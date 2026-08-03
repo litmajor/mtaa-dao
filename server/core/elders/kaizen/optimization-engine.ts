@@ -338,8 +338,7 @@ export class OptimizationEngine {
       return sum + impactWeight;
     }, 0);
 
-    // Confidence score based on data quality
-    const confidenceScore = Math.min(100, 70 + (metrics.system.uptime * 0.3));
+    const confidenceScore = this.calculateConfidenceScore(metrics, topOpportunities.length);
 
     return {
       timestamp: new Date(),
@@ -350,6 +349,51 @@ export class OptimizationEngine {
       weeklyProjection,
       monthlyProjection
     };
+  }
+
+  private calculateConfidenceScore(metrics: PerformanceMetrics, opportunityCount: number): number {
+    const scoreAverage =
+      (metrics.scores.overall + metrics.scores.treasury + metrics.scores.governance + metrics.scores.community + metrics.scores.system) / 5;
+
+    const systemQuality = Math.max(0, 100 - metrics.system.responseTime * 0.25 - metrics.system.errorRate * 15);
+    const dataQualityFactor = this.computeDataQuality(metrics);
+
+    const baseConfidence = 15;
+    const signalConfidence = (scoreAverage * 0.2 + systemQuality * 0.15) * dataQualityFactor;
+    const dataConfidence = dataQualityFactor * 40;
+    const opportunityConfidence = Math.min(10, opportunityCount * 2);
+
+    let rawConfidence = baseConfidence + signalConfidence + dataConfidence + opportunityConfidence;
+
+    if (opportunityCount === 0) {
+      rawConfidence *= 0.65;
+    }
+
+    if (dataQualityFactor < 0.25) {
+      rawConfidence = Math.min(rawConfidence, 50);
+    }
+
+    return Math.round(Math.max(10, Math.min(100, rawConfidence)));
+  }
+
+  private computeDataQuality(metrics: PerformanceMetrics): number {
+    const dataPoints = [
+      metrics.treasury.balance,
+      metrics.treasury.burnRate,
+      metrics.treasury.runway,
+      metrics.governance.participationRate,
+      metrics.governance.proposalSuccessRate,
+      metrics.governance.quorumMet,
+      metrics.community.engagementScore,
+      metrics.community.retentionRate,
+      metrics.dao.memberCount,
+      metrics.dao.activeMemberCount,
+      metrics.wallet.securityScore,
+      metrics.scores.overall
+    ];
+
+    const validCount = dataPoints.filter(value => typeof value === 'number' && Number.isFinite(value) && value !== 0).length;
+    return Math.min(1, validCount / dataPoints.length);
   }
 
   /**

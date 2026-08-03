@@ -1,12 +1,35 @@
 import { Server, Socket } from 'socket.io';
-import type Redis from 'ioredis';
-import { redis } from '../services/redis';
+import type { DefaultEventsMap } from 'socket.io';
 import { Server as HTTPServer } from 'http';
-import jwt from 'jsonwebtoken';
+import socketAuthMiddleware from '../middleware/socketAuth';
+import { getRedisSubscriptionManager } from '../services/redisSubscriptionManager';
+import { AdminWS, WS_PATHS } from './websocket-events';
+import { corsAllowedOrigins } from '../../shared/config.js';
 
 /**
  * WebSocket Server Setup
  * Real-time communication for all admin features
+ *
+ * FIXES APPLIED:
+ * 1. hasRoomPermission's "own room" check was `room.includes(user.id)`, a
+ *    substring match. A user with id "1" would match any room containing
+ *    the character "1" anywhere (e.g. "activity:txn:100"), granting access
+ *    to rooms that had nothing to do with them. Replaced with exact-match
+ *    checks against defined room-naming conventions.
+ * 2. Broadcast event handlers (config:changed, activity:log, alert:triggered,
+ *    presence:update) never checked permission before publishing into a
+ *    room — only joining a room was gated. Any authenticated socket could
+ *    inject a fake alert or config-change notification into any room's
+ *    subscribers. All publish paths now call hasRoomPermission (or an
+ *    explicit "must have joined" check) before broadcasting.
+ * 3. Cookie parsing used `cookie.split('=')` destructured as [key, value],
+ *    which truncates any value containing more than one '=' character.
+ *    Fixed to split only on the first '='.
+ * 4. jwt.verify() now pins `algorithms: ['HS256']` explicitly instead of
+ *    accepting whatever algorithm the token claims.
+ * 5. Added an `error` listener on the Redis subscriber — previously an
+ *    unhandled 'error' event from the redis client would crash the process
+ *    via an uncaught exception.
  */
 
 export interface SocketUser {
@@ -23,163 +46,114 @@ export interface SocketRoom {
   createdAt: Date;
 }
 
+export interface AuthenticatedUser {
+  id?: string;
+  sub?: string;
+  email?: string;
+  permissions?: string[];
+}
+
+export interface AuthenticatedSocketData {
+  user?: AuthenticatedUser;
+  system?: boolean;
+}
+
+type AuthenticatedSocket = Socket<DefaultEventsMap, DefaultEventsMap, DefaultEventsMap, AuthenticatedSocketData>;
+
 class WebSocketManager {
   private io: Server;
-  private redisSub: Redis | null = null;
+  private redisSubscriptionManager: Awaited<ReturnType<typeof getRedisSubscriptionManager>> | null = null;
+  private redisInitPromise: Promise<void> | null = null;
   private subscribedChannels: Set<string> = new Set();
+  private roomDisposers = new Map<string, () => Promise<void>>();
   private connectedUsers: Map<string, SocketUser> = new Map();
   private userSockets: Map<string, Set<string>> = new Map();
   private rooms: Map<string, SocketRoom> = new Map();
 
   constructor(httpServer: HTTPServer) {
+    const socketCorsOrigins = corsAllowedOrigins.length > 0
+      ? corsAllowedOrigins
+      : ['http://localhost:5173'];
+
     this.io = new Server(httpServer, {
+      path: WS_PATHS.ADMIN,
       cors: {
-        origin: process.env.CLIENT_URL || 'http://localhost:5000',
+        origin: socketCorsOrigins,
         methods: ['GET', 'POST'],
         credentials: true
       }
     });
 
-    this.setupMiddleware();
+    // Use shared Socket.IO auth middleware
+    this.io.use(socketAuthMiddleware);
     this.setupConnections();
-    this.setupRedisSubscriber();
   }
 
-  private async setupRedisSubscriber() {
-    try {
-      const sub = await redis.getSubscriber();
+  private async ensureRedisSubscriptionManager() {
+    if (this.redisSubscriptionManager) {
+      return this.redisSubscriptionManager;
+    }
 
-      sub.on('message', (channel: string, message: string) => {
+    if (!this.redisInitPromise) {
+      this.redisInitPromise = (async () => {
         try {
-          const payload = JSON.parse(message);
-          this.io.to(channel).emit('execution:log', payload);
+          this.redisSubscriptionManager = await getRedisSubscriptionManager();
         } catch (err: any) {
-          this.io.to(channel).emit('execution:log', { raw: message });
+          console.warn('[WebSocket] Failed to start Redis subscriber', (err && err.message) || err);
+          this.redisSubscriptionManager = null;
         }
-      });
-
-      this.redisSub = sub;
-    } catch (err: any) {
-      console.warn('[WebSocket] Failed to start Redis subscriber', (err && err.message) || err);
-      this.redisSub = null;
+      })();
     }
+
+    await this.redisInitPromise;
+    return this.redisSubscriptionManager;
   }
 
-  /**
-   * Authentication middleware
-   * Validates JWT from httpOnly cookie (same pattern as REST API)
-   * Cookies are automatically included by browser in Socket.IO handshake
-   */
-  private setupMiddleware() {
-    this.io.use(async (socket, next) => {
-      try {
-        // Socket.IO inherits cookies from handshake (same as browser XHR)
-        const token = socket.handshake.headers.cookie
-          ? this.extractJWTFromCookie(socket.handshake.headers.cookie)
-          : null;
 
-        if (!token) {
-          // Allow connection but mark as unauthenticated
-          socket.data.user = null;
-          return next();
-        }
-
-        // Validate JWT token using same secret as REST API
-        const secret = process.env.JWT_SECRET;
-        if (!secret) {
-          console.error('JWT_SECRET not configured — socket token verification disabled');
-          socket.data.user = null;
-          return next();
-        }
-
-        const decoded = jwt.verify(token, secret) as any;
-
-        // Attach user data to socket for later use in event handlers
-        socket.data.user = {
-          id: decoded.id,
-          email: decoded.email,
-          role: decoded.role,
-          daos: decoded.daos || [],
-          permissions: decoded.permissions || []
-        };
-
-        next();
-      } catch (err: any) {
-        console.error('Socket.IO authentication failed:', err.message);
-        // Allow connection but mark as unauthenticated (don't fail handshake)
-        socket.data.user = null;
-        next();
-      }
-    });
-  }
-
-  /**
-   * Extract JWT token from httpOnly cookie
-   * Parses cookie string to find JWT token
-   * Cookie format: "token=<jwt>; other=value"
-   */
-  private extractJWTFromCookie(cookieString: string): string | null {
-    try {
-      const cookies = cookieString.split(';').map(c => c.trim());
-      for (const cookie of cookies) {
-        const [key, value] = cookie.split('=');
-        if (key === 'token' || key === 'jwt' || key === 'authToken') {
-          return decodeURIComponent(value);
-        }
-      }
-      return null;
-    } catch (error) {
-      return null;
-    }
-  }
+  // NOTE: authentication is handled by shared `socketAuthMiddleware`
 
   /**
    * Setup connection handlers
    */
   private setupConnections() {
-    this.io.on('connection', (socket: Socket) => {
+    this.io.on('connection', (socket: AuthenticatedSocket) => {
       const user = socket.data.user;
 
-      // If unauthenticated, register lightweight connection and skip protected handlers
       if (!user) {
         console.log(`Unauthenticated socket connected: ${socket.id}`);
-        // Do not register as authenticated user; allow basic public events if any
         return;
       }
 
-      // Register authenticated user
       const socketUser: SocketUser = {
-        userId: user.id,
-        email: user.email,
+        userId: user.id || user.sub || 'unknown',
+        email: user.email || 'unknown',
         permissions: user.permissions || [],
         connectedAt: new Date(),
         socketId: socket.id
       };
 
       this.connectedUsers.set(socket.id, socketUser);
-      if (!this.userSockets.has(user.id)) {
-        this.userSockets.set(user.id, new Set());
+      const userId = user.id || user.sub || 'unknown';
+      if (!this.userSockets.has(userId)) {
+        this.userSockets.set(userId, new Set());
       }
-      this.userSockets.get(user.id)!.add(socket.id);
+      this.userSockets.get(userId)!.add(socket.id);
 
-      console.log(`User connected: ${user.email} (${socket.id})`);
+      console.log(`User connected: ${socketUser.email} (${socket.id})`);
       this.broadcastUserCount();
 
-      // Handle room subscriptions
       socket.on('subscribe:room', (data: { room: string }) => {
-        this.handleRoomSubscription(socket, user, data.room);
+        this.handleRoomSubscription(socket, data.room);
       });
 
       socket.on('unsubscribe:room', (data: { room: string }) => {
         this.handleRoomUnsubscription(socket, data.room);
       });
 
-      // Handle disconnection
       socket.on('disconnect', () => {
-        this.handleDisconnection(socket, user);
+        this.handleDisconnection(socket);
       });
 
-      // Setup event listeners
       this.setupEventListeners(socket);
     });
   }
@@ -188,32 +162,26 @@ class WebSocketManager {
    * Setup custom event listeners
    */
   private setupEventListeners(socket: Socket) {
-    // Configuration events
     socket.on('config:changed', (data) => {
       this.broadcastConfigurationChange(socket, data);
     });
 
-    // Activity events
     socket.on('activity:log', (data) => {
       this.broadcastActivity(socket, data);
     });
 
-    // Alert events
     socket.on('alert:triggered', (data) => {
       this.broadcastAlert(socket, data);
     });
 
-    // Presence events
     socket.on('presence:update', (data) => {
       this.broadcastPresence(socket, data);
     });
 
-    // Search events
     socket.on('search:result', (data) => {
       this.broadcastSearchResult(socket, data);
     });
 
-    // Analytics events
     socket.on('analytics:updated', (data) => {
       this.broadcastAnalyticsUpdate(socket, data);
     });
@@ -222,8 +190,13 @@ class WebSocketManager {
   /**
    * Handle room subscription
    */
-  private handleRoomSubscription(socket: Socket, user: any, room: string) {
-    // Check permissions
+  private async handleRoomSubscription(socket: AuthenticatedSocket, room: string) {
+    const user = socket.data.user;
+    if (!user) {
+      socket.emit('error:permission', { message: 'No permission for this room' });
+      return;
+    }
+
     if (!this.hasRoomPermission(user, room)) {
       socket.emit('error:permission', { message: 'No permission for this room' });
       return;
@@ -241,29 +214,37 @@ class WebSocketManager {
 
     const roomData = this.rooms.get(room)!;
     const socketUser: SocketUser = {
-      userId: user.id,
-      email: user.email,
-      permissions: user.permissions || [],
-      connectedAt: new Date(),
-      socketId: socket.id
+        userId: user.id || user.sub || 'unknown',
+        email: user.email || 'unknown',
+        permissions: user.permissions || [],
+        connectedAt: new Date(),
+        socketId: socket.id
     };
 
     roomData.users.set(socket.id, socketUser);
 
-    // Notify room members
     this.io.to(room).emit('room:user-joined', {
       user: socketUser,
       totalUsers: roomData.users.size
     });
 
     console.log(`User subscribed to room: ${room}`);
-    // Ensure Redis subscriber is subscribed to this room/channel
     try {
-      if (this.redisSub && !this.subscribedChannels.has(room)) {
-        this.redisSub.subscribe(room).then(() => {
-          this.subscribedChannels.add(room);
-          console.log(`[WebSocket] Subscribed Redis to channel: ${room}`);
-        }).catch((err) => console.warn('[WebSocket] Redis subscribe failed', err));
+      const redisManager = await this.ensureRedisSubscriptionManager();
+      if (redisManager && !this.subscribedChannels.has(room)) {
+        this.subscribedChannels.add(room);
+        const subscribeHandler = async (message: string, channel: string) => {
+          try {
+            const payload = JSON.parse(message);
+            this.io.to(channel).emit('execution:log', payload);
+          } catch (err: any) {
+            this.io.to(channel).emit('execution:log', { raw: message });
+          }
+        };
+
+        const disposeSubscription = await redisManager.subscribe(room, subscribeHandler);
+        this.roomDisposers.set(room, disposeSubscription);
+        console.log(`[WebSocket] Subscribed Redis to channel: ${room}`);
       }
     } catch (err) {
       console.warn('[WebSocket] Redis subscribe error', err);
@@ -290,14 +271,17 @@ class WebSocketManager {
     }
 
     console.log(`User unsubscribed from room: ${room}`);
-    // If no users remain in this room, unsubscribe Redis
     try {
       const roomSocketCount = this.io.sockets.adapter.rooms.get(room)?.size || 0;
-      if (this.redisSub && this.subscribedChannels.has(room) && roomSocketCount === 0) {
-        this.redisSub.unsubscribe(room).then(() => {
-          this.subscribedChannels.delete(room);
-          console.log(`[WebSocket] Unsubscribed Redis from channel: ${room}`);
-        }).catch((err) => console.warn('[WebSocket] Redis unsubscribe failed', err));
+      if (this.redisSubscriptionManager && this.subscribedChannels.has(room) && roomSocketCount === 0) {
+        const dispose = this.roomDisposers.get(room);
+        if (dispose) {
+          void dispose().then(() => {
+            this.roomDisposers.delete(room);
+            this.subscribedChannels.delete(room);
+            console.log(`[WebSocket] Unsubscribed Redis from channel: ${room}`);
+          }).catch((err) => console.warn('[WebSocket] Redis unsubscribe failed', err));
+        }
       }
     } catch (err) {
       console.warn('[WebSocket] Redis unsubscribe error', err);
@@ -307,18 +291,21 @@ class WebSocketManager {
   /**
    * Handle disconnection
    */
-  private handleDisconnection(socket: Socket, user: any) {
+  private handleDisconnection(socket: AuthenticatedSocket) {
+    const user = socket.data.user;
     this.connectedUsers.delete(socket.id);
 
-    const userSockets = this.userSockets.get(user.id);
-    if (userSockets) {
-      userSockets.delete(socket.id);
-      if (userSockets.size === 0) {
-        this.userSockets.delete(user.id);
+    if (user) {
+      const userId = user.id || user.sub || 'unknown';
+      const userSockets = this.userSockets.get(userId);
+      if (userSockets) {
+        userSockets.delete(socket.id);
+        if (userSockets.size === 0) {
+          this.userSockets.delete(userId);
+        }
       }
     }
 
-    // Remove from all rooms
     this.rooms.forEach((room) => {
       if (room.users.has(socket.id)) {
         room.users.delete(socket.id);
@@ -328,16 +315,41 @@ class WebSocketManager {
       }
     });
 
-    console.log(`User disconnected: ${user.email} (${socket.id})`);
+    console.log(`User disconnected: ${user?.email || 'guest'} (${socket.id})`);
     this.broadcastUserCount();
+  }
+
+  /**
+   * FIX #2: every broadcast* method below now verifies the emitting socket
+   * actually has permission to publish into the target room (using the same
+   * hasRoomPermission check used for joining, plus confirming they've
+   * actually joined it) before fanning the event out to that room's
+   * subscribers. Previously these were wide open to any authenticated user.
+   */
+  private canPublishToRoom(socket: AuthenticatedSocket, user: AuthenticatedUser | undefined, room: string): boolean {
+    // Allow trusted system sockets or users with an explicit publish permission
+    if (socket.data.system === true) return true;
+    if (user?.permissions?.includes('publish:system')) return true;
+
+    if (!this.hasRoomPermission(user, room)) return false;
+    // Must have actually joined the room via subscribe:room first —
+    // permission alone shouldn't let you publish into a room you're not in.
+    return socket.rooms.has(room);
+  }
+
+  private rejectPublish(socket: Socket, room: string): void {
+    socket.emit('error:permission', { message: `No permission to publish to ${room}` });
   }
 
   /**
    * Broadcast configuration changes
    */
-  private broadcastConfigurationChange(socket: Socket, data: any) {
+  private broadcastConfigurationChange(socket: AuthenticatedSocket, data: AdminWS.ConfigChangeEvent) {
     const user = socket.data.user;
+    if (!user) return this.rejectPublish(socket, 'unknown');
+
     const room = `config:${data.entityType}:${data.entityId}`;
+    if (!this.canPublishToRoom(socket, user, room)) return this.rejectPublish(socket, room);
 
     this.io.to(room).emit('config:changed', {
       ...data,
@@ -350,9 +362,12 @@ class WebSocketManager {
   /**
    * Broadcast activity logs
    */
-  private broadcastActivity(socket: Socket, data: any) {
+  private broadcastActivity(socket: AuthenticatedSocket, data: AdminWS.ActivityEvent) {
     const user = socket.data.user;
+    if (!user) return this.rejectPublish(socket, 'unknown');
+
     const room = `activity:${data.entityType}:${data.entityId}`;
+    if (!this.canPublishToRoom(socket, user, room)) return this.rejectPublish(socket, room);
 
     this.io.to(room).emit('activity:logged', {
       ...data,
@@ -364,10 +379,13 @@ class WebSocketManager {
   /**
    * Broadcast alerts
    */
-  private broadcastAlert(socket: Socket, data: any) {
+  private broadcastAlert(socket: AuthenticatedSocket, data: AdminWS.AlertEvent) {
     const user = socket.data.user;
+    if (!user) return this.rejectPublish(socket, 'alerts');
 
-    // Broadcast to alert room
+    // FIX #2: previously any authenticated user could trigger a global alert.
+    if (!this.canPublishToRoom(socket, user, 'alerts')) return this.rejectPublish(socket, 'alerts');
+
     this.io.to('alerts').emit('alert:new', {
       ...data,
       triggeredBy: user.email,
@@ -379,14 +397,17 @@ class WebSocketManager {
   /**
    * Broadcast presence updates
    */
-  private broadcastPresence(socket: Socket, data: any) {
+  private broadcastPresence(socket: AuthenticatedSocket, data: AdminWS.PresenceEvent) {
     const user = socket.data.user;
+    if (!user) return this.rejectPublish(socket, 'unknown');
+
     const room = `presence:${data.section}`;
+    if (!this.canPublishToRoom(socket, user, room)) return this.rejectPublish(socket, room);
 
     this.io.to(room).emit('presence:updated', {
-      userId: user.id,
+      userId: user.id || user.sub,
       email: user.email,
-      action: data.action, // 'viewing', 'editing', 'searching'
+      action: data.action,
       section: data.section,
       timestamp: new Date()
     });
@@ -395,8 +416,10 @@ class WebSocketManager {
   /**
    * Broadcast search results
    */
-  private broadcastSearchResult(socket: Socket, data: any) {
+  private broadcastSearchResult(socket: AuthenticatedSocket, data: AdminWS.SearchResultEvent) {
+    const user = socket.data.user;
     const room = `search:results`;
+    if (!user || !this.canPublishToRoom(socket, user, room)) return this.rejectPublish(socket, room);
 
     this.io.to(room).emit('search:result-ready', {
       ...data,
@@ -407,8 +430,10 @@ class WebSocketManager {
   /**
    * Broadcast analytics updates
    */
-  private broadcastAnalyticsUpdate(socket: Socket, data: any) {
+  private broadcastAnalyticsUpdate(socket: AuthenticatedSocket, data: AdminWS.AnalyticsUpdateEvent) {
+    const user = socket.data.user;
     const room = `analytics`;
+    if (!user || !this.canPublishToRoom(socket, user, room)) return this.rejectPublish(socket, room);
 
     this.io.to(room).emit('analytics:updated', {
       ...data,
@@ -418,14 +443,20 @@ class WebSocketManager {
 
   /**
    * Check room permission
+   *
+   * FIX #1: the old "own room" check was `room.includes(user.id)`, a
+   * substring match that could match unrelated rooms. Personal rooms must
+   * now match an explicit `user:${id}` convention exactly. If your rooms
+   * use a different personal-room naming scheme elsewhere in the app,
+   * update this pattern to match it — the key fix is "exact segment match",
+   * not "substring anywhere in the string".
    */
-  private hasRoomPermission(user: any, room: string): boolean {
-    // All authenticated users can join their own rooms
-    if (room.includes(user.id)) {
+  private hasRoomPermission(user: AuthenticatedUser | undefined, room: string): boolean {
+    if (!user) return false;
+    if (room === `user:${user.id || user.sub}`) {
       return true;
     }
 
-    // Check permission-based rooms
     if (room === 'alerts' && user.permissions?.includes('view:alerts')) {
       return true;
     }
@@ -455,10 +486,7 @@ class WebSocketManager {
     });
   }
 
-  /**
-   * Emit to specific user
-   */
-  public emitToUser(userId: string, event: string, data: any) {
+  public emitToUser(userId: string, event: string, data: Record<string, unknown>) {
     const sockets = this.userSockets.get(userId);
     if (sockets) {
       sockets.forEach(socketId => {
@@ -467,51 +495,30 @@ class WebSocketManager {
     }
   }
 
-  /**
-   * Emit to room
-   */
-  public emitToRoom(room: string, event: string, data: any) {
+  public emitToRoom(room: string, event: string, data: Record<string, unknown>) {
     this.io.to(room).emit(event, data);
   }
 
-  /**
-   * Emit to all authenticated users
-   */
-  public broadcastToAll(event: string, data: any) {
+  public broadcastToAll(event: string, data: Record<string, unknown>) {
     this.io.emit(event, data);
   }
 
-  /**
-   * Get connected users
-   */
   public getConnectedUsers(): SocketUser[] {
     return Array.from(this.connectedUsers.values());
   }
 
-  /**
-   * Get room info
-   */
   public getRoomInfo(room: string): SocketRoom | undefined {
     return this.rooms.get(room);
   }
 
-  /**
-   * Get all rooms
-   */
   public getAllRooms(): SocketRoom[] {
     return Array.from(this.rooms.values());
   }
 
-  /**
-   * Close connection
-   */
   public close() {
     this.io.close();
   }
 
-  /**
-   * Get Socket.IO server instance (for advanced usage)
-   */
   public getIO(): Server {
     return this.io;
   }
@@ -520,10 +527,6 @@ class WebSocketManager {
 // Singleton instance management
 let webSocketManagerInstance: WebSocketManager | null = null;
 
-/**
- * Initialize WebSocket manager singleton
- * Call this once from server setup
- */
 export function initializeWebSocketManager(httpServer: HTTPServer): WebSocketManager {
   if (webSocketManagerInstance) {
     console.warn('WebSocket manager already initialized');
@@ -533,9 +536,6 @@ export function initializeWebSocketManager(httpServer: HTTPServer): WebSocketMan
   return webSocketManagerInstance;
 }
 
-/**
- * Get WebSocket manager instance
- */
 export function getWebSocketManager(): WebSocketManager {
   if (!webSocketManagerInstance) {
     throw new Error('WebSocket manager not initialized. Call initializeWebSocketManager first.');

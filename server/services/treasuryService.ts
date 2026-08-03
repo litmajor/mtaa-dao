@@ -154,18 +154,18 @@ export class TreasuryService {
   static async getBalance(daoId: string): Promise<TreasuryBalance> {
     try {
       // Query all completed transactions for this DAO
-      const transactions: any[] = await db.select().from(walletTransactions)
+      const transactions = await db.select().from(walletTransactions)
         .where(and(
-          eq(walletTransactions.daoId, daoId as any),
+          eq(walletTransactions.daoId, daoId),
           eq(walletTransactions.status, 'completed')
-        )) as any;
+        ));
 
       // Also get pending transactions for pending balance
-      const pendingTxs: any[] = await db.select().from(walletTransactions)
+      const pendingTxs = await db.select().from(walletTransactions)
         .where(and(
-          eq(walletTransactions.daoId, daoId as any),
+          eq(walletTransactions.daoId, daoId),
           eq(walletTransactions.status, 'pending')
-        )) as any;
+        ));
 
       // Calculate balances from transaction history
       let totalDeposits = 0;
@@ -173,13 +173,15 @@ export class TreasuryService {
       let pendingAmount = 0;
 
       for (const tx of transactions) {
-        const amount = parseFloat(tx.amount);
+        if (!tx.amount) continue; // Skip if amount is null/undefined
+        const amount = typeof tx.amount === 'string' ? parseFloat(tx.amount) : tx.amount;
         if (tx.type === 'deposit' || tx.type === 'contribution') totalDeposits += amount;
         if (tx.type === 'withdrawal') totalWithdrawals += amount;
       }
 
       for (const tx of pendingTxs) {
-        const amount = parseFloat(tx.amount);
+        if (!tx.amount) continue; // Skip if amount is null/undefined
+        const amount = typeof tx.amount === 'string' ? parseFloat(tx.amount) : tx.amount;
         if (tx.type === 'withdrawal') pendingAmount += amount;
       }
 
@@ -209,7 +211,7 @@ export class TreasuryService {
   ): Promise<{ transactions: TreasuryTransaction[]; total: number }> {
     try {
       // Query real transaction history from database
-      const transactions: any[] = await db.select({
+      const transactions = await db.select({
         id: walletTransactions.id,
         daoId: walletTransactions.daoId,
         type: walletTransactions.type,
@@ -222,30 +224,32 @@ export class TreasuryService {
         updatedAt: walletTransactions.updatedAt,
       })
         .from(walletTransactions)
-        .where(eq(walletTransactions.daoId, daoId as any))
+        .where(eq(walletTransactions.daoId, daoId))
         .orderBy(desc(walletTransactions.createdAt))
         .limit(Math.min(limit, 100))
-        .offset(offset) as any;
+        .offset(offset);
 
       // Get total count
-      const countResult: any[] = await db.select({ count: sql<number>`cast(count(*) as integer)` })
+      const countResult = await db.select({ count: sql<number>`cast(count(*) as integer)` })
         .from(walletTransactions)
-        .where(eq(walletTransactions.daoId, daoId as any)) as any;
+        .where(eq(walletTransactions.daoId, daoId));
 
-      const total = countResult[0]?.count || 0;
+      const total = countResult[0]?.count ?? 0;
 
       return {
-        transactions: transactions.map(tx => ({
-          id: tx.id,
-          daoId: tx.daoId,
-          type: tx.type,
-          amount: tx.amount.toString(),
-          currency: tx.currency,
-          status: tx.status,
-          description: tx.description,
-          initiatedBy: tx.fromUserId,
-          createdAt: tx.createdAt?.toISOString() || new Date().toISOString(),
-        })),
+        transactions: transactions
+          .filter(tx => tx.daoId != null && tx.fromUserId != null)
+          .map(tx => ({
+            id: tx.id,
+            daoId: tx.daoId!,
+            type: tx.type as TreasuryTransaction['type'],
+            amount: (tx.amount ?? '0').toString(),
+            currency: tx.currency ?? 'cUSD',
+            status: tx.status as TreasuryTransaction['status'],
+            description: tx.description ?? undefined,
+            initiatedBy: tx.fromUserId!,
+            createdAt: tx.createdAt?.toISOString() ?? new Date().toISOString(),
+          })),
         total,
       };
     } catch (error) {
@@ -272,41 +276,43 @@ export class TreasuryService {
       }
 
       // Insert transaction record
-      const result: any[] = await db.insert(walletTransactions).values({
-        daoId: daoId as any,
+      const result = await db.insert(walletTransactions).values({
+        daoId,
         fromUserId: initiatedBy,
         walletAddress: 'treasury',
-        amount: amount as any,
+        amount,
         currency,
         type: 'deposit',
         status: 'completed',
-        description: description || 'Treasury deposit',
+        description: description ?? 'Treasury deposit',
         metadata: { depositedBy: initiatedBy },
-      } as any).returning({ id: walletTransactions.id }) as any;
+      }).returning({ id: walletTransactions.id });
 
-      const txId = result[0].id;
+      const txId = result[0]?.id;
+      if (!txId) throw new Error('Failed to create transaction');
 
       // Update DAO treasury balance
-      const daoRecord: any = await db.query.daos.findFirst({
-        where: eq(daos.id, daoId as any),
-      }) as any;
+      const daoRecord = await db.query.daos.findFirst({
+        where: eq(daos.id, daoId),
+      });
 
       if (daoRecord) {
-        const currentBalance = parseFloat(daoRecord.treasuryBalance?.toString() || '0');
+        const currentBalance = parseFloat((daoRecord.treasuryBalance ?? '0').toString());
         const newBalance = (currentBalance + amountNum).toString();
         await db.update(daos)
-          .set({ treasuryBalance: newBalance as any })
-          .where(eq(daos.id, daoId as any));
+          .set({ treasuryBalance: newBalance })
+          .where(eq(daos.id, daoId));
       }
 
       // Audit log
       await logConsolidatedAuditEvent({
-        dao_id: daoId,
-        user_id: initiatedBy,
-        action: 'treasury_deposit_recorded',
+        actorId: initiatedBy,
+        actionType: 'treasury_deposit_recorded',
+        targetType: 'dao',
+        targetId: daoId,
         severity: 'critical',
-        details: { amount, currency, description, txId },
-      } as any);
+        metadata: { amount, currency, description, txId },
+      });
 
       return txId;
     } catch (error) {
@@ -336,9 +342,9 @@ export class TreasuryService {
       }
 
       // Get multisig config to check threshold
-      const multisigConfig: any = await db.query.daoMultisigConfig.findFirst({
-        where: eq(daoMultisigConfig.daoId, daoId as any),
-      }) as any;
+      const multisigConfig = await db.query.daoMultisigConfig.findFirst({
+        where: eq(daoMultisigConfig.daoId, daoId),
+      });
 
       // CRITICAL FIX: REQUIRE explicit DAO configuration - no default threshold fallback
       // This prevents bypassing multisig by withdrawing amounts like $999 (under default $1000)
@@ -351,47 +357,49 @@ export class TreasuryService {
       const requiresMultisig = amountNum > threshold;
 
       // Insert withdrawal transaction
-      const result: any[] = await db.insert(walletTransactions).values({
-        daoId: daoId as any,
+      const result = await db.insert(walletTransactions).values({
+        daoId,
         fromUserId: initiatedBy,
-        toUserId: recipient as any,
+        toUserId: recipient,
         walletAddress: recipient,
-        amount: amount as any,
+        amount,
         currency: 'cUSD',
         type: 'withdrawal',
         status: requiresMultisig ? 'pending' : 'completed',
-        description: reason || 'Treasury withdrawal',
+        description: reason ?? 'Treasury withdrawal',
         metadata: { initiatedBy, requiresMultisig },
-      } as any).returning({ id: walletTransactions.id }) as any;
+      }).returning({ id: walletTransactions.id });
 
-      const txId = result[0].id;
+      const txId = result[0]?.id;
+      if (!txId) throw new Error('Failed to create withdrawal transaction');
 
       // If multisig required, create approval record
       if (requiresMultisig) {
         await db.insert(treasuryWithdrawalApprovals).values({
-          daoId: daoId as any,
-          withdrawalId: txId as any,
+          daoId,
+          withdrawalId: txId,
           approverId: initiatedBy,
           approved: false,
           comment: 'Withdrawal awaiting approvals',
           votedAt: new Date(),
-        } as any).catch(err => console.log('Approval init note:', err));
+        }).catch(err => console.error('Approval init error:', err));
       }
 
       // Audit log
       await logConsolidatedAuditEvent({
-        dao_id: daoId,
-        user_id: initiatedBy,
-        action: 'treasury_withdrawal_initiated',
+        actorId: initiatedBy,
+        actionType: 'treasury_withdrawal_initiated',
+        targetType: 'dao',
+        targetId: daoId,
         severity: 'critical',
-        details: {
+        metadata: {
           amount,
           recipient,
           reason,
           requiresMultisig,
           txId,
         },
-      } as any);
+      });
 
       return { txId, requiresMultisig };
     } catch (error) {
@@ -411,9 +419,9 @@ export class TreasuryService {
   ): Promise<{ status: 'pending' | 'approved'; approvalsNeeded?: number }> {
     try {
       // Get withdrawal transaction
-      const withdrawal: any = await db.query.walletTransactions.findFirst({
-        where: eq(walletTransactions.id, txId as any),
-      }) as any;
+      const withdrawal = await db.query.walletTransactions.findFirst({
+        where: eq(walletTransactions.id, txId),
+      });
 
       if (!withdrawal) {
         throw new Error('Withdrawal transaction not found');
@@ -421,27 +429,27 @@ export class TreasuryService {
 
       // Record approval
       await db.insert(treasuryWithdrawalApprovals).values({
-        daoId: daoId as any,
-        withdrawalId: txId as any,
+        daoId,
+        withdrawalId: txId,
         approverId: approvedBy,
         approved: true,
-        comment: comment || null,
+        comment: comment ?? null,
         votedAt: new Date(),
-      } as any);
+      });
 
       // Get all approvals
-      const approvals: any[] = await db.query.treasuryWithdrawalApprovals.findMany({
-        where: eq(treasuryWithdrawalApprovals.withdrawalId, txId as any),
-      }) as any;
+      const approvals = await db.query.treasuryWithdrawalApprovals.findMany({
+        where: eq(treasuryWithdrawalApprovals.withdrawalId, txId),
+      });
 
       const approvedCount = approvals.filter(a => a.approved).length;
 
       // Get required approvals
-      const multisigConfig: any = await db.query.daoMultisigConfig.findFirst({
-        where: eq(daoMultisigConfig.daoId, daoId as any),
-      }) as any;
+      const multisigConfig = await db.query.daoMultisigConfig.findFirst({
+        where: eq(daoMultisigConfig.daoId, daoId),
+      });
 
-      const requiredApprovals = multisigConfig?.requiredApprovals || treasuryConfig.multisig.defaultRequiredApprovals;
+      const requiredApprovals = multisigConfig?.requiredApprovals ?? treasuryConfig.multisig.defaultRequiredApprovals;
 
       let status: 'pending' | 'approved' = 'pending';
       if (approvedCount >= requiredApprovals) {
@@ -450,31 +458,32 @@ export class TreasuryService {
         // Update withdrawal status
         await db.update(walletTransactions)
           .set({ status: 'completed' })
-          .where(eq(walletTransactions.id, txId as any));
+          .where(eq(walletTransactions.id, txId));
 
         // Update DAO treasury balance
-        const dao: any = await db.query.daos.findFirst({
-          where: eq(daos.id, daoId as any),
-        }) as any;
+        const dao = await db.query.daos.findFirst({
+          where: eq(daos.id, daoId),
+        });
 
         if (dao) {
-          const currentBalance = parseFloat(dao.treasuryBalance?.toString() || '0');
-          const withdrawalAmount = parseFloat(withdrawal.amount);
+          const currentBalance = parseFloat((dao.treasuryBalance ?? '0').toString());
+          const withdrawalAmount = withdrawal?.amount ? parseFloat(withdrawal.amount.toString()) : 0;
           const newBalance = Math.max(currentBalance - withdrawalAmount, 0).toString();
           await db.update(daos)
-            .set({ treasuryBalance: newBalance as any })
-            .where(eq(daos.id, daoId as any));
+            .set({ treasuryBalance: newBalance })
+            .where(eq(daos.id, daoId));
         }
       }
 
       // Audit log
       await logConsolidatedAuditEvent({
-        dao_id: daoId,
-        user_id: approvedBy,
-        action: 'treasury_withdrawal_approved',
+        actorId: approvedBy,
+        actionType: 'treasury_withdrawal_approved',
+        targetType: 'withdrawal',
+        targetId: txId,
         severity: 'critical',
-        details: { txId, comment, status, approvalsCount: approvedCount, requiredApprovals },
-      } as any);
+        metadata: { comment, status, approvalsCount: approvedCount, requiredApprovals },
+      });
 
       return { 
         status, 
@@ -492,11 +501,11 @@ export class TreasuryService {
   static async getContributionTypes(daoId: string): Promise<ContributionType[]> {
     try {
       // Query actual contribution types from database
-      let types: any[] = await db.select().from(daoContributionTypes)
+      let types = await db.select().from(daoContributionTypes)
         .where(and(
-          eq(daoContributionTypes.daoId, daoId as any),
+          eq(daoContributionTypes.daoId, daoId),
           eq(daoContributionTypes.isActive, true)
-        )) as any;
+        ));
 
       // Return defaults if no custom types configured
       if (types.length === 0) {
@@ -507,7 +516,7 @@ export class TreasuryService {
           description: type.description,
           minimumAmount: type.minimumAmount,
           maximumAmount: type.maximumAmount === null ? undefined : type.maximumAmount,
-          requiresApproval: type.requiresApproval,
+          requiresApproval: type.requiresApproval ?? false,
           createdAt: new Date().toISOString(),
         })) as ContributionType[];
       }
@@ -516,11 +525,11 @@ export class TreasuryService {
         id: t.id,
         daoId: t.daoId,
         name: t.name,
-        description: t.description,
-        minimumAmount: t.minimumAmount?.toString() || '0.00',
+        description: t.description ?? undefined,
+        minimumAmount: (t.minimumAmount ?? 0).toString(),
         maximumAmount: t.maximumAmount?.toString(),
-        requiresApproval: t.requiresApproval,
-        createdAt: t.createdAt?.toISOString(),
+        requiresApproval: t.requiresApproval ?? false,
+        createdAt: t.createdAt?.toISOString() ?? new Date().toISOString(),
       }));
     } catch (error) {
       console.error('[Treasury] Contribution types error:', error);
@@ -536,6 +545,7 @@ export class TreasuryService {
     name: string,
     description: string | undefined,
     minimumAmount: string | undefined,
+    maximumAmount: string | undefined,
     requiresApproval: boolean,
     createdBy: string
   ): Promise<ContributionType> {
@@ -545,30 +555,32 @@ export class TreasuryService {
       }
 
       // Insert new contribution type
-      const result: any[] = await db.insert(daoContributionTypes).values({
-        daoId: daoId as any,
+      const result = await db.insert(daoContributionTypes).values({
+        daoId,
         name,
-        description: description || null,
-        minimumAmount: minimumAmount ? parseFloat(minimumAmount) : 0,
-        maximumAmount: null,
+        description: description ?? null,
+        minimumAmount: minimumAmount ?? '0',
+        maximumAmount: maximumAmount ?? null,
         requiresApproval,
         approvalsNeeded: requiresApproval ? 1 : 0,
         isActive: true,
-      } as any).returning({ 
+      }).returning({ 
         id: daoContributionTypes.id,
         createdAt: daoContributionTypes.createdAt,
-      }) as any;
+      });
 
       const newType = result[0];
+      if (!newType?.id) throw new Error('Failed to create contribution type');
 
       // Audit log
       await logConsolidatedAuditEvent({
-        dao_id: daoId,
-        user_id: createdBy,
-        action: 'contribution_type_created',
+        actorId: createdBy,
+        actionType: 'contribution_type_created',
+        targetType: 'dao',
+        targetId: daoId,
         severity: 'medium',
-        details: { name, minimumAmount, requiresApproval },
-      } as any);
+        metadata: { name, minimumAmount, maximumAmount, requiresApproval },
+      });
 
       return {
         id: newType.id,
@@ -576,8 +588,9 @@ export class TreasuryService {
         name,
         description,
         minimumAmount: minimumAmount || '0.00',
+        maximumAmount: maximumAmount ?? undefined,
         requiresApproval,
-        createdAt: newType.createdAt?.toISOString(),
+        createdAt: newType.createdAt?.toISOString() ?? new Date().toISOString(),
       };
     } catch (error) {
       console.error('[Treasury] Create contribution type error:', error);
@@ -596,16 +609,15 @@ export class TreasuryService {
   ): Promise<{ contributions: Contribution[]; total: number }> {
     try {
       // Build where clause
-      let whereClause: any = eq(daoContributions.daoId, daoId as any);
-      if (status) {
-        whereClause = and(
-          eq(daoContributions.daoId, daoId as any),
-          eq(daoContributions.status, status)
-        );
-      }
+      const whereClause = status
+        ? and(
+            eq(daoContributions.daoId, daoId),
+            eq(daoContributions.status, status)
+          )
+        : eq(daoContributions.daoId, daoId);
 
       // Query contributions with pagination
-      const contributions: any[] = await db.select({
+      const contributions = await db.select({
         id: daoContributions.id,
         daoId: daoContributions.daoId,
         contributionTypeId: daoContributions.contributionTypeId,
@@ -619,25 +631,25 @@ export class TreasuryService {
         .where(whereClause)
         .orderBy(desc(daoContributions.createdAt))
         .limit(Math.min(limit, 100))
-        .offset(offset) as any;
+        .offset(offset);
 
       // Get total count
-      const countResult: any[] = await db.select({ count: sql<number>`cast(count(*) as integer)` })
+      const countResult = await db.select({ count: sql<number>`cast(count(*) as integer)` })
         .from(daoContributions)
-        .where(whereClause) as any;
+        .where(whereClause);
 
-      const total = countResult[0]?.count || 0;
+      const total = countResult[0]?.count ?? 0;
 
       return {
         contributions: contributions.map(c => ({
           id: c.id,
           daoId: c.daoId,
           typeId: c.contributionTypeId,
-          amount: c.amount.toString(),
-          currency: c.currency,
-          status: c.status,
+          amount: (c.amount ?? '0').toString(),
+          currency: c.currency ?? 'cUSD',
+          status: c.status as Contribution['status'],
           submittedBy: c.contributorId,
-          submittedAt: c.createdAt?.toISOString(),
+          submittedAt: c.createdAt?.toISOString() ?? new Date().toISOString(),
         })),
         total,
       };
@@ -659,9 +671,9 @@ export class TreasuryService {
   ): Promise<Contribution> {
     try {
       // Get contribution
-      const contribution: any = await db.query.daoContributions.findFirst({
-        where: eq(daoContributions.id, contributionId as any),
-      }) as any;
+      const contribution = await db.query.daoContributions.findFirst({
+        where: eq(daoContributions.id, contributionId),
+      });
 
       if (!contribution) {
         throw new Error('Contribution not found');
@@ -669,13 +681,13 @@ export class TreasuryService {
 
       // Record approval
       await db.insert(daoContributionApprovals).values({
-        daoId: daoId as any,
-        contributionId: contributionId as any,
+        daoId,
+        contributionId,
         approverId: approvedBy,
         approved,
-        comment: comment || null,
+        comment: comment ?? null,
         approvedAt: new Date(),
-      } as any);
+      });
 
       const newStatus = approved ? 'approved' : 'rejected';
 
@@ -685,57 +697,58 @@ export class TreasuryService {
           status: newStatus,
           approvalStatus: approved ? 'unanimousApproval' : 'rejected',
           completedAt: new Date(),
-        } as any)
-        .where(eq(daoContributions.id, contributionId as any));
+        })
+        .where(eq(daoContributions.id, contributionId));
 
       // If approved, create wallet transaction and update balance
       if (approved) {
         await db.insert(walletTransactions).values({
-          daoId: daoId as any,
+          daoId,
           fromUserId: contribution.contributorId,
           toUserId: null,
           walletAddress: 'treasury',
-          amount: contribution.amount as any,
-          currency: contribution.currency || 'cUSD',
+          amount: contribution.amount?.toString() ?? '0',
+          currency: contribution.currency ?? 'cUSD',
           type: 'contribution',
           status: 'completed',
           description: `Contribution approved`,
           metadata: { contributionId, approvedBy },
-        } as any);
+        });
 
         // Update DAO treasury balance
-        const dao: any = await db.query.daos.findFirst({
-          where: eq(daos.id, daoId as any),
-        }) as any;
+        const dao = await db.query.daos.findFirst({
+          where: eq(daos.id, daoId),
+        });
 
         if (dao) {
-          const currentBalance = parseFloat(dao.treasuryBalance?.toString() || '0');
-          const contributionAmount = parseFloat(contribution.amount);
+          const currentBalance = parseFloat((dao.treasuryBalance ?? '0').toString());
+          const contributionAmount = parseFloat(contribution.amount?.toString() ?? '0');
           const newBalance = (currentBalance + contributionAmount).toString();
           await db.update(daos)
-            .set({ treasuryBalance: newBalance as any })
-            .where(eq(daos.id, daoId as any));
+            .set({ treasuryBalance: newBalance })
+            .where(eq(daos.id, daoId));
         }
       }
 
       // Audit log
       await logConsolidatedAuditEvent({
-        dao_id: daoId,
-        user_id: approvedBy,
-        action: 'contribution_approved',
+        actorId: approvedBy,
+        actionType: 'contribution_approved',
+        targetType: 'contribution',
+        targetId: contributionId,
         severity: 'critical',
-        details: { contributionId, approved, comment, status: newStatus },
-      } as any);
+        metadata: { approved, comment, status: newStatus },
+      });
 
       return {
         id: contributionId,
         daoId,
         typeId: contribution.contributionTypeId,
-        amount: contribution.amount.toString(),
-        currency: contribution.currency || 'cUSD',
-        status: newStatus as any,
+        amount: contribution.amount?.toString() ?? '0',
+        currency: contribution.currency ?? 'cUSD',
+        status: newStatus as Contribution['status'],
         submittedBy: contribution.contributorId,
-        submittedAt: contribution.createdAt?.toISOString(),
+        submittedAt: contribution.createdAt?.toISOString() ?? new Date().toISOString(),
         approvedBy: approved ? approvedBy : undefined,
         approvedAt: approved ? new Date().toISOString() : undefined,
       };
@@ -764,10 +777,10 @@ export class TreasuryService {
 
         // Create wallet transaction for treasury initialization
         await db.insert(walletTransactions).values({
-          daoId: daoId as any,
+          daoId,
           fromUserId: 'system',
           walletAddress: `treasury-${type}`,
-          amount: typeConfig.initialBalance as any,
+          amount: typeConfig.initialBalance,
           currency: 'cUSD',
           type: 'deposit',
           status: 'completed',
@@ -776,43 +789,51 @@ export class TreasuryService {
             treasuryType: type,
             allocationPercentage: typeConfig.allocationPercentage,
           },
-        } as any);
+        });
 
         // Create audit log for treasury creation
         await logConsolidatedAuditEvent({
-          dao_id: daoId,
-          user_id: 'system',
-          action: `treasury_${type}_created`,
+          actorId: 'system',
+          actionType: `treasury_${type}_created`,
+          targetType: 'dao',
+          targetId: daoId,
           severity: 'medium',
-          details: {
+          metadata: {
             type,
             balance: typeConfig.initialBalance,
             accessLevel: typeConfig.accessLevel,
             requiresApproval: typeConfig.requiresApproval,
             allocationPercentage: typeConfig.allocationPercentage,
           },
-        } as any);
-
-        createdTreasuries.push({
-          id: `${daoId}-${type}`,
-          daoId,
-          type,
-          balance: typeConfig.initialBalance,
-          maxBalance: undefined,
-          accessLevel: typeConfig.accessLevel,
-          requiresApproval: typeConfig.requiresApproval,
-          multisigThreshold: (typeConfig as any).multisigThreshold,
-          rebalanceFrequency: (typeConfig as any).rebalanceFrequency,
-          allocationPercentage: typeConfig.allocationPercentage,
-          createdAt: new Date().toISOString(),
-          updatedAt: new Date().toISOString(),
         });
+
+        const treasuryMetadata: TreasuryMetadata = {
+        id: `${daoId}-${type}`,
+        daoId,
+        type,
+        balance: typeConfig.initialBalance,
+        maxBalance: undefined,
+        accessLevel: typeConfig.accessLevel,
+        requiresApproval: typeConfig.requiresApproval,
+        allocationPercentage: typeConfig.allocationPercentage,
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      };
+
+      if ('multisigThreshold' in typeConfig) {
+        treasuryMetadata.multisigThreshold = typeConfig.multisigThreshold;
       }
+      if ('rebalanceFrequency' in typeConfig) {
+        treasuryMetadata.rebalanceFrequency = typeConfig.rebalanceFrequency;
+      }
+
+      createdTreasuries.push(treasuryMetadata);
+    }
 
       // Update DAO with total treasury balance
       await db.update(daos)
-        .set({ treasuryBalance: totalBalance.toString() as any })
-        .where(eq(daos.id, daoId as any));
+        .set({ treasuryBalance: totalBalance.toString() })
+        .where(eq(daos.id, daoId));
 
       return {
         treasuries: createdTreasuries,
@@ -939,11 +960,12 @@ export class TreasuryService {
 
       // Audit log
       await logConsolidatedAuditEvent({
-        dao_id: daoId,
-        user_id: initiatedBy,
-        action: 'treasury_transfer',
+        actorId: initiatedBy,
+        actionType: 'treasury_transfer',
+        targetType: 'dao',
+        targetId: daoId,
         severity: 'medium',
-        details: {
+        metadata: {
           fromType,
           toType,
           amount,
@@ -951,7 +973,7 @@ export class TreasuryService {
           fromTxId,
           toTxId,
         },
-      } as any);
+      });
 
       return { fromTxId, toTxId };
     } catch (error) {
@@ -1022,12 +1044,13 @@ export class TreasuryService {
 
         // Audit log
         await logConsolidatedAuditEvent({
-          dao_id: daoId,
-          user_id: initiatedBy,
-          action: 'treasury_rebalanced',
+          actorId: initiatedBy,
+          actionType: 'treasury_rebalanced',
+          targetType: 'dao',
+          targetId: daoId,
           severity: 'medium',
-          details: { adjustments, allocations },
-        } as any);
+          metadata: { adjustments, allocations },
+        });
       }
 
       return { adjustments };
@@ -1325,11 +1348,12 @@ export class TreasuryService {
 
       // Audit log
       await logConsolidatedAuditEvent({
-        dao_id: daoId,
-        user_id: fromUser,
-        action: `treasury_${type}`,
+        actorId: fromUser,
+        actionType: `treasury_${type}`,
+        targetType: 'dao',
+        targetId: daoId,
         severity: treasuryType === 'vault' || treasuryType === 'governance' ? 'critical' : 'medium',
-        details: {
+        metadata: {
           treasuryType,
           amount,
           currency,
@@ -1337,7 +1361,7 @@ export class TreasuryService {
           status,
           txId,
         },
-      } as any);
+      });
 
       return { txId, status };
     } catch (error) {

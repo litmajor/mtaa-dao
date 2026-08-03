@@ -21,7 +21,7 @@ import { Button } from '@/components/ui/button';
 import { Wallet, TrendingUp, Users, DollarSign, ArrowUpRight, ArrowDownLeft } from 'lucide-react';
 // @ts-ignore
 import { Lock, Zap, RefreshCw, Eye, EyeOff, TrendingDown } from 'lucide-react';
-import { useBalanceAggregator } from '@/pages/hooks/useBalanceAggregator';
+import { useBalanceAggregator } from '@/hooks/useBalanceAggregator';
 import { useQuery } from '@tanstack/react-query';
 import { PriceBadge } from './PriceDisplay';
 
@@ -37,7 +37,7 @@ const BalanceAggregatorWidget: React.FC = () => {
   const { data: preferences } = useQuery({
     queryKey: ['user-preferences'],
     queryFn: async () => {
-      const response = await fetch('/api/user-preferences');
+      const response = await fetch('/api/user/preferences');
       if (!response.ok) throw new Error('Failed to fetch preferences');
       const data = await response.json();
       return data.data;

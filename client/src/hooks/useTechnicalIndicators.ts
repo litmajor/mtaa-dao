@@ -1,117 +1,268 @@
-/**
- * Hook for fetching technical indicators
- */
-
+// hooks/useTechnicalIndicators.ts
 import { useQuery } from '@tanstack/react-query';
 
-export interface TechnicalIndicatorsResponse {
+// ═══════════════════════════════════════════════════════════════════════════════
+// TYPES (mirror the v2 service exports so the frontend is type-safe)
+// ═══════════════════════════════════════════════════════════════════════════════
+
+export type MarketRegime = 'trending' | 'range' | 'high_volatility' | 'low_volatility';
+
+export interface WeightedSignal {
+  indicator: 'rsi' | 'macd' | 'bb' | 'ma_cross';
+  signal: 'bullish' | 'bearish' | 'neutral';
+  value: number;
+  base_weight: number;
+  regime_weight: number;
+  final_weight: number;
+  confidence: number;
+}
+
+export interface SignalDelta {
+  signalChanged: boolean;
+  confidenceShift: number;
+  newAcceleration: boolean;
+  regimeShift: boolean;
+  volatilityTrend: 'increasing' | 'stable' | 'decreasing';
+  strength: number;
+}
+
+export interface EnhancedTechnicalResult {
   symbol: string;
   exchange: string;
   timeframe: string;
-  count: number;
   timestamp: number;
-  indicators: {
-    rsi: {
-      value: number;
-      signal: 'oversold' | 'neutral' | 'overbought';
-    };
-    macd: {
-      macd: number;
-      signal: number;
-      histogram: number;
-      position: 'bearish' | 'neutral' | 'bullish';
-    };
-    bollingerBands: {
-      upper: number;
-      middle: number;
-      lower: number;
-      position: 'above' | 'within' | 'below';
-    };
-    movingAverages: {
-      sma20: number;
-      sma50: number;
-      sma200: number;
-      ema12: number;
-      ema26: number;
-    };
-    signals: {
-      bullish: number;
-      bearish: number;
-      neutral: number;
-    };
+  candleCount: number;
+  ohlcvDataSource: string;
+  fetchedAt: number;
+
+  rsi: { value: number; signal: 'oversold' | 'neutral' | 'overbought' };
+  macd: {
+    macd: number;
+    signal: number;
+    histogram: number;
+    position: 'bearish' | 'neutral' | 'bullish';
   };
+  bollingerBands: {
+    upper: number;
+    middle: number;
+    lower: number;
+    position: 'above' | 'within' | 'below';
+  };
+  movingAverages: {
+    sma20: number;
+    sma50: number;
+    sma200: number;
+    ema12: number;
+    ema26: number;
+  };
+  signals: { bullish: number; bearish: number; neutral: number };
+
+  regime: MarketRegime;
+  volatility: number;
+  weightedSignals: WeightedSignal[];
+  overallConfidence: number;
+  signalState: {
+    timestamp: number;
+    symbol: string;
+    timeframe: string;
+    overallSignal: 'bullish' | 'bearish' | 'neutral';
+    confidence: number;
+    weightedSignals: WeightedSignal[];
+    regime: MarketRegime;
+    volatility: number;
+    accelerating: boolean;
+  };
+  previousState?: EnhancedTechnicalResult['signalState'];
+  delta?: SignalDelta;
+
+  priceRange: { min: number; max: number; avg: number };
+  volumeMetrics: { avgVolume: number; maxVolume: number; minVolume: number };
 }
 
-export const useTechnicalIndicators = (
-  symbol: string,
-  exchange: string = 'binance',
-  timeframe: string = '1d',
-  enabled: boolean = true
-) => {
-  return useQuery<TechnicalIndicatorsResponse>({
-    queryKey: ['technicalIndicators', symbol, exchange, timeframe],
+export interface MultiTimeframeResponse {
+  symbol: string;
+  exchange: string;
+  timestamp: number;
+  macroTrend: {
+    timeframe: string;
+    direction: 'bullish' | 'bearish' | 'neutral';
+    strength: number;
+    support: number;
+    resistance: number;
+  };
+  microEntry: {
+    timeframe: string;
+    signal: 'buy' | 'sell' | 'hold';
+    confirmation: boolean;
+    urgency: number;
+  };
+  recommendation: 'strong_buy' | 'buy' | 'hold' | 'sell' | 'strong_sell';
+  aggregateConfidence: number;
+}
+
+export interface UseTechnicalIndicatorsOptions {
+  symbol: string;
+  timeframe?: string;
+  exchange?: string;
+  source?: 'cex' | 'dex' | 'auto';
+  enabled?: boolean;
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// HOOKS
+// ═══════════════════════════════════════════════════════════════════════════════
+
+/**
+ * Enhanced snapshot: regime, weighted signals, confidence, delta
+ * GET /v1/yuki/indicators/:symbol
+ */
+export const useTechnicalIndicators = ({
+  symbol,
+  timeframe = '1d',
+  exchange = 'binance',
+  source = 'auto',
+  enabled = true,
+}: UseTechnicalIndicatorsOptions) => {
+  const params = new URLSearchParams({
+    timeframe,
+    exchange,
+    source,
+  });
+
+  return useQuery<EnhancedTechnicalResult>({
+    queryKey: ['technicalIndicators', symbol, timeframe, exchange, source],
     queryFn: async () => {
-      const response = await fetch(
-        `/api/v1/yuki/exchanges/technicals?symbol=${encodeURIComponent(symbol)}&exchange=${encodeURIComponent(exchange)}&timeframe=${encodeURIComponent(timeframe)}`
+      const res = await fetch(
+        `/api/v1/yuki/indicators/${encodeURIComponent(symbol)}?${params.toString()}`
       );
-
-      if (!response.ok) {
-        const error = await response.json();
-        throw new Error(error.error || 'Failed to fetch technical indicators');
+      if (!res.ok) {
+        const err = await res.json();
+        throw new Error(err?.error || 'Failed to fetch indicators');
       }
-
-      return response.json();
+      const json = await res.json();
+      return json.data;
     },
-    enabled: enabled && !!symbol && !!exchange,
-    retry: 2,
-  } as any);
+    enabled: enabled && !!symbol,
+    staleTime: 60_000,
+  });
 };
 
 /**
- * Get color for RSI value
+ * Multi-timeframe analysis (macro trend + micro entry)
+ * GET /v1/yuki/indicators/:symbol/multi-timeframe
  */
+export const useMultiTimeframeIndicators = ({
+  symbol,
+  exchange = 'binance',
+  source = 'auto',
+  enabled = true,
+  macro = '1h',
+  micro = '5m',
+}: UseTechnicalIndicatorsOptions & { macro?: string; micro?: string }) => {
+  const params = new URLSearchParams({
+    macro,
+    micro,
+    exchange,
+    source,
+  });
+
+  return useQuery<MultiTimeframeResponse>({
+    queryKey: ['multiTimeframeIndicators', symbol, macro, micro, exchange, source],
+    queryFn: async () => {
+      const res = await fetch(
+        `/api/v1/yuki/indicators/${encodeURIComponent(symbol)}/multi-timeframe?${params.toString()}`
+      );
+      if (!res.ok) throw new Error('Failed to fetch multi-timeframe analysis');
+      const json = await res.json();
+      return json.data;
+    },
+    enabled: enabled && !!symbol,
+    staleTime: 120_000,
+  });
+};
+
+/**
+ * Chart time-series (candles + indicator arrays)
+ * GET /v1/yuki/indicators/:symbol/chart
+ */
+export const useIndicatorChart = ({
+  symbol,
+  timeframe = '1d',
+  exchange = 'binance',
+  source = 'auto',
+  limit = 200,
+  enabled = true,
+}: UseTechnicalIndicatorsOptions & { limit?: number }) => {
+  const params = new URLSearchParams({
+    timeframe,
+    exchange,
+    source,
+    limit: String(limit),
+  });
+
+  return useQuery({
+    queryKey: ['indicatorChart', symbol, timeframe, exchange, source, limit],
+    queryFn: async () => {
+      const res = await fetch(
+        `/api/v1/yuki/indicators/${encodeURIComponent(symbol)}/chart?${params.toString()}`
+      );
+      if (!res.ok) throw new Error('Failed to fetch chart indicators');
+      const json = await res.json();
+      return json.data;
+    },
+    enabled: enabled && !!symbol,
+    staleTime: 300_000,
+  });
+};
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// UI HELPERS
+// ═══════════════════════════════════════════════════════════════════════════════
+
 export const getRSIColor = (value: number): string => {
-  if (value < 30) return 'text-green-500'; // Oversold - buy signal
-  if (value > 70) return 'text-red-500'; // Overbought - sell signal
-  return 'text-yellow-500'; // Neutral
+  if (value < 30) return 'text-green-500';
+  if (value > 70) return 'text-red-500';
+  return 'text-yellow-500';
 };
 
-/**
- * Get color for MACD histogram
- */
 export const getMACDColor = (histogram: number): string => {
-  if (histogram > 0) return 'text-green-500'; // Bullish
-  if (histogram < 0) return 'text-red-500'; // Bearish
-  return 'text-gray-500'; // Neutral
+  if (histogram > 0) return 'text-green-500';
+  if (histogram < 0) return 'text-red-500';
+  return 'text-gray-500';
 };
 
-/**
- * Get color for Bollinger Bands position
- */
-export const getBBColor = (position: string): string => {
-  if (position === 'below') return 'text-green-500'; // Buy signal
-  if (position === 'above') return 'text-red-500'; // Sell signal
-  return 'text-blue-500'; // Neutral
+export const getRegimeColor = (regime: MarketRegime): string => {
+  switch (regime) {
+    case 'trending': return 'text-blue-500';
+    case 'range': return 'text-purple-500';
+    case 'high_volatility': return 'text-orange-500';
+    case 'low_volatility': return 'text-emerald-500';
+  }
 };
 
-/**
- * Get signal strength description
- */
-export const getSignalStrength = (bullish: number, bearish: number, neutral: number): string => {
-  const total = bullish + bearish + neutral;
-  const bullishPercent = (bullish / total) * 100;
-
-  if (bullishPercent >= 75) return 'Strong Bullish';
-  if (bullishPercent >= 50) return 'Bullish';
-  if (bullishPercent >= 25) return 'Neutral';
-  return 'Bearish';
+export const getRegimeLabel = (regime: MarketRegime): string => {
+  switch (regime) {
+    case 'trending': return 'Trending';
+    case 'range': return 'Range-bound';
+    case 'high_volatility': return 'High Volatility';
+    case 'low_volatility': return 'Low Volatility';
+  }
 };
 
-/**
- * Get signal strength color
- */
-export const getSignalColor = (bullish: number, bearish: number): string => {
-  if (bullish > bearish + 1) return 'text-green-600';
-  if (bearish > bullish + 1) return 'text-red-600';
-  return 'text-yellow-600';
+export const getConfidenceBadge = (confidence: number) => {
+  if (confidence >= 75) return { label: 'High Conviction', color: 'bg-green-100 text-green-800' };
+  if (confidence >= 55) return { label: 'Moderate', color: 'bg-yellow-100 text-yellow-800' };
+  return { label: 'Uncertain', color: 'bg-gray-100 text-gray-800' };
+};
+
+export const getRecommendationColor = (
+  rec: MultiTimeframeResponse['recommendation']
+): string => {
+  switch (rec) {
+    case 'strong_buy': return 'text-green-700 font-bold';
+    case 'buy': return 'text-green-600';
+    case 'hold': return 'text-yellow-600';
+    case 'sell': return 'text-red-600';
+    case 'strong_sell': return 'text-red-700 font-bold';
+  }
 };

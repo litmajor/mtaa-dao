@@ -6,7 +6,7 @@
  */
 
 import React, { useState, useEffect } from 'react';
-import Icons from '../lib/icons';
+import { MessageCircle, X } from 'lucide-react';
 
 interface Message {
   id: string;
@@ -130,7 +130,7 @@ export default function MorioFloatingChat() {
         `}
         title="Chat with Morio"
       >
-        <Icons.MessageCircle className="w-5 h-5" />
+        <MessageCircle className="w-5 h-5" />
         {!isOpen && (
           <>
             <span className="hidden sm:inline">Morio</span>
@@ -160,7 +160,7 @@ export default function MorioFloatingChat() {
               className="p-1 hover:bg-gray-200 dark:hover:bg-gray-800 rounded transition-colors"
               title="Close chat"
             >
-              <Icons.X className="w-5 h-5 text-gray-600 dark:text-gray-400" />
+              <X className="w-5 h-5 text-gray-600 dark:text-gray-400" />
             </button>
           </div>
 

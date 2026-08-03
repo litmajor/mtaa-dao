@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from "react";
-import { Task } from "../../components/TaskBountyBoard";
+import type { Task } from "../../components/TaskBountyBoard";
 import { useToast } from "../../components/ui/use-toast";
 
 export const useTasks = () => {

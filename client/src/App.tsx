@@ -364,6 +364,8 @@ function App() {
                         {/* Protected routes */}
                         {/* WEEK 1 UPDATE: Use new PersonalizedDashboard */}
                         <Route path="/dashboard" element={<ProtectedRoute><Suspense fallback={<PageLoading />}><PersonalizedDashboardLazy /></Suspense></ProtectedRoute>} />
+                        <Route path="/dashboard/yuki" element={<Navigate to="/trading" replace />} />
+                        <Route path="/dashboard/trading" element={<Navigate to="/trading" replace />} />
                         <Route path="/create-dao" element={<ProtectedRoute><Suspense fallback={<PageLoading message="Loading Create DAO..." />}><CreateDaoLazy /></Suspense></ProtectedRoute>} />
                         <Route path="/proposals" element={<ProtectedRoute><Suspense fallback={<PageLoading />}><ProposalsLazy /></Suspense></ProtectedRoute>} />
                         <Route path="/proposals/:id" element={<ProtectedRoute><Suspense fallback={<PageLoading />}><ProposalDetailLazy /></Suspense></ProtectedRoute>} />
@@ -484,7 +486,7 @@ function App() {
                         {/* Visual Strategy Builder (code-split) */}
                         <Route path="/builder" element={<ProtectedRoute><Suspense fallback={<PageLoading />}><VisualStrategyBuilderLazy /></Suspense></ProtectedRoute>} />
                         <Route path="/builder/:id" element={<ProtectedRoute><Suspense fallback={<PageLoading />}><VisualStrategyBuilderLazy /></Suspense></ProtectedRoute>} />
-                        <Route path="/yuki-dashboard" element={<ProtectedRoute><Suspense fallback={<PageLoading />}><YukiDashboardPageLazy /></Suspense></ProtectedRoute>} />
+                        <Route path="/yuki-dashboard" element={<Navigate to="/trading" replace />} />
                         {/* Legacy Exchange Markets - Phase 1 & 2 CCXT Integration */}
                         <Route path="/exchange-markets" element={<ProtectedRoute><Suspense fallback={<PageLoading />}><ExchangeMarketsLazy /></Suspense></ProtectedRoute>} />
                         <Route path="/defi-dex" element={<ProtectedRoute><Suspense fallback={<PageLoading />}><DeFiDEXAnalyticsLazy /></Suspense></ProtectedRoute>} />

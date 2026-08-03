@@ -9,7 +9,7 @@ import { Badge } from '../ui/badge';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from '../ui/dialog';
 import { Clock, DollarSign, Trash2, Plus, AlertCircle, CheckCircle } from 'lucide-react';
 import { Switch } from '../ui/switch';
-import { useWebSocket } from '@/hooks/useWebSocket';
+import { useSharedSocket } from '@/hooks/useSharedSocket';
 
 interface RecurringPayment {
   id: string;
@@ -33,7 +33,7 @@ interface RecurringPaymentsProps {
 }
 
 export default function RecurringPayments({ walletAddress, onPaymentCreated }: RecurringPaymentsProps) {
-  const { socket, isConnected } = useWebSocket();
+  const { socket, isConnected } = useSharedSocket();
   
   const [recurringPayments, setRecurringPayments] = useState<RecurringPayment[]>([]);
   const [loading, setLoading] = useState(true);
@@ -52,59 +52,33 @@ export default function RecurringPayments({ walletAddress, onPaymentCreated }: R
     fetchRecurringPayments();
   }, [walletAddress]);
 
-  // WebSocket real-time recurring payment updates
+  // WebSocket real-time recurring payment updates via notificationService
   useEffect(() => {
-    if (!isConnected) {
+    if (!socket || !isConnected) {
       setWsConnected(false);
       return;
     }
 
     setWsConnected(true);
 
-    // Handle recurring payment activity updates
-    const handleActivityLog = (data: any) => {
+    // Handle recurring payment notifications from notificationService
+    const handleNotification = (data: any) => {
       try {
-        if (data.action?.includes('recurring') || data.entityType === 'recurring_payment') {
+        // Check if this is a recurring payment-related notification
+        if (data.type?.includes('recurring') || data.type?.includes('payment') ||
+            data.metadata?.entityType === 'recurring_payment') {
           fetchRecurringPayments();
         }
       } catch (error) {
-        console.error('Error processing recurring payment activity:', error);
+        console.error('Error processing recurring payment notification:', error);
       }
     };
 
-    // Handle recurring payment alerts (failures, balance issues, etc.)
-    const handleAlert = (data: any) => {
-      try {
-        if (data.message?.toLowerCase().includes('recurring') || 
-            data.message?.toLowerCase().includes('payment') ||
-            data.entityType === 'recurring_payment') {
-          fetchRecurringPayments();
-        }
-      } catch (error) {
-        console.error('Error processing recurring payment alert:', error);
-      }
-    };
-
-    // Handle status updates for recurring payments
-    const handleStatusChange = (data: any) => {
-      try {
-        if (data.entityType === 'recurring_payment' || data.status?.includes('recurring')) {
-          fetchRecurringPayments();
-        }
-      } catch (error) {
-        console.error('Error processing recurring payment status change:', error);
-      }
-    };
-
-    socket.on('activity:logged', handleActivityLog);
-    socket.on('alert:new', handleAlert);
-    socket.on('status:changed', handleStatusChange);
+    socket.on('notification_created', handleNotification);
 
     // Cleanup
     return () => {
-      socket.off('activity:logged', handleActivityLog);
-      socket.off('alert:new', handleAlert);
-      socket.off('status:changed', handleStatusChange);
+      socket.off('notification_created', handleNotification);
     };
   }, [socket, isConnected]);
 

@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
-import { usePersona, SubprofileType } from '../contexts/persona-context';
-import { Lucide } from '../lib/icons';
-const { Mic, Wrench, DollarSign, Check } = (Lucide as any) || {};
+import { usePersona } from '../contexts/persona-context';
+import type { SubprofileType } from '../contexts/persona-context';
+import { Mic, Wrench, DollarSign, Check } from 'lucide-react';
 /* eslint-disable */
 
 /**

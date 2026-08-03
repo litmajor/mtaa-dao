@@ -12,7 +12,7 @@ jest.mock('../db', () => {
   };
 });
 
-const { db } = require('../db');
+import { db } from '../db';
 
 describe('processRotation', () => {
   beforeEach(() => {

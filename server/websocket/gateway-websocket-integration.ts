@@ -1,202 +1,198 @@
-/**
- * Gateway WebSocket Integration
- * Sets up WebSocket server with the main HTTP server
- */
-
-import { Express } from "express";
-import { Server as HTTPServer } from "http";
-import {
-  createGatewayWebSocketServer,
-  GatewayWebSocketServer,
-} from "./gateway-websocket";
-import { GatewayAgentService } from "../core/agents/gateway/service";
+import WebSocketManager from './websocket';
+import { AdminWS } from './websocket-events';
 
 /**
- * Integration configuration
- */
-export interface WebSocketIntegrationConfig {
-  gatewayService?: GatewayAgentService;
-  corsOrigin?: string;
-  pingInterval?: number; // ms
-  pingTimeout?: number; // ms
-}
-
-/**
- * Initialize Gateway WebSocket integration
- * Should be called after creating HTTP server but before listening
- */
-export function setupGatewayWebSocket(
-  httpServer: HTTPServer,
-  config: WebSocketIntegrationConfig = {}
-): GatewayWebSocketServer {
-  const wsServer = createGatewayWebSocketServer(
-    httpServer,
-    config.gatewayService
-  );
-
-  // Configure Socket.IO options if needed
-  const io = wsServer.getIO();
-  // Note: Socket.IO options are configured during server creation, not modified after
-  // CORS, ping intervals, etc. should be set during GatewayWebSocketServer initialization
-  
-  if (config.corsOrigin) {
-    console.log(`[Gateway WebSocket] CORS configured for origin: ${config.corsOrigin}`);
-  }
-  if (config.pingInterval) {
-    console.log(`[Gateway WebSocket] Ping interval: ${config.pingInterval}ms`);
-  }
-  if (config.pingTimeout) {
-    console.log(`[Gateway WebSocket] Ping timeout: ${config.pingTimeout}ms`);
-  }
-
-  console.log("[Gateway WebSocket] WebSocket server initialized");
-
-  return wsServer;
-}
-
-/**
- * Express/Socket.IO integration example for main server file
+ * WebSocket Event Handlers Service
+ * Centralized handlers for all real-time events.
  *
- * Usage in server.ts:
- *
- * import { createServer } from 'http';
- * import express from 'express';
- * import { setupGatewayWebSocket } from './websocket/gateway-websocket-integration';
- *
- * const app = express();
- * const httpServer = createServer(app);
- *
- * // Setup Gateway routes first
- * app.use('/api/v1/gateway', gatewayRoutes);
- *
- * // Initialize Gateway WebSocket
- * const wsServer = setupGatewayWebSocket(httpServer, {
- *   gatewayService: gatewayService,
- *   corsOrigin: process.env.CORS_ORIGIN || '*',
- *   pingInterval: 30000,
- *   pingTimeout: 60000,
- * });
- *
- * // Listen on port
- * const PORT = process.env.PORT || 3000;
- * httpServer.listen(PORT, () => {
- *   console.log(`Server running on http://localhost:${PORT}`);
- * });
- *
- * // Graceful shutdown
- * process.on('SIGTERM', async () => {
- *   await wsServer.shutdown();
- *   httpServer.close(() => {
- *     process.exit(0);
- *   });
- * });
+ * FIX: every room/event name below now comes from the AdminWS registry in
+ * websocket-events.ts instead of being typed inline. This is what caught
+ * the drift where this service was pushing to rooms (`dashboard:updates`,
+ * `alerts:critical`, `activity:feed`, `status:*`, `approval:*`,
+ * `scheduled:changes`, `system:updates`) that WebSocketManager.hasRoomPermission
+ * never actually allowed a client to join. Those permission rules need to be
+ * added server-side (see AdminWS.ROOM_PERMISSIONS) or clients subscribing to
+ * these rooms will keep getting silently rejected.
  */
 
-/**
- * Get WebSocket statistics endpoint
- * Mount on Express app: app.get('/api/v1/gateway/ws/stats', getWebSocketStats(wsServer))
- */
-export function getWebSocketStats(wsServer: GatewayWebSocketServer) {
-  return (_req: any, res: any) => {
-    res.json({
-      success: true,
-      data: wsServer.getStats(),
-      timestamp: new Date().toISOString(),
+export type ConfigChangeEvent = AdminWS.ConfigChangeEvent;
+export type ActivityEvent = AdminWS.ActivityEvent;
+export type AlertEvent = AdminWS.AlertEvent;
+export type PresenceEvent = AdminWS.PresenceEvent;
+export type SearchResultEvent = AdminWS.SearchResultEvent;
+export type AnalyticsUpdateEvent = AdminWS.AnalyticsUpdateEvent;
+
+class WebSocketEventService {
+  constructor(private wsManager: WebSocketManager) {}
+
+  public notifyConfigurationChange(event: AdminWS.ConfigChangeEvent) {
+    const room = AdminWS.Rooms.config(event.entityType, event.entityId);
+
+    this.wsManager.emitToRoom(room, AdminWS.ServerEvents.CONFIG_CHANGED, {
+      ...event,
+      timestamp: new Date(),
+      type: 'configuration-change'
     });
-  };
+
+    this.wsManager.emitToRoom(AdminWS.Rooms.dashboardUpdates(), AdminWS.ServerEvents.CONFIG_CHANGED, {
+      entityType: event.entityType,
+      entityId: event.entityId,
+      action: 'modified',
+      timestamp: new Date()
+    });
+  }
+
+  public notifyActivity(event: AdminWS.ActivityEvent) {
+    const room = AdminWS.Rooms.activity(event.entityType, event.entityId);
+
+    this.wsManager.emitToRoom(room, AdminWS.ServerEvents.ACTIVITY_LOGGED, {
+      ...event,
+      timestamp: new Date(),
+      type: 'activity-log'
+    });
+
+    this.wsManager.emitToRoom(AdminWS.Rooms.activityFeed(), 'activity:new', {
+      entityType: event.entityType,
+      entityId: event.entityId,
+      action: event.action,
+      timestamp: new Date()
+    });
+  }
+
+  public notifyAlert(event: AdminWS.AlertEvent) {
+    this.wsManager.emitToRoom(AdminWS.Rooms.alerts(), AdminWS.ServerEvents.ALERT_NEW, {
+      ...event,
+      timestamp: new Date(),
+      type: 'alert',
+      id: `alert-${Date.now()}`
+    });
+
+    if (event.entityId) {
+      const room = AdminWS.Rooms.alertsForEntity(event.entityType, event.entityId);
+      this.wsManager.emitToRoom(room, AdminWS.ServerEvents.ALERT_ENTITY, {
+        ...event,
+        timestamp: new Date()
+      });
+    }
+
+    if (event.severity === 'critical') {
+      this.wsManager.emitToRoom(AdminWS.Rooms.alertsCritical(), AdminWS.ServerEvents.ALERT_CRITICAL, {
+        ...event,
+        timestamp: new Date()
+      });
+    }
+  }
+
+  public notifyPresence(userId: string, event: AdminWS.PresenceEvent) {
+    const room = AdminWS.Rooms.presence(event.section);
+    const { userId: _eventUserId, ...eventPayload } = event;
+
+    this.wsManager.emitToRoom(room, AdminWS.ServerEvents.PRESENCE_UPDATED, {
+      userId,
+      ...eventPayload,
+      timestamp: new Date()
+    });
+  }
+
+  public notifySearchResult(event: AdminWS.SearchResultEvent) {
+    this.wsManager.emitToRoom(AdminWS.Rooms.searchResults(), AdminWS.ServerEvents.SEARCH_RESULT_READY, {
+      ...event,
+      timestamp: new Date(),
+      type: 'search-complete'
+    });
+  }
+
+  public notifyAnalyticsUpdate(event: AdminWS.AnalyticsUpdateEvent) {
+    this.wsManager.emitToRoom(AdminWS.Rooms.analytics(), AdminWS.ServerEvents.ANALYTICS_UPDATED, {
+      ...event,
+      timestamp: new Date(),
+      type: 'analytics-update'
+    });
+
+    this.wsManager.emitToRoom(AdminWS.Rooms.dashboardMetrics(), AdminWS.ServerEvents.METRICS_UPDATED, {
+      metricType: event.metricType,
+      period: event.period,
+      timestamp: new Date()
+    });
+  }
+
+  public notifyUser(userId: string, eventType: string, data: any) {
+    this.wsManager.emitToUser(userId, eventType, {
+      ...data,
+      timestamp: new Date()
+    });
+  }
+
+  public notifyDashboard(data: any) {
+    this.wsManager.emitToRoom(AdminWS.Rooms.dashboardUpdates(), AdminWS.ServerEvents.DASHBOARD_UPDATE, {
+      ...data,
+      timestamp: new Date()
+    });
+  }
+
+  public notifyAnalyticsDashboard(metrics: Record<string, any>) {
+    this.wsManager.emitToRoom(AdminWS.Rooms.dashboardAnalytics(), 'analytics:metrics', {
+      ...metrics,
+      timestamp: new Date()
+    });
+  }
+
+  public notifyStatusChange(entityType: string, entityId: string, status: string) {
+    this.wsManager.emitToRoom(AdminWS.Rooms.status(entityType, entityId), AdminWS.ServerEvents.STATUS_CHANGED, {
+      entityType,
+      entityId,
+      status,
+      timestamp: new Date()
+    });
+  }
+
+  public notifyApprovalStatusChange(entityType: string, entityId: string, approvalStatus: string) {
+    this.wsManager.emitToRoom(AdminWS.Rooms.approval(entityType, entityId), AdminWS.ServerEvents.APPROVAL_CHANGED, {
+      entityType,
+      entityId,
+      approvalStatus,
+      timestamp: new Date()
+    });
+  }
+
+  public notifyScheduledChange(entityType: string, entityId: string, action: string) {
+    this.wsManager.emitToRoom(AdminWS.Rooms.scheduledChanges(), AdminWS.ServerEvents.SCHEDULED_UPDATED, {
+      entityType,
+      entityId,
+      action, // 'created', 'approved', 'executed', 'cancelled'
+      timestamp: new Date()
+    });
+  }
+
+  public notifyBulkUpdate(updateType: string, affectedEntities: number, details: any) {
+    this.wsManager.emitToRoom(AdminWS.Rooms.systemUpdates(), AdminWS.ServerEvents.BULK_UPDATE, {
+      updateType,
+      affectedEntities,
+      details,
+      timestamp: new Date()
+    });
+  }
+
+  public notifySystemEvent(eventType: string, message: string, data?: any) {
+    this.wsManager.broadcastToAll(AdminWS.ServerEvents.SYSTEM_EVENT, {
+      eventType,
+      message,
+      data,
+      timestamp: new Date()
+    });
+  }
+
+  public getConnectionStats() {
+    const users = this.wsManager.getConnectedUsers();
+    const rooms = this.wsManager.getAllRooms();
+
+    return {
+      totalConnectedSockets: users.length,
+      totalUniqueUsers: new Set(users.map(u => u.userId)).size,
+      totalRooms: rooms.length,
+      timestamp: new Date()
+    };
+  }
 }
 
-/**
- * Example client-side WebSocket connection and usage
- *
- * Usage in frontend (React/Vue/etc):
- *
- * import { io } from 'socket.io-client';
- *
- * const socket = io('http://localhost:3000', {
- *   auth: {
- *     token: 'your-jwt-token',
- *     userId: 'user-123',
- *   },
- * });
- *
- * // Connect
- * socket.on('connect', () => {
- *   console.log('Connected to Gateway');
- * });
- *
- * // Subscribe to prices
- * socket.emit('gateway:subscribe_prices', {
- *   symbols: ['ETH', 'BTC'],
- *   chains: ['ethereum', 'polygon'],
- * }, (response) => {
- *   if (response.success) {
- *     console.log('Subscribed:', response.subscriptionId);
- *   }
- * });
- *
- * // Listen for price updates
- * socket.on('gateway:prices_update', (data) => {
- *   console.log('Price update:', data);
- * });
- *
- * // Request one-time data
- * socket.emit('gateway:request_data', {
- *   type: 'prices',
- *   params: {
- *     symbols: ['ETH'],
- *   },
- * }, (response) => {
- *   console.log('Data:', response.data);
- * });
- *
- * // Get subscriptions
- * socket.emit('gateway:get_subscriptions', (response) => {
- *   console.log('Current subscriptions:', response.subscriptions);
- * });
- *
- * // Unsubscribe
- * socket.emit('gateway:unsubscribe', {
- *   subscriptionId: 'sub:...',
- * }, (response) => {
- *   console.log('Unsubscribed:', response.message);
- * });
- *
- * // Health check
- * socket.emit('gateway:health_check', (response) => {
- *   console.log('Health:', response.healthy);
- * });
- *
- * // Disconnect
- * socket.disconnect();
- */
-
-/**
- * Monitoring WebSocket metrics
- *
- * Example metrics to track:
- * - connectedClients: number of active WebSocket connections
- * - totalSubscriptions: total number of subscriptions created
- * - activeSubscriptions: number of active subscriptions
- * - subscriptionsByType: breakdown by data type
- *
- * Add to Prometheus/monitoring:
- *
- * const gauge = new prometheus.Gauge({
- *   name: 'gateway_ws_connected_clients',
- *   help: 'Number of connected WebSocket clients',
- * });
- *
- * const subscription = new prometheus.Gauge({
- *   name: 'gateway_ws_active_subscriptions',
- *   help: 'Number of active subscriptions',
- * });
- *
- * setInterval(() => {
- *   const stats = wsServer.getStats();
- *   gauge.set(stats.connectedClients);
- *   subscription.set(stats.activeSubscriptions);
- * }, 30000);
- */
-
-export default setupGatewayWebSocket;
+export default WebSocketEventService;

@@ -5,7 +5,7 @@
  */
 
 import { EventEmitter } from 'events';
-import {
+import type {
   GatewayMarketSnapshot,
   GatewayRecommendation,
   GatewayQuoteRequest,
@@ -42,9 +42,27 @@ export class GatewayService extends EventEmitter {
   };
 
   private rateLimiter: Map<string, RateLimitPolicy> = new Map();
+  private rateLimiterState: Map<
+    string,
+    {
+      tokens: number;
+      lastRefill: number;
+      transactionsThisHour: number;
+      volumeThisHour: number;
+      hourWindowStart: number;
+    }
+  > = new Map();
   private activeAlerts: Map<string, Alert> = new Map();
   private oracleHealthy: Map<string, boolean> = new Map();
   private bridgeHealthy: Map<string, boolean> = new Map();
+
+  private readonly DEFAULT_RATE_LIMIT_POLICY: RateLimitPolicy = {
+    maxTransactionsPerHour: 30,
+    maxVolumePerHour: '1000000',
+    maxVolumePerTransaction: '250000',
+    bucketTokens: 6,
+    refreshRate: 60_000,
+  };
 
   constructor(
     private priceProvider: any,
@@ -58,6 +76,10 @@ export class GatewayService extends EventEmitter {
     this.initializeHealthChecks();
   }
 
+  private emitGatewayEvent(event: GatewayEvent): void {
+    this.emit('gatewayEvent', event);
+  }
+
   // ============================================================================
   // PRICE AGGREGATION
   // ============================================================================
@@ -69,7 +91,23 @@ export class GatewayService extends EventEmitter {
 
     try {
       const price = await this.priceProvider.getPrice(token, chainId);
+      if (!price) {
+        return null;
+      }
+
       this.setCached(this.state.prices, cacheKey, price, CACHE_TTL.PRICES);
+      this.emitGatewayEvent({
+        type: 'price_update',
+        severity: 'info',
+        data: {
+          symbol: token.toUpperCase(),
+          chainId,
+          price: price.price,
+          source: price.source,
+        },
+        timestamp: Date.now(),
+        chainId,
+      });
       return price;
     } catch (error) {
       console.error(`Error fetching price for ${token}:`, error);
@@ -198,6 +236,31 @@ export class GatewayService extends EventEmitter {
     }
   }
 
+  private getNativeGasTokenSymbol(chainId: number): string {
+    switch (chainId) {
+      case 1:
+        return 'ETH';
+      case 137:
+        return 'MATIC';
+      case 42161:
+        return 'ETH';
+      case 10:
+        return 'ETH';
+      case 56:
+        return 'BNB';
+      case 8453:
+        return 'ETH';
+      case 42220:
+        return 'CELO';
+      case 43114:
+        return 'AVAX';
+      case 250:
+        return 'FTM';
+      default:
+        return 'ETH';
+    }
+  }
+
   async getEstimatedGasCost(
     chainId: number,
     gasLimit: string,
@@ -209,11 +272,11 @@ export class GatewayService extends EventEmitter {
     const gasPrice = gasFeed[speedLevel];
     const cost = (BigInt(gasPrice) * BigInt(gasLimit)).toString();
 
-    // Convert to USD
-    const ethPrice = await this.getTokenPrice('ETH', chainId);
-    const costUSD = ethPrice 
-      ? parseFloat(cost) / 1e18 * ethPrice.price 
-      : 0;
+    // Convert to USD using the native gas token for the requested chain.
+    const nativeGasToken = this.getNativeGasTokenSymbol(chainId);
+    const nativeTokenPrice = await this.getTokenPrice(nativeGasToken, chainId);
+    const pricePerUnit = nativeTokenPrice ? nativeTokenPrice.price : 0;
+    const costUSD = pricePerUnit > 0 ? (Number(cost) / 1e18) * pricePerUnit : 0;
 
     return { cost, costUSD };
   }
@@ -279,8 +342,8 @@ export class GatewayService extends EventEmitter {
   // ============================================================================
 
   async getOptimalRoute(request: GatewayQuoteRequest): Promise<GatewayQuoteResponse | null> {
-    // Check rate limits
-    if (!this.checkRateLimit(request.tokenIn)) {
+    // Check rate limits using the request amount as transaction volume
+    if (!this.checkRateLimit(request.tokenIn, request.amountIn)) {
       throw new Error('Rate limit exceeded');
     }
 
@@ -316,12 +379,24 @@ export class GatewayService extends EventEmitter {
         throw new Error(`Route failed security checks: ${audit.riskFlags.join(', ')}`);
       }
 
-      // Emit event
-      this.emit('route_generated', {
-        request,
-        route,
+      const routeEvent = {
+        type: 'route_generated' as const,
+        severity: 'info' as const,
+        data: {
+          routeId: `${request.tokenIn}_${request.tokenOut}_${Date.now()}`,
+          routeDetails: {
+            request,
+            route,
+            alternatives,
+            audit,
+          },
+        },
         timestamp: Date.now(),
-      });
+        chainId: request.chainOutId ?? request.chainInId,
+      };
+
+      this.emitGatewayEvent(routeEvent);
+      this.emit('route_generated', routeEvent);
 
       return {
         quote,
@@ -568,9 +643,64 @@ export class GatewayService extends EventEmitter {
            `Estimated time: ${route.estimatedTime}s.`;
   }
 
-  private checkRateLimit(key: string): boolean {
-    // Simple rate limit check
-    return true; // Placeholder
+  private checkRateLimit(key: string, amount?: string): boolean {
+    const policy = this.rateLimiter.get(key) ?? this.DEFAULT_RATE_LIMIT_POLICY;
+    const now = Date.now();
+    const state = this.rateLimiterState.get(key) ?? {
+      tokens: policy.bucketTokens,
+      lastRefill: now,
+      transactionsThisHour: 0,
+      volumeThisHour: 0,
+      hourWindowStart: now,
+    };
+
+    const oneHour = 60 * 60 * 1000;
+    if (now - state.hourWindowStart >= oneHour) {
+      state.transactionsThisHour = 0;
+      state.volumeThisHour = 0;
+      state.hourWindowStart = now;
+    }
+
+    const refreshUnits = Math.floor((now - state.lastRefill) / policy.refreshRate);
+    if (refreshUnits > 0) {
+      state.tokens = Math.min(policy.bucketTokens, state.tokens + refreshUnits);
+      state.lastRefill += refreshUnits * policy.refreshRate;
+    }
+
+    const amountValue = amount ? parseFloat(amount) : 0;
+    const maxTxnVolume = parseFloat(policy.maxVolumePerTransaction);
+    const maxHourVolume = parseFloat(policy.maxVolumePerHour);
+
+    if (state.transactionsThisHour >= policy.maxTransactionsPerHour) {
+      this.emitAlert('gateway_rate_limit', 'warning', `Rate limit reached for ${key}: ${state.transactionsThisHour}/${policy.maxTransactionsPerHour} transactions`);
+      this.rateLimiterState.set(key, state);
+      return false;
+    }
+
+    if (amountValue > maxTxnVolume) {
+      this.emitAlert('gateway_rate_limit', 'warning', `Transaction volume ${amountValue} exceeds max allowed ${maxTxnVolume} for ${key}`);
+      this.rateLimiterState.set(key, state);
+      return false;
+    }
+
+    if (state.volumeThisHour + amountValue > maxHourVolume) {
+      this.emitAlert('gateway_rate_limit', 'warning', `Hourly volume limit exceeded for ${key}: ${state.volumeThisHour + amountValue}/${maxHourVolume}`);
+      this.rateLimiterState.set(key, state);
+      return false;
+    }
+
+    if (state.tokens <= 0) {
+      this.emitAlert('gateway_rate_limit', 'warning', `Token bucket empty for ${key}; retry after refill`);
+      this.rateLimiterState.set(key, state);
+      return false;
+    }
+
+    state.tokens -= 1;
+    state.transactionsThisHour += 1;
+    state.volumeThisHour += amountValue;
+    this.rateLimiterState.set(key, state);
+
+    return true;
   }
 
   private isValidAmount(amount: string): boolean {

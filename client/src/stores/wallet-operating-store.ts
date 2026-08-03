@@ -1,6 +1,6 @@
 import { useSyncExternalStore } from 'react'
 import Decimal from 'decimal.js'
-import { Transaction, SelectedAccount } from '../../../shared/types/wallet'
+import type { Transaction, SelectedAccount } from '../../../shared/types/wallet'
 
 export type Vault = { id: string; currency?: string; balance?: string | number; type?: string; locked?: boolean; pending?: boolean }
 

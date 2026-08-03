@@ -3,7 +3,8 @@
  * Fetch market sentiment data with creative visualizations
  */
 
-import { useQuery, UseQueryResult } from '@tanstack/react-query';
+import { useQuery } from '@tanstack/react-query';
+import type { UseQueryResult } from '@tanstack/react-query';
 import type { FearGreedIndex, MarketChangeMetrics, BtcDominanceData, MarketSentimentResponse } from '@/types/exchanges';
 import {
   formatNumberCompact,
@@ -139,7 +140,7 @@ export function formatChangePercent(percent: number): {
   const emoji = isPositive ? '📈' : percent < 0 ? '📉' : '➡️';
   const color = isPositive ? '#22c55e' : percent < 0 ? '#ef4444' : '#f59e0b';
   const decimals = getOptimalDecimals(percent);
-  const formatted = `${isPositive ? '+' : ''}${percent.toFixed(decimals)}%`;
+  const formatted = `${isPositive ? '+' : ''}${formatPercentage(percent, decimals)}`;
 
   return { formatted, color, emoji };
 }
@@ -148,8 +149,24 @@ export function formatChangePercent(percent: number): {
  * Format large numbers with abbreviations
  */
 export function formatLargeNumber(num: number): string {
-  // Use the centralized formatting utility
   return formatNumberCompact(num, 2);
+}
+
+/**
+ * Format a numeric sentiment value for display.
+ */
+export function formatSentimentValue(
+  value: number,
+  type: 'auto' | 'currency' | 'percentage' | 'number' = 'auto'
+): string {
+  return formatDisplayValue(value, type);
+}
+
+/**
+ * Format a currency amount for sentiment visualizations.
+ */
+export function formatSentimentCurrency(value: number): string {
+  return formatCurrency(value);
 }
 
 /**

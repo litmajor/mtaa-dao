@@ -29,7 +29,10 @@ export function useWebSocket(options: UseWebSocketOptions = {}) {
       return;
     }
 
-    const socketUrl = options.url || process.env.NEXT_PUBLIC_WS_URL || 'http://localhost:3001';
+    const socketUrl =
+      options.url ||
+      process.env.NEXT_PUBLIC_WS_URL ||
+      (typeof window !== 'undefined' ? window.location.origin : '');
 
     const socket = io(socketUrl, {
       auth: {

@@ -7,8 +7,8 @@
 
 import React, { useState } from 'react';
 import { useTradingMetrics } from '../../src/hooks/useTrading';
-import { Lucide } from '../../src/lib/icons';
-const { Menu, Bell, Target, DollarSign, ChartBar, CheckCircle, User, Settings, CreditCard, LogOut } = (Lucide as any) || {};
+import { Menu, Bell, Target, DollarSign, BarChart2, CheckCircle, User, Settings, CreditCard, LogOut } from 'lucide-react';
+const ChartBar = BarChart2;
 
 interface TopNavBarProps {
   sidebarOpen: boolean;

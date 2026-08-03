@@ -1,6 +1,7 @@
 import { useQuery } from '@tanstack/react-query';
-import { SparklinePoint } from '@/components/MarketSparkline';
+import type { SparklinePoint } from '@/components/MarketSparkline';
 import { 
+  priceHistoryCache,
   marketCapHistoryCache, 
   volumeHistoryCache,
   generateCacheKey, 
@@ -39,7 +40,7 @@ export const useHistoricalPriceData = (
   range: DataRange = '24h'
 ) => {
   return useQuery({
-    queryKey: ['historical-price', coinId, range],
+    queryKey: ['historical-price', coinId || '', range],
     queryFn: async (): Promise<{
       raw: HistoricalDataPoint[];
       sparkline: SparklinePoint[];
@@ -55,7 +56,16 @@ export const useHistoricalPriceData = (
       const cacheKey = generateCacheKey(coinId, range);
       
       // Check cache first
-      const cachedData = priceHistoryCache.get(cacheKey);
+      const cachedData = priceHistoryCache.get(cacheKey) as {
+        raw: HistoricalDataPoint[];
+        sparkline: SparklinePoint[];
+        stats: {
+          min: number;
+          max: number;
+          change: number;
+          changePercent: number;
+        };
+      } | null;
       if (cachedData) {
         console.debug(`[Cache] Hit for price data: ${cacheKey}`);
         return cachedData;
@@ -149,7 +159,7 @@ export const useHistoricalMarketCapData = (
   range: DataRange = '24h'
 ) => {
   return useQuery({
-    queryKey: ['historical-marketcap', coinId, range],
+    queryKey: ['historical-marketcap', coinId || '', range],
     queryFn: async (): Promise<{
       raw: HistoricalDataPoint[];
       sparkline: SparklinePoint[];
@@ -165,7 +175,16 @@ export const useHistoricalMarketCapData = (
       const cacheKey = generateCacheKey(coinId, `${range}-marketcap`);
       
       // Check cache first
-      const cachedData = marketCapHistoryCache.get(cacheKey);
+      const cachedData = marketCapHistoryCache.get(cacheKey) as {
+        raw: HistoricalDataPoint[];
+        sparkline: SparklinePoint[];
+        stats: {
+          min: number;
+          max: number;
+          change: number;
+          changePercent: number;
+        };
+      } | null;
       if (cachedData) {
         console.debug(`[Cache] Hit for market cap data: ${cacheKey}`);
         return cachedData;
@@ -255,7 +274,7 @@ export const useHistoricalVolumeData = (
   range: DataRange = '24h'
 ) => {
   return useQuery({
-    queryKey: ['historical-volume', coinId, range],
+    queryKey: ['historical-volume', coinId || '', range],
     queryFn: async (): Promise<{
       raw: HistoricalDataPoint[];
       sparkline: SparklinePoint[];
@@ -272,7 +291,17 @@ export const useHistoricalVolumeData = (
       const cacheKey = generateCacheKey(coinId, `${range}-volume`);
       
       // Check cache first
-      const cachedData = volumeHistoryCache.get(cacheKey);
+      const cachedData = volumeHistoryCache.get(cacheKey) as {
+        raw: HistoricalDataPoint[];
+        sparkline: SparklinePoint[];
+        stats: {
+          min: number;
+          max: number;
+          change: number;
+          changePercent: number;
+          avgVolume: number;
+        };
+      } | null;
       if (cachedData) {
         console.debug(`[Cache] Hit for volume data: ${cacheKey}`);
         return cachedData;

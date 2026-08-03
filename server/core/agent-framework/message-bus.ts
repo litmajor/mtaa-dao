@@ -48,6 +48,9 @@ export enum MessageType {
   PRICE_UPDATE = 'price_update',
   LIQUIDITY_UPDATE = 'liquidity_update',
   EXECUTION_REQUEST= 'execution_request',
+  TRANSACTION_EVENT = 'transaction_event',
+  USER_EVENT = 'user_event',
+  AUDIT_REQUEST = 'audit_request',
 
 
 }

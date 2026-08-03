@@ -27,7 +27,8 @@ import {
 
 import Shell from '../components/ui/shell';
 import { Grid } from '../components/ui/grid';
-import SystemStateProvider, { useSystemState, deriveOperationalMode, OperationalMode } from '../context/systemState';
+import SystemStateProvider, { useSystemState, deriveOperationalMode } from '../context/systemState';
+import type { OperationalMode } from '../context/systemState';
 
 // Sub-components (stub implementations, can be replaced with proper components later)
 const PlatformOverviewCard = ({ data, isLoading }: any) => (
@@ -89,16 +90,28 @@ const RealtimeActivityFeed = ({ opportunities, globalMetrics, activityLogs, isLo
   </Card>
 );
 
-const TradingDashboard = () => (
-  <Card className="surface-raised">
-    <CardHeader>
-      <CardTitle>Trading Dashboard</CardTitle>
-    </CardHeader>
-    <CardContent>
-      Trading interface coming soon...
-    </CardContent>
-  </Card>
-);
+const TradingDashboard = () => {
+  const navigate = useNavigate();
+  return (
+    <Card className="bg-slate-800 border-slate-700">
+      <CardHeader>
+        <CardTitle className="flex items-center gap-2">
+          <TrendingUp className="h-5 w-5 text-blue-400" />
+          Yuki Trading Hub
+        </CardTitle>
+        <CardDescription>Advanced DEX/CEX execution, arbitrage, and strategy automation.</CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-4">
+        <p className="text-sm text-slate-300">
+          The unified trading interface provides real-time market data across 6+ exchanges and enables smart order routing.
+        </p>
+        <Button onClick={() => navigate('/trading')} className="w-full bg-blue-600 hover:bg-blue-700">
+          Launch Trading Hub
+        </Button>
+      </CardContent>
+    </Card>
+  );
+};
 
 import { PageLoading } from '@/components/ui/page-loading';
 

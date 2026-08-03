@@ -9,7 +9,7 @@
  */
 
 import express, { Request, Response, NextFunction } from 'express';
-import { dexService } from '../../../services/dexIntegrationService';
+import { dexService } from '../../../services/dexRoutingService';
 import { rateLimit } from 'express-rate-limit';
 import {
   getDexHealth,

@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useCallback, useState } from 'react';
-import { Card } from './card-design';
+import { Card } from './card';
 import { Button } from './button';
 import { Icon } from './icon-design';
 

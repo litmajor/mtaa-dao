@@ -20,7 +20,7 @@ import { logger } from '../../../utils/logger';
 import { db } from '../../../storage';
 import advancedModeGuard from '../../../middleware/advancedModeGuard';
 import { walletTransactions } from '../../../../shared/schema';
-import { dexService } from '../../../services/dexIntegrationService';
+import { dexService } from '../../../services/dexRoutingService';
 import { BridgeIntegration, BridgeProtocol } from '../../../services/bridgeIntegration';
 import { FlashLoanSimulator } from '../../../services/tradingDexSimulator';
 import { gasPriceOracle } from '../../../services/gasPriceOracle';
@@ -734,7 +734,8 @@ router.post(
 
       try {
         // Get gas price from oracle
-        const gasPrices = await gasPriceOracle.getCurrentGasPrices();
+        const chainName = data.chainId === 42220 ? 'celo' : data.chainId === 1 ? 'ethereum' : data.chainId === 137 ? 'polygon' : data.chainId === 56 ? 'bsc' : data.chainId === 43114 ? 'avalanche' : 'ethereum';
+        const gasPrices = await gasPriceOracle.getCurrentGasPrices(undefined as any, chainName);
         gasPriceGwei = parseFloat(gasPrices.standard) / 1e9; // Convert from wei to gwei
       } catch (gasError) {
         logger.warn('[YUKI] Failed to fetch gas price, using fallback', { error: gasError });

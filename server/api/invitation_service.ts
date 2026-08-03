@@ -1,25 +1,13 @@
-import { Request, Response } from 'express';
+import type { Request, Response } from 'express';
 import { db } from '../db';
 import { daoInvitations, daoMemberships, users, daos } from '../../shared/schema';
 import { eq, and } from 'drizzle-orm';
 import { Logger } from '../utils/logger';
 import { v4 as uuidv4 } from 'uuid';
 import crypto from 'crypto';
+import { EmailService } from '../services/emailService';
 
 const logger = new Logger('invitation-service');
-
-// Email service (integrate with your email provider)
-import nodemailer from 'nodemailer';
-
-const emailTransporter = nodemailer.createTransport({
-  host: process.env.SMTP_HOST,
-  port: parseInt(process.env.SMTP_PORT || '587'),
-  secure: process.env.SMTP_SECURE === 'true',
-  auth: {
-    user: process.env.SMTP_USER,
-    pass: process.env.SMTP_PASS
-  }
-});
 
 /**
  * Generate a secure invite token
@@ -126,8 +114,7 @@ export async function sendInvitationEmail(
       </div>
     `;
 
-    await emailTransporter.sendMail({
-      from: process.env.SMTP_FROM_EMAIL || 'noreply@mtaa.app',
+    await EmailService.send({
       to: invitation.invitedEmail,
       subject: `${inviterName} invited you to join ${daoName}`,
       html: htmlContent

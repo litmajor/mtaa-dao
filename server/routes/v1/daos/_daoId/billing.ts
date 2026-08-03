@@ -8,7 +8,8 @@
  * POST   /api/v1/daos/:daoId/billing/upgrade      Upgrade DAO plan
  */
 
-import express, { Request, Response } from 'express';
+import express from 'express';
+import type { Request, Response } from 'express';
 import { isAuthenticated } from '../../../../auth';
 import { rateLimiter } from '../../../../middleware/rateLimiter';
 import { db } from '../../../../storage';

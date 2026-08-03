@@ -240,14 +240,18 @@ class OpportunityEngineService {
    */
   private async fetchMultiTimeframeIndicators(
     assets: string[],
-    timeframes: string[] = ['15m', '1h', '4h', '1d'] // FIX 3: was ['1h','4h','1d']
+    timeframes: string[] = ['15m', '1h', '4h', '1d'], // FIX 3: was ['1h','4h','1d']
+    options?: { batchSize?: number; parallelism?: number; }
   ): Promise<Map<string, Map<string, any>>> {
     const t0 = Date.now();
     try {
       const indicators = await engineService.getTechnicalIndicatorsBatchMultiTimeframe(
         assets,
         timeframes,
-        { batchSize: 50 }
+        {
+          batchSize: options?.batchSize ?? 20,
+          parallelism: options?.parallelism ?? 3,
+        }
       );
       logger.debug(
         `[OpportunityEngine] Indicator fetch: ${indicators.size} assets in ${Date.now() - t0}ms`
@@ -366,8 +370,9 @@ class OpportunityEngineService {
     );
 
     const allIndicators = await this.fetchMultiTimeframeIndicators(
-      assetsToScan.slice(0, 100)
-      // timeframes default to ['15m','1h','4h','1d'] — FIX 3 already applied in helper
+      assetsToScan.slice(0, 60),
+      ['15m', '1h', '4h', '1d'],
+      { batchSize: 20, parallelism: 3 }
     );
 
     // Build tasks — one per asset — and run with concurrency cap

@@ -162,6 +162,18 @@ export class CCXTAggregator {
   private tickerLimiter = pLimit(10);   // Up from 3 — ticker fetches are cheap
   private marketLimiter = pLimit(2);    // Low — loadMarkets is expensive per exchange
 
+  private readonly EAGER_WARMUP_EXCHANGES = ['binance', 'kraken'];
+  private readonly LOAD_MARKETS_TIMEOUTS: Record<string, number> = {
+    binance: 25000,
+    coinbase: 30000,
+    kraken: 30000,
+    bybit: 40000,
+    kucoin: 40000,
+    okx: 35000,
+    gateio: 30000,
+    default: 20000,
+  };
+
   // FIX #2: Per-exchange promise lock for loadMarkets()
   // If multiple concurrent fetches hit the same exchange simultaneously,
   // they all await the same in-flight promise instead of firing duplicates.
@@ -218,6 +230,14 @@ export class CCXTAggregator {
     return Math.max(1000 / requestsPerSecond, 50);
   }
 
+  private getLoadMarketsTimeout(exchangeName: string): number {
+    const envTimeout = parseInt(process.env.CCXT_LOADMARKETS_TIMEOUT || '');
+    if (!Number.isNaN(envTimeout) && envTimeout > 0) {
+      return envTimeout;
+    }
+    return this.LOAD_MARKETS_TIMEOUTS[exchangeName] || this.LOAD_MARKETS_TIMEOUTS.default;
+  }
+
   // ---------------------------------------------------------------------------
   // FIX #2: Shared loadMarkets() lock per exchange
   // ---------------------------------------------------------------------------
@@ -231,12 +251,28 @@ export class CCXTAggregator {
     if (!exchange) throw new Error(`Exchange ${exchangeName} not initialized`);
 
     const cacheKey = `markets:${exchangeName}`;
-    // Try marketsCache first (TTL-driven). If present, reuse cached markets and avoid loadMarkets()
+    // Try local memory cache first (TTL-driven).
     const cachedMarkets = this.marketsCache.get<any>(cacheKey);
     if (cachedMarkets && Object.keys(cachedMarkets).length > 0) {
-      // Restore into the CCXT exchange instance so callers see markets as if loaded
       exchange.markets = cachedMarkets;
       return;
+    }
+
+    // Try Redis-backed cache before hitting loadMarkets(). This avoids cold-start
+    // loadMarkets() for exchanges that already have market metadata persisted.
+    try {
+      const cachedMarketsFromRedis = await unifiedCache.getCachedMarkets(exchangeName);
+      if (cachedMarketsFromRedis && cachedMarketsFromRedis.length > 0) {
+        exchange.markets = cachedMarketsFromRedis.reduce((acc: any, market: any) => {
+          if (market && market.symbol) acc[market.symbol] = market;
+          return acc;
+        }, {});
+        this.marketsCache.set(cacheKey, exchange.markets);
+        logger.info(`[CCXTAggregator] Restored markets for ${exchangeName} from Redis cache`);
+        return;
+      }
+    } catch (err: any) {
+      logger.debug(`[CCXTAggregator] Redis market cache unavailable for ${exchangeName}: ${err.message}`);
     }
 
     // If the CCXT instance already has markets but our cache expired, we want to refresh
@@ -266,23 +302,39 @@ export class CCXTAggregator {
       logger.info(`[CCXTAggregator] Loading markets for ${exchangeName}...`);
       const start = Date.now();
       // Load markets from exchange (do NOT force refresh every time)
-      // Add a short timeout to avoid permanently blocking callers if an exchange stalls
-      const LOAD_MARKETS_TIMEOUT_MS = parseInt(process.env.CCXT_LOADMARKETS_TIMEOUT || '20000');
+      // Add a per-exchange timeout to avoid permanently blocking callers if an exchange stalls.
+      const LOAD_MARKETS_TIMEOUT_MS = this.getLoadMarketsTimeout(exchangeName);
       const loadOp = exchange.loadMarkets();
       await Promise.race([
         loadOp,
-        new Promise((_, reject) => setTimeout(() => reject(new Error('loadMarkets timeout')), LOAD_MARKETS_TIMEOUT_MS)),
+        new Promise((_, reject) => setTimeout(() => reject(new Error(`loadMarkets timeout after ${LOAD_MARKETS_TIMEOUT_MS}ms`)), LOAD_MARKETS_TIMEOUT_MS)),
       ]);
       logger.info(
         `[CCXTAggregator] loadMarkets complete for ${exchangeName} ` +
         `(${Object.keys(exchange.markets).length} markets, ${Date.now() - start}ms)`
       );
 
-      // Store loaded markets into the NodeCache so future calls within TTL reuse them
+      // Store loaded markets into the in-memory cache so future calls within TTL reuse them
       try {
         this.marketsCache.set(cacheKey, exchange.markets);
       } catch (err: any) {
         logger.warn(`[CCXTAggregator] Failed to cache markets for ${exchangeName}: ${err.message}`);
+      }
+
+      // Persist market metadata to Redis for cross-process reuse.
+      try {
+        const marketList = Object.values(exchange.markets || {}).map((market: any) => ({
+          id: market.id,
+          symbol: market.symbol,
+          base: market.base,
+          quote: market.quote,
+          maker: market.maker,
+          taker: market.taker,
+          limits: market.limits,
+        }));
+        await unifiedCache.setMarkets(exchangeName, marketList);
+      } catch (err: any) {
+        logger.debug(`[CCXTAggregator] Failed to persist Redis market cache for ${exchangeName}: ${err.message}`);
       }
     }).finally(() => {
       // Clear lock so future calls can re-load if markets expire
@@ -299,8 +351,9 @@ export class CCXTAggregator {
    */
   private async warmupMarkets(): Promise<void> {
     try {
-      logger.info('[CCXTAggregator] Warmup: pre-loading markets for available exchanges');
-      const names = Array.from(this.exchanges.keys());
+      logger.info('[CCXTAggregator] Warmup: pre-loading markets for high-volume exchanges');
+      const eager = this.EAGER_WARMUP_EXCHANGES.filter((name) => this.exchanges.has(name));
+      const names = eager.length > 0 ? eager : Array.from(this.exchanges.keys());
       await Promise.all(
         names.map((n) => this.ensureMarketsLoaded(n).catch((err) => {
           logger.warn(`[CCXTAggregator] Warmup failed for ${n}: ${err?.message || err}`);
@@ -843,6 +896,165 @@ export class CCXTAggregator {
       } catch (error: any) {
         logger.error(`❌ Failed to place limit order: ${error.message}`);
         throw new Error(`Failed to place ${side} limit order: ${error.message}`);
+      }
+    });
+  }
+
+  async placeStopOrder(
+    exchangeName: string,
+    symbol: string,
+    side: 'buy' | 'sell',
+    amount: number,
+    stopPrice: number,
+    type: 'stop-loss' | 'stop-limit' = 'stop-loss'
+  ): Promise<OrderResult> {
+    logger.info(`📉 Placing ${side} ${type} order for ${amount} ${symbol} at ${stopPrice} on ${exchangeName}`);
+
+    const validation = await this.validateOrder(exchangeName, symbol, side, amount, stopPrice);
+    if (!validation.valid) {
+      throw new Error(`Order validation failed: ${validation.errors.join(', ')}`);
+    }
+
+    return this.tickerLimiter(async () => {
+      const exchange = this.exchanges.get(exchangeName);
+      if (!exchange) throw new Error(`Exchange ${exchangeName} not initialized`);
+      if (!exchange.apiKey || !exchange.secret) {
+        throw new Error(`No API credentials configured for ${exchangeName}`);
+      }
+
+      const formattedSymbol = await this.formatSymbolForExchange(exchangeName, symbol);
+      if (!formattedSymbol) throw new Error(`Symbol ${symbol} not supported on ${exchangeName}`);
+
+      try {
+        const order = await exchange.createOrder(
+          formattedSymbol,
+          type === 'stop-limit' ? 'stopLimit' : 'stop',
+          side,
+          amount,
+          stopPrice
+        );
+
+        return {
+          success: true,
+          orderId: order['id'],
+          symbol: formattedSymbol,
+          side,
+          amount,
+          filled: order['filled'] || 0,
+          average: order['average'] || 0,
+          fee: order['fee']?.['cost'] || 0,
+          cost: order['cost'] || 0,
+          status: order['status'],
+          timestamp: order['timestamp'],
+        };
+      } catch (error: any) {
+        logger.error(`❌ Failed to place stop order: ${error.message}`);
+        throw new Error(`Failed to place ${type} order: ${error.message}`);
+      }
+    });
+  }
+
+  async placeTakeProfitOrder(
+    exchangeName: string,
+    symbol: string,
+    side: 'buy' | 'sell',
+    amount: number,
+    takeProfitPrice: number
+  ): Promise<OrderResult> {
+    logger.info(`📈 Placing ${side} take-profit order for ${amount} ${symbol} at ${takeProfitPrice} on ${exchangeName}`);
+
+    const validation = await this.validateOrder(exchangeName, symbol, side, amount, takeProfitPrice);
+    if (!validation.valid) {
+      throw new Error(`Order validation failed: ${validation.errors.join(', ')}`);
+    }
+
+    return this.tickerLimiter(async () => {
+      const exchange = this.exchanges.get(exchangeName);
+      if (!exchange) throw new Error(`Exchange ${exchangeName} not initialized`);
+      if (!exchange.apiKey || !exchange.secret) {
+        throw new Error(`No API credentials configured for ${exchangeName}`);
+      }
+
+      const formattedSymbol = await this.formatSymbolForExchange(exchangeName, symbol);
+      if (!formattedSymbol) throw new Error(`Symbol ${symbol} not supported on ${exchangeName}`);
+
+      try {
+        const order = await exchange.createOrder(
+          formattedSymbol,
+          'takeProfit',
+          side,
+          amount,
+          takeProfitPrice
+        );
+
+        return {
+          success: true,
+          orderId: order['id'],
+          symbol: formattedSymbol,
+          side,
+          amount,
+          filled: order['filled'] || 0,
+          average: order['average'] || 0,
+          fee: order['fee']?.['cost'] || 0,
+          cost: order['cost'] || 0,
+          status: order['status'],
+          timestamp: order['timestamp'],
+        };
+      } catch (error: any) {
+        logger.error(`❌ Failed to place take-profit order: ${error.message}`);
+        throw new Error(`Failed to place take-profit order: ${error.message}`);
+      }
+    });
+  }
+
+  async placeTrailingStopOrder(
+    exchangeName: string,
+    symbol: string,
+    side: 'buy' | 'sell',
+    amount: number,
+    trailPercent?: number,
+    trailAmount?: number
+  ): Promise<OrderResult> {
+    logger.info(`🧭 Placing ${side} trailing-stop order for ${amount} ${symbol} on ${exchangeName}`);
+
+    const validation = await this.validateOrder(exchangeName, symbol, side, amount);
+    if (!validation.valid) {
+      throw new Error(`Order validation failed: ${validation.errors.join(', ')}`);
+    }
+
+    return this.tickerLimiter(async () => {
+      const exchange = this.exchanges.get(exchangeName);
+      if (!exchange) throw new Error(`Exchange ${exchangeName} not initialized`);
+      if (!exchange.apiKey || !exchange.secret) {
+        throw new Error(`No API credentials configured for ${exchangeName}`);
+      }
+
+      const formattedSymbol = await this.formatSymbolForExchange(exchangeName, symbol);
+      if (!formattedSymbol) throw new Error(`Symbol ${symbol} not supported on ${exchangeName}`);
+
+      try {
+        const params: Record<string, any> = {};
+        if (trailPercent !== undefined) params.trailingPercent = trailPercent;
+        if (trailAmount !== undefined) params.trailingAmount = trailAmount;
+
+        const order = await exchange.createOrder(formattedSymbol, 'trailingStop', side, amount, undefined, params);
+
+        return {
+          success: true,
+          orderId: order['id'],
+          symbol: formattedSymbol,
+          side,
+          amount,
+          filled: order['filled'] || 0,
+          average: order['average'] || 0,
+          fee: order['fee']?.['cost'] || 0,
+          cost: order['cost'] || 0,
+          status: order['status'],
+          timestamp: order['timestamp'],
+        };
+      } catch (error: any) {
+        logger.error(`❌ Failed to place trailing-stop order: ${error.message}`);
+        throw new Error(`Failed to place trailing-stop order: ${error.message}`);
       }
     });
   }

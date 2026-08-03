@@ -1,4 +1,5 @@
-import { Router, Request, Response } from "express";
+import { Router } from "express";
+import type { Request, Response } from "express";
 import { isAuthenticated } from "../nextAuthMiddleware";
 import { ruleEngine } from "../services/rule-engine";
 import { db } from "../db";
@@ -314,13 +315,17 @@ router.get("/rules/templates/:templateId", isAuthenticated, async (req: Request,
       });
     }
 
+    const ruleConfig = template.rule_config ?? template.default_config;
+    const parsedDefaultConfig = typeof ruleConfig === "string"
+      ? JSON.parse(ruleConfig)
+      : ruleConfig;
+
     res.json({
       success: true,
       data: {
         ...template,
-        default_config: typeof template.default_config === "string"
-          ? JSON.parse(template.default_config)
-          : template.default_config,
+        default_config: parsedDefaultConfig,
+        ruleConfig: parsedDefaultConfig,
       },
     });
   } catch (error) {

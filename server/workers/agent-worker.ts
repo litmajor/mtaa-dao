@@ -8,17 +8,22 @@
  * ✅ DomainAggregatorAgent (5min poll) - I/O heavy, isolated
  * ✅ CapacityPlannerAgent (10min poll) - DB/compute heavy, isolated
  * 
- * This file runs in a worker thread/process and is NOT part of main API
+ * This file runs in a forked child process and is NOT part of main API
  * 
  * Benefits:
  * - API remains responsive during heavy agent compute
- * - Prevents event loop blocking
+ * - Prevents event loop blocking in the main process
  * - Isolates agent failures (one crash ≠ API crash)
  * - Agent CPU spikes don't affect user requests
  * - Easy to monitor/restart independently
  */
 
 import { Logger } from '../utils/logger';
+import { evaluateAgentRuntimeSafety } from '../utils/agentRuntimeSafety';
+import type { PerformanceOptimizerAgent } from '../agents/performanceOptimizerAgent';
+import type { DomainAggregatorAgent } from '../agents/domainAggregatorAgent';
+import type { CapacityPlannerAgent } from '../agents/capacityPlannerAgent';
+import type { HealthMonitorAgent } from '../agents/healthMonitorAgent';
 
 const logger = Logger.getLogger();
 
@@ -26,10 +31,10 @@ const logger = Logger.getLogger();
 // Agent Initialization
 // ════════════════════════════════════════════════════════════════════════════════
 
-let performanceOptimizer: any = null;
-let domainAggregator: any = null;
-let capacityPlanner: any = null;
-let healthMonitor: any = null;
+let performanceOptimizer: PerformanceOptimizerAgent | null = null;
+let domainAggregator: DomainAggregatorAgent | null = null;
+let capacityPlanner: CapacityPlannerAgent | null = null;
+let healthMonitor: HealthMonitorAgent | null = null;
 
 // Configuration from environment with fallbacks
 const agentPort = parseInt(process.env.AGENT_PORT || process.env.PORT || '5000');
@@ -38,6 +43,12 @@ const baseUrl = process.env.AGENT_BASE_URL || `http://${agentHost}:${agentPort}`
 
 async function initializeAgents() {
   logger.info('[AGENT_WORKER] Initializing agents in isolated worker...');
+
+  const runtimeSafety = evaluateAgentRuntimeSafety();
+  if (runtimeSafety.shouldPause) {
+    logger.warn(`[AGENT_WORKER] Pausing agent initialization due to runtime pressure: ${runtimeSafety.reason}`);
+    return;
+  }
 
   try {
     // Lazy load agents to avoid blocking
@@ -90,12 +101,12 @@ async function initializeAgents() {
  * Error boundary wrapper for each agent
  * Ensures one agent failure doesn't crash the worker
  */
-async function initAgentWithErrorBoundary(
+async function initAgentWithErrorBoundary<T>(
   name: string,
-  initFn: () => any
-): Promise<any> {
+  initFn: () => Promise<T> | T
+): Promise<T | null> {
   try {
-    const agent = initFn();
+    const agent = await initFn();
     logger.info(`[AGENT_WORKER] ✅ ${name} initialized`);
     return agent;
   } catch (error) {
@@ -109,40 +120,110 @@ async function initAgentWithErrorBoundary(
 // Message Handler (IPC from Main Process)
 // ════════════════════════════════════════════════════════════════════════════════
 
-process.on('message', async (message: any) => {
-  if (!message || !message.type) return;
+process.on('message', async (message: unknown) => {
+  if (!message || typeof message !== 'object' || message === null) return;
+  const msg = message as { type?: string; domain?: string };
+  if (!msg.type) return;
 
   try {
-    switch (message.type) {
-      case 'get-perf-stats':
+    switch (msg.type) {
+      case 'get-perf-stats': {
+        const runtimeSafety = evaluateAgentRuntimeSafety();
+        if (runtimeSafety.shouldPause) {
+          process.send?.({ type: 'error', error: `Performance optimizer paused: ${runtimeSafety.reason}` });
+          break;
+        }
+
         if (performanceOptimizer) {
           const stats = performanceOptimizer.getOptimizationHealth();
           process.send?.({
             type: 'perf-stats-response',
-            data: stats,
+            data: {
+              ...stats,
+              summary: {
+                totalActions: stats.totalActions,
+                successfulActions: stats.successfulActions,
+                averageImprovement: stats.averageImprovement,
+                currentlySlow: stats.currentlySlow,
+                healthState: stats.currentlySlow > 0 ? 'warning' : 'healthy',
+              },
+            },
+          });
+        } else {
+          process.send?.({
+            type: 'error',
+            error: 'PerformanceOptimizer agent is not initialized',
           });
         }
         break;
+      }
 
-      case 'get-domain-health':
+      case 'get-domain-health': {
+        const runtimeSafety = evaluateAgentRuntimeSafety();
+        if (runtimeSafety.shouldPause) {
+          process.send?.({ type: 'error', error: `Domain aggregator paused: ${runtimeSafety.reason}` });
+          break;
+        }
+
         if (domainAggregator) {
-          const health = domainAggregator.getDomainSnapshot(message.domain);
+          const health = domainAggregator.getDomainSnapshot(msg.domain);
+          const isSingleDomainSnapshot = !!msg.domain && health !== null && !(health instanceof Map);
+          const payload = isSingleDomainSnapshot
+            ? {
+                ...health,
+                summary: {
+                  currentHealth: health.assessment?.healthState ?? 'unknown',
+                  currentHealthScore: health.assessment?.healthScore ?? 0,
+                  trend: health.assessment?.trend ?? 'stable',
+                  confidence: health.assessment?.confidence ?? 0,
+                  saturationScore: Math.round(Math.max(0, 100 - (health.assessment?.healthScore ?? 0))),
+                },
+              }
+            : health;
+
           process.send?.({
             type: 'domain-health-response',
-            data: health,
+            data: payload,
+          });
+        } else {
+          process.send?.({
+            type: 'error',
+            error: 'DomainAggregator agent is not initialized',
           });
         }
         break;
+      }
 
-      case 'get-capacity-forecast':
+      case 'get-capacity-forecast': {
+        const runtimeSafety = evaluateAgentRuntimeSafety();
+        if (runtimeSafety.shouldPause) {
+          process.send?.({ type: 'error', error: `Capacity planner paused: ${runtimeSafety.reason}` });
+          break;
+        }
+
         if (capacityPlanner) {
           const forecast = capacityPlanner.getCapacityForecast();
           process.send?.({
             type: 'capacity-forecast-response',
-            data: forecast,
+            data: {
+              ...forecast,
+              summary: {
+                currentHealth: forecast.currentCapacity?.assessment.healthState ?? 'unknown',
+                currentHealthScore: forecast.currentCapacity?.assessment.healthScore ?? 0,
+                trend: forecast.currentCapacity?.assessment.trend ?? 'stable',
+                confidence: forecast.currentCapacity?.assessment.confidence ?? 0,
+                saturationScore: forecast.currentCapacity?.assessment.saturationScore ?? 0,
+              },
+            },
+          });
+        } else {
+          process.send?.({
+            type: 'error',
+            error: 'CapacityPlanner agent is not initialized',
           });
         }
         break;
+      }
 
       case 'get-agent-health':
         // Report worker health
@@ -169,7 +250,7 @@ process.on('message', async (message: any) => {
         break;
 
       default:
-        logger.warn(`[AGENT_WORKER] Unknown message type: ${message.type}`);
+        logger.warn(`[AGENT_WORKER] Unknown message type: ${msg.type}`);
     }
   } catch (error) {
     logger.error(`[AGENT_WORKER] Error handling message:`, error);

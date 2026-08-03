@@ -11,7 +11,7 @@
 
 import * as crypto from 'crypto';
 import { encrypt, decrypt, EncryptedData } from '../utils/encryption';
-import { db } from './db';
+import { pool } from '../db';
 
 export interface KeyVersion {
   id: string;
@@ -83,7 +83,7 @@ export class KeyManagementService {
    * Create key management tables if they don't exist
    */
   private async createKeyManagementTables(): Promise<void> {
-    await db.query(`
+    await pool.query(`
       CREATE TABLE IF NOT EXISTS key_versions (
         id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
         version INTEGER NOT NULL UNIQUE,
@@ -97,7 +97,7 @@ export class KeyManagementService {
       );
     `);
 
-    await db.query(`
+    await pool.query(`
       CREATE TABLE IF NOT EXISTS encryption_audit_log (
         id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
         key_version INTEGER NOT NULL,
@@ -133,7 +133,7 @@ export class KeyManagementService {
     const latestVersion = await this.getLatestKeyVersion();
     const newVersion = (latestVersion?.version || 0) + 1;
 
-    const result = await db.query(
+    const result = await pool.query(
       `INSERT INTO key_versions (version, master_key_hash, algorithm, status)
        VALUES ($1, $2, $3, $4)
        RETURNING *`,
@@ -150,7 +150,7 @@ export class KeyManagementService {
    * Get currently active key version
    */
   async getActiveKeyVersion(): Promise<KeyVersion | null> {
-    const result = await db.query(
+    const result = await pool.query(
       `SELECT * FROM key_versions WHERE status = 'active' ORDER BY version DESC LIMIT 1`
     );
 
@@ -166,7 +166,7 @@ export class KeyManagementService {
       return this.keyVersionCache.get(version) || null;
     }
 
-    const result = await db.query(
+    const result = await pool.query(
       `SELECT * FROM key_versions WHERE version = $1`,
       [version]
     );
@@ -184,7 +184,7 @@ export class KeyManagementService {
    * Get latest key version
    */
   async getLatestKeyVersion(): Promise<KeyVersion | null> {
-    const result = await db.query(
+    const result = await pool.query(
       `SELECT * FROM key_versions ORDER BY version DESC LIMIT 1`
     );
 
@@ -244,7 +244,7 @@ export class KeyManagementService {
       }
 
       // Mark old version as deprecated
-      await db.query(
+      await pool.query(
         `UPDATE key_versions SET status = 'deprecated', rotated_at = NOW() WHERE version = $1`,
         [oldVersion.version]
       );
@@ -278,7 +278,7 @@ export class KeyManagementService {
     try {
       const version = this.currentKeyVersion?.version || 0;
 
-      await db.query(
+      await pool.query(
         `INSERT INTO encryption_audit_log (
           key_version, action, data_type, user_id, success, error_message
         ) VALUES ($1, $2, $3, $4, $5, $6)`,
@@ -293,7 +293,7 @@ export class KeyManagementService {
    * Get audit log for a user
    */
   async getUserAuditLog(userId: string, limit: number = 100): Promise<EncryptionAuditLog[]> {
-    const result = await db.query(
+    const result = await pool.query(
       `SELECT * FROM encryption_audit_log
        WHERE user_id = $1
        ORDER BY timestamp DESC
@@ -301,14 +301,14 @@ export class KeyManagementService {
       [userId, limit]
     );
 
-    return result.rows.map(row => this.mapAuditLog(row));
+    return result.rows.map((row: Record<string, any>) => this.mapAuditLog(row));
   }
 
   /**
    * Get system-wide audit log
    */
   async getSystemAuditLog(limit: number = 100): Promise<EncryptionAuditLog[]> {
-    const result = await db.query(
+    const result = await pool.query(
       `SELECT * FROM encryption_audit_log
        ORDER BY timestamp DESC
        LIMIT $1`,
@@ -322,7 +322,7 @@ export class KeyManagementService {
    * Get key rotation history
    */
   async getKeyRotationHistory(): Promise<KeyVersion[]> {
-    const result = await db.query(
+    const result = await pool.query(
       `SELECT * FROM key_versions ORDER BY version DESC`
     );
 

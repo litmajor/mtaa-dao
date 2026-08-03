@@ -1,131 +1,29 @@
 /**
- * Staking API Utilities
- * 
- * Client-side functions for interacting with staking endpoints
- * Handles stake creation, claiming rewards, and unstaking
- * 
- * ✅ Migrated to authClient for centralized auth handling:
- * - Uses cookie-based authentication (httpOnly)
- * - Auto-refresh on 401
- * - Single-flight refresh to prevent token storms
- * - CSRF protection
+ * Deprecated staking API forwarding layer
+ *
+ * This file kept for backwards compatibility. The canonical staking methods
+ * now live in `client/src/api/yukiApi.ts`. Imports here are forwarded to the
+ * `yukiApi` implementations to keep existing call sites working.
  */
 
-import { authClient } from './authClient';
+/* eslint-disable @typescript-eslint/ban-ts-comment */
+// @ts-ignore - Forwarding to yukiApi
+import * as yuki from '../api/yukiApi';
 
-const API_BASE = '/api/v1/yuki/staking';
+export const getStakingPools = yuki.getStakingPools;
+export const getStakingPositions = yuki.getStakingPositions;
+export const stakeTokens = yuki.stakeTokens;
+export const unstakeTokens = yuki.unstakeTokens;
+export const claimStakingRewards = yuki.claimStakingRewards;
+export const getStakingLeaderboard = async () => {
+  // yukiApi exposes pool/position APIs; leaderboard is proxied if present
+  if (typeof (yuki as any).getStakingLeaderboard === 'function') {
+    return (yuki as any).getStakingLeaderboard();
+  }
+  return [];
+};
 
-interface StakeRequest {
-  amount: number;
-  duration: number; // days
-}
-
-interface StakeResponse {
-  stakeId: string;
-  userId: string;
-  amount: number;
-  duration: number;
-  stakedAt: Date;
-  unlockAt: Date;
-  rewards: number;
-  apy: number;
-  totalValue: number;
-}
-
-interface MyStakesResponse {
-  data: StakeResponse[];
-  totalStaked: number;
-  totalRewards: number;
-}
-
-interface StakingStatsResponse {
-  totalStaked: number;
-  totalRewards: number;
-  activeStakes: number;
-  vaultAccess: {
-    tier: 'bronze' | 'silver' | 'gold' | 'platinum';
-    name: string;
-    minStake: number;
-    maxVaults: number;
-    feeDiscount: number;
-    description: string;
-  };
-}
-
-/**
- * Stake MTAA tokens
- */
-export async function stakeTokens(request: StakeRequest): Promise<StakeResponse> {
-  return authClient.post<StakeResponse>(`${API_BASE}/stake`, request);
-}
-
-/**
- * Get user's stakes
- */
-export async function getMyStakes(): Promise<StakeResponse[]> {
-  const data = await authClient.get<{ data: StakeResponse[] }>(`${API_BASE}/my-stakes`);
-  return data.data || [];
-}
-
-/**
- * Get staking statistics
- */
-export async function getStakingStats(): Promise<StakingStatsResponse> {
-  return authClient.get<StakingStatsResponse>(`${API_BASE}/stats`);
-}
-
-/**
- * Claim rewards for a stake
- */
-export async function claimRewards(stakeId: string): Promise<{ amount: number }> {
-  return authClient.post<{ amount: number }>(`${API_BASE}/claim/${stakeId}`);
-}
-
-/**
- * Unstake tokens (requires lockup period to be over)
- */
-export async function unstakeTokens(stakeId: string): Promise<{ amount: number; rewards: number }> {
-  return authClient.post<{ amount: number; rewards: number }>(`${API_BASE}/unstake/${stakeId}`);
-}
-
-/**
- * Get vault access tier based on staked amount
- */
-export async function getVaultAccessTier(): Promise<{
-  tier: 'bronze' | 'silver' | 'gold' | 'platinum';
-  name: string;
-  maxVaults: number;
-  feeDiscount: number;
-}> {
-  return authClient.get<{
-    tier: 'bronze' | 'silver' | 'gold' | 'platinum';
-    name: string;
-    maxVaults: number;
-    feeDiscount: number;
-  }>(`${API_BASE}/vault-access`);
-}
-
-/**
- * Get global staking leaderboard
- */
-export async function getStakingLeaderboard(): Promise<
-  Array<{
-    rank: number;
-    userId: string;
-    username: string;
-    totalStaked: number;
-    totalRewards: number;
-  }>
-> {
-  const data = await authClient.get<{ data: Array<{ rank: number; userId: string; username: string; totalStaked: number; totalRewards: number }> }>(
-    `${API_BASE}/leaderboard`
-  );
-  return data.data || [];
-}
-
-/**
- * Calculate projected rewards for a stake
- */
+// Keep local utility that callers might rely on
 export function calculateProjectedRewards(
   amount: number,
   duration: number,
@@ -135,7 +33,6 @@ export function calculateProjectedRewards(
   dailyReward: number;
   periodReward: number;
 } {
-  // Duration multipliers
   const multipliers: { [key: number]: number } = {
     7: 0.5,
     30: 1.0,

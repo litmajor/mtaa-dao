@@ -18,11 +18,13 @@
  * Now properly secured and renamed to trading-signals for production clarity.
  */
 
-import { Router, Request, Response } from 'express';
+import { Router } from 'express';
+import type { Request, Response } from 'express';
 import { authenticateToken } from '../middleware/auth';
 import { websocketRealtimeFeeds } from '../services/websocketRealTimeFeeds';
 import { futuresMarketSupport } from '../services/futuresMarketSupport';
 import { advancedMicrostructureIndicators } from '../services/advancedMicrostructureIndicators';
+import { ccxtService } from '../services/ccxtService';
 import { ApiResponse } from '../utils/apiResponse';
 import { logger } from '../utils/logger';
 import { v4 as uuidv4 } from 'uuid';
@@ -35,33 +37,38 @@ const router = Router();
 // ✅ All 39 endpoints require valid JWT token in Authorization header
 router.use(authenticateToken as any);
 
+function resolveExchange(exchangeParam: unknown, res: Response): string | null {
+  const normalized = typeof exchangeParam === 'string' ? exchangeParam.trim().toLowerCase() : '';
+  const availableExchanges = ccxtService.getAvailableExchanges();
+
+  if (normalized) {
+    if (!availableExchanges.includes(normalized)) {
+      res.status(400).json(
+        ApiResponse.error(`Unsupported exchange: ${normalized}`).addMeta({ supportedExchanges: availableExchanges })
+      );
+      return null;
+    }
+    return normalized;
+  }
+
+  if (availableExchanges.length === 0) {
+    res.status(503).json(ApiResponse.error('No configured exchanges are available')); 
+    return null;
+  }
+
+  return availableExchanges[0];
+}
+
 // ============================================================================
-// WEBSOCKET ROUTES
+// LEGACY WEBSOCKET UPGRADE ROUTE
 // ============================================================================
 
 /**
- * WebSocket upgrade endpoint
- * Clients connect here and subscribe to real-time feeds
+ * NOTE: The `/api/trading/realtime` upgrade route was formerly implemented with
+ * express-ws. The current server does not install or initialize express-ws, so
+ * that route is not available here. Real-time market feed traffic is instead
+ * served through the dedicated raw WebSocket price stream server at `/ws/prices`.
  */
-const wsRouter = router as Router & {
-  ws?: (path: string, handler: (ws: any, req: Request) => void) => void;
-};
-
-if (typeof wsRouter.ws === 'function') {
-  wsRouter.ws('/realtime', (ws, req) => {
-    const clientId = uuidv4();
-    logger.info('WebSocket client connection request', { clientId });
-
-    try {
-      websocketRealtimeFeeds.addClient(clientId, ws);
-    } catch (error) {
-      logger.error('Failed to add WebSocket client', { clientId, error });
-      ws.close(1011, 'Server error');
-    }
-  });
-} else {
-  logger.warn('router.ws is unavailable; realtime websocket route not registered');
-}
 
 /**
  * GET /api/trading/stats
@@ -96,11 +103,12 @@ router.get('/stats', async (req: Request, res: Response) => {
 router.get('/funding-rate/:symbol', async (req: Request, res: Response) => {
   try {
     const { symbol } = req.params;
-    const { exchange = 'binance' } = req.query;
+    const exchange = resolveExchange(req.query.exchange, res);
+    if (!exchange) return;
 
     const fundingRate = await futuresMarketSupport.getFundingRate(
       symbol as string,
-      exchange as string
+      exchange
     );
 
     res.json(
@@ -170,7 +178,9 @@ router.get('/open-interest/:symbol', async (req: Request, res: Response) => {
  */
 router.post('/funding-prediction', async (req: Request, res: Response) => {
   try {
-    const { symbol, exchange = 'binance' } = req.body;
+    const { symbol } = req.body;
+    const exchange = resolveExchange(req.body.exchange, res);
+    if (!exchange) return;
 
     if (!symbol) {
       return res.status(400).json(ApiResponse.error('symbol is required'));
@@ -196,7 +206,9 @@ router.post('/funding-prediction', async (req: Request, res: Response) => {
  */
 router.post('/liquidation-risk', async (req: Request, res: Response) => {
   try {
-    const { symbol, entryPrice, leverage = 1, exchange = 'binance' } = req.body;
+    const { symbol, entryPrice, leverage = 1 } = req.body;
+    const exchange = resolveExchange(req.body.exchange, res);
+    if (!exchange) return;
 
     if (!symbol || !entryPrice) {
       return res
@@ -227,11 +239,12 @@ router.post('/liquidation-risk', async (req: Request, res: Response) => {
 router.get('/market-health/:symbol', async (req: Request, res: Response) => {
   try {
     const { symbol } = req.params;
-    const { exchange = 'binance' } = req.query;
+    const exchange = resolveExchange(req.query.exchange, res);
+    if (!exchange) return;
 
     const health = await futuresMarketSupport.getFuturesMarketHealth(
       symbol as string,
-      exchange as string
+      exchange
     );
 
     res.json(
@@ -254,11 +267,12 @@ router.get('/market-health/:symbol', async (req: Request, res: Response) => {
 router.get('/order-flow/:symbol', async (req: Request, res: Response) => {
   try {
     const { symbol } = req.params;
-    const { exchange = 'binance' } = req.query;
+    const exchange = resolveExchange(req.query.exchange, res);
+    if (!exchange) return;
 
     const orderFlow = await advancedMicrostructureIndicators.analyzeOrderFlowImbalance(
       symbol as string,
-      exchange as string
+      exchange
     );
 
     res.json(
@@ -277,12 +291,17 @@ router.get('/order-flow/:symbol', async (req: Request, res: Response) => {
 router.get('/vol-of-vol/:symbol', async (req: Request, res: Response) => {
   try {
     const { symbol } = req.params;
-    const { exchange = 'binance', periods = '24' } = req.query;
+    const exchange = resolveExchange(req.query.exchange, res);
+    if (!exchange) return;
+    const periods = Number(req.query.periods ?? 24);
+    if (!Number.isFinite(periods) || periods < 1 || periods > 500) {
+      return res.status(400).json(ApiResponse.error('periods must be between 1 and 500'));
+    }
 
     const volOfVol = await advancedMicrostructureIndicators.calculateVolatilityOfVolatility(
       symbol as string,
-      exchange as string,
-      parseInt(periods as string)
+      exchange,
+      periods
     );
 
     res.json(
@@ -301,11 +320,12 @@ router.get('/vol-of-vol/:symbol', async (req: Request, res: Response) => {
 router.get('/toxicity/:symbol', async (req: Request, res: Response) => {
   try {
     const { symbol } = req.params;
-    const { exchange = 'binance' } = req.query;
+    const exchange = resolveExchange(req.query.exchange, res);
+    if (!exchange) return;
 
     const toxicity = await advancedMicrostructureIndicators.detectOrderBookToxicity(
       symbol as string,
-      exchange as string
+      exchange
     );
 
     res.json(
@@ -324,11 +344,12 @@ router.get('/toxicity/:symbol', async (req: Request, res: Response) => {
 router.get('/price-impact/:symbol', async (req: Request, res: Response) => {
   try {
     const { symbol } = req.params;
-    const { exchange = 'binance' } = req.query;
+    const exchange = resolveExchange(req.query.exchange, res);
+    if (!exchange) return;
 
     const impact = await advancedMicrostructureIndicators.analyzePriceImpact(
       symbol as string,
-      exchange as string
+      exchange
     );
 
     res.json(
@@ -347,11 +368,12 @@ router.get('/price-impact/:symbol', async (req: Request, res: Response) => {
 router.get('/comprehensive/:symbol', async (req: Request, res: Response) => {
   try {
     const { symbol } = req.params;
-    const { exchange = 'binance' } = req.query;
+    const exchange = resolveExchange(req.query.exchange, res);
+    if (!exchange) return;
 
     const indicators = await advancedMicrostructureIndicators.getComprehensiveMicrostructure(
       symbol as string,
-      exchange as string
+      exchange
     );
 
     res.json(
@@ -372,11 +394,12 @@ router.get('/comprehensive/:symbol', async (req: Request, res: Response) => {
 router.get('/alerts/:symbol', async (req: Request, res: Response) => {
   try {
     const { symbol } = req.params;
-    const { exchange = 'binance' } = req.query;
+    const exchange = resolveExchange(req.query.exchange, res);
+    if (!exchange) return;
 
     const alerts = await advancedMicrostructureIndicators.generateMicrostructureAlerts(
       symbol as string,
-      exchange as string
+      exchange
     );
 
     res.json(
@@ -407,17 +430,18 @@ router.get('/alerts/:symbol', async (req: Request, res: Response) => {
 router.get('/market-insight/:symbol', async (req: Request, res: Response) => {
   try {
     const { symbol } = req.params;
-    const { exchange = 'binance' } = req.query;
+    const exchange = resolveExchange(req.query.exchange, res);
+    if (!exchange) return;
 
     const [microstructure, futuresHealth, alerts] = await Promise.all([
       advancedMicrostructureIndicators.getComprehensiveMicrostructure(
         symbol as string,
-        exchange as string
+        exchange
       ),
-      futuresMarketSupport.getFuturesMarketHealth(symbol as string, exchange as string),
+      futuresMarketSupport.getFuturesMarketHealth(symbol as string, exchange),
       advancedMicrostructureIndicators.generateMicrostructureAlerts(
         symbol as string,
-        exchange as string
+        exchange
       )
     ]);
 

@@ -15,7 +15,16 @@
 import authChannel from './authChannel';
 
 // Use Vite-provided env variable in the browser. Falls back to localhost backend.
-const API_BASE = (typeof import.meta !== 'undefined' && (import.meta.env as any)?.VITE_API_URL) || 'http://localhost:5000';
+const API_BASE_INPUT = (typeof import.meta !== 'undefined' && (import.meta.env as any)?.VITE_API_URL) || '';
+const API_BASE = API_BASE_INPUT.replace(/\/api\/?$/, '').replace(/\/$/, '');
+
+function resolveApiUrl(url: string): string {
+  if (url.startsWith('http')) return url;
+
+  const normalizedUrl = url.startsWith('/') ? url : `/${url}`;
+  const hasApiPrefix = normalizedUrl === '/api' || normalizedUrl.startsWith('/api/');
+  return `${API_BASE}${hasApiPrefix ? normalizedUrl : `/api${normalizedUrl}`}`;
+}
 
 interface AuthResponse<T = any> {
   success: boolean;
@@ -57,7 +66,7 @@ async function refreshToken(): Promise<void> {
         refreshHeaders['X-CSRF-Token'] = csrfToken;
       }
 
-      const res = await fetch(`${API_BASE}/api/auth/refresh-token`, {
+      const res = await fetch(resolveApiUrl('/api/auth/refresh-token'), {
         method: 'POST',
         credentials: 'include',
         headers: refreshHeaders,
@@ -91,7 +100,7 @@ async function authFetch(
   retry = true
 ): Promise<Response> {
   // Ensure full URL
-  const fullUrl = url.startsWith('http') ? url : `${API_BASE}${url}`;
+  const fullUrl = resolveApiUrl(url);
 
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), DEFAULT_REQUEST_TIMEOUT_MS);
@@ -178,7 +187,7 @@ function handleAuthFailure(): void {
         ? { 'X-CSRF-Token': csrfToken }
         : undefined;
 
-      void fetch(`${API_BASE}/api/auth/logout`, {
+      void fetch(resolveApiUrl('/api/auth/logout'), {
         method: 'POST',
         credentials: 'include',
         headers: logoutHeaders,

@@ -1,5 +1,5 @@
 import { useEffect } from 'react';
-import { TradingFilterState } from './useTradingFilters';
+import type { TradingFilterState } from './useTradingFilters';
 
 export type ViewMode = 'ranking' | 'heatmap' | 'comparison' | 'sparklines' | 'insights' | 'network' | 'focus' | 'treasury';
 

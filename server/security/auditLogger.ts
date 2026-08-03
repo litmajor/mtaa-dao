@@ -62,9 +62,14 @@ export const auditMiddleware = (req: Request, res: Response, next: NextFunction)
   res.send = function(body) {
     const endTime = Date.now();
     const responseTime = endTime - startTime;
+    const resolvedEndpoint = getRequestEndpoint(req);
     
     // Log after response is sent
     setImmediate(async () => {
+      if (isIgnoredAuditRoute(resolvedEndpoint)) {
+        return;
+      }
+
       const user = req.user as any;
       const auditLogger = AuditLogger.getInstance();
       
@@ -76,11 +81,11 @@ export const auditMiddleware = (req: Request, res: Response, next: NextFunction)
         timestamp: new Date(),
         userId: userId,
         userEmail: userEmail,
-        action: getActionFromRequest(req),
-        resource: getResourceFromRequest(req),
+        action: getActionFromRequest(req, resolvedEndpoint),
+        resource: getResourceFromRequest(req, resolvedEndpoint),
         resourceId: req.params.id || req.params.daoId || req.params.proposalId,
         method: req.method,
-        endpoint: req.path,
+        endpoint: resolvedEndpoint,
         ipAddress: req.ip || req.connection.remoteAddress || '',
         userAgent: req.get('User-Agent') || '',
         status: res.statusCode,
@@ -90,8 +95,8 @@ export const auditMiddleware = (req: Request, res: Response, next: NextFunction)
           query: req.query,
           params: req.params
         },
-        severity: getSeverityFromRequest(req, res.statusCode),
-        category: getCategoryFromRequest(req)
+        severity: getSeverityFromRequest(req, res.statusCode, resolvedEndpoint),
+        category: getCategoryFromRequest(req, resolvedEndpoint)
       };
       
       await auditLogger.log(entry);
@@ -103,9 +108,29 @@ export const auditMiddleware = (req: Request, res: Response, next: NextFunction)
   next();
 };
 
-function getActionFromRequest(req: Request): string {
+function getRequestEndpoint(req: Request): string {
+  const routePath = typeof req.route?.path === 'string' ? req.route.path : '';
+  const baseUrl = req.baseUrl || '';
+  const rawEndpoint = routePath ? `${baseUrl}${routePath}` : req.originalUrl || req.path || '';
+  const withoutQuery = rawEndpoint.split('?')[0].split('#')[0];
+  const normalized = withoutQuery.replace(/\/+/g, '/').replace(/\/?$/, '');
+  return normalized || req.path || '/unknown';
+}
+
+function isIgnoredAuditRoute(endpoint: string): boolean {
+  const normalized = endpoint.toLowerCase().split('?')[0].split('#')[0];
+  return normalized === '/health'
+    || normalized === '/api/health'
+    || normalized.startsWith('/api/health/')
+    || normalized === '/api-health'
+    || normalized === '/metrics'
+    || normalized === '/metrics/json'
+    || normalized === '/favicon.ico';
+}
+
+function getActionFromRequest(req: Request, endpoint: string): string {
   const method = req.method.toLowerCase();
-  const path = req.path;
+  const path = endpoint || req.path;
   
   if (path.includes('/login')) return 'login';
   if (path.includes('/logout')) return 'logout';
@@ -120,8 +145,8 @@ function getActionFromRequest(req: Request): string {
   return `${method}_${path.split('/')[2] || 'unknown'}`;
 }
 
-function getResourceFromRequest(req: Request): string {
-  const path = req.path;
+function getResourceFromRequest(req: Request, endpoint: string): string {
+  const path = endpoint || req.path;
   
   if (path.includes('/vault')) return 'vault';
   if (path.includes('/dao')) return 'dao';
@@ -134,16 +159,16 @@ function getResourceFromRequest(req: Request): string {
   return 'unknown';
 }
 
-function getSeverityFromRequest(req: Request, statusCode: number): AuditLogEntry['severity'] {
+function getSeverityFromRequest(req: Request, statusCode: number, endpoint: string): AuditLogEntry['severity'] {
   if (statusCode >= 500) return 'critical';
   if (statusCode >= 400) return 'high';
-  if (req.path.includes('/admin')) return 'high';
-  if (req.path.includes('/vault') || req.path.includes('/payment')) return 'medium';
+  if ((endpoint || req.path).includes('/admin')) return 'high';
+  if ((endpoint || req.path).includes('/vault') || (endpoint || req.path).includes('/payment')) return 'medium';
   return 'low';
 }
 
-function getCategoryFromRequest(req: Request): AuditLogEntry['category'] {
-  const path = req.path;
+function getCategoryFromRequest(req: Request, endpoint: string): AuditLogEntry['category'] {
+  const path = endpoint || req.path;
   
   if (path.includes('/auth') || path.includes('/login') || path.includes('/register')) return 'auth';
   if (path.includes('/vault') || path.includes('/payment') || path.includes('/deposit') || path.includes('/withdraw')) return 'financial';

@@ -6,6 +6,7 @@ import { Button } from './ui/button';
 import { Label } from './ui/label';
 import { Separator } from './ui/separator';
 import { Bell, Mail, Smartphone, Users, FileText, Briefcase } from 'lucide-react';
+import { NOTIFICATION_PREFERENCES_ENDPOINT } from '../lib/notificationEndpoints';
 
 interface NotificationPreferences {
   emailNotifications: boolean;
@@ -22,7 +23,7 @@ export default function NotificationPreferences() {
   const { data: preferences, isLoading } = useQuery({
     queryKey: ['notification-preferences'],
     queryFn: async () => {
-      const response = await fetch('/api/notifications/preferences');
+      const response = await fetch(NOTIFICATION_PREFERENCES_ENDPOINT);
       if (!response.ok) throw new Error('Failed to fetch preferences');
       return response.json();
     },
@@ -30,7 +31,7 @@ export default function NotificationPreferences() {
 
   const updatePreferencesMutation = useMutation({
     mutationFn: async (newPreferences: Partial<NotificationPreferences>) => {
-      const response = await fetch('/api/notifications/preferences', {
+      const response = await fetch(NOTIFICATION_PREFERENCES_ENDPOINT, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(newPreferences),

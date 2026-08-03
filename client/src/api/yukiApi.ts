@@ -10,7 +10,8 @@
  */
 
 import { authClient } from '@/utils/authClient';
-import { Strategy, Position, Exchange } from './dashboardApi';
+import type { Strategy, Position, Exchange } from './dashboardApi';
+import { API_CONFIG } from '@/config/apiConfig';
 
 const API_BASE = '/api/v1';
 
@@ -18,11 +19,11 @@ const API_BASE = '/api/v1';
 // MARKET INTELLIGENCE
 // ============================================================================
 
-export async function getMarketPrices(symbols: string[] = ['ETH', 'USDC', 'BTC']) {
+export async function getMarketPrices(symbols: string[] = ['ETH', 'USDC', 'BTC']): Promise<unknown> {
   return authClient.get(`${API_BASE}/yuki/market/prices?symbols=${symbols.join(',')}`);
 }
 
-export async function getMarketOpportunities() {
+export async function getMarketOpportunities(): Promise<unknown> {
   return authClient.get(`${API_BASE}/yuki/market/opportunities`);
 }
 
@@ -141,11 +142,47 @@ export async function saveGraph(graph: any) {
   return authClient.post(`${API_BASE}/yuki/strategies/save-graph`, { graph });
 }
 
+export interface BacktestJobResponse {
+  jobId: string;
+  status: string;
+  statusUrl: string;
+  resultUrl: string;
+  streamUrl: string;
+}
+
+export function normalizeBacktestJobResponse(payload: any): BacktestJobResponse {
+  const body = payload?.data?.data ?? payload?.data ?? payload;
+  const data = body?.data ?? body;
+
+  return {
+    jobId: data?.jobId || data?.id || '',
+    status: data?.status || 'queued',
+    statusUrl: data?.statusUrl || '',
+    resultUrl: data?.resultUrl || '',
+    streamUrl: data?.streamUrl || '',
+  };
+}
+
 export async function backtestStrategy(id: string, startDate: string, endDate: string) {
-  return authClient.post(`${API_BASE}/yuki/strategies/${id}/backtest`, {
+  const response = await authClient.post(`${API_BASE}/yuki/strategies/${id}/backtest`, {
     startDate,
     endDate,
+    pair: 'BTC/USDT',
+    timeframe: '1h',
+    stakeAmount: 100,
+    startingCapital: 10000,
+    engine: 'freqtrade',
   });
+
+  return normalizeBacktestJobResponse(response);
+}
+
+export async function getBacktestJobStatus(jobId: string) {
+  return authClient.get(`/api/jobs/${jobId}/status`);
+}
+
+export async function getBacktestJobResult(jobId: string) {
+  return authClient.get(`/api/jobs/${jobId}/result`);
 }
 
 export async function getStrategySignals(id: string) {
@@ -211,9 +248,83 @@ export async function getExchangePositions(id: string) {
   return authClient.get(`${API_BASE}/yuki/exchanges/${id}/positions`);
 }
 
-// User watchlist endpoints (UI expects `fetchWatchlist`)
-export async function fetchWatchlist() {
+// User watchlist endpoints (UI expects `fetchWatchlist`) - expanded
+export type WatchlistItemType = 'symbol' | 'pool' | 'vault' | 'investment_pool' | 'strategy' | 'creator';
+export type WatchlistAlertMetric = 'price' | 'apy' | 'tvl';
+export type WatchlistAlertDirection = 'above' | 'below';
+
+export interface WatchlistItem {
+  id: string;
+  watchlist_id: string;
+  item_type: WatchlistItemType;
+  symbol_id: string | null;
+  pool_id: string | null;
+  vault_id: string | null;
+  investment_pool_id: string | null;
+  strategy_id: string | null;
+  creator_id: string | null;
+  target_name: string; // resolved display name, joined server-side
+  alert_metric: WatchlistAlertMetric | null;
+  alert_direction: WatchlistAlertDirection | null;
+  alert_threshold: number | null;
+  alert_active: boolean;
+  alert_last_fired_at: string | null;
+  metadata: Record<string, any>;
+}
+
+export interface Watchlist {
+  id: string;
+  user_id: string;
+  name: string;
+  items: WatchlistItem[];
+}
+
+export async function listWatchlists(): Promise<Watchlist[]> {
   return authClient.get(`${API_BASE}/yuki/watchlist`);
+}
+
+// Kept as an alias since the UI (per the confirmation note) already
+// references `fetchWatchlist` as the entrypoint name.
+export async function fetchWatchlist(): Promise<Watchlist[]> {
+  return listWatchlists();
+}
+
+export async function createWatchlist(name: string): Promise<Watchlist> {
+  return authClient.post(`${API_BASE}/yuki/watchlist`, { name });
+}
+
+export async function deleteWatchlist(watchlistId: string) {
+  return authClient.delete(`${API_BASE}/yuki/watchlist/${watchlistId}`);
+}
+
+export async function addWatchlistItem(
+  watchlistId: string,
+  params: {
+    itemType: WatchlistItemType;
+    targetId: string;
+    alertMetric?: WatchlistAlertMetric;
+    alertDirection?: WatchlistAlertDirection;
+    alertThreshold?: number;
+    metadata?: Record<string, unknown>;
+  }
+): Promise<WatchlistItem> {
+  return authClient.post(`${API_BASE}/yuki/watchlist/${watchlistId}/items`, params);
+}
+
+export async function removeWatchlistItem(itemId: string): Promise<void> {
+  return authClient.delete(`${API_BASE}/yuki/watchlist/items/${itemId}`);
+}
+
+// Pass alertMetric: null to clear an existing alert.
+export async function updateWatchlistItemAlert(
+  itemId: string,
+  params: {
+    alertMetric: WatchlistAlertMetric | null;
+    alertDirection?: WatchlistAlertDirection;
+    alertThreshold?: number;
+  }
+): Promise<WatchlistItem> {
+  return authClient.put(`${API_BASE}/yuki/watchlist/items/${itemId}/alert`, params);
 }
 
 // ============================================================================
@@ -236,13 +347,111 @@ export async function executeOptimalRoute(symbol: string, amount: number, venue:
   });
 }
 
+export async function triggerRebalance(strategyId: string, orders: any[]) {
+  return authClient.post(`${API_BASE}/yuki/execute/rebalance`, {
+    strategyId,
+    orders,
+  });
+}
+
+export async function startAlgoOrder(config: any) {
+  return authClient.post(`${API_BASE}/yuki/execute/algo`, config);
+}
+
+
+// ============================================================================
+// PORTFOLIO & RISK
+// ============================================================================
+
+export async function getPortfolio() {
+  return authClient.get(`${API_BASE}/yuki/portfolio`);
+}
+
+export async function getRiskSettings() {
+  return authClient.get(`${API_BASE}/yuki/risk/settings`);
+}
+
+export async function updateRiskSettings(settings: any) {
+  return authClient.put(`${API_BASE}/yuki/risk/settings`, settings);
+}
+
+// ============================================================================
+// ALERTS
+// ============================================================================
+
+export async function getAlerts() {
+  return authClient.get(`${API_BASE}/yuki/alerts`);
+}
+
+export async function createAlert(alert: any) {
+  return authClient.post(`${API_BASE}/yuki/alerts`, alert);
+}
+
+export async function deleteAlert(id: string) {
+  return authClient.delete(`${API_BASE}/yuki/alerts/${id}`);
+}
+
+// ============================================================================
+// STAKING
+// ============================================================================
+
+export async function getStakingPools() {
+  return authClient.get(`${API_BASE}/yuki/staking/pools`);
+}
+
+export async function getStakingPositions() {
+  return authClient.get(`${API_BASE}/yuki/staking/positions`);
+}
+
+export async function stakeTokens(poolId: string, amount: number) {
+  return authClient.post(`${API_BASE}/yuki/staking/stake`, { poolId, amount });
+}
+
+export async function unstakeTokens(poolId: string, amount: number) {
+  return authClient.post(`${API_BASE}/yuki/staking/unstake`, { poolId, amount });
+}
+
+export async function claimStakingRewards(poolId: string) {
+  return authClient.post(`${API_BASE}/yuki/staking/claim`, { poolId });
+}
+
 // ============================================================================
 // WebSocket Real-Time Feeds
 // ============================================================================
 
-export function connectToYukiWebSocket(token: string): WebSocket {
-  const wsUrl = process.env.REACT_APP_WS_URL || 'ws://localhost:3000/api/v1/yuki/ws';
-  const ws = new WebSocket(`${wsUrl}?token=${token}`);
+/**
+ * Connects to the YUKI real-time WebSocket.
+ *
+ * FIXED: previously took a `token` parameter and appended it as `?token=`,
+ * mirroring a Create-React-App-style token-based auth model this app
+ * doesn't use. Auth here is a cookie-based, httpOnly `access_token` cookie
+ * (see authClient.ts) — there's no client-readable token to pass, and native
+ * WebSocket handshakes carry the browser's cookies for the target origin
+ * automatically, same as a normal navigation request. No token argument or
+ * query param is needed.
+ *
+ * ALSO FIXED: the previous fallback read `process.env.REACT_APP_WS_URL`,
+ * which is a Create React App convention. This app is built with Vite (see
+ * authClient.ts's use of `import.meta.env`), so that env var is never
+ * defined in the browser bundle — meaning this ALWAYS fell through to the
+ * hardcoded `ws://localhost:3000/...` fallback, in every environment
+ * including production, and on the wrong port besides (server defaults to
+ * 5000, not 3000). Now derives the WS origin from API_CONFIG, with an
+ * explicit VITE_WS_URL override if you want to point it elsewhere (e.g. a
+ * separate WS-only load balancer).
+ *
+ * SERVER-SIDE COMPANION CHANGE NEEDED: whatever handles the `/api/v1/yuki/ws`
+ * upgrade needs to read the `access_token` cookie from the upgrade request's
+ * headers (mirroring the same fix needed in server/index.ts's `io.use()`
+ * for the Socket.IO notification channel), rather than expecting a token in
+ * the query string.
+ */
+export function connectToYukiWebSocket(): WebSocket {
+  const wsUrl =
+    (typeof import.meta !== 'undefined' && (import.meta.env as any)?.VITE_WS_URL) ||
+    `${API_CONFIG.BASE_URL.replace(/^http/, 'ws')}/api/v1/yuki/ws`;
+
+  const ws = new WebSocket(wsUrl);
 
   ws.onopen = () => {
     console.log('[Yuki WebSocket] Connected');

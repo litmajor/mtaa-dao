@@ -10,7 +10,7 @@
  * - Treasury transfers
  */
 
-import { Redis } from 'ioredis';
+import type { RedisClientType } from 'redis';
 import { nanoid } from 'nanoid';
 import { logger } from '../utils/logger';
 
@@ -21,10 +21,10 @@ import { logger } from '../utils/logger';
  * Ensures only one instance can hold a lock at a time.
  */
 export class DistributedLockManager {
-  private client: Redis;
+  private client: RedisClientType;
   private locks: Map<string, string> = new Map(); // Lock key → token
 
-  constructor(redisClient: Redis) {
+  constructor(redisClient: RedisClientType) {
     this.client = redisClient;
   }
 
@@ -58,15 +58,9 @@ export class DistributedLockManager {
     for (let attempt = 0; attempt < retries; attempt++) {
       try {
         // SET key value EX ttl NX — only set if not exists, with expiry
-        const result = await this.client.set(
-          lockKey,
-          token,
-          'EX',
-          lockTTL,
-          'NX'
-        );
+        const result = await this.client.set(lockKey, token, { EX: lockTTL, NX: true } as any);
 
-        if (result === 'OK') {
+        if (result === 'OK' || result === 'OK') {
           this.locks.set(token, lockKey);
           logger.debug(`[LOCK ACQUIRED] ${resourceId} (attempt ${attempt + 1})`);
           return token;
@@ -109,9 +103,9 @@ export class DistributedLockManager {
         end
       `;
 
-      const result = await this.client.eval(luaScript, 1, lockKey, token);
+      const result = await this.client.eval(luaScript, { keys: [lockKey], arguments: [token] } as any);
 
-      if (result === 1) {
+      if (result === 1 || result === BigInt(1)) {
         this.locks.delete(token);
         logger.debug(`[LOCK RELEASED] ${lockKey}`);
         return true;
@@ -169,10 +163,10 @@ export class DistributedLockManager {
  * - Returns cached result instead of double-withdrawal
  */
 export class IdempotencyManager {
-  private client: Redis;
+  private client: RedisClientType;
   private ttl: number = 86400; // 24 hours default
 
-  constructor(redisClient: Redis, ttlSeconds: number = 86400) {
+  constructor(redisClient: RedisClientType, ttlSeconds: number = 86400) {
     this.client = redisClient;
     this.ttl = ttlSeconds;
   }
@@ -197,7 +191,8 @@ export class IdempotencyManager {
     });
 
     try {
-      await this.client.setex(key, ttl, serialized);
+      // node-redis v4: setEx
+      await this.client.setEx(key, ttl, serialized as string);
       logger.debug(`[IDEMPOTENCY] Key recorded: ${idempotencyKey}`);
     } catch (error) {
       logger.error(`[IDEMPOTENCY] Record error: ${idempotencyKey}`, error);
@@ -255,9 +250,9 @@ export class IdempotencyManager {
  * - Limit governance proposals to 5 per day per user
  */
 export class RateLimiter {
-  private client: Redis;
+  private client: RedisClientType;
 
-  constructor(redisClient: Redis) {
+  constructor(redisClient: RedisClientType) {
     this.client = redisClient;
   }
 
@@ -280,15 +275,15 @@ export class RateLimiter {
 
     try {
       // Remove old entries outside window
-      await this.client.zremrangebyscore(rateKey, '-inf', windowStart);
+      await this.client.zRemRangeByScore(rateKey, '-inf', String(windowStart));
 
       // Count entries in current window
-      const count = await this.client.zcard(rateKey);
-      const remaining = Math.max(0, limit - count);
+      const count = await this.client.zCard(rateKey);
+      const remaining = Math.max(0, limit - Number(count));
 
-      if (count < limit) {
+      if (Number(count) < limit) {
         // Add new entry with current timestamp
-        await this.client.zadd(rateKey, now, `${now}-${nanoid(8)}`);
+        await this.client.zAdd(rateKey, [{ score: now as any, value: `${now}-${nanoid(8)}` }]);
         // Set expiry on rate key
         await this.client.expire(rateKey, windowSeconds + 1);
 
@@ -297,8 +292,8 @@ export class RateLimiter {
       }
 
       // At limit, calculate retry time
-      const oldestEntry = await this.client.zrange(rateKey, 0, 0);
-      const oldestTime = oldestEntry.length > 0 ? parseFloat(oldestEntry[0]) : now;
+      const oldestEntry = await this.client.zRange(rateKey, 0, 0, { BY: 'SCORE' } as any);
+      const oldestTime = oldestEntry.length > 0 ? parseFloat(String(oldestEntry[0]).split('-')[0]) : now;
       const retryAfter = Math.ceil(oldestTime + windowSeconds - now);
 
       logger.warn(`[RATELIMIT] ${key}: Limit reached (${limit}/${limit})`);
@@ -321,7 +316,7 @@ export let rateLimiter: RateLimiter;
 /**
  * Initialize managers (called from cacheService.initialize)
  */
-export function initializeConcurrencyManagers(redisClient: Redis): void {
+export function initializeConcurrencyManagers(redisClient: RedisClientType): void {
   distributedLockManager = new DistributedLockManager(redisClient);
   idempotencyManager = new IdempotencyManager(redisClient);
   rateLimiter = new RateLimiter(redisClient);

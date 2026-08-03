@@ -12,7 +12,7 @@
  */
 
 import { logger } from '../utils/logger';
-import { dexService } from './dexIntegrationService';
+import { dexService } from './dexRoutingService';
 import { assetGraphService } from './assetGraphService';
 import { priceOracle } from './priceOracle';
 import pLimit from 'p-limit';

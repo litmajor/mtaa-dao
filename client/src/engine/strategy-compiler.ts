@@ -1,11 +1,14 @@
-import { StrategyGraph } from '../models/StrategyGraph';
-import { graphToIR, IRGraph } from './strategy-ir';
+import type { StrategyGraph } from '../models/StrategyGraph';
+import type { StrategyEdge } from '../models/StrategyEdge';
+import { graphToIR } from './strategy-ir';
+import type { IRGraph } from './strategy-ir';
 import NodeRegistry from '../state/node-registry';
+import type { StrategyNode } from '../models/StrategyNode';
 
 export interface CompiledNode {
   id: string;
   type: string;
-  config: Record<string, any>;
+  config: StrategyNode['config'];
   // `next` may be a single node or branching map keyed by port/label
   next?: CompiledNode | { branches: Record<string, CompiledNode> } | null;
 }
@@ -14,12 +17,20 @@ export interface CompiledStrategy {
   id: string;
   name: string;
   execution: CompiledNode;
-  riskControls: any;
+  riskControls: StrategyGraph['riskControls'];
   metadata: {
     nodeCount: number;
     edgeCount: number;
     compiledAt: string;
   };
+}
+
+interface NormalizedNode {
+  id: string;
+  type: string;
+  config: StrategyNode['config'];
+  ports: StrategyNode['ports'];
+  outputs: Array<{ targetId: string; sourcePortId?: string; targetPortId?: string }>;
 }
 
 function topologicalSort(graph: StrategyGraph) {
@@ -30,8 +41,10 @@ function topologicalSort(graph: StrategyGraph) {
     adj.set(n.id, []);
   });
   graph.edges.forEach((e) => {
-    const t = (e as any).targetNodeId || (e as any).target;
-    const s = (e as any).sourceNodeId || (e as any).source;
+    const t = e.targetNodeId ?? e.target;
+    const s = e.sourceNodeId ?? e.source;
+    if (!t || !s) return;
+
     indeg.set(t, (indeg.get(t) || 0) + 1);
     adj.get(s)?.push(t);
   });
@@ -49,27 +62,29 @@ function topologicalSort(graph: StrategyGraph) {
     }
   }
 
-  return order.map((id) => graph.nodes.find((n) => n.id === id)!).filter(Boolean as any);
+  return order
+    .map((id) => graph.nodes.find((n) => n.id === id))
+    .filter((n): n is StrategyNode => Boolean(n));
 }
 
-function buildExecutionTree(entryNode: any, graph: StrategyGraph): CompiledNode {
+function buildExecutionTree(entryNode: StrategyNode, graph: StrategyGraph): CompiledNode {
   const visited = new Set<string>();
   function build(nodeId: string): CompiledNode {
     const node = graph.nodes.find((n) => n.id === nodeId)!;
     visited.add(nodeId);
     const outs = graph.edges
-      .filter((e) => (e as any).sourceNodeId === nodeId)
-      .map((e) => (e as any).targetNodeId);
+      .filter((e) => e.sourceNodeId === nodeId)
+      .map((e) => e.targetNodeId);
     const next = outs.length > 0 ? build(outs[0]) : null;
     // Use node-level compiler if available in the registry
     const entry = NodeRegistry[node.type];
     if (entry && entry.compiler) {
-      const compiledFragment: any = (entry.compiler as any)(node);
+      const compiledFragment = entry.compiler(node);
       compiledFragment.next = next;
-      return compiledFragment as CompiledNode;
+      return compiledFragment;
     }
 
-    return { id: node.id, type: node.type, config: (node as any).config, next };
+    return { id: node.id, type: node.type, config: node.config, next };
   }
   return build(entryNode.id);
 }
@@ -79,19 +94,23 @@ export function compileGraph(graph: StrategyGraph): CompiledStrategy {
   const ir: IRGraph = graphToIR(graph);
 
   // Build compiled fragments per node using registry compilers (normalized IR fragments)
-  const compiledFragments: Record<string, any> = {};
+  const compiledFragments: Record<string, CompiledNode> = {};
   for (const node of graph.nodes) {
     const entry = NodeRegistry[node.type];
     if (entry && entry.compiler) {
-      compiledFragments[node.id] = (entry.compiler as any)(node);
+      compiledFragments[node.id] = entry.compiler(node);
     } else {
-      compiledFragments[node.id] = { id: node.id, type: node.type, config: (node as any).config };
+      compiledFragments[node.id] = { id: node.id, type: node.type, config: node.config };
     }
   }
 
   const sorted = topologicalSort(graph);
 
-  const incoming = new Set((graph.edges as any[]).map((e) => e.targetNodeId || e.target));
+  const incoming = new Set(
+    graph.edges
+      .map((e) => e.targetNodeId ?? e.target)
+      .filter((value): value is string => Boolean(value))
+  );
   const entryNode = sorted.find((n) => n.type === 'execution' && !incoming.has(n.id));
   if (!entryNode) throw new Error('No execution entry point found');
 
@@ -109,13 +128,18 @@ export function compileGraph(graph: StrategyGraph): CompiledStrategy {
 }
 
 // Normalize compiled fragments into a strict StrategyIR shape
-export function normalizeCompiledFragments(compiledFragments: Record<string, any>, ir: IRGraph) {
-  // StrategyIR nodes: { id, type, config, ports, outputs: [{ targetId, sourcePortId, targetPortId }] }
-  const normalized: Record<string, { id: string; type: string; config: any; ports: any[]; outputs: { targetId: string; sourcePortId?: string; targetPortId?: string }[] }> = {};
+export function normalizeCompiledFragments(compiledFragments: Record<string, CompiledNode>, ir: IRGraph) {
+  const normalized: Record<string, NormalizedNode> = {};
 
   // initialize nodes
   for (const n of ir.nodes) {
-    normalized[n.id] = { id: n.id, type: n.type, config: compiledFragments[n.id] || n.config, ports: n.ports || [], outputs: [] };
+    normalized[n.id] = {
+      id: n.id,
+      type: n.type,
+      config: compiledFragments[n.id]?.config ?? n.config,
+      ports: n.ports ?? [],
+      outputs: [],
+    };
   }
 
   // populate outputs using IR edges (preserve port info for branching)
@@ -131,7 +155,7 @@ export function normalizeCompiledFragments(compiledFragments: Record<string, any
 }
 
 // Build a compiled execution tree from normalized IR
-function buildExecutionFromNormalized(entryId: string, normalized: Record<string, any>, visited = new Set<string>()): CompiledNode {
+function buildExecutionFromNormalized(entryId: string, normalized: Record<string, NormalizedNode>, visited = new Set<string>()): CompiledNode {
   if (visited.has(entryId)) return { id: entryId, type: normalized[entryId].type, config: normalized[entryId].config, next: null };
   visited.add(entryId);
   const node = normalized[entryId];
@@ -148,7 +172,7 @@ function buildExecutionFromNormalized(entryId: string, normalized: Record<string
 
   // Branching: group outputs by sourcePortId (fall back to index keys)
   const branches: Record<string, CompiledNode> = {};
-  node.outputs.forEach((o: any, idx: number) => {
+  node.outputs.forEach((o, idx) => {
     const key = o.sourcePortId || `out_${idx}`;
     branches[key] = buildExecutionFromNormalized(o.targetId, normalized, visited);
   });

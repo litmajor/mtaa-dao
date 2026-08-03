@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { getMultisigInfo } from '../api/walletApi';
-import { useTreasurySystem, MultisigWallet } from '@/context/treasurySystem';
+import { useTreasurySystem } from '@/context/treasurySystem';
+import type { MultisigWallet } from '@/context/treasurySystem';
 import CreateMultisigModal from '@/components/modals/CreateMultisigModal';
 
 export default function Multisig() {

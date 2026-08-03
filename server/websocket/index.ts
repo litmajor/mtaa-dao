@@ -4,15 +4,15 @@
 
 export {
   GatewayWebSocketServer,
-  attachGatewayWebSocketHandlers,
-  createGatewayWebSocketServer,
   type GatewaySubscription,
 } from "./gateway-websocket";
 
 export {
-  setupGatewayWebSocket,
-  getWebSocketStats,
-  type WebSocketIntegrationConfig,
+  default as WebSocketEventService,
+  type ConfigChangeEvent,
+  type ActivityEvent,
+  type AlertEvent,
+  type PresenceEvent,
+  type SearchResultEvent,
+  type AnalyticsUpdateEvent,
 } from "./gateway-websocket-integration";
-
-export default setupGatewayWebSocket;

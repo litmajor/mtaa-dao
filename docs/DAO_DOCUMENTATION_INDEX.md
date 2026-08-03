@@ -34,6 +34,19 @@
    - Testing checklist
    - **Read time: 20 minutes**
 
+5. **[governance-domain-map.md](governance-domain-map.md)** 🧭 GOVERNANCE MAPPING
+   - Full inventory of DAO and protocol governance routes
+   - Active vs draft implementation status
+   - Duplication and consolidation risk areas
+   - Recommended target architecture
+   - **Read time: 10 minutes**
+
+6. **[governance-domain-architecture.md](governance-domain-architecture.md)** 🏗️ GOVERNANCE ARCHITECTURE
+   - Canonical DAO vs protocol governance topology
+   - Service boundaries and shared support services
+   - Architecture principles and consolidation plan
+   - **Read time: 8 minutes**
+
 ---
 
 ## 🎯 Use Cases by Role

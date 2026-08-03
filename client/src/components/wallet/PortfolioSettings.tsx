@@ -39,7 +39,7 @@ export function PortfolioSettings({ onSettingsUpdate }: PortfolioSettingsProps) 
   const { data: preferences, isLoading } = useQuery<CurrencyPreference>({
     queryKey: ['user-preferences'],
     queryFn: async () => {
-      const response = await fetch('/api/user-preferences');
+      const response = await fetch('/api/user/preferences');
       if (!response.ok) throw new Error('Failed to fetch preferences');
       const data = await response.json();
       return {
@@ -64,7 +64,7 @@ export function PortfolioSettings({ onSettingsUpdate }: PortfolioSettingsProps) 
   // Update preferences mutation
   const updateMutation = useMutation({
     mutationFn: async (newPreferences: CurrencyPreference) => {
-      const response = await fetch('/api/user-preferences/currency', {
+      const response = await fetch('/api/user/preferences/currency', {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({

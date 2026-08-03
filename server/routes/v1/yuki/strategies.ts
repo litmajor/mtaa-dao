@@ -14,13 +14,17 @@
  * Rate Limiting: 60 req/min per user
  */
 
-import express, { Request, Response } from 'express';
+import express from 'express';
+import type { Request, Response } from 'express';
 import { z } from 'zod';
 import { isAuthenticated } from '../../../auth';
 import { logger } from '../../../utils/logger';
-import { pool, db } from '../../../db';
+import { pool } from '../../../db';
 import { redis } from '../../../services/redis';
 import { orderRouter } from '../../../services/orderRouter';
+import { opportunityEngine } from '../../../services/opportunityEngine';
+import { assetGraphService } from '../../../services/assetGraphService';
+import advancedModeGuard from '../../../middleware/advancedModeGuard';
 
 const router = express.Router();
 
@@ -50,7 +54,7 @@ const backtestSchema = z.object({
 });
 
 const compiledDeploySchema = z.object({
-  compiled: z.any(),
+  compiled: z.unknown(),
   deploymentConfig: z.object({
     tradingPair: z.string().min(1).optional(),
     exchangeConnections: z.array(z.string()).optional(),
@@ -66,6 +70,83 @@ const listStrategiesSchema = z.object({
   limit: z.string().optional().default('20'),
 });
 
+type AuthenticatedRequest = Request & { user?: { id?: string } };
+
+type CompiledStrategyPayload = {
+  id?: string;
+  name?: string;
+  description?: string;
+  [key: string]: unknown;
+};
+
+function getAuthenticatedUserId(req: Request): string | null {
+  return ((req as AuthenticatedRequest).user?.id ?? null);
+}
+
+function parseNumeric(value: unknown): number {
+  if (typeof value === 'number' && Number.isFinite(value)) return value;
+  if (typeof value === 'string' && value.trim()) {
+    const parsed = Number(value);
+    return Number.isFinite(parsed) ? parsed : 0;
+  }
+  return 0;
+}
+
+function parseJson<T = unknown>(value: unknown): T | null {
+  if (typeof value === 'string') {
+    try {
+      return JSON.parse(value) as T;
+    } catch {
+      return null;
+    }
+  }
+  return value as T;
+}
+
+interface StrategyListRow {
+  id: string;
+  name: string;
+  description: string | null;
+  returns: number | string | null;
+  win_rate: number | null;
+  total_trades: number | null;
+  max_drawdown: number | null;
+  created_at?: Date | string | null;
+  updated_at?: Date | string | null;
+  execution_count?: number | null;
+  signal_count_24h?: number | null;
+  last_execution_at?: Date | string | null;
+}
+
+interface StrategyDetailRow {
+  id: string;
+  user_id: string;
+  name: string;
+  description: string | null;
+  parameters: unknown;
+  returns: number | string | null;
+  win_rate: number | null;
+  total_trades: number | null;
+  max_drawdown: number | null;
+  created_at?: Date | string | null;
+  updated_at?: Date | string | null;
+  execution_count?: number | null;
+  last_execution_at?: Date | string | null;
+}
+
+interface ExchangeRow {
+  exchange: string;
+}
+
+interface SignalRow {
+  id: string;
+  execution_id: string;
+  event_type: string;
+  message: string;
+  metadata: unknown;
+  created_at?: Date | string | null;
+}
+
 // ════════════════════════════════════════════════════════════════════════════════
 // GET /v1/yuki/strategies - List execution-scoped strategies
 // ════════════════════════════════════════════════════════════════════════════════
@@ -76,9 +157,9 @@ const listStrategiesSchema = z.object({
 router.get('/', isAuthenticated, async (req: Request, res: Response) => {
   try {
     const query = listStrategiesSchema.parse(req.query);
-    const userId = (req as any).user?.id;
-    const skip = parseInt(query.skip);
-    const limit = Math.min(parseInt(query.limit), 100);
+    const userId = getAuthenticatedUserId(req);
+    const skip = parseInt(query.skip, 10);
+    const limit = Math.min(parseInt(query.limit, 10), 100);
 
     logger.info('[YUKI-STRATEGIES] Listing execution strategies', {
       userId,
@@ -89,7 +170,7 @@ router.get('/', isAuthenticated, async (req: Request, res: Response) => {
 
     // Build query
     let whereClause = 'WHERE s.user_id = $1';
-    const params: any[] = [userId];
+    const params: Array<string | number | null> = [userId];
 
     if (query.status) {
       whereClause += ` AND se.status = $${params.length + 1}`;
@@ -121,24 +202,27 @@ router.get('/', isAuthenticated, async (req: Request, res: Response) => {
       [...params, limit, skip]
     );
 
-    const strategies = result.rows.map((row: any) => ({
-      id: row.id,
-      name: row.name,
-      description: row.description,
-      performance: {
-        totalReturn: parseFloat(row.returns.toFixed(2)) || 0,
-        winRate: parseFloat((row.win_rate * 100).toFixed(2)) || 0,
-        totalTrades: row.total_trades || 0,
-        maxDrawdown: parseFloat((row.max_drawdown * 100).toFixed(2)) || 0,
-      },
-      execution: row.execution_count ? {
-        executionCount: row.execution_count,
-        lastExecutedAt: row.last_execution_at?.toISOString(),
-        signalsLast24h: row.signal_count_24h || 0,
-      } : null,
-      createdAt: row.created_at?.toISOString(),
-      updatedAt: row.updated_at?.toISOString(),
-    }));
+    const strategies = result.rows.map((row) => {
+      const typedRow = row as StrategyListRow;
+      return {
+        id: typedRow.id,
+        name: typedRow.name,
+        description: typedRow.description,
+        performance: {
+          totalReturn: parseNumeric(typedRow.returns),
+          winRate: parseNumeric(typedRow.win_rate) * 100,
+          totalTrades: Number(typedRow.total_trades ?? 0),
+          maxDrawdown: parseNumeric(typedRow.max_drawdown) * 100,
+        },
+        execution: typedRow.execution_count ? {
+          executionCount: Number(typedRow.execution_count),
+          lastExecutedAt: typedRow.last_execution_at ? new Date(typedRow.last_execution_at).toISOString() : null,
+          signalsLast24h: Number(typedRow.signal_count_24h ?? 0),
+        } : null,
+        createdAt: typedRow.created_at ? new Date(typedRow.created_at).toISOString() : null,
+        updatedAt: typedRow.updated_at ? new Date(typedRow.updated_at).toISOString() : null,
+      };
+    });
 
     return res.json({
       success: true,
@@ -170,6 +254,52 @@ router.get('/', isAuthenticated, async (req: Request, res: Response) => {
   }
 });
 
+// GET /v1/yuki/strategies/jobs/:jobId - Backtest job status (owner-only)
+router.get('/jobs/:jobId', isAuthenticated, async (req: Request, res: Response) => {
+  try {
+    const jobId = String(req.params.jobId || '');
+    const userId = getAuthenticatedUserId(req);
+
+    if (!userId) return res.status(401).json({ success: false, error: 'Unauthorized' });
+
+    const jobRes = await pool.query(
+      `SELECT bj.id, bj.strategy_id, bj.kind, bj.status, bj.metrics, bj.best_parameters, bj.error, bj.requested_at, bj.started_at, bj.completed_at, bj.duration_ms
+       FROM backtest_jobs bj
+       JOIN strategies s ON s.id = bj.strategy_id
+       WHERE bj.id = $1 AND s.user_id = $2`,
+      [jobId, userId]
+    );
+
+    if (jobRes.rowCount === 0) {
+      return res.status(404).json({ success: false, error: 'Job not found' });
+    }
+
+    const row = jobRes.rows[0];
+    const metrics = typeof row.metrics === 'string' ? JSON.parse(row.metrics) : row.metrics;
+    const bestParameters = typeof row.best_parameters === 'string' ? JSON.parse(row.best_parameters) : row.best_parameters;
+
+    return res.json({
+      success: true,
+      data: {
+        jobId: row.id,
+        strategyId: row.strategy_id,
+        kind: row.kind,
+        status: row.status,
+        metrics: metrics || null,
+        bestParameters: bestParameters || null,
+        error: row.error || null,
+        requestedAt: row.requested_at,
+        startedAt: row.started_at,
+        completedAt: row.completed_at,
+        durationMs: row.duration_ms || null,
+      }
+    });
+  } catch (error) {
+    logger.error('[YUKI-STRATEGIES] Failed to fetch job status', { error });
+    return res.status(500).json({ success: false, error: 'Failed to fetch job status' });
+  }
+});
+
 // ════════════════════════════════════════════════════════════════════════════════
 // GET /v1/yuki/strategies/:id - Get strategy details
 // ════════════════════════════════════════════════════════════════════════════════
@@ -180,7 +310,7 @@ router.get('/', isAuthenticated, async (req: Request, res: Response) => {
 router.get('/:id', isAuthenticated, async (req: Request, res: Response) => {
   try {
     const { id } = strategyIdSchema.parse(req.params);
-    const userId = (req as any).user?.id;
+    const userId = getAuthenticatedUserId(req);
 
     logger.info('[YUKI-STRATEGIES] Fetching strategy', { strategyId: id, userId });
 
@@ -205,8 +335,10 @@ router.get('/:id', isAuthenticated, async (req: Request, res: Response) => {
       });
     }
 
-    const row = result.rows[0];
-    const parameters = typeof row.parameters === 'string' ? JSON.parse(row.parameters) : row.parameters;
+    const row = result.rows[0] as StrategyDetailRow;
+    const parameters = parseJson(row.parameters) ?? row.parameters;
+    const opportunityStatus = opportunityEngine.getStatus();
+    const userGraph = await assetGraphService.loadUserGraph(userId ?? '');
 
     return res.json({
       success: true,
@@ -215,18 +347,26 @@ router.get('/:id', isAuthenticated, async (req: Request, res: Response) => {
         name: row.name,
         description: row.description,
         parameters,
+        opportunityEngine: {
+          scanning: opportunityStatus.isScanning,
+          listeners: opportunityStatus.listenerCount,
+        },
+        assetGraph: {
+          nodeCount: userGraph.nodes.size,
+          edgeCount: userGraph.edges.size,
+        },
         performance: {
-          totalReturn: parseFloat(row.returns.toFixed(2)) || 0,
-          winRate: parseFloat((row.win_rate * 100).toFixed(2)) || 0,
-          totalTrades: row.total_trades || 0,
-          maxDrawdown: parseFloat((row.max_drawdown * 100).toFixed(2)) || 0,
+          totalReturn: parseNumeric(row.returns),
+          winRate: parseNumeric(row.win_rate) * 100,
+          totalTrades: Number(row.total_trades ?? 0),
+          maxDrawdown: parseNumeric(row.max_drawdown) * 100,
         },
         executionHistory: {
-          totalExecutions: row.execution_count || 0,
-          lastExecuted: row.last_execution_at?.toISOString(),
+          totalExecutions: Number(row.execution_count ?? 0),
+          lastExecuted: row.last_execution_at ? new Date(row.last_execution_at).toISOString() : null,
         },
-        createdAt: row.created_at?.toISOString(),
-        updatedAt: row.updated_at?.toISOString(),
+        createdAt: row.created_at ? new Date(row.created_at).toISOString() : null,
+        updatedAt: row.updated_at ? new Date(row.updated_at).toISOString() : null,
       },
     });
   } catch (error) {
@@ -258,7 +398,7 @@ router.post('/:id/deploy', isAuthenticated, async (req: Request, res: Response) 
   try {
     const { id } = strategyIdSchema.parse(req.params);
     const params = deploySchema.parse(req.body);
-    const userId = (req as any).user?.id;
+    const userId = getAuthenticatedUserId(req);
 
     logger.info('[YUKI-STRATEGIES] Deploying strategy', {
       userId,
@@ -290,15 +430,27 @@ router.post('/:id/deploy', isAuthenticated, async (req: Request, res: Response) 
       });
     }
 
+    const exchangeNames = exchResult.rows.map((r: ExchangeRow) => r.exchange);
+    const bestExecution = params.tradingPair
+      ? await orderRouter.findBestExecutionVenue(params.tradingPair, params.maxOrderSize ?? 1, 'buy')
+      : null;
+
     // Create execution record
     const executionId = `exec_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`;
     const deploymentConfig = {
       tradingPair: params.tradingPair,
-      exchanges: exchResult.rows.map((r: any) => r.exchange),
+      exchanges: exchangeNames,
       maxOrderSize: params.maxOrderSize || null,
       dailyLossLimit: params.dailyLossLimit || null,
       realTrading: params.enableRealTrading,
       deployedAt: new Date().toISOString(),
+      recommendedExecution: bestExecution
+        ? {
+            venue: bestExecution.venue,
+            exchange: bestExecution.exchange,
+            confidence: bestExecution.confidence,
+          }
+        : null,
     };
 
     const insertResult = await pool.query(
@@ -335,6 +487,11 @@ router.post('/:id/deploy', isAuthenticated, async (req: Request, res: Response) 
         startedAt: insertResult.rows[0].started_at?.toISOString(),
         message: `Strategy deployed on ${params.exchangeConnections.length} exchange(s). Monitoring active.`,
         signalsUrl: `/v1/yuki/strategies/${id}/signals/${executionId}`,
+        recommendedExecution: bestExecution ? {
+          venue: bestExecution.venue,
+          exchange: bestExecution.exchange,
+          confidence: bestExecution.confidence,
+        } : undefined,
       },
     });
   } catch (error) {
@@ -362,11 +519,11 @@ router.post('/:id/deploy', isAuthenticated, async (req: Request, res: Response) 
  * Run historical backtest on strategy to validate performance
  * Returns metrics and simulated execution results
  */
-router.post('/:id/backtest', isAuthenticated, async (req: Request, res: Response) => {
+router.post('/:id/backtest', isAuthenticated, advancedModeGuard, async (req: Request, res: Response) => {
   try {
     const { id } = strategyIdSchema.parse(req.params);
     const params = backtestSchema.parse(req.body);
-    const userId = (req as any).user?.id;
+    const userId = getAuthenticatedUserId(req);
 
     logger.info('[YUKI-STRATEGIES] Running backtest', {
       userId,
@@ -387,61 +544,29 @@ router.post('/:id/backtest', isAuthenticated, async (req: Request, res: Response
       });
     }
 
-    // Create backtest record
-    const backtestId = `bt_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`;
-
-    // For now, return simulated backtest results
-    // In production, this would fetch OHLCV data and run the strategy logic
-    const simulatedResults = {
-      totalTrades: Math.floor(Math.random() * 500) + 50,
-      winRate: 0.45 + Math.random() * 0.25,
-      avgWin: (100 + Math.random() * 200).toFixed(2),
-      avgLoss: (40 + Math.random() * 80).toFixed(2),
-      maxDrawdown: 0.1 + Math.random() * 0.2,
-      totalReturn: (params.initialCapital * (0.5 + Math.random() * 1.5) - params.initialCapital).toFixed(2),
-      sharpeRatio: 0.5 + Math.random() * 2,
-    };
+    // Create a queued backtest job (async worker will pick this up)
+    const backtestJobId = `backtest_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`;
 
     await pool.query(
-      `INSERT INTO backtest_results (
-        id, strategy_id, user_id, start_date, end_date, 
-        initial_capital, results, status, created_at
-      ) VALUES ($1, $2, $3, $4, $5, $6, $7, 'completed', NOW())`,
-      [
-        backtestId,
-        id,
-        userId,
-        new Date(params.startDate),
-        new Date(params.endDate),
-        params.initialCapital,
-        JSON.stringify(simulatedResults),
-      ]
+      `INSERT INTO backtest_jobs (id, strategy_id, kind, status, requested_at, created_at)
+       VALUES ($1, $2, $3, $4, NOW(), NOW())`,
+      [backtestJobId, id, 'backtest', 'pending']
     );
 
-    return res.status(201).json({
+    // Publish a lightweight notification for workers (optional)
+    try {
+      await redis.publish('backtest_jobs:queue', JSON.stringify({ jobId: backtestJobId, strategyId: id }));
+    } catch (err) {
+      logger.warn('[YUKI-STRATEGIES] Redis publish backtest job failed', { err });
+    }
+
+    return res.status(202).json({
       success: true,
       data: {
-        backtestId,
-        strategyId: id,
-        dateRange: {
-          start: params.startDate,
-          end: params.endDate,
-        },
-        initialCapital: params.initialCapital,
-        results: {
-          totalTrades: simulatedResults.totalTrades,
-          winRate: parseFloat((simulatedResults.winRate * 100).toFixed(2)),
-          profitFactor: (
-            (simulatedResults.totalTrades * parseFloat(simulatedResults.avgWin)) /
-            (simulatedResults.totalTrades * (1 - simulatedResults.winRate) * parseFloat(simulatedResults.avgLoss))
-          ).toFixed(2),
-          maxDrawdown: parseFloat((simulatedResults.maxDrawdown * 100).toFixed(2)),
-          totalReturn: parseFloat(simulatedResults.totalReturn),
-          sharpeRatio: parseFloat(simulatedResults.sharpeRatio.toFixed(2)),
-        },
-        status: 'completed',
-        completedAt: new Date().toISOString(),
-      },
+        status: 'queued',
+        jobId: backtestJobId,
+        message: 'Backtest queued. Use GET /v1/yuki/strategies/jobs/:jobId for status.'
+      }
     });
   } catch (error) {
     if (error instanceof z.ZodError) {
@@ -471,8 +596,8 @@ router.post('/:id/backtest', isAuthenticated, async (req: Request, res: Response
 router.get('/:id/signals', isAuthenticated, async (req: Request, res: Response) => {
   try {
     const { id } = strategyIdSchema.parse(req.params);
-    const userId = (req as any).user?.id;
-    const limit = Math.min(parseInt((req.query.limit as string) || '50'), 200);
+    const userId = getAuthenticatedUserId(req);
+    const limit = Math.min(parseInt((req.query.limit as string) || '50', 10), 200);
 
     logger.info('[YUKI-STRATEGIES] Fetching signals', {
       userId,
@@ -506,14 +631,17 @@ router.get('/:id/signals', isAuthenticated, async (req: Request, res: Response) 
       [id, userId, limit]
     );
 
-    const signals = signalsResult.rows.map((row: any) => ({
-      id: row.id,
-      executionId: row.execution_id,
-      type: row.event_type,
-      message: row.message,
-      metadata: typeof row.metadata === 'string' ? JSON.parse(row.metadata) : row.metadata,
-      timestamp: row.created_at?.toISOString(),
-    }));
+    const signals = signalsResult.rows.map((row) => {
+      const typedRow = row as SignalRow;
+      return {
+        id: typedRow.id,
+        executionId: typedRow.execution_id,
+        type: typedRow.event_type,
+        message: typedRow.message,
+        metadata: typeof typedRow.metadata === 'string' ? parseJson(typedRow.metadata) : typedRow.metadata,
+        timestamp: typedRow.created_at ? new Date(typedRow.created_at).toISOString() : null,
+      };
+    });
 
     return res.json({
       success: true,
@@ -554,9 +682,13 @@ router.get('/:id/signals', isAuthenticated, async (req: Request, res: Response) 
 router.post('/deploy', isAuthenticated, async (req: Request, res: Response) => {
   try {
     const parsed = compiledDeploySchema.parse(req.body);
-    const userId = (req as any).user?.id;
-    const compiled = parsed.compiled;
+    const userId = getAuthenticatedUserId(req);
+    const compiled = parsed.compiled as CompiledStrategyPayload;
     const deployCfg = parsed.deploymentConfig || {};
+
+    if (!userId) {
+      return res.status(401).json({ success: false, error: 'Unauthorized' });
+    }
 
     // If this deployment enables real trading, enforce 2FA, KYC, and daily quota
     const enablingRealTrading = !!deployCfg.enableRealTrading;
@@ -664,7 +796,11 @@ router.get('/:id/signals/:executionId', isAuthenticated, async (req: Request, re
   try {
     const { id } = strategyIdSchema.parse(req.params);
     const executionId = String(req.params.executionId || '');
-    const userId = (req as any).user?.id;
+    const userId = getAuthenticatedUserId(req);
+
+    if (!userId) {
+      return res.status(401).json({ success: false, error: 'Unauthorized' });
+    }
 
     // Verify execution exists and belongs to user
     const execResult = await pool.query(
@@ -753,15 +889,15 @@ router.post('/save-graph', isAuthenticated, async (req: Request, res: Response) 
     });
 
     const conditionNode = baseNodeSchema.extend({ type: z.literal('condition'), config: z.object({ expression: z.string().optional() }).optional() });
-    const actionNode = baseNodeSchema.extend({ type: z.literal('action'), config: z.object({ actionType: z.string().optional(), params: z.record(z.any()).optional() }).optional() });
+    const actionNode = baseNodeSchema.extend({ type: z.literal('action'), config: z.object({ actionType: z.string().optional(), params: z.record(z.unknown()).optional() }).optional() });
     const riskNode = baseNodeSchema.extend({ type: z.literal('risk'), config: z.object({ stopLossPct: z.number().optional(), takeProfitPct: z.number().optional() }).optional() });
     const executionNode = baseNodeSchema.extend({ type: z.literal('execution'), config: z.object({ schedule: z.string().optional() }).optional() });
-    const logicNode = baseNodeSchema.extend({ type: z.literal('logic'), config: z.record(z.any()).optional() });
+    const logicNode = baseNodeSchema.extend({ type: z.literal('logic'), config: z.record(z.unknown()).optional() });
 
     // Simple, explicit schemas for AI/Vault/Crosschain nodes to avoid arbitrary shapes
     const aiNode = baseNodeSchema.extend({ type: z.literal('ai'), config: z.object({ model: z.string().optional(), prompt: z.string().optional(), temperature: z.number().optional() }).optional() });
     const vaultNode = baseNodeSchema.extend({ type: z.literal('vault'), config: z.object({ vaultId: z.string().optional(), action: z.string().optional() }).optional() });
-    const crosschainNode = baseNodeSchema.extend({ type: z.literal('crosschain'), config: z.object({ chain: z.string().optional(), method: z.string().optional(), params: z.record(z.any()).optional() }).optional() });
+    const crosschainNode = baseNodeSchema.extend({ type: z.literal('crosschain'), config: z.object({ chain: z.string().optional(), method: z.string().optional(), params: z.record(z.unknown()).optional() }).optional() });
 
     const nodeSchema = z.discriminatedUnion('type', [conditionNode, actionNode, riskNode, executionNode, logicNode, aiNode, vaultNode, crosschainNode]);
 
@@ -780,14 +916,14 @@ router.post('/save-graph', isAuthenticated, async (req: Request, res: Response) 
       description: z.string().optional(),
       nodes: z.array(nodeSchema).optional(),
       edges: z.array(edgeSchema).optional(),
-      metadata: z.any().optional(),
+      metadata: z.unknown().optional(),
     });
 
     const saveGraphSchema = z.object({ graph: graphSchema });
 
     const parsed = saveGraphSchema.parse(req.body);
     const graph = parsed.graph;
-    const userId = (req as any).user?.id;
+    const userId = getAuthenticatedUserId(req);
 
     // Try to update existing strategy parameters/layout
     const updateResult = await pool.query(

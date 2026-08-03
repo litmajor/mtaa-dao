@@ -45,7 +45,8 @@
  * ═══════════════════════════════════════════════════════════════════════════════
  */
 
-import express, { Request, Response, NextFunction } from 'express';
+import express from 'express';
+import type { Request, Response, NextFunction } from 'express';
 import { strategyDashboardService } from '../services/strategyDashboardService';
 import { strategyFreqtradeIntegration } from '../services/strategyFreqtradeIntegration';
 import { Logger } from '../utils/logger';
@@ -58,40 +59,108 @@ import { eq } from 'drizzle-orm';
 const logger = Logger.getLogger();
 const router = express.Router();
 
+interface AuthenticatedRequest extends Request {
+  userId?: string;
+}
+
+interface StrategyAllocation {
+  asset: string;
+  weight: number;
+  [key: string]: unknown;
+}
+
+type StrategyRiskLevel = 'low' | 'medium' | 'high';
+
+interface StrategyCreateRequestBody {
+  name?: string;
+  description?: string;
+  allocations?: StrategyAllocation[];
+  rebalanceFrequencyDays?: number;
+  tags?: string[];
+  riskLevel?: StrategyRiskLevel;
+  freqtradeStrategyCode?: string;
+  backtestRequest?: {
+    pair?: string;
+    timeframe?: string;
+    timerange?: string;
+    stakeAmount?: number;
+    enableOptimization?: boolean;
+  };
+}
+
+interface StrategyUpdateRequestBody {
+  name?: string;
+  description?: string;
+  allocations?: StrategyAllocation[];
+  rebalanceFrequencyDays?: number;
+  tags?: string[];
+  riskLevel?: StrategyRiskLevel;
+}
+
+interface StrategyFollowRequestBody {
+  investAmount?: number;
+}
+
+interface StrategyBacktestRequestBody {
+  pair?: string;
+  timeframe?: string;
+  timerange?: string;
+  stakeAmount?: number;
+  startingCapital?: number;
+  enableOptimization?: boolean;
+  engine?: 'freqtrade' | 'native';
+}
+
+interface StrategyDeployRequestBody {
+  dryRun?: boolean;
+}
+
+interface StrategyOptimizeRequestBody {
+  parameters?: Record<string, unknown>;
+  optimizer?: string;
+}
+
+type StrategyAccessResult = {
+  allowed: boolean;
+  error?: string;
+  strategy?: Awaited<ReturnType<typeof strategyDashboardService.getStrategyDetails>>;
+};
+
 /**
  * Helper: Verify strategy ownership or DAO admin access
  */
-async function verifyStrategyAccess(strategyId: string, userId: string, requiredAdmin = false): Promise<{ allowed: boolean; error?: string; strategy?: any }> {
+async function verifyStrategyAccess(strategyId: string, userId: string): Promise<StrategyAccessResult> {
   try {
     const strategy = await strategyDashboardService.getStrategyDetails(strategyId);
     if (!strategy) {
       return { allowed: false, error: 'Strategy not found' };
     }
 
-    // Check ownership
     if (strategy.creator === userId) {
       return { allowed: true, strategy };
     }
 
     return { allowed: false, error: 'Unauthorized: You do not have access to this strategy' };
-  } catch (e) {
+  } catch {
     return { allowed: false, error: 'Error verifying access' };
   }
 }
-
 
 /**
  * Middleware: Require authentication for sensitive operations
  */
 function requireAuth(req: Request, res: Response, next: NextFunction) {
-  const userId = (req as any).userId || req.query.userId;
+  const authReq = req as AuthenticatedRequest;
+  const userId = authReq.userId || (typeof req.query.userId === 'string' ? req.query.userId : undefined);
+
   if (!userId) {
     return res.status(401).json({
       success: false,
       error: 'Unauthorized: User ID required'
     });
   }
-  (req as any).userId = userId;
+
+  authReq.userId = userId;
   next();
 }
 
@@ -117,17 +186,21 @@ function addDeprecationHeaders(deprecationDate: string) {
  */
 router.get('/', async (req: Request, res: Response) => {
   try {
-    const { skip = 0, limit = 20, riskLevel, tags, sortBy = 'createdAt' } = req.query;
+    const skip = Number(req.query.skip ?? 0);
+    const limit = Number(req.query.limit ?? 20);
+    const riskLevel = typeof req.query.riskLevel === 'string' ? req.query.riskLevel : undefined;
+    const tags = typeof req.query.tags === 'string' ? req.query.tags : undefined;
+    const sortBy = typeof req.query.sortBy === 'string' ? req.query.sortBy : 'createdAt';
 
-    const filters: any = {};
+    const filters: { riskLevel?: string; tags?: { contains: string } } = {};
     if (riskLevel) filters.riskLevel = riskLevel;
     if (tags) filters.tags = { contains: tags };
 
     const strategies = await strategyDashboardService.listStrategies({
-      skip: parseInt(skip as string),
-      limit: parseInt(limit as string),
+      skip,
+      limit,
       filters,
-      sortBy: sortBy as string
+      sortBy
     });
 
     res.json({
@@ -149,7 +222,14 @@ router.get('/', async (req: Request, res: Response) => {
  */
 router.post('/', [requireAuth, rateLimitPerUser('strategy-create', 10, '10min')], async (req: Request, res: Response) => {
   try {
-    const userId = (req as any).userId;
+    const userId = (req as AuthenticatedRequest).userId;
+    if (!userId) {
+      return res.status(401).json({
+        success: false,
+        error: 'Unauthorized: User ID required'
+      });
+    }
+
     const {
       name,
       description,
@@ -159,7 +239,7 @@ router.post('/', [requireAuth, rateLimitPerUser('strategy-create', 10, '10min')]
       riskLevel = 'medium',
       freqtradeStrategyCode,
       backtestRequest
-    } = req.body;
+    } = req.body as StrategyCreateRequestBody;
 
     if (!name || !allocations || allocations.length === 0) {
       return res.status(400).json({
@@ -176,12 +256,11 @@ router.post('/', [requireAuth, rateLimitPerUser('strategy-create', 10, '10min')]
       const strategyId = await strategyFreqtradeIntegration.createStrategyWithFreqtrade({
         creatorId: userId,
         name,
-        description,
+        description: description ?? '',
         allocations,
         freqtradeStrategyCode,
+        freqtradeStrategyName: name,
         backtestRequest: backtestRequest ? {
-          strategyId: `temp_${Date.now()}`,
-          strategyCode: freqtradeStrategyCode,
           pair: backtestRequest.pair || 'BTC/USDT',
           timeframe: backtestRequest.timeframe || '1h',
           timerange: backtestRequest.timerange || '20230101-20231231',
@@ -189,17 +268,24 @@ router.post('/', [requireAuth, rateLimitPerUser('strategy-create', 10, '10min')]
           enableOptimization: backtestRequest.enableOptimization || false
         } : undefined
       });
-      strategy = { id: strategyId, ...req.body };
+
+      strategy = await strategyDashboardService.getStrategyDetails(strategyId);
+      if (!strategy) {
+        return res.status(500).json({
+          success: false,
+          error: 'Strategy was created but could not be loaded'
+        });
+      }
     } else {
       // Regular strategy creation
       strategy = await strategyDashboardService.createStrategy({
         creatorId: userId,
         name,
-        description,
+        description: description ?? '',
         allocations,
         rebalanceFrequencyDays,
         tags,
-        riskLevel
+        riskLevel: riskLevel ?? 'medium'
       });
     }
 
@@ -224,7 +310,7 @@ router.post('/', [requireAuth, rateLimitPerUser('strategy-create', 10, '10min')]
 router.get('/:strategyId', async (req: Request, res: Response) => {
   try {
     const { strategyId } = req.params;
-    const userId = (req as any).userId;
+    const userId = (req as AuthenticatedRequest).userId;
 
     const strategy = await strategyDashboardService.getStrategyDetails(strategyId);
 
@@ -261,9 +347,16 @@ router.get('/:strategyId', async (req: Request, res: Response) => {
  */
 router.put('/:strategyId', [requireAuth, rateLimitPerUser('strategy-update', 30, '10min')], async (req: Request, res: Response) => {
   try {
-    const userId = (req as any).userId;
+    const userId = (req as AuthenticatedRequest).userId;
+    if (!userId) {
+      return res.status(401).json({
+        success: false,
+        error: 'Unauthorized: User ID required'
+      });
+    }
+
     const { strategyId } = req.params;
-    const { name, description, allocations, rebalanceFrequencyDays, tags, riskLevel } = req.body;
+    const { name, description, tags, riskLevel } = req.body as StrategyUpdateRequestBody;
 
     // Verify ownership
     const strategy = await strategyDashboardService.getStrategyDetails(strategyId);
@@ -278,7 +371,7 @@ router.put('/:strategyId', [requireAuth, rateLimitPerUser('strategy-update', 30,
       name,
       description,
       tags,
-      riskLevel
+      riskLevel: riskLevel ?? 'medium'
     });
 
     res.json({
@@ -301,7 +394,14 @@ router.put('/:strategyId', [requireAuth, rateLimitPerUser('strategy-update', 30,
  */
 router.delete('/:strategyId', [requireAuth, rateLimitPerUser('strategy-delete', 10, '10min')], async (req: Request, res: Response) => {
   try {
-    const userId = (req as any).userId;
+    const userId = (req as AuthenticatedRequest).userId;
+    if (!userId) {
+      return res.status(401).json({
+        success: false,
+        error: 'Unauthorized: User ID required'
+      });
+    }
+
     const { strategyId } = req.params;
 
     // Verify ownership
@@ -339,9 +439,16 @@ router.delete('/:strategyId', [requireAuth, rateLimitPerUser('strategy-delete', 
  */
 router.post('/:strategyId/follow', [requireAuth, rateLimitPerUser('strategy-follow', 30, '5min')], async (req: Request, res: Response) => {
   try {
-    const userId = (req as any).userId;
+    const userId = (req as AuthenticatedRequest).userId;
+    if (!userId) {
+      return res.status(401).json({
+        success: false,
+        error: 'Unauthorized: User ID required'
+      });
+    }
+
     const { strategyId } = req.params;
-    const { investAmount = 100 } = req.body;
+    const { investAmount = 100 } = req.body as StrategyFollowRequestBody;
 
     const result = await strategyDashboardService.followStrategy(strategyId, userId, investAmount);
 
@@ -365,7 +472,14 @@ router.post('/:strategyId/follow', [requireAuth, rateLimitPerUser('strategy-foll
  */
 router.delete('/:strategyId/follow', [requireAuth, rateLimitPerUser('strategy-unfollow', 30, '5min')], async (req: Request, res: Response) => {
   try {
-    const userId = (req as any).userId;
+    const userId = (req as AuthenticatedRequest).userId;
+    if (!userId) {
+      return res.status(401).json({
+        success: false,
+        error: 'Unauthorized: User ID required'
+      });
+    }
+
     const { strategyId } = req.params;
 
     await strategyDashboardService.unfollowStrategy(userId, strategyId);
@@ -439,15 +553,24 @@ router.get('/:strategyId/backtest', async (req: Request, res: Response) => {
  */
 router.post('/:strategyId/backtest', [requireAuth, rateLimitPerUser('strategy-backtest', 20, '10min')], async (req: Request, res: Response) => {
   try {
-    const userId = (req as any).userId;
+    const userId = (req as AuthenticatedRequest).userId;
+    if (!userId) {
+      return res.status(401).json({
+        success: false,
+        error: 'Unauthorized: User ID required'
+      });
+    }
+
     const { strategyId } = req.params;
     const {
       pair = 'BTC/USDT',
       timeframe = '1h',
       timerange = '20230101-20231231',
       stakeAmount = 100,
-      enableOptimization = false
-    } = req.body;
+      startingCapital = 10000,
+      enableOptimization = false,
+      engine = 'freqtrade'
+    } = req.body as StrategyBacktestRequestBody;
 
     // Queue backtest job
     const jobId = await jobQueueService.queueJob('strategy-backtest', {
@@ -457,7 +580,9 @@ router.post('/:strategyId/backtest', [requireAuth, rateLimitPerUser('strategy-ba
       timeframe,
       timerange,
       stakeAmount,
-      enableOptimization
+      startingCapital,
+      enableOptimization,
+      engine
     }, {
       priority: 6,
       timeout: 1800000 // 30 minute timeout for backtest
@@ -564,7 +689,14 @@ router.get('/rankings/:metric', async (req: Request, res: Response) => {
  */
 router.post('/:strategyId/rebalance', [requireAuth, rateLimitPerUser('strategy-rebalance', 10, '10min')], async (req: Request, res: Response) => {
   try {
-    const userId = (req as any).userId;
+    const userId = (req as AuthenticatedRequest).userId;
+    if (!userId) {
+      return res.status(401).json({
+        success: false,
+        error: 'Unauthorized: User ID required'
+      });
+    }
+
     const { strategyId } = req.params;
 
     const result = await strategyDashboardService.rebalanceStrategy(strategyId);
@@ -589,9 +721,16 @@ router.post('/:strategyId/rebalance', [requireAuth, rateLimitPerUser('strategy-r
  */
 router.post('/:strategyId/deploy', [requireAuth, rateLimitPerUser('strategy-deploy', 10, '10min')], async (req: Request, res: Response) => {
   try {
-    const userId = (req as any).userId;
+    const userId = (req as AuthenticatedRequest).userId;
+    if (!userId) {
+      return res.status(401).json({
+        success: false,
+        error: 'Unauthorized: User ID required'
+      });
+    }
+
     const { strategyId } = req.params;
-    const { dryRun = false } = req.body;
+    const { dryRun = false } = req.body as StrategyDeployRequestBody;
 
     const result = await strategyFreqtradeIntegration.deployStrategy(
       strategyId,
@@ -619,9 +758,16 @@ router.post('/:strategyId/deploy', [requireAuth, rateLimitPerUser('strategy-depl
  */
 router.post('/:strategyId/optimize', [requireAuth, rateLimitPerUser('strategy-optimize', 10, '10min')], async (req: Request, res: Response) => {
   try {
-    const userId = (req as any).userId;
+    const userId = (req as AuthenticatedRequest).userId;
+    if (!userId) {
+      return res.status(401).json({
+        success: false,
+        error: 'Unauthorized: User ID required'
+      });
+    }
+
     const { strategyId } = req.params;
-    const { parameters, optimizer = 'hyperopt' } = req.body;
+    const { parameters, optimizer = 'hyperopt' } = req.body as StrategyOptimizeRequestBody;
 
     // Queue optimization job
     const jobId = await jobQueueService.queueJob('strategy-optimize', {

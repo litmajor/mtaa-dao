@@ -10,6 +10,17 @@
       "coingeckoId": "celo",
       "category": "native",
       "celoNativeOnly": true
+    },
+    {
+      "symbol": "stCELO",
+      "name": "Staked Celo",
+      "address": "0x2F8311032b500d23ED78C53C3d7c505f5CebA1e3",
+      "decimals": 18,
+      "chain": "celo",
+      "chainId": 42220,
+      "coingeckoId": "staked-celo",
+      "category": "liquid_staking",
+      "celoNativeOnly": true
     }
   ],
   "stablecoins": [
@@ -38,7 +49,7 @@
     {
       "symbol": "cKES",
       "name": "Celo Kenyan Shilling",
-      "address": "0x456235e1159dC4a8ac8339ee4D08853a5e2A0dB6",
+      "address": "0x456a3D042C0DbD3db53D5489e98dFb038553B0d0",
       "decimals": 18,
       "chain": "celo",
       "chainId": 42220,
@@ -49,11 +60,33 @@
     {
       "symbol": "cREAL",
       "name": "Celo Brazilian Real",
-      "address": "0xe8537ead75ff72da7c5a4d8d5fFd51053c6e62e5",
+      "address": "0xe8537a3d056DA446677B9E9d6c5dB704EaAb4787",
       "decimals": 18,
       "chain": "celo",
       "chainId": 42220,
       "coingeckoId": "celo-brazilian-real",
+      "category": "stablecoin",
+      "celoNativeOnly": true
+    },
+    {
+      "symbol": "eXOF",
+      "name": "Celo West African CFA Franc",
+      "address": "0x73A210632f4F292212260dC5a4527FF0A37D83f9",
+      "decimals": 18,
+      "chain": "celo",
+      "chainId": 42220,
+      "coingeckoId": "celo-xof",
+      "category": "stablecoin",
+      "celoNativeOnly": true
+    },
+    {
+      "symbol": "cCOP",
+      "name": "Celo Colombian Peso",
+      "address": "0x7890C05a2e379Acf3f4C719C6dCD1a6D6aBD6f6f",
+      "decimals": 18,
+      "chain": "celo",
+      "chainId": 42220,
+      "coingeckoId": "celo-colombian-peso",
       "category": "stablecoin",
       "celoNativeOnly": true
     },
@@ -71,8 +104,8 @@
     },
     {
       "symbol": "USDT",
-      "name": "Tether USD (Bridged Celo)",
-      "address": "0x88eeC49252c8cbc039DCdB394c0c2BA2f1637EA0",
+      "name": "Tether USD (Native Celo)",
+      "address": "0x48065fbBE25f71C9282ddf5e1cD6D6A887483D5e",
       "decimals": 6,
       "chain": "celo",
       "chainId": 42220,
@@ -86,7 +119,7 @@
     {
       "symbol": "WETH",
       "name": "Wrapped Ether (Celo)",
-      "address": "0x2DEf4285787d58a2f811AF50739649C0DdA7Df1B",
+      "address": "0xD221812de1BD094f35587EE8E174B07B6167D9Af",
       "decimals": 18,
       "chain": "celo",
       "chainId": 42220,
@@ -123,7 +156,7 @@
   "governance": [
     {
       "symbol": "UBE",
-      "name": "Ubeswap",
+      "name": "Ubeswap Token",
       "address": "0x00Be915B9dCf56a3CBE739D9B9c202ca692409EC",
       "decimals": 18,
       "chain": "celo",
@@ -140,6 +173,17 @@
       "chain": "celo",
       "chainId": 42220,
       "coingeckoId": "mtaa",
+      "category": "governance",
+      "celoNativeOnly": true
+    },
+    {
+      "symbol": "MOO",
+      "name": "Moola Market Token",
+      "address": "0x17700282592D6917F6A73D0bF8AcCf4D578c131e",
+      "decimals": 18,
+      "chain": "celo",
+      "chainId": 42220,
+      "coingeckoId": "moola-market",
       "category": "governance",
       "celoNativeOnly": true
     }

@@ -1,54 +1,58 @@
-import { sql, eq, isNull, and, gte, lte } from 'drizzle-orm';
+import { sql } from 'drizzle-orm';
 import {
-  ReversibleAction,
   ReversibilityStatus,
   ActionSeverity,
   ActorType,
   ReversalReason,
-  CreateReversibleActionDTO,
-  ReverseActionDTO,
-  ConfirmActionDTO,
-  ExecuteActionDTO,
-  ReversibilityReport,
 } from '../types/reversibility';
+import type {ReversibleAction,  CreateReversibleActionDTO,ReverseActionDTO,ConfirmActionDTO,ExecuteActionDTO,ReversibilityReport,} from '../types/reversibility';
 import { v4 as uuidv4 } from 'uuid';
 
 /**
  * ReversibilityService
- * 
- * Core service for implementing universal reversibility pattern.
- * Manages the complete lifecycle of reversible high-power actions,
- * including grace periods, confirmations, reversals, and audit trails.
- * 
- * This is foundational for all reversible actions across the system:
- * - Proposal executions
- * - Admin destructive actions
- * - Agent deployments
- * - Governance decisions
- * - Escrow releases
- * - etc.
- */
-export class ReversibilityService {
-  private db: any;
+ *
+ 
+  * This service manages reversible actions, including creation, confirmation
+  * grace period handling, execution, reversal, and reporting. It interacts with the database to persist action states
+  * and approvals.**/
 
-  constructor(database: any) {
+export class ReversibilityService {
+  private db: { execute: (query: unknown) => Promise<{ rows: Array<Record<string, unknown>> }> };
+
+  constructor(database: { execute: (query: unknown) => Promise<{ rows: Array<Record<string, unknown>> }> }) {
     this.db = database;
   }
 
-  /**
-   * Create a new reversible action
-   * Initializes action in INITIATED state and validates all requirements
-   */
   async createReversibleAction(dto: CreateReversibleActionDTO): Promise<ReversibleAction> {
     const id = uuidv4();
     const now = new Date();
 
-    // Validate severity and derive grace period if not provided
     const confirmationTimeout = dto.confirmationRequirement.confirmationTimeoutMinutes;
     const gracePeriodStart = new Date(now.getTime() + confirmationTimeout * 60000);
     const gracePeriodEnd = new Date(
       gracePeriodStart.getTime() + dto.gracePeriodConfig.durationHours * 3600000
     );
+
+    const approverRoles = dto.confirmationRequirement.approverRoles ?? [];
+    const gracePeriodReminderHours = dto.gracePeriodConfig.reminderHoursBefore ?? [];
+    const reversibleFields = dto.reversibilityScope.fields ?? [];
+    const emergencyStopAllowedActors = dto.emergencyStopConfig?.allowedActors ?? ['SUPER_ADMIN', 'GOVERNANCE', 'SYSTEM'];
+
+    const approverRolesSql = approverRoles.length > 0
+      ? sql`ARRAY[${sql.join(approverRoles.map((role) => sql`${role}`), sql`, `)}]::text[]`
+      : sql`ARRAY[]::text[]`;
+
+    const gracePeriodReminderHoursSql = gracePeriodReminderHours.length > 0
+      ? sql`ARRAY[${sql.join(gracePeriodReminderHours.map((hour) => sql`${hour}`), sql`, `)}]::integer[]`
+      : sql`ARRAY[]::integer[]`;
+
+    const reversibleFieldsSql = reversibleFields.length > 0
+      ? sql`ARRAY[${sql.join(reversibleFields.map((field) => sql`${field}`), sql`, `)}]::text[]`
+      : sql`ARRAY[]::text[]`;
+
+    const emergencyStopAllowedActorsSql = emergencyStopAllowedActors.length > 0
+      ? sql`ARRAY[${sql.join(emergencyStopAllowedActors.map((actor) => sql`${actor}`), sql`, `)}]::text[]`
+      : sql`ARRAY[]::text[]`;
 
     try {
       const result = await this.db.execute(sql`
@@ -72,27 +76,27 @@ export class ReversibilityService {
           ${dto.initiator.id}, ${dto.initiator.type}, ${dto.initiator.role || null}, ${dto.initiator.email || null},
           ${dto.affectedEntity.type}, ${dto.affectedEntity.id}, ${dto.affectedEntity.name || null},
           ${JSON.stringify(dto.actionPayload)}, ${JSON.stringify(dto.beforeState)}, ${JSON.stringify(dto.afterState)},
-          ${dto.confirmationRequirement.type}, ${dto.confirmationRequirement.requiredApprovals || null},
-          ${dto.confirmationRequirement.approverRoles ? JSON.stringify(dto.confirmationRequirement.approverRoles) : null},
+          ${dto.confirmationRequirement.type}, ${dto.confirmationRequirement.requiredApprovals ?? null},
+          ${approverRolesSql},
           ${dto.confirmationRequirement.confirmationTimeoutMinutes},
           ${dto.gracePeriodConfig.durationHours},
-          ${JSON.stringify(dto.gracePeriodConfig.reminderHoursBefore)},
+          ${gracePeriodReminderHoursSql},
           ${dto.gracePeriodConfig.userCanAccelerate},
           ${dto.gracePeriodConfig.autoExecuteAtDeadline},
-          ${JSON.stringify(dto.reversibilityScope.fields)},
+          ${reversibleFieldsSql},
           ${dto.reversibilityScope.initiatorCanReverse},
           ${dto.reversibilityScope.adminCanReverse},
           ${dto.reversibilityScope.governanceCanReverse},
           ${dto.reversibilityScope.minimumRoleToReverse || null},
-          ${dto.reversibilityScope.reversalDeadlineHours || null},
+          ${dto.reversibilityScope.reversalDeadlineHours ?? null},
           ${dto.reversibilityScope.partialReversalAllowed},
           ${dto.emergencyStopConfig?.enabled ?? true},
-          ${JSON.stringify(dto.emergencyStopConfig?.allowedActors || ['SUPER_ADMIN', 'GOVERNANCE'])},
+          ${emergencyStopAllowedActorsSql},
           ${dto.emergencyStopConfig?.requiresApproval ?? false},
           ${dto.emergencyStopConfig?.activeDurationHours ?? 24},
-          ${dto.emergencyStopConfig?.stopAction || 'PAUSE'},
+          ${dto.emergencyStopConfig?.stopAction ?? 'PAUSE'},
           ${dto.emergencyStopConfig?.appealable ?? true},
-          ${JSON.stringify(dto.metadata || {})},
+          ${JSON.stringify(dto.metadata ?? {})},
           ${now}
         )
         RETURNING *
@@ -105,9 +109,6 @@ export class ReversibilityService {
     }
   }
 
-  /**
-   * Get action by ID
-   */
   async getActionById(actionId: string): Promise<ReversibleAction | null> {
     try {
       const result = await this.db.execute(sql`
@@ -122,10 +123,6 @@ export class ReversibilityService {
     }
   }
 
-  /**
-   * Confirm an action (move from INITIATED to PENDING_CONFIRMATION)
-   * Validates confirmation requirements are met
-   */
   async confirmAction(dto: ConfirmActionDTO): Promise<ReversibleAction> {
     const action = await this.getActionById(dto.actionId);
     if (!action) throw new Error('Action not found');
@@ -134,12 +131,6 @@ export class ReversibilityService {
       throw new Error(`Action must be in INITIATED status to confirm, current: ${action.status}`);
     }
 
-    // TODO: Validate confirmation data based on confirmation type
-    // - PIN verification
-    // - Email token validation
-    // - Signature verification
-    // - etc.
-
     const now = new Date();
     const gracePeriodStart = new Date(now.getTime() + action.confirmationRequirement.confirmationTimeoutMinutes * 60000);
 
@@ -147,7 +138,7 @@ export class ReversibilityService {
       await this.db.execute(sql`
         UPDATE action_reversals
         SET 
-          status = ${'PENDING_CONFIRMATION'},
+          status = ${ReversibilityStatus.PENDING_CONFIRMATION},
           confirmed_at = ${now},
           grace_period_starts_at = ${gracePeriodStart},
           grace_period_ends_at = ${new Date(
@@ -164,10 +155,6 @@ export class ReversibilityService {
     }
   }
 
-  /**
-   * Move action into grace period
-   * Called automatically when confirmation timeout expires or manually by admin
-   */
   async enterGracePeriod(actionId: string): Promise<ReversibleAction> {
     const action = await this.getActionById(actionId);
     if (!action) throw new Error('Action not found');
@@ -182,7 +169,7 @@ export class ReversibilityService {
       await this.db.execute(sql`
         UPDATE action_reversals
         SET 
-          status = ${'GRACE_PERIOD'},
+          status = ${ReversibilityStatus.GRACE_PERIOD},
           updated_at = ${now}
         WHERE id = ${actionId}
       `);
@@ -194,32 +181,24 @@ export class ReversibilityService {
     }
   }
 
-  /**
-   * Reverse an action (cancel it entirely)
-   * Can only be done during grace period or if reversal deadline not passed
-   */
   async reverseAction(dto: ReverseActionDTO): Promise<ReversibleAction> {
     const action = await this.getActionById(dto.actionId);
     if (!action) throw new Error('Action not found');
 
-    // Check if action is still reversible
     const now = new Date();
     if (action.reversalDetails) {
       throw new Error('Action has already been reversed');
     }
 
-    // Validate reversal is allowed
     const isReversalAllowed = this.checkReversalPermission(action, dto.reversedBy);
     if (!isReversalAllowed) {
       throw new Error(`User role ${dto.reversedBy.role} cannot reverse this action`);
     }
 
-    // Check Grace Period
     if (action.status === ReversibilityStatus.GRACE_PERIOD ||
         action.status === ReversibilityStatus.REVERSIBLE_UNTIL) {
-      // Valid for reversal - good
+      // Valid for reversal
     } else if (action.status === ReversibilityStatus.EXECUTED && action.executedAt) {
-      // Check if still within reversal deadline
       const reversalDeadline = action.reversibilityScope.reversalDeadlineHours
         ? new Date(action.executedAt.getTime() + action.reversibilityScope.reversalDeadlineHours * 3600000)
         : null;
@@ -234,20 +213,20 @@ export class ReversibilityService {
     }
 
     try {
-      const now = new Date();
+      const now2 = new Date();
 
       await this.db.execute(sql`
         UPDATE action_reversals
         SET 
-          status = ${'REVERSED'},
-          reversed_at = ${now},
+          status = ${ReversibilityStatus.REVERSED},
+          reversed_at = ${now2},
           reversed_by_id = ${dto.reversedBy.id},
           reversed_by_type = ${dto.reversedBy.type},
           reversed_by_role = ${dto.reversedBy.role || null},
           reversal_reason = ${dto.reason},
-          reversal_reason_text = ${dto.reversalReason},
-          reversal_payload = ${JSON.stringify(dto.reversalPayload || {})},
-          updated_at = ${now}
+          reversal_reason_text = ${dto.reversalReason || null},
+          reversal_payload = ${JSON.stringify(dto.reversalPayload ?? {})},
+          updated_at = ${now2}
         WHERE id = ${dto.actionId}
       `);
 
@@ -259,19 +238,20 @@ export class ReversibilityService {
   }
 
   /**
-   * Execute an action (move to EXECUTED state)
-   * Can be called after grace period ends or manually by authorized users
+   * Executes the action after the grace period has ended. This method should be called by the system or an authorized actor to finalize the action.
    */
   async executeAction(dto: ExecuteActionDTO): Promise<ReversibleAction> {
     const action = await this.getActionById(dto.actionId);
     if (!action) throw new Error('Action not found');
 
-    // Validate status allows execution
+    if (action.status === ReversibilityStatus.EXECUTED) {
+      return action;
+    }
+
     if (action.status === ReversibilityStatus.INITIATED || action.status === ReversibilityStatus.PENDING_CONFIRMATION) {
       throw new Error(`Action must complete confirmation and grace period before execution, current: ${action.status}`);
     }
 
-    // Check grace period if skip not allowed
     if (!dto.skipGracePeriod && action.gracePeriodEndsAt && new Date() < action.gracePeriodEndsAt) {
       throw new Error('Grace period has not ended yet');
     }
@@ -282,12 +262,18 @@ export class ReversibilityService {
         ? new Date(now.getTime() + action.reversibilityScope.reversalDeadlineHours * 3600000)
         : null;
 
+      const result = dto.executionResult;
+
       await this.db.execute(sql`
         UPDATE action_reversals
         SET 
-          status = ${'EXECUTED'},
+          status = ${ReversibilityStatus.EXECUTED},
           executed_at = ${now},
           irreversible_at = ${irreversibleAt},
+          execution_success = ${result?.success ?? null},
+          execution_error = ${result?.error ?? null},
+          execution_transaction_hash = ${result?.transactionHash ?? null},
+          execution_block_number = ${result?.blockNumber ?? null},
           updated_at = ${now}
         WHERE id = ${dto.actionId}
       `);
@@ -299,10 +285,6 @@ export class ReversibilityService {
     }
   }
 
-  /**
-   * Mark action as irreversible (passed all reversal deadlines)
-   * Called via scheduled job or manual admin override
-   */
   async markIrreversible(actionId: string, reason?: string): Promise<ReversibleAction> {
     const action = await this.getActionById(actionId);
     if (!action) throw new Error('Action not found');
@@ -313,7 +295,7 @@ export class ReversibilityService {
       await this.db.execute(sql`
         UPDATE action_reversals
         SET 
-          status = ${'IRREVERSIBLE'},
+          status = ${ReversibilityStatus.IRREVERSIBLE},
           irreversible_at = ${now},
           metadata = metadata || jsonb_build_object('marked_irreversible_reason', ${reason || 'reversal deadline passed'}),
           updated_at = ${now}
@@ -327,9 +309,6 @@ export class ReversibilityService {
     }
   }
 
-  /**
-   * Record an approval for multi-signature actions
-   */
   async recordApproval(
     actionId: string,
     approverId: string,
@@ -351,9 +330,34 @@ export class ReversibilityService {
     }
   }
 
-  /**
-   * Get all approvals for an action
-   */
+  async checkAndAutoConfirmIfApprovalsMet(actionId: string): Promise<ReversibleAction | null> {
+    const action = await this.getActionById(actionId);
+    if (!action) {
+      throw new Error('Action not found');
+    }
+
+    if (action.confirmationRequirement.type !== 'MULTI_SIG') {
+      return null;
+    }
+
+    const requiredApprovals = action.confirmationRequirement.requiredApprovals ?? 1;
+    const approvals = await this.getApprovals(actionId);
+
+    if (approvals.length < requiredApprovals) {
+      return null;
+    }
+
+    if (action.status === ReversibilityStatus.INITIATED) {
+      await this.confirmAction({ actionId });
+    }
+
+    if (action.status === ReversibilityStatus.PENDING_CONFIRMATION || action.status === ReversibilityStatus.INITIATED) {
+      return this.enterGracePeriod(actionId);
+    }
+
+    return action;
+  }
+
   async getApprovals(actionId: string): Promise<Array<{ approverId: string; approverRole: string; approvedAt: Date; comment?: string }>> {
     try {
       const result = await this.db.execute(sql`
@@ -363,11 +367,11 @@ export class ReversibilityService {
         ORDER BY approved_at ASC
       `);
 
-      return result.rows.map((row: any) => ({
-        approverId: row.approver_id,
-        approverRole: row.approver_role,
-        approvedAt: row.approved_at,
-        comment: row.comment,
+      return result.rows.map((row: Record<string, unknown>) => ({
+        approverId: row.approver_id as string,
+        approverRole: row.approver_role as string,
+        approvedAt: row.approved_at as Date,
+        comment: row.comment as string | undefined,
       }));
     } catch (error) {
       console.error('Failed to fetch approvals:', error);
@@ -375,9 +379,6 @@ export class ReversibilityService {
     }
   }
 
-  /**
-   * Get actions pending in grace period (need attention soon)
-   */
   async getActionsInGracePeriod(limit: number = 100, offset: number = 0): Promise<ReversibleAction[]> {
     try {
       const result = await this.db.execute(sql`
@@ -395,7 +396,7 @@ export class ReversibilityService {
   }
 
   /**
-   * Get actions by type with filtering
+   * Fetches actions filtered by action type and optionally by status. Supports pagination through limit and offset parameters.
    */
   async getActionsByType(
     actionType: string,
@@ -404,17 +405,19 @@ export class ReversibilityService {
     offset: number = 0
   ): Promise<ReversibleAction[]> {
     try {
-      let whereClause = `action_type = ${actionType}`;
-      if (status) {
-        whereClause += ` AND status = ${status}`;
-      }
-
-      const result = await this.db.execute(sql`
-        SELECT * FROM action_reversals
-        WHERE ${sql.raw(whereClause)}
-        ORDER BY initiated_at DESC
-        LIMIT ${limit} OFFSET ${offset}
-      `);
+      const result = status
+        ? await this.db.execute(sql`
+            SELECT * FROM action_reversals
+            WHERE action_type = ${actionType} AND status = ${status}
+            ORDER BY initiated_at DESC
+            LIMIT ${limit} OFFSET ${offset}
+          `)
+        : await this.db.execute(sql`
+            SELECT * FROM action_reversals
+            WHERE action_type = ${actionType}
+            ORDER BY initiated_at DESC
+            LIMIT ${limit} OFFSET ${offset}
+          `);
 
       return result.rows.map((row: any) => this.parseActionRow(row));
     } catch (error) {
@@ -423,9 +426,6 @@ export class ReversibilityService {
     }
   }
 
-  /**
-   * Get actions for a specific entity (affected_entity_id)
-   */
   async getActionsForEntity(
     entityType: string,
     entityId: string,
@@ -447,16 +447,12 @@ export class ReversibilityService {
     }
   }
 
-  /**
-   * Generate compliance report for an action
-   */
   async generateReversibilityReport(actionId: string): Promise<ReversibilityReport> {
     const action = await this.getActionById(actionId);
     if (!action) throw new Error('Action not found');
 
     const approvals = await this.getApprovals(actionId);
 
-    // Get status timeline
     let statusTimeline: Array<{ status: ReversibilityStatus; timestamp: Date; actor?: { id: string; role?: string } }> = [];
     try {
       const result = await this.db.execute(sql`
@@ -466,10 +462,10 @@ export class ReversibilityService {
         ORDER BY changed_at ASC
       `);
 
-      statusTimeline = result.rows.map((row: any) => ({
-        status: row.new_status,
-        timestamp: row.changed_at,
-        actor: row.changed_by_id ? { id: row.changed_by_id, role: row.changed_by_role } : undefined,
+      statusTimeline = result.rows.map((row: Record<string, unknown>) => ({
+        status: row.new_status as ReversibilityStatus,
+        timestamp: row.changed_at as Date,
+        actor: row.changed_by_id ? { id: row.changed_by_id as string, role: row.changed_by_role as string | undefined } : undefined,
       }));
     } catch (error) {
       console.error('Failed to fetch status timeline:', error);
@@ -516,110 +512,105 @@ export class ReversibilityService {
     };
   }
 
-  /**
-   * Private helper: Check if actor has permission to reverse this action
-   */
   private checkReversalPermission(action: ReversibleAction, actor: { id: string; type: ActorType; role?: string }): boolean {
     if (action.reversibilityScope.initiatorCanReverse && actor.id === action.initiator.id) {
       return true;
     }
-
     if (action.reversibilityScope.adminCanReverse && actor.role === 'ADMIN') {
       return true;
     }
-
     if (action.reversibilityScope.governanceCanReverse && actor.type === ActorType.DAO_GOVERNANCE) {
       return true;
     }
-
     if (action.reversibilityScope.minimumRoleToReverse === actor.role) {
       return true;
     }
-
     return false;
   }
 
-  /**
-   * Private helper: Parse database row to ReversibleAction object
-   */
-  private parseActionRow(row: any): ReversibleAction {
+  private parseActionRow(row: Record<string, unknown>): ReversibleAction {
+    const status = row.status as ReversibilityStatus;
+    const irreversibleAt = row.irreversible_at ? new Date(row.irreversible_at as Date | string) : undefined;
     const isCurrentlyCancelable = [
       ReversibilityStatus.GRACE_PERIOD,
       ReversibilityStatus.REVERSIBLE_UNTIL,
       ReversibilityStatus.PENDING_CONFIRMATION,
-    ].includes(row.status) ||
-      (row.status === ReversibilityStatus.EXECUTED && row.irreversible_at && new Date() < row.irreversible_at);
+    ].includes(status) ||
+      (status === ReversibilityStatus.EXECUTED && irreversibleAt !== undefined && new Date() < irreversibleAt);
+
+    const executionSuccess = row.execution_success as boolean | null | undefined;
+    const reversalTimestamp = row.reversed_at as Date | undefined;
 
     return {
-      id: row.id,
-      actionType: row.action_type,
-      description: row.description,
-      status: row.status,
-      severity: row.severity,
+      id: row.id as string,
+      actionType: row.action_type as string,
+      description: row.description as string,
+      status,
+      severity: row.severity as ActionSeverity,
       initiator: {
-        id: row.initiator_id,
-        type: row.initiator_type,
-        role: row.initiator_role,
-        email: row.initiator_email,
+        id: row.initiator_id as string,
+        type: row.initiator_type as ActorType,
+        role: row.initiator_role as string | undefined,
+        email: row.initiator_email as string | undefined,
       },
       affectedEntity: {
-        type: row.affected_entity_type,
-        id: row.affected_entity_id,
-        name: row.affected_entity_name,
+        type: row.affected_entity_type as string,
+        id: row.affected_entity_id as string,
+        name: row.affected_entity_name as string | undefined,
       },
-      actionPayload: row.action_payload,
-      beforeState: row.before_state,
-      afterState: row.after_state,
+      actionPayload: row.action_payload as Record<string, unknown>,
+      beforeState: row.before_state as Record<string, unknown>,
+      afterState: row.after_state as Record<string, unknown>,
       confirmationRequirement: {
-        type: row.confirmation_type,
-        requiredApprovals: row.required_approvals,
-        approverRoles: row.approver_roles,
-        confirmationTimeoutMinutes: row.confirmation_timeout_minutes,
+        type: row.confirmation_type as ReversibleAction['confirmationRequirement']['type'],
+        requiredApprovals: row.required_approvals as number | undefined,
+        approverRoles: row.approver_roles as string[] | undefined,
+        confirmationTimeoutMinutes: row.confirmation_timeout_minutes as number,
       },
       gracePeriodConfig: {
-        durationHours: row.grace_period_duration_hours,
-        reminderHoursBefore: row.grace_period_reminder_hours,
-        userCanAccelerate: row.user_can_accelerate,
-        autoExecuteAtDeadline: row.auto_execute_at_deadline,
+        durationHours: row.grace_period_duration_hours as number,
+        reminderHoursBefore: row.grace_period_reminder_hours as number[],
+        userCanAccelerate: row.user_can_accelerate as boolean,
+        autoExecuteAtDeadline: row.auto_execute_at_deadline as boolean,
       },
       reversibilityScope: {
-        fields: row.reversible_fields,
-        initiatorCanReverse: row.initiator_can_reverse,
-        adminCanReverse: row.admin_can_reverse,
-        governanceCanReverse: row.governance_can_reverse,
-        minimumRoleToReverse: row.minimum_role_to_reverse,
-        reversalDeadlineHours: row.reversal_deadline_hours,
-        partialReversalAllowed: row.partial_reversal_allowed,
+        fields: row.reversible_fields as string[],
+        initiatorCanReverse: row.initiator_can_reverse as boolean,
+        adminCanReverse: row.admin_can_reverse as boolean,
+        governanceCanReverse: row.governance_can_reverse as boolean,
+        minimumRoleToReverse: row.minimum_role_to_reverse as string | undefined,
+        reversalDeadlineHours: row.reversal_deadline_hours as number | undefined,
+        partialReversalAllowed: row.partial_reversal_allowed as boolean,
       },
-      initiatedAt: row.initiated_at,
-      confirmedAt: row.confirmed_at,
-      gracePeriodStartsAt: row.grace_period_starts_at,
-      gracePeriodEndsAt: row.grace_period_ends_at,
-      executedAt: row.executed_at,
-      reversedAt: row.reversed_at,
-      irreversibleAt: row.irreversible_at,
-      executionResult: row.execution_success !== null
+      initiatedAt: row.initiated_at as Date,
+      confirmedAt: row.confirmed_at as Date | undefined,
+      gracePeriodStartsAt: row.grace_period_starts_at as Date | undefined,
+      gracePeriodEndsAt: row.grace_period_ends_at as Date | undefined,
+      executedAt: row.executed_at as Date | undefined,
+      reversedAt: reversalTimestamp,
+      irreversibleAt: row.irreversible_at as Date | undefined,
+      executionResult: executionSuccess !== null && executionSuccess !== undefined
         ? {
-            success: row.execution_success,
-            error: row.execution_error,
-            transactionHash: row.execution_transaction_hash,
-            blockNumber: row.execution_block_number,
+            success: executionSuccess,
+            error: row.execution_error as string | undefined,
+            transactionHash: row.execution_transaction_hash as string | undefined,
+            blockNumber: row.execution_block_number as number | undefined,
           }
         : undefined,
-      reversalDetails: row.reversed_at
+      reversalDetails: reversalTimestamp
         ? {
-            reason: row.reversal_reason,
+            reason: row.reversal_reason as ReversalReason,
             reversedBy: {
-              id: row.reversed_by_id,
-              type: row.reversed_by_type,
-              role: row.reversed_by_role,
+              id: row.reversed_by_id as string,
+              type: row.reversed_by_type as ActorType,
+              role: row.reversed_by_role as string | undefined,
             },
-            reversalReason: row.reversal_reason_text,
-            reversalPayload: row.reversal_payload,
-            reversalTransactionHash: row.reversal_transaction_hash,
+            reversalReason: row.reversal_reason_text as string,
+            reversalPayload: row.reversal_payload as Record<string, unknown> | undefined,
+            reversalTransactionHash: row.reversal_transaction_hash as string | undefined,
           }
         : undefined,
-      metadata: row.metadata,
+      metadata: row.metadata as ReversibleAction['metadata'],
       isCurrentlyCancelable,
     };
   }

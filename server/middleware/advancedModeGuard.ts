@@ -14,11 +14,12 @@
  * }
  */
 
-import { Request, Response, NextFunction } from 'express';
+import type { Request, Response, NextFunction } from 'express';
 import { db } from '../storage';
 import { users } from '../../shared/schema';
 import { eq } from 'drizzle-orm';
 import { logger } from '../utils/logger';
+import { getRequestUserId } from '../utils/requestUser';
 
 /**
  * Middleware: Check if user has advanced mode enabled
@@ -32,9 +33,9 @@ export async function advancedModeGuard(
   res: Response,
   next: NextFunction
 ) {
-  try {
-    const userId = (req as any).user?.id || (req as any).userId;
+  const userId = getRequestUserId(req);
 
+  try {
     if (!userId) {
       return res.status(401).json({
         success: false,
@@ -84,7 +85,7 @@ export async function advancedModeGuard(
     next();
   } catch (error) {
     logger.error('[Advanced Mode Guard] Error checking advanced mode', {
-      userId: (req as any).user?.id,
+      userId,
       error
     });
 

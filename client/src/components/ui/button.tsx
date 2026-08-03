@@ -2,7 +2,7 @@ import React from 'react';
 import clsx from 'clsx';
 
 export type ButtonVariant = 'primary' | 'secondary' | 'ghost' | 'outline' | 'danger' | 'default';
-export type ButtonSize = 'sm' | 'md' | 'lg' | 'icon';
+export type ButtonSize = 'sm' | 'md' | 'lg' | 'icon' | 'default';
 
 export interface ButtonProps extends React.ButtonHTMLAttributes<HTMLButtonElement> {
   variant?: ButtonVariant;
@@ -30,12 +30,14 @@ const sizeMap: Record<ButtonSize, string> = {
   md: 'h-[var(--size-btn-md)] px-4 text-base',
   lg: 'h-[var(--size-btn-lg)] px-5 text-base',
   icon: 'h-[var(--size-btn-md)] w-[var(--size-btn-md)] p-0',
+  default: 'h-[var(--size-btn-md)] px-4 text-base',
 };
 
-export const Button: React.FC<ButtonProps> = ({ variant = 'default', size = 'md', className, children, loading = false, gradient, icon, iconPosition = 'left', ...rest }) => {
-  const isDisabled = !!(rest.disabled || loading);
+export const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(
+  ({ variant = 'default', size = 'md', className, children, loading = false, gradient, icon, iconPosition = 'left', ...rest }, ref) => {
+    const isDisabled = !!(rest.disabled || loading);
 
-  const style: React.CSSProperties = { ...(rest.style || {}) };
+    const style: React.CSSProperties = { ...(rest.style || {}) };
   if (gradient) {
     if (/^[a-zA-Z0-9_-]+$/.test(gradient)) style.background = `var(--gradient-${gradient})`;
     else if (gradient.trim().startsWith('linear-gradient')) style.background = gradient;
@@ -50,7 +52,7 @@ export const Button: React.FC<ButtonProps> = ({ variant = 'default', size = 'md'
   );
 
   return (
-    <button className={classes} style={style} aria-disabled={isDisabled} {...rest} disabled={isDisabled}>
+    <button ref={ref} className={classes} style={style} aria-disabled={isDisabled} {...rest} disabled={isDisabled}>
       {loading ? (
         <svg className="w-4 h-4 animate-spin mr-2" viewBox="0 0 24 24" fill="none" stroke="currentColor"><circle cx="12" cy="12" r="10" strokeWidth="4" strokeOpacity="0.15"></circle><path d="M22 12a10 10 0 00-10-10" strokeWidth="4"></path></svg>
       ) : null}
@@ -59,7 +61,10 @@ export const Button: React.FC<ButtonProps> = ({ variant = 'default', size = 'md'
       {icon && iconPosition === 'right' ? <span className="ml-2 inline-flex items-center">{icon}</span> : null}
     </button>
   );
-};
+  }
+);
+
+Button.displayName = 'Button';
 
 export default Button;
 

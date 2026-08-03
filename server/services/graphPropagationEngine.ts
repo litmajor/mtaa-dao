@@ -209,9 +209,9 @@ export const EDGE_DEFINITIONS = {
   liquidity_shared: {
     description: 'Shared liquidity pools - AMM pairs, DEX connections',
     baseMultiplier: 0.8,
-    bidirectional: true,
+    bidirectional: false, // In decentralized AMMs, liquidity drains typically hit the native asset disproportionately to the wrapper
     riskCategory: 'execution',
-    example: 'BTC/USDC in Uniswap v3 → affects both sides',
+    example: 'BTC/USDC in Uniswap v3',
   },
   
   structural: {
@@ -297,6 +297,7 @@ export interface CascadeEffect {
   reasoning: string; // why is this cascade happening?
   // Hop distance from original source (1 = direct neighbor)
   hop?: number;
+  timestamp: number; // For out-of-order delta tracking
 }
 
 /**
@@ -337,7 +338,7 @@ export class PropagationScorer {
    * Main entry point: Given a node state change,
    * return all cascades to neighbors
    */
-  computeCascades(delta: PropagationDelta): CascadeEffect[] {
+  computeCascades(delta: PropagationDelta, systemicVolatilityMultiplier: number = 1.0): CascadeEffect[] {
     const sourceNode = this.nodeMap.get(delta.nodeId);
     if (!sourceNode) return [];
 
@@ -356,6 +357,7 @@ export class PropagationScorer {
     neighbors.forEach((edge, targetId) => {
       const targetNode = this.nodeMap.get(targetId);
       if (!targetNode) return;
+      visited.add(targetId); // BFS Fix: mark visited immediately on queue push
       queue.push({ currentId: targetId, edge, hop: 1 });
     });
 
@@ -363,23 +365,20 @@ export class PropagationScorer {
       const entry = queue.shift()!;
       const { currentId, edge, hop } = entry;
 
-      if (visited.has(currentId)) continue;
-
       const targetNode = this.nodeMap.get(currentId);
       if (!targetNode) continue; // safety
 
-      const cascade = this.scoreCascade(sourceNode, targetNode, edge, delta, hop);
+      const cascade = this.scoreCascade(sourceNode, targetNode, edge, delta, hop, systemicVolatilityMultiplier);
       if (cascade) {
         cascade.hop = hop;
         cascades.push(cascade);
       }
 
-      visited.add(currentId);
-
       if (hop < maxHops) {
         const nextNeighbors = this.edgeMap.get(currentId) || new Map();
         nextNeighbors.forEach((nextEdge, nextId) => {
           if (visited.has(nextId)) return;
+          visited.add(nextId); // BFS Fix: mark visited immediately on queue push
           queue.push({ currentId: nextId, edge: nextEdge, hop: hop + 1 });
         });
       }
@@ -396,7 +395,8 @@ export class PropagationScorer {
     targetNode: GraphNode,
     edge: GraphEdge,
     delta: PropagationDelta,
-    hop: number = 1
+    hop: number = 1,
+    systemicVolatilityMultiplier: number = 1.0
   ): CascadeEffect | null {
     // Effective magnitude considers edge weight, type multiplier, correlation metadata, and hop dampening
     const typeMult = edge.typeMultiplier || 1;
@@ -410,7 +410,7 @@ export class PropagationScorer {
 
     // Edge-specific thresholding (contagion is more sensitive)
     const baseThreshold = delta.threshold || 0.3;
-    const edgeThreshold = edge.edgeType === 'contagion' ? Math.min(0.12, baseThreshold * 0.6) : baseThreshold * Math.pow(0.8, hop - 1);
+    const edgeThreshold = (edge.edgeType === 'contagion' ? Math.min(0.12, baseThreshold * 0.6) : baseThreshold * Math.pow(0.8, hop - 1)) * systemicVolatilityMultiplier;
 
     if (effectiveMagnitude < edgeThreshold) return null;
 
@@ -432,6 +432,7 @@ export class PropagationScorer {
       adjustmentPercent: adjustment.percent,
       confidence: this.calculateConfidence(edge, delta) * Math.pow(0.9, hop - 1),
       reasoning: this.generateReasoning(edge, delta),
+      timestamp: delta.timestamp, // Passthrough timestamp for out-of-order protection
     };
   }
   
@@ -519,6 +520,7 @@ export interface StateUpdate {
   proposedValue: number;
   reason: string; // which cascade caused this?
   confidence: number; // 0-1
+  timestamp: number;
 }
 
 /**
@@ -583,6 +585,7 @@ export class StateDispatcher {
           ),
           reason: `Cascaded from ${cascade.sourceNode} via correlation`,
           confidence: cascade.confidence,
+          timestamp: cascade.timestamp,
         });
         break;
         
@@ -598,6 +601,7 @@ export class StateDispatcher {
           ),
           reason: `Cascaded from ${cascade.sourceNode} via shared liquidity`,
           confidence: cascade.confidence,
+          timestamp: cascade.timestamp,
         });
         break;
         
@@ -613,6 +617,7 @@ export class StateDispatcher {
           ),
           reason: `Cascaded from ${cascade.sourceNode} via structural link`,
           confidence: cascade.confidence,
+          timestamp: cascade.timestamp,
         });
         break;
         
@@ -628,6 +633,7 @@ export class StateDispatcher {
           ),
           reason: `Cascaded from ${cascade.sourceNode} via strategy link`,
           confidence: cascade.confidence,
+          timestamp: cascade.timestamp,
         });
         break;
         
@@ -643,6 +649,7 @@ export class StateDispatcher {
           ),
           reason: `Cascaded from ${cascade.sourceNode} via contagion`,
           confidence: cascade.confidence,
+          timestamp: cascade.timestamp,
         });
         break;
     }
@@ -685,18 +692,26 @@ export class StateDispatcher {
         // No conflict
         resolved.push(fieldUpdates[0]);
       } else {
-        // Multiple updates: weighted average by confidence
-        const totalConfidence = fieldUpdates.reduce(
-          (sum, u) => sum + u.confidence,
-          0
-        );
-        
-        const proposedValue =
-          fieldUpdates.reduce(
-            (sum, u) =>
-              sum + (u.proposedValue as number) * (u.confidence / totalConfidence),
-            0
-          );
+        // Multiple updates: check if this is a systemic risk metric requiring cumulative compounding
+        let proposedValue: number;
+        const totalConfidence = fieldUpdates.reduce((sum, u) => sum + u.confidence, 0);
+
+        if (field === 'causalityRisk' || field === 'depegRisk' || field === 'counterpartyRisk') {
+          // Cumulative risk model: P(failure) = 1 - (1 - P1)*(1 - P2)*...
+          const combinedRisk = 1 - fieldUpdates.reduce((product, u) => {
+            return product * (1 - (u.proposedValue as number));
+          }, 1);
+          proposedValue = combinedRisk;
+        } else {
+          // Weighted average for normal fields (with div-by-zero safeguard)
+          proposedValue = totalConfidence === 0
+            ? fieldUpdates[0].currentValue
+            : fieldUpdates.reduce(
+                (sum, u) =>
+                  sum + (u.proposedValue as number) * (u.confidence / totalConfidence),
+                0
+              );
+        }
         
         resolved.push({
           nodeId: fieldUpdates[0].nodeId,
@@ -705,6 +720,7 @@ export class StateDispatcher {
           proposedValue,
           reason: `Aggregated from ${fieldUpdates.length} cascades`,
           confidence: Math.min(1, totalConfidence / fieldUpdates.length),
+          timestamp: Math.max(...fieldUpdates.map(u => u.timestamp)), // Keep freshest timestamp
         });
       }
     });
@@ -724,8 +740,13 @@ export class StateDispatcher {
       
       // For numeric fields, update directly
       if (typeof update.proposedValue === 'number') {
+        // Prevent out-of-order execution race conditions
+        if (node.propagationState.updatedAt && update.timestamp && node.propagationState.updatedAt > update.timestamp) {
+          return; // Skip stale update
+        }
+        
         (node.propagationState[update.field] as number) = update.proposedValue;
-        node.propagationState.updatedAt = Date.now();
+        node.propagationState.updatedAt = update.timestamp || Date.now();
         node.propagationState.dataFreshness = 1; // Mark as fresh
       }
       
@@ -802,7 +823,7 @@ export class GraphPropagationEngine {
    * 3. Apply state updates with conflict resolution
    * 4. Return modified nodes
    */
-  propagate(delta: PropagationDelta): Map<string, GraphNode> {
+  propagate(delta: PropagationDelta, systemicVolatilityMultiplier: number = 1.0): Map<string, GraphNode> {
     if (!this.initialized) {
       logger.warn(`Attempted to propagate before engine initialized: ${delta.nodeId}`);
       return new Map();
@@ -819,7 +840,7 @@ export class GraphPropagationEngine {
     }
     
     // Step 1: Score cascades
-    const cascades = this.scorer.computeCascades(delta);
+    const cascades = this.scorer.computeCascades(delta, systemicVolatilityMultiplier);
     logger.debug(`  ├─ Found ${cascades.length} cascades`);
     
     // Step 2: Apply to nodes
@@ -836,7 +857,7 @@ export class GraphPropagationEngine {
   /**
    * Batch propagation: multiple deltas in one cycle
    */
-  propagateBatch(deltas: PropagationDelta[]): Map<string, GraphNode> {
+  propagateBatch(deltas: PropagationDelta[], systemicVolatilityMultiplier: number = 1.0): Map<string, GraphNode> {
     const allModified = new Map<string, GraphNode>();
     if (!this.initialized) {
       logger.warn('Attempted batch propagate before engine initialized');
@@ -850,7 +871,7 @@ export class GraphPropagationEngine {
         logger.warn(`Batch propagate: unknown source node ${delta.nodeId}, skipping`);
         return;
       }
-      const cascades = this.scorer.computeCascades(delta);
+      const cascades = this.scorer.computeCascades(delta, systemicVolatilityMultiplier);
       if (cascades && cascades.length > 0) {
         allCascades.push(...cascades);
       }

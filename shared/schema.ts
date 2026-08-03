@@ -85,6 +85,203 @@ export type InsertMtaaDistributionRule = typeof mtaaDistributionRules.$inferInse
 export type DaoAchievementMilestone = typeof daoAchievementMilestones.$inferSelect;
 export type InsertDaoAchievementMilestone = typeof daoAchievementMilestones.$inferInsert;
 
+// Strategy tables
+export const strategies = pgTable(
+  "strategies",
+  {
+    id: varchar("id", { length: 256 }).primaryKey(),
+    creatorId: varchar("creator_id", { length: 256 }).notNull(),
+    name: varchar("name", { length: 256 }).notNull(),
+    description: text("description"),
+    targetAllocations: jsonb("target_allocations").notNull(),
+    rebalanceFrequency: varchar("rebalance_frequency", { length: 50 }).notNull(),
+    rebalanceThresholdPercent: numeric("rebalance_threshold_percent").default("1"),
+    riskLevel: varchar("risk_level", { length: 50 }).notNull(),
+    tags: jsonb("tags"),
+    freqtradeStrategyId: varchar("freqtrade_strategy_id", { length: 256 }),
+    freqtradeCode: text("freqtrade_code"),
+    freqtradeName: varchar("freqtrade_name", { length: 256 }),
+    backtestResults: jsonb("backtest_results"),
+    lastBacktestedAt: timestamp("last_backtested_at"),
+    totalValueLocked: numeric("total_value_locked").default("0"),
+    totalFollowers: integer("total_followers").default(0),
+    assetsUnderManagement: numeric("assets_under_management").default("0"),
+    ytdReturnPercent: numeric("ytd_return_percent").default("0"),
+    mtdReturnPercent: numeric("mtd_return_percent").default("0"),
+    wtdReturnPercent: numeric("wtd_return_percent").default("0"),
+    sharpeRatio: numeric("sharpe_ratio").default("0"),
+    maxDrawdownPercent: numeric("max_drawdown_percent").default("0"),
+    volatilityPercent: numeric("volatility_percent").default("0"),
+    isActive: boolean("is_active").default(true),
+    isPublic: boolean("is_public").default(true),
+    lastRebalancedAt: timestamp("last_rebalanced_at"),
+    nextRebalanceAt: timestamp("next_rebalance_at"),
+    totalRebalances: integer("total_rebalances").default(0),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+    updatedAt: timestamp("updated_at").defaultNow().notNull(),
+  },
+  (table) => ({
+    creatorIdIdx: index("strategy_creator_idx").on(table.creatorId),
+    activeIdx: index("strategy_active_idx").on(table.isActive),
+  })
+);
+
+export const strategiesTable = strategies;
+export type Strategy = typeof strategies.$inferSelect;
+export type InsertStrategy = typeof strategies.$inferInsert;
+
+export const strategyFollowers = pgTable(
+  "strategy_followers",
+  {
+    id: varchar("id", { length: 256 }).primaryKey(),
+    strategyId: varchar("strategy_id", { length: 256 }).notNull(),
+    followerId: varchar("follower_id", { length: 256 }).notNull(),
+    investedAmountUsd: numeric("invested_amount_usd").notNull(),
+    currentValueUsd: numeric("current_value_usd").notNull(),
+    returnUsd: numeric("return_usd").notNull(),
+    returnPercent: numeric("return_percent").notNull(),
+    autoRebalance: boolean("auto_rebalance").default(true),
+    maxSlippagePercent: numeric("max_slippage_percent").default("0.5"),
+    enableNotifications: boolean("enable_notifications").default(true),
+    lastRebalancedAt: timestamp("last_rebalanced_at"),
+    totalRebalances: integer("total_rebalances").default(0),
+    followedAt: timestamp("followed_at").defaultNow().notNull(),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+    updatedAt: timestamp("updated_at").defaultNow().notNull(),
+  }
+);
+
+export type StrategyFollower = typeof strategyFollowers.$inferSelect;
+export type InsertStrategyFollower = typeof strategyFollowers.$inferInsert;
+
+export const strategyAllocations = pgTable(
+  "strategy_allocations",
+  {
+    id: varchar("id", { length: 256 }).primaryKey(),
+    strategyId: varchar("strategy_id", { length: 256 }).notNull(),
+    asset: varchar("asset", { length: 256 }).notNull(),
+    targetWeightPercent: numeric("target_weight_percent").notNull(),
+    currentWeightPercent: numeric("current_weight_percent").notNull(),
+    driftPercent: numeric("drift_percent").notNull(),
+    lastRebalancedAt: timestamp("last_rebalanced_at"),
+    timesSoldDuringRebalance: integer("times_sold_during_rebalance").default(0),
+    timesBoughtDuringRebalance: integer("times_bought_during_rebalance").default(0),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+    updatedAt: timestamp("updated_at").defaultNow().notNull(),
+  }
+);
+
+export type StrategyAllocation = typeof strategyAllocations.$inferSelect;
+export type InsertStrategyAllocation = typeof strategyAllocations.$inferInsert;
+
+export const strategyRebalances = pgTable(
+  "strategy_rebalances",
+  {
+    id: varchar("id", { length: 256 }).primaryKey(),
+    strategyId: varchar("strategy_id", { length: 256 }).notNull(),
+    triggeredAt: timestamp("triggered_at").defaultNow().notNull(),
+    executedAt: timestamp("executed_at"),
+    completedAt: timestamp("completed_at"),
+    transactions: jsonb("transactions").notNull(),
+    transactionCount: integer("transaction_count").notNull(),
+    successfulTransactions: integer("successful_transactions").default(0),
+    failedTransactions: integer("failed_transactions").default(0),
+    totalGasUsed: numeric("total_gas_used"),
+    totalGasCostUsd: numeric("total_gas_cost_usd"),
+    totalSlippage: numeric("total_slippage"),
+    status: varchar("status", { length: 50 }).notNull(),
+    error: text("error"),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+  }
+);
+
+export type StrategyRebalance = typeof strategyRebalances.$inferSelect;
+export type InsertStrategyRebalance = typeof strategyRebalances.$inferInsert;
+
+export const backtestJobs = pgTable(
+  "backtest_jobs",
+  {
+    id: varchar("id", { length: 128 }).primaryKey(),
+    strategyId: varchar("strategy_id", { length: 128 }).notNull(),
+    kind: varchar("kind", { length: 32 }).notNull(),
+    status: varchar("status", { length: 32 }).notNull().default("pending"),
+    metrics: jsonb("metrics"),
+    bestParameters: jsonb("best_parameters"),
+    error: text("error"),
+    requestedAt: timestamp("requested_at", { withTimezone: true }).notNull().defaultNow(),
+    startedAt: timestamp("started_at", { withTimezone: true }),
+    completedAt: timestamp("completed_at", { withTimezone: true }),
+    durationMs: integer("duration_ms"),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+  }
+);
+
+export type BacktestJob = typeof backtestJobs.$inferSelect;
+export type InsertBacktestJob = typeof backtestJobs.$inferInsert;
+
+export const strategyPerformance = pgTable(
+  "strategy_performance",
+  {
+    id: varchar("id", { length: 256 }).primaryKey(),
+    strategyId: varchar("strategy_id", { length: 256 }).notNull(),
+    date: timestamp("date").notNull(),
+    aum: numeric("aum").notNull(),
+    followers: integer("followers").notNull(),
+    returnPercent: numeric("return_percent").notNull(),
+    sharpeRatio: numeric("sharpe_ratio"),
+    maxDrawdownPercent: numeric("max_drawdown_percent"),
+    volatilityPercent: numeric("volatility_percent"),
+    tradeVolume: numeric("trade_volume"),
+    rebalanceCount: integer("rebalance_count").default(0),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+  }
+);
+
+export type StrategyPerformance = typeof strategyPerformance.$inferSelect;
+export type InsertStrategyPerformance = typeof strategyPerformance.$inferInsert;
+
+export const strategiesRelations = relations(strategies, ({ many }) => ({
+  followers: many(strategyFollowers),
+  allocations: many(strategyAllocations),
+  rebalances: many(strategyRebalances),
+  performance: many(strategyPerformance),
+}));
+
+export const strategyFollowersRelations = relations(strategyFollowers, ({ one }) => ({
+  strategy: one(strategies, {
+    fields: [strategyFollowers.strategyId],
+    references: [strategies.id],
+  }),
+}));
+
+export const strategyAllocationsRelations = relations(strategyAllocations, ({ one }) => ({
+  strategy: one(strategies, {
+    fields: [strategyAllocations.strategyId],
+    references: [strategies.id],
+  }),
+}));
+
+export const strategyRebalancesRelations = relations(strategyRebalances, ({ one }) => ({
+  strategy: one(strategies, {
+    fields: [strategyRebalances.strategyId],
+    references: [strategies.id],
+  }),
+}));
+
+export const backtestJobsRelations = relations(backtestJobs, ({ one }) => ({
+  strategy: one(strategies, {
+    fields: [backtestJobs.strategyId],
+    references: [strategies.id],
+  }),
+}));
+
+export const strategyPerformanceRelations = relations(strategyPerformance, ({ one }) => ({
+  strategy: one(strategies, {
+    fields: [strategyPerformance.strategyId],
+    references: [strategies.id],
+  }),
+}));
+
 // Tasks table
 export const tasks = pgTable("tasks", {
   id: uuid("id").primaryKey().defaultRandom(),
@@ -170,8 +367,8 @@ export const users = pgTable("users", {
   lastName: varchar("last_name"),
   profileImageUrl: varchar("profile_image_url"),
   profilePicture: varchar("profile_picture"),
+  slug: varchar("slug"),
   referralRewards: varchar("referral_rewards"),
-  // wallet address used in multiple server callsites
   walletAddress: varchar("wallet_address"),
   persona: varchar("persona"),
   bio: text("bio"),
@@ -224,6 +421,9 @@ export const users = pgTable("users", {
   advancedMode: boolean("advanced_mode").default(false), // Manual opt-in for advanced features
   reputation: integer("reputation").default(0), // Reputation score for gating
   balance: decimal("balance", { precision: 20, scale: 2 }).default("0"), // Account balance for gating
+  plan: varchar("plan").default("free"), // free, growth, professional, enterprise
+  subscriptionPlan: varchar("subscription_plan").default("free"), // Subscription plan type
+  billingStatus: varchar("billing_status").default("active"),
   activeSubprofile: varchar("active_subprofile").default("okedi"), // User's active subprofile (okedi/yuki/amara) - users switch between these
   // If you need legacy/alternate spellings, use different property names or comment out as needed:
   // referralCodeLegacy: varchar("referralCode"),
@@ -435,7 +635,9 @@ export const daos = pgTable("daos", {
   deleted_by: varchar("deleted_by"),
   delete_reason: text("delete_reason"),
   deleted_recovery_deadline: timestamp("deleted_recovery_deadline"),
-});
+}, (table) => ({
+  nameUnique: uniqueIndex('daos_name_unique_idx').on(table.name),
+}));
 
 // DAO Settings table (flexible JSON storage for per-DAO settings)
 export const daoSettings = pgTable("dao_settings", {
@@ -761,10 +963,13 @@ export const vaults = pgTable("vaults", {
 
   // Phase 3 enhancements
   isActive: boolean("is_active").default(true),
+  status: varchar("status").default("ACTIVE"), // ACTIVE, PAUSED, CLOSED
+  version: integer("version").default(1),
   riskLevel: varchar("risk_level").default("low"), // low, medium, high
   minDeposit: decimal("min_deposit", { precision: 18, scale: 8 }).default("0"),
   maxDeposit: decimal("max_deposit", { precision: 18, scale: 8 }),
   totalValueLocked: decimal("total_value_locked", { precision: 18, scale: 8 }).default("0"), // TVL in USD equivalent
+  shareSupply: decimal("share_supply", { precision: 18, scale: 8 }).default("0"), // Transitional state for Sprint 3
   // accumulated yield numeric captured by some analytics services
   yieldGenerated: decimal("yield_generated", { precision: 18, scale: 8 }).default("0"),
   yieldStrategy: varchar("yield_strategy"), // references YIELD_STRATEGIES
@@ -908,6 +1113,7 @@ export const paymentTransactions = pgTable('payment_transactions', {
   provider: text('provider').notNull(),
   status: text('status').notNull().default('pending'),
   metadata: json('metadata'),
+  version: integer('version').notNull().default(1),
   createdAt: timestamp('created_at').defaultNow(),
   updatedAt: timestamp('updated_at').defaultNow()
 });
@@ -1241,6 +1447,10 @@ export const vaultTransactions = pgTable("vault_transactions", {
   provider: varchar("provider").default("unknown"), // Added for admin analytics compatibility
   fromAddress: varchar("from_address"), // Added for admin analytics compatibility
   timestamp: timestamp("timestamp").defaultNow(), // Added for admin analytics compatibility
+}, (vt) => {
+  return {
+    txHashIdx: uniqueIndex("vault_tx_hash_idx").on(vt.transactionHash),
+  };
 });
 
 // Phase 3: Vault Risk Assessments table
@@ -1431,6 +1641,9 @@ export const assetGraphVersions = pgTable("asset_graph_versions", {
   // ========== CHANGE TRACKING ==========
   changeReason: varchar("change_reason", { length: 50 }),
   changeDetails: text("change_details"),
+  
+  // Differential graph metadata for audit and incremental loading.
+  edgeDiffFromPreviousVersion: jsonb("edge_diff_from_previous_version").default({}),
   
   // Edge counts by type/chain (for efficient queries without loading full graph)
   edgeCountByType: jsonb("edge_count_by_type").default({}),
@@ -1943,7 +2156,7 @@ export const daoMessages = pgTable("dao_messages", {
 export const messageReactions = pgTable("message_reactions", {
   id: uuid("id").primaryKey().defaultRandom(),
   messageId: uuid("message_id").references(() => daoMessages.id, { onDelete: 'cascade' }).notNull(),
-  userId: varchar("user_id").references(() => users.id, { onDelete: 'cascade' }).notNull(),
+  userId: varchar("user_id").references(() => users.id, { onDelete: 'cascade' }),
   daoId: uuid("dao_id").references(() => daos.id),
   emoji: varchar("emoji", { length: 10 }).notNull(),
   createdAt: timestamp("created_at").defaultNow(),
@@ -1979,7 +2192,6 @@ export const subscriptions = pgTable("subscriptions", {
 // User Reputation table
 // Re-export canonical gamification table for backward compatibility
 import { userGamification } from './reputationSchema';
-import MaonoVaultDashboard from "@/pages/maonovault-dashboard";
 export const userReputation = userGamification;
 
 // Platform Announcements table
@@ -2004,7 +2216,7 @@ export const platformAnnouncements = pgTable("platform_announcements", {
 // User Announcement Views table
 export const userAnnouncementViews = pgTable("user_announcement_views", {
   id: uuid("id").primaryKey().defaultRandom(),
-  userId: varchar("user_id").references(() => users.id, { onDelete: 'cascade' }).notNull(),
+  userId: varchar("user_id").references(() => users.id, { onDelete: 'cascade' }),
   announcementId: uuid("announcement_id").references(() => platformAnnouncements.id, { onDelete: 'cascade' }).notNull(),
   viewedAt: timestamp("viewed_at").defaultNow(),
   dismissed: boolean("dismissed").default(false),
@@ -2048,7 +2260,7 @@ export const poolAssets = pgTable("pool_assets", {
 export const poolInvestments = pgTable("pool_investments", {
   id: uuid("id").primaryKey().defaultRandom(),
   poolId: uuid("pool_id").references(() => investmentPools.id, { onDelete: 'cascade' }).notNull(),
-  userId: varchar("user_id").references(() => users.id, { onDelete: 'cascade' }).notNull(),
+  userId: varchar("user_id").references(() => users.id, { onDelete: 'cascade' }),
   investmentAmountUsd: decimal("investment_amount_usd", { precision: 18, scale: 2 }).notNull(),
   sharesMinted: decimal("shares_minted", { precision: 18, scale: 8 }).notNull(),
   sharePriceAtInvestment: decimal("share_price_at_investment", { precision: 18, scale: 8 }).notNull(),
@@ -2243,6 +2455,7 @@ export const userBalances = pgTable("user_balances", {
   currency: varchar("currency").notNull(), // duplicate of wallet currency for quick access
   lockedBalance: decimal("locked_balance", { precision: 18, scale: 8 }).default("0"), // for staking/governance
   availableBalance: decimal("available_balance", { precision: 18, scale: 8 }).default("0"),
+  version: integer("version").notNull().default(1),
   lastUpdated: timestamp("last_updated").defaultNow(),
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
@@ -2427,9 +2640,9 @@ export const multisigWallets = pgTable("multisig_wallets", {
 export const multisigSigners = pgTable("multisig_signers", {
   id: uuid("id").primaryKey().defaultRandom(),
   multisigWalletId: uuid("multisig_wallet_id").references(() => multisigWallets.id, { onDelete: 'cascade' }).notNull(),
-  userId: varchar("user_id").references(() => users.id, { onDelete: 'cascade' }).notNull(),
+  userId: varchar("user_id").references(() => users.id, { onDelete: 'cascade' }),
   signerAddress: varchar("signer_address").notNull(), // Individual signer's wallet address
-  signerIndex: integer("signer_index").notNull(), // Order of signers (for deterministic ordering)
+  signerIndex: integer("signer_index").notNull(), // Order of signers
   role: varchar("role").default("signer"), // signer, lead_signer, validator
   isActive: boolean("is_active").default(true),
   joinedAt: timestamp("joined_at").defaultNow(),
@@ -2696,6 +2909,7 @@ export const userNotificationPreferences = pgTable("user_notification_preference
   daoAnnouncements: boolean("dao_announcements").default(true),
   weeklyDigest: boolean("weekly_digest").default(false),
   dailyDigest: boolean("daily_digest").default(false),
+  telegramNotifications: boolean("telegram_notifications").default(false),
   unsubscribeAll: boolean("unsubscribe_all").default(false),
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
@@ -3208,12 +3422,12 @@ export const referralRewardsRelations = relations(referralRewards, ({ one }) => 
 }));
 
 // Zod schemas
-export const insertUserSchema = createInsertSchema(users);
-export const insertDaoSchema = createInsertSchema(daos);
-export const insertProposalSchema = createInsertSchema(proposals);
-export const insertVoteSchema = createInsertSchema(votes);
-export const insertContributionSchema = createInsertSchema(contributions);
-export const insertVaultSchema = createInsertSchema(vaults);
+export const insertUserSchema = createInsertSchema(users).strict();
+export const insertDaoSchema = createInsertSchema(daos).strict();
+export const insertProposalSchema = createInsertSchema(proposals).strict();
+export const insertVoteSchema = createInsertSchema(votes).strict();
+export const insertContributionSchema = createInsertSchema(contributions).strict();
+export const insertVaultSchema = createInsertSchema(vaults).strict();
 export const insertBudgetPlanSchema = createInsertSchema(budgetPlans);
 export const insertDaoMembershipSchema = createInsertSchema(daoMemberships);
 export const insertWalletTransactionSchema = createInsertSchema(walletTransactions);
@@ -3222,8 +3436,8 @@ export const insertDaoContributionSchema = createInsertSchema(daoContributions);
 export const insertDaoContributionApprovalSchema = createInsertSchema(daoContributionApprovals);
 export const insertDaoMultisigConfigSchema = createInsertSchema(daoMultisigConfig);
 export const insertTreasuryWithdrawalApprovalSchema = createInsertSchema(treasuryWithdrawalApprovals);
-export const insertReferralRewardSchema = createInsertSchema(referralRewards);
-export const insertWalletSchema = createInsertSchema(wallets);
+export const insertReferralRewardSchema = createInsertSchema(referralRewards).strict();
+export const insertWalletSchema = createInsertSchema(wallets).strict();
 export const insertUserBalanceSchema = createInsertSchema(userBalances);
 export const insertWalletPrivateKeySchema = createInsertSchema(walletPrivateKeys);
 export const insertWalletSeedPhraseSchema = createInsertSchema(walletSeedPhrases);
@@ -3416,7 +3630,7 @@ export type FileUpload = typeof fileUploads.$inferSelect;
 export type InsertFileUpload = typeof fileUploads.$inferInsert;
 
 
-export const insertTaskSchema = createInsertSchema(tasks);
+export const insertTaskSchema = createInsertSchema(tasks).strict();
 export const insertNotificationSchema = createInsertSchema(notifications);
 export const insertTaskHistorySchema = createInsertSchema(taskHistory);
 export const insertProposalTemplateSchema = createInsertSchema(proposalTemplates);
@@ -3671,7 +3885,9 @@ export const ruleTemplates = pgTable("rule_templates", {
   name: varchar("name").notNull().unique(),
   category: varchar("category").notNull(), // 'entry', 'withdrawal', 'rotation', 'financial', 'governance'
   description: text("description"),
+  icon: varchar("icon", { length: 255 }),
   ruleConfig: jsonb("rule_config").notNull(), // Contains conditions and actions
+  defaultConfig: jsonb("default_config").notNull().default(sql`'{}'::jsonb`),
   isDefault: boolean("is_default").default(false),
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
@@ -3771,6 +3987,8 @@ export const limitOrders = pgTable("limit_orders", {
   expiresAt: timestamp("expires_at").notNull(),
   canceledAt: timestamp("canceled_at"),
   lastCheckedAt: timestamp("last_checked_at"),
+  // OCC: Optimistic Concurrency Control — every UPDATE must use WHERE version = ? AND SET version = version + 1
+  version: integer("version").default(1).notNull(),
 });
 
 // Limit Orders Types
@@ -4477,5 +4695,133 @@ export const daoTasks = pgTable('dao_tasks', {
 export type DaoTask = typeof daoTasks.$inferSelect;
 export type InsertDaoTask = typeof daoTasks.$inferInsert;
 
+// YUKI Watchlists and Watchlist Items
+export const yukiWatchlists = pgTable("yuki_watchlists", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  userId: varchar("user_id").notNull(),
+  name: varchar("name", { length: 100 }).notNull(),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+});
+
+export const yukiWatchlistItems = pgTable("yuki_watchlist_items", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  watchlistId: uuid("watchlist_id").references(() => yukiWatchlists.id, { onDelete: 'cascade' }).notNull(),
+  itemType: varchar("item_type", { length: 50 }).notNull(),
+  targetId: varchar("target_id", { length: 255 }).notNull(),
+  alertPrice: decimal("alert_price", { precision: 20, scale: 8 }),
+  metadata: jsonb("metadata").default({}),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+export type YukiWatchlist = typeof yukiWatchlists.$inferSelect;
+export type InsertYukiWatchlist = typeof yukiWatchlists.$inferInsert;
+export type YukiWatchlistItem = typeof yukiWatchlistItems.$inferSelect;
+export type InsertYukiWatchlistItem = typeof yukiWatchlistItems.$inferInsert;
+
 // Operational Framework Schema Extensions
 export * from '../server/services/operational/schema';
+
+// ============================================================
+// User Settings Tables
+// ============================================================
+
+export const userSettings = pgTable('user_settings', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  userId: varchar('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull().unique(),
+  // Appearance
+  theme: varchar('theme', { length: 20 }).default('system'),
+  fontSize: varchar('font_size', { length: 20 }).default('normal'),
+  highContrast: boolean('high_contrast').default(false),
+  reducedMotion: boolean('reduced_motion').default(false),
+  // Locale
+  language: varchar('language', { length: 10 }).default('en'),
+  timezone: varchar('timezone', { length: 60 }).default('UTC'),
+  preferredCurrency: varchar('preferred_currency', { length: 10 }).default('USD'),
+  // Privacy
+  profileVisibility: varchar('profile_visibility', { length: 20 }).default('friends'),
+  activityVisibility: varchar('activity_visibility', { length: 20 }).default('members'),
+  // Notifications
+  emailNotifications: boolean('email_notifications').default(true),
+  pushNotifications: boolean('push_notifications').default(true),
+  smsNotifications: boolean('sms_notifications').default(false),
+  notifyGovernance: boolean('notify_governance').default(true),
+  notifyTreasury: boolean('notify_treasury').default(true),
+  notifyMorio: boolean('notify_morio').default(true),
+  notifyWeeklySummary: boolean('notify_weekly_summary').default(true),
+  // Security
+  twoFactorEnabled: boolean('two_factor_enabled').default(false),
+  twoFactorMethod: varchar('two_factor_method', { length: 20 }).default('authenticator'),
+  sessionTimeout: integer('session_timeout').default(30),
+  createdAt: timestamp('created_at').defaultNow(),
+  updatedAt: timestamp('updated_at').defaultNow(),
+});
+
+export const exchangeApiKeys = pgTable('exchange_api_keys', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  userId: varchar('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
+  exchange: varchar('exchange', { length: 50 }).notNull(),
+  label: varchar('label', { length: 100 }),
+  apiKey: text('api_key').notNull(),
+  apiSecret: text('api_secret').notNull(),
+  apiPassphrase: text('api_passphrase'),
+  isActive: boolean('is_active').default(true),
+  lastUsedAt: timestamp('last_used_at'),
+  createdAt: timestamp('created_at').defaultNow(),
+  updatedAt: timestamp('updated_at').defaultNow(),
+});
+
+export const connectedDevices = pgTable('connected_devices', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  userId: varchar('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
+  deviceName: varchar('device_name', { length: 100 }),
+  deviceType: varchar('device_type', { length: 30 }),
+  os: varchar('os', { length: 50 }),
+  ipAddress: varchar('ip_address', { length: 50 }),
+  userAgent: text('user_agent'),
+  isTrustedDevice: boolean('is_trusted_device').default(false),
+  lastSeenAt: timestamp('last_seen_at').defaultNow(),
+  createdAt: timestamp('created_at').defaultNow(),
+  updatedAt: timestamp('updated_at').defaultNow(),
+});
+
+export const featurePreferences = pgTable('feature_preferences', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  userId: varchar('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull().unique(),
+  advancedMode: boolean('advanced_mode').default(false),
+  betaFeatures: boolean('beta_features').default(false),
+  compactLayout: boolean('compact_layout').default(false),
+  showPnl: boolean('show_pnl').default(true),
+  showPortfolioValue: boolean('show_portfolio_value').default(true),
+  defaultTradingView: varchar('default_trading_view', { length: 20 }).default('chart'),
+  metadata: jsonb('metadata').default({}),
+  createdAt: timestamp('created_at').defaultNow(),
+  updatedAt: timestamp('updated_at').defaultNow(),
+});
+
+export const apiQuotas = pgTable('api_quotas', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  userId: varchar('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull().unique(),
+  dailyRequestLimit: integer('daily_request_limit').default(10000),
+  dailyRequestsUsed: integer('daily_requests_used').default(0),
+  monthlyRequestLimit: integer('monthly_request_limit').default(300000),
+  monthlyRequestsUsed: integer('monthly_requests_used').default(0),
+  rateLimitTier: varchar('rate_limit_tier', { length: 20 }).default('standard'),
+  resetAt: timestamp('reset_at'),
+  createdAt: timestamp('created_at').defaultNow(),
+  updatedAt: timestamp('updated_at').defaultNow(),
+});
+
+export type UserSettings = typeof userSettings.$inferSelect;
+export type InsertUserSettings = typeof userSettings.$inferInsert;
+export type ExchangeApiKey = typeof exchangeApiKeys.$inferSelect;
+export type InsertExchangeApiKey = typeof exchangeApiKeys.$inferInsert;
+export type ConnectedDevice = typeof connectedDevices.$inferSelect;
+export type InsertConnectedDevice = typeof connectedDevices.$inferInsert;
+export type FeaturePreference = typeof featurePreferences.$inferSelect;
+export type InsertFeaturePreference = typeof featurePreferences.$inferInsert;
+export type ApiQuota = typeof apiQuotas.$inferSelect;
+export type InsertApiQuota = typeof apiQuotas.$inferInsert;
+
+// Event-Driven Architecture schemas
+export * from '../server/db/schema/eda';

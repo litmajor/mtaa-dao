@@ -29,9 +29,9 @@ export default function Home() {
           const user = payload?.data?.user;
 
           const routes: Record<string, string> = {
-            okedi: '/dashboard/okedi',
-            yuki: '/dashboard/yuki',
-            amara: '/dashboard/amara',
+            okedi: '/dashboard',
+            yuki: '/trading',
+            amara: '/dashboard',
           };
 
           const dest = user?.activeSubprofile ? routes[user.activeSubprofile] : null;

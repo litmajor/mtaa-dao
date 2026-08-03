@@ -13,7 +13,8 @@
  * - GET /api/docs/stats/domain/:domain  → Metrics for 1 domain
  */
 
-import { Router, Request, Response } from 'express';
+import { Router } from 'express';
+import type { Request, Response } from 'express';
 import { endpointMetricsCollector } from '../services/endpointMetricsCollector';
 import { Logger } from '../utils/logger';
 
@@ -236,11 +237,17 @@ router.get('/stats/domain/:domain', (req: Request, res: Response) => {
  */
 router.get('/health', (req: Request, res: Response) => {
   try {
+    const start = Date.now();
+    logger.info('[API_REGISTRY] /health handler start');
+
+    // Measure time spent in summary generation (should be synchronous and fast)
+    const summaryStart = Date.now();
     const summary = endpointMetricsCollector.getSummary();
-    
+    const summaryMs = Date.now() - summaryStart;
+
     let overallStatus = 'healthy';
     let statusCode = 200;
-    
+
     if (summary.unhealthyEndpoints > 0) {
       overallStatus = 'degraded';
       statusCode = 200; // Still return 200, but include status in body
@@ -250,7 +257,7 @@ router.get('/health', (req: Request, res: Response) => {
       statusCode = 200; // Still 200 for now, clients should check status field
     }
 
-    res.status(statusCode).json({
+    const body = {
       timestamp: new Date().toISOString(),
       status: overallStatus,
       summary: {
@@ -263,13 +270,31 @@ router.get('/health', (req: Request, res: Response) => {
         avgLatency: summary.avgLatency,
         p99Latency: summary.p99Latency,
       },
-    });
+    };
+
+    const totalMs = Date.now() - start;
+    logger.info('[API_REGISTRY] /health handler done', { summaryMs, totalMs });
+
+    res.status(statusCode).json(body);
   } catch (error) {
     logger.error('[API_REGISTRY] Error getting health:', error);
     res.status(500).json({
       status: 'error',
       message: error instanceof Error ? error.message : 'Unknown error',
     });
+  }
+});
+
+/**
+ * GET /api/docs/ping
+ * Very small probe endpoint to validate server liveness and listener binding
+ */
+router.get('/ping', (req: Request, res: Response) => {
+  try {
+    res.json({ timestamp: new Date().toISOString(), status: 'ok' });
+  } catch (err) {
+    logger.error('[API_REGISTRY] /ping error', err);
+    res.status(500).json({ status: 'error' });
   }
 });
 

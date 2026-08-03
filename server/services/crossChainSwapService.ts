@@ -13,6 +13,42 @@ import { crossChainTransfers } from '../../shared/schema';
 import { eq, and } from 'drizzle-orm';
 import { synchronizerAgent } from '../agents/synchronizer';
 import { randomUUID } from 'crypto';
+import { resolveProviderUrls } from './providerBootstrap';
+import { ResilientRpcProvider } from './resilientRpcProvider';
+
+/**
+ * Compute estimated destination token amount (atomic units) using fixed-point integer math.
+ * Keeps all operations in BigInt to avoid float precision issues across different decimals.
+ */
+export function computeEstimatedToAmountAtomic(
+  fromAmountAtomic: string,
+  fromDecimals: number,
+  toDecimals: number,
+  fromTokenPrice: number,
+  toTokenPrice: number
+): string {
+  const amountBigInt = ethers.toBigInt(fromAmountAtomic);
+  const priceScale = 1_000_000n; // 1e6 price scalar for safe integer math
+  const fromPriceScaled = BigInt(Math.round(fromTokenPrice * Number(priceScale)));
+  const toPriceScaled = BigInt(Math.round(toTokenPrice * Number(priceScale)));
+  if (toPriceScaled === 0n) throw new Error('Invalid destination token price');
+
+  const decimalsDelta = toDecimals - fromDecimals;
+  const scaleFactor = (delta: number): bigint => 10n ** BigInt(Math.abs(delta));
+
+  let numerator = amountBigInt * fromPriceScaled;
+  let denominator = toPriceScaled;
+
+  if (decimalsDelta >= 0) {
+    numerator *= scaleFactor(decimalsDelta);
+  } else {
+    denominator *= scaleFactor(decimalsDelta);
+  }
+
+  // integer division with rounding to nearest
+  const estimatedToAmountBigInt = (numerator + denominator / 2n) / denominator;
+  return estimatedToAmountBigInt.toString();
+}
 
 type InsertCrossChainTransfer = typeof crossChainTransfers.$inferInsert;
 
@@ -49,6 +85,17 @@ export class CrossChainSwapService {
     'function decimals() view returns (uint8)'
   ];
 
+  private createResilientProvider(rpcUrl: string): ResilientRpcProvider {
+    const providerUrls = resolveProviderUrls();
+    const primaryHttpUrl = providerUrls.rpcUrl || rpcUrl;
+    return new ResilientRpcProvider({
+      primary: { name: 'primary-rpc', httpUrl: primaryHttpUrl },
+      fallback: providerUrls.fallbackRpcUrl ? { name: 'fallback-rpc', httpUrl: providerUrls.fallbackRpcUrl } : undefined,
+      cooldownMs: 60_000,
+      onFailover: (from, to, reason) => this.logger.warn(`Swap RPC failover ${from} -> ${to}: ${reason}`),
+    });
+  }
+
   /**
    * Get an accurate token swap quote using fixed-point math and token decimals
    */
@@ -60,6 +107,7 @@ export class CrossChainSwapService {
     fromAmount: string, // Enforce incoming amount as atomic string representation (Wei)
     slippageTolerance: number = 1.0
   ): Promise<SwapQuote> {
+    const providerUrls = resolveProviderUrls();
     try {
       this.logger.info(`Fetching secure swap quote: ${fromChain}:${fromToken} -> ${toChain}:${toToken}`);
 
@@ -68,29 +116,37 @@ export class CrossChainSwapService {
       if (!fromConfig || !toConfig) throw new AppError('Unsupported chain parameters provided.', 400);
 
       // Initialize temporary RPC connections to accurately check decimals
-      const fromProvider = new ethers.JsonRpcProvider(fromConfig.rpcUrl);
-      const toProvider = new ethers.JsonRpcProvider(toConfig.rpcUrl);
+      const fromProvider = this.createResilientProvider(providerUrls.rpcUrl || fromConfig.rpcUrl);
+      const toProvider = this.createResilientProvider(providerUrls.rpcUrl || toConfig.rpcUrl);
       
-      const fromContract = new ethers.Contract(fromToken, this.ERC20_ABI, fromProvider);
-      const toContract = new ethers.Contract(toToken, this.ERC20_ABI, toProvider);
-
-      const [fromDecimals, toDecimals] = await Promise.all([
-        fromContract.decimals().catch(() => 18),
-        toContract.decimals().catch(() => 18)
+      const [fromDecimalsRaw, toDecimalsRaw] = await Promise.all([
+        fromProvider.call(async (provider) => {
+          const contract = new ethers.Contract(fromToken, this.ERC20_ABI, provider);
+          return contract.decimals().catch(() => 18);
+        }),
+        toProvider.call(async (provider) => {
+          const contract = new ethers.Contract(toToken, this.ERC20_ABI, provider);
+          return contract.decimals().catch(() => 18);
+        })
       ]);
 
+      const fromDecimals = Number(fromDecimalsRaw);
+      const toDecimals = Number(toDecimalsRaw);
       const fromTokenPrice = await this.getTokenPrice(fromChain, fromToken);
       const toTokenPrice = await this.getTokenPrice(toChain, toToken);
       const exchangeRate = fromTokenPrice / toTokenPrice;
 
-      // Safe BigInt Conversion using calculated decimals to avoid float truncation
       const amountBigInt = ethers.toBigInt(fromAmount);
       const bridgeFeeBigInt = (amountBigInt * 1n) / 1000n; // Strict 0.1% fee calculation
-      
-      // Scale floating point rates safely to match destination decimals
-      const amountFloat = Number(ethers.formatUnits(amountBigInt, fromDecimals));
-      const estimatedOutputFloat = amountFloat * exchangeRate;
-      const estimatedToAmount = ethers.parseUnits(estimatedOutputFloat.toFixed(toDecimals), toDecimals).toString();
+      const amountFloat = parseFloat(ethers.formatUnits(amountBigInt, fromDecimals));
+
+      const estimatedToAmount = computeEstimatedToAmountAtomic(
+        fromAmount,
+        fromDecimals,
+        toDecimals,
+        fromTokenPrice,
+        toTokenPrice
+      );
 
       return {
         fromChain,
@@ -106,9 +162,10 @@ export class CrossChainSwapService {
         bridgeFee: bridgeFeeBigInt.toString(),
         slippageTolerance
       };
-    } catch (error) {
+    } catch (error: any) {
       this.logger.error('Failed to parse secure swap quote parameters:', error);
-      throw new AppError('Failed to safely calculate token swap options.', 500);
+      console.error('getSwapQuote raw error:', error);
+      throw new AppError(`Failed to safely calculate token swap options: ${error?.message || 'unknown'}`, 500);
     }
   }
 
@@ -219,9 +276,13 @@ export class CrossChainSwapService {
     const fromConfig = ChainRegistry.getChainConfig(quote.fromChain);
     if (!fromConfig) throw new Error(`Target system configuration footprint missing for chain: ${quote.fromChain}`);
 
-    const provider = new ethers.JsonRpcProvider(fromConfig.rpcUrl);
-    const signer = createWalletIfValid(process.env.BRIDGE_PRIVATE_KEY || '', provider);
-    if (!signer) throw new Error('Missing or invalid BRIDGE_PRIVATE_KEY');
+    const providerUrls = resolveProviderUrls();
+    const resilientProvider = this.createResilientProvider(providerUrls.rpcUrl || fromConfig.rpcUrl);
+    const signer = await resilientProvider.call(async (provider) => {
+      const signer = createWalletIfValid(process.env.BRIDGE_PRIVATE_KEY || '', provider);
+      if (!signer) throw new Error('Missing or invalid BRIDGE_PRIVATE_KEY');
+      return signer;
+    });
 
     if (quote.fromChain === 'celo') {
       return this.bridgeViaCeloPortal(quote, signer);
@@ -292,11 +353,15 @@ export class CrossChainSwapService {
     const toConfig = ChainRegistry.getChainConfig(quote.toChain);
     if (!toConfig) throw new Error(`Target configuration missing for network identifier: ${quote.toChain}`);
 
-    const provider = new ethers.JsonRpcProvider(toConfig.rpcUrl);
-    const signer = createWalletIfValid(process.env.SWAP_PRIVATE_KEY || '', provider);
-    if (!signer) throw new Error('Missing or invalid SWAP_PRIVATE_KEY');
+    const providerUrls = resolveProviderUrls();
+    const resilientProvider = this.createResilientProvider(providerUrls.rpcUrl || toConfig.rpcUrl);
+    const signer = await resilientProvider.call(async (provider) => {
+      const signer = createWalletIfValid(process.env.SWAP_PRIVATE_KEY || '', provider);
+      if (!signer) throw new Error('Missing or invalid SWAP_PRIVATE_KEY');
+      return signer;
+    });
 
-    const tx = await this.executeSwapVia1Inch(quote, signer, provider);
+    const tx = await this.executeSwapVia1Inch(quote, signer, resilientProvider.getRawProvider());
     return tx.hash;
   }
 
@@ -383,16 +448,17 @@ export class CrossChainSwapService {
       if (!fromConfig || !toConfig) return this.getFallbackGasEstimate(fromChain, toChain);
 
       let totalGasEth = 0;
-      const fromProvider = new ethers.JsonRpcProvider(fromConfig.rpcUrl);
-      const fromGasPrice = await fromProvider.getFeeData().then(fees => fees?.gasPrice);
+      const providerUrls = resolveProviderUrls();
+      const fromProvider = this.createResilientProvider(providerUrls.rpcUrl || fromConfig.rpcUrl);
+      const fromGasPrice = await fromProvider.call(async (provider) => provider.getFeeData().then(fees => fees?.gasPrice));
       
       if (fromGasPrice) {
         totalGasEth += Number(ethers.formatEther(200000n * fromGasPrice));
       }
 
       if (fromChain !== toChain) {
-        const toProvider = new ethers.JsonRpcProvider(toConfig.rpcUrl);
-        const toGasPrice = await toProvider.getFeeData().then(fees => fees?.gasPrice);
+        const toProvider = this.createResilientProvider(providerUrls.rpcUrl || toConfig.rpcUrl);
+        const toGasPrice = await toProvider.call(async (provider) => provider.getFeeData().then(fees => fees?.gasPrice));
         if (toGasPrice) {
           totalGasEth += Number(ethers.formatEther(150000n * toGasPrice));
         }

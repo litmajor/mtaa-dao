@@ -6,10 +6,11 @@
  */
 
 import React, { useState, useEffect, useMemo } from 'react';
-import { Users, TrendingUp, Settings, Check } from 'lucide-react';
+import { Users, TrendingUp, Settings, Check, Upload } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import MiniGraph from './MiniGraph';
 import * as yukiApi from '../../api/yukiApi';
+import StrategyPublish from './StrategyPublish';
 
 type Strategy = {
   id: string;
@@ -54,6 +55,8 @@ export default function StrategyMarketplace() {
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedStrategy, setSelectedStrategy] = useState<any>(null);
   const [loading, setLoading] = useState(true);
+  const [publishModalOpen, setPublishModalOpen] = useState(false);
+  const [strategyToPublish, setStrategyToPublish] = useState<{id: string, name: string} | null>(null);
 
   useEffect(() => {
     const fetchMarketplace = async () => {
@@ -426,6 +429,16 @@ export default function StrategyMarketplace() {
                     <span>📋</span>
                     Copy Strategy
                   </button>
+                  <button 
+                    onClick={() => {
+                      setStrategyToPublish({ id: selectedStrategy.id, name: selectedStrategy.name });
+                      setPublishModalOpen(true);
+                    }}
+                    className="w-full bg-indigo-600 hover:bg-indigo-700 px-4 py-2 rounded font-semibold flex items-center justify-center gap-2 transition-colors mb-2"
+                  >
+                    <Upload className="h-4 w-4" />
+                    Publish to Marketplace
+                  </button>
                   <button className="w-full bg-purple-600 hover:bg-purple-700 px-4 py-2 rounded font-semibold flex items-center justify-center gap-2 transition-colors">
                     <TrendingUp className="h-4 w-4" />
                     Upgrade to Amara
@@ -436,11 +449,21 @@ export default function StrategyMarketplace() {
           )}
         </div>
       </div>
+
+      {/* Publish Modal */}
+      {strategyToPublish && (
+        <StrategyPublish
+          open={publishModalOpen}
+          onOpenChange={setPublishModalOpen}
+          strategyId={strategyToPublish.id}
+          strategyName={strategyToPublish.name}
+        />
+      )}
     </div>
   );
 }
 
-const Check = ({ className }: { className: string }) => (
+const CheckmarkIcon = ({ className }: { className: string }) => (
   <svg
     className={className}
     viewBox="0 0 24 24"

@@ -129,22 +129,40 @@ class TokenDiscoveryService {
   private unifiedUniverse: Map<string, UnifiedToken> = new Map();
   private lastBuilt = 0;
   private readonly REFRESH_MS = 15 * 60 * 1000; // 15 minutes
+  private readonly CHAIN_SCAN_TIMEOUT_MS = parseInt(process.env.TOKEN_DISCOVERY_CHAIN_TIMEOUT_MS || '12000');
+  private readonly CELO_SCAN_TIMEOUT_MS = parseInt(process.env.TOKEN_DISCOVERY_CELO_TIMEOUT_MS || '8000');
+  private readonly CHAIN_CIRCUIT_BREAKER_MS = 60 * 60 * 1000; // 1 hour
+  private chainFailures: Map<string, number> = new Map();
   private buildPromise: Promise<void> | null = null;
 
   async buildUnifiedUniverse(): Promise<Map<string, UnifiedToken>> {
     if (this.buildPromise) {
+      logger.debug('[TokenDiscovery] build already in-flight; awaiting existing promise');
       await this.buildPromise;
       return this.unifiedUniverse;
     }
 
     const now = Date.now();
     if (this.unifiedUniverse.size > 0 && now - this.lastBuilt < this.REFRESH_MS) {
+      logger.debug('[TokenDiscovery] Using cached unified universe');
       return this.unifiedUniverse;
     }
 
-    this.buildPromise = this._build().finally(() => {
-      this.buildPromise = null;
-    });
+    // Start build with a guarded timeout so startup isn't blocked indefinitely.
+    // Increased from 3s to 15s so DEX scanning and Celo chain discovery have room to finish.
+    const buildOp: Promise<void> = this._build();
+    const TIMEOUT_MS = parseInt(process.env.TOKEN_DISCOVERY_TIMEOUT_MS || '15000');
+    this.buildPromise = Promise.race([
+      buildOp,
+      new Promise<void>((_, reject) => setTimeout(() => reject(new Error(`TokenDiscovery build timeout after ${TIMEOUT_MS}ms`)), TIMEOUT_MS))
+    ])
+      .catch((err) => {
+        // Log and continue — we want startup to proceed even if discovery times out
+        logger.warn('[TokenDiscovery] buildUnifiedUniverse timed out or failed:', err?.message || err);
+      })
+      .finally(() => {
+        this.buildPromise = null;
+      });
 
     await this.buildPromise;
     return this.unifiedUniverse;
@@ -153,11 +171,24 @@ class TokenDiscoveryService {
   private async _build(): Promise<void> {
     logger.info('[TokenDiscovery] Building unified token universe...');
     const t0 = Date.now();
+    logger.debug('[TokenDiscovery] Starting discoverCEXAssets + discoverMultiChainDEXAssets');
 
-    const [cexAssetsRes, dexPairsRes] = await Promise.allSettled([
-      this.discoverCEXAssets(),
-      this.discoverMultiChainDEXAssets(),
-    ]);
+    // Run both discovery flows but with per-call logging so we can trace stalls
+    const cexPromise = (async () => {
+      logger.debug('[TokenDiscovery] discoverCEXAssets: starting');
+      const res = await this.discoverCEXAssets();
+      logger.debug('[TokenDiscovery] discoverCEXAssets: completed');
+      return res;
+    })();
+
+    const dexPromise = (async () => {
+      logger.debug('[TokenDiscovery] discoverMultiChainDEXAssets: starting');
+      const res = await this.discoverMultiChainDEXAssets();
+      logger.debug('[TokenDiscovery] discoverMultiChainDEXAssets: completed');
+      return res;
+    })();
+
+    const [cexAssetsRes, dexPairsRes] = await Promise.allSettled([cexPromise, dexPromise]);
 
     const universe = new Map<string, UnifiedToken>();
 
@@ -346,7 +377,10 @@ class TokenDiscoveryService {
     );
     // persist a local fallback cache to allow resilient restarts when external APIs fail
     try {
-      await this.saveFallbackUniverse();
+      // Save fallback asynchronously to avoid blocking final startup path
+      this.saveFallbackUniverse().catch((err) => {
+        logger.warn('[TokenDiscovery] Async saveFallbackUniverse failed:', err?.message || err);
+      });
     } catch (err: any) {
       logger.warn('[TokenDiscovery] Failed to persist fallback universe cache:', err?.message || err);
     }
@@ -428,7 +462,7 @@ class TokenDiscoveryService {
     const limiter = pLimit(2);
 
     const chainResults = await Promise.allSettled(
-      enabledChains.map(({ chainKey, cfg }) => limiter(() => this.discoverChainPairs(chainKey, cfg)))
+      enabledChains.map(({ chainKey, cfg }) => limiter(() => this.discoverChainPairsWithCircuitBreaker(chainKey, cfg)))
     );
 
     const pairs: DexPair[] = [];
@@ -500,6 +534,33 @@ class TokenDiscoveryService {
 
     logger.info(`[TokenDiscovery] ${cfg.name}: ${pairsBySymbol.size} tokens discovered`);
     return Array.from(pairsBySymbol.values());
+  }
+
+  private async discoverChainPairsWithCircuitBreaker(chainKey: string, cfg: ChainConfig): Promise<DexPair[]> {
+    const failureExpiry = this.chainFailures.get(chainKey) || 0;
+    if (Date.now() < failureExpiry) {
+      logger.warn(`[TokenDiscovery] Skipping ${cfg.name} chain discovery due to recent failure until ${new Date(failureExpiry).toISOString()}`);
+      return [];
+    }
+
+    try {
+      return await this.timeoutPromise(
+        this.discoverChainPairs(chainKey, cfg),
+        chainKey === 'celo' ? this.CELO_SCAN_TIMEOUT_MS : this.CHAIN_SCAN_TIMEOUT_MS,
+        `${cfg.name} DEX discovery timed out`
+      );
+    } catch (err: any) {
+      logger.warn(`[TokenDiscovery] Chain discovery failed for ${cfg.name}: ${err.message || err}`);
+      this.chainFailures.set(chainKey, Date.now() + this.CHAIN_CIRCUIT_BREAKER_MS);
+      return [];
+    }
+  }
+
+  private async timeoutPromise<T>(promise: Promise<T>, timeoutMs: number, reason: string): Promise<T> {
+    return Promise.race([
+      promise,
+      new Promise<T>((_, reject) => setTimeout(() => reject(new Error(reason)), timeoutMs)),
+    ]);
   }
 
   /**

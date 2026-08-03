@@ -590,7 +590,7 @@ export const FEATURES: Record<string, FeatureDefinition> = {
   requiresAdvancedMode: false,
   presentation: { okedi: 'visible', yuki: 'visible', amara: 'visible' },
   featureServiceKey: 'payment.methods',
-  routes: ['/api/v1/p2p-transfers/*'],
+  routes: ['/api/p2p-transfers/*', '/api/v1/p2p-transfers/*', '/walletapi/v1/p2p-transfers/*'],
 },
 
 // Features that should unlock via KYC:

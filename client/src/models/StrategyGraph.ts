@@ -1,5 +1,5 @@
-import { StrategyNode } from './StrategyNode';
-import { StrategyEdge } from './StrategyEdge';
+import type { StrategyNode } from './StrategyNode';
+import type { StrategyEdge } from './StrategyEdge';
 
 export interface RiskControls {
   maxLoss: number;
@@ -40,4 +40,4 @@ export function emptyGraph(): StrategyGraph {
   };
 }
 
-export default StrategyGraph;
+export default emptyGraph;

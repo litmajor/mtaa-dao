@@ -4,8 +4,11 @@ import { ethers } from 'ethers';
 import { db } from '../db';
 import { daos, daoRotationCycles } from '../../shared/schema';
 import { eq, desc } from 'drizzle-orm';
+import { resolveProviderUrls } from './providerBootstrap';
+import { ResilientRpcProvider } from './resilientRpcProvider';
 
-const RPC_URL = process.env.RPC_URL || 'http://localhost:8545';
+const providerUrls = resolveProviderUrls();
+const RPC_URL = providerUrls.rpcUrl;
 const ROTATION_MODULE_ADDRESS = process.env.ROTATION_MODULE_ADDRESS || '';
 
 function loadAbi() {
@@ -20,7 +23,12 @@ export function startRotationEventListener() {
     return;
   }
 
-  const provider = new ethers.JsonRpcProvider(RPC_URL);
+  const resilientProvider = new ResilientRpcProvider({
+    primary: { name: 'primary-rpc', httpUrl: RPC_URL },
+    fallback: providerUrls.fallbackRpcUrl ? { name: 'fallback-rpc', httpUrl: providerUrls.fallbackRpcUrl } : undefined,
+    cooldownMs: 60_000,
+  });
+  const provider = resilientProvider.getRawProvider();
   const abi = loadAbi();
   const contract = new ethers.Contract(ROTATION_MODULE_ADDRESS, abi, provider);
 

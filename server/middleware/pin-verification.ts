@@ -7,6 +7,7 @@
 import { Request, Response, NextFunction } from 'express';
 import { verifySessionToken } from '../services/wallet-session-service';
 import { logger } from '../utils/logger';
+import { getRequestUserId } from '../utils/requestUser';
 
 export interface PINProtectedRequest extends Request {
   walletSession?: {
@@ -14,6 +15,8 @@ export interface PINProtectedRequest extends Request {
     walletId?: string;
     userId?: string;
     expiresAt?: Date;
+    connectedAt?: Date;
+    lastAccessedAt?: Date;
   };
 }
 
@@ -52,7 +55,7 @@ export async function requirePINVerification(
     }
 
     // Verify user matches
-    const userId = req.user?.id;
+    const userId = getRequestUserId(req);
     if (!userId || userId !== sessionResult.userId) {
       logger.warn(`Session user mismatch: ${sessionResult.userId} vs ${userId}`);
       return res.status(403).json({
@@ -201,6 +204,20 @@ export function checkAmountThreshold(thresholdAmount?: string | number) {
           userId: req.walletSession.userId,
           walletId: req.walletSession.walletId,
         });
+
+        const maxAgeMs = Number(process.env.PIN_LARGE_TRANSFER_MAX_AGE_MS) || 5 * 60 * 1000;
+        const verifiedAt = req.walletSession.connectedAt || req.walletSession.lastAccessedAt;
+        const sessionAgeMs = verifiedAt ? Date.now() - verifiedAt.getTime() : Number.POSITIVE_INFINITY;
+
+        if (sessionAgeMs > maxAgeMs) {
+          return res.status(401).json({
+            success: false,
+            error: `Large transfers (>${threshold}) require recent PIN verification`,
+            code: 'PIN_REVERIFICATION_REQUIRED',
+            amount,
+            threshold,
+          });
+        }
       }
 
       next();

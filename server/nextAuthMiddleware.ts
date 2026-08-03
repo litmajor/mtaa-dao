@@ -1,11 +1,11 @@
 import type { RequestHandler } from "express";
 import { getToken } from "next-auth/jwt";
-import { verifyAccessToken } from "./auth";
+import { verifyAccessToken, type TokenPayload } from "./auth";
 import { storage } from "./storage";
 
 export interface UserClaims {
   sub: string; // JWT subject, always present
-  role?: string;
+  roles?: string | string[];
   email?: string;
 }
 
@@ -27,10 +27,11 @@ export const isAuthenticated: RequestHandler = async (req, res, next) => {
     let userClaims: UserClaims | null = null;
 
     if (token && token.sub) {
-      userClaims = { 
-        sub: token.sub, 
+      const nextToken = token as Partial<TokenPayload>;
+      userClaims = {
+        sub: token.sub,
         email: token.email || undefined,
-        role: (token as any).role || undefined 
+        roles: nextToken.roles ?? nextToken.role ?? undefined,
       };
     } else {
       // Fallback to JWT token from Authorization header
@@ -42,7 +43,7 @@ export const isAuthenticated: RequestHandler = async (req, res, next) => {
           userClaims = {
             sub: decoded.sub,
             email: decoded.email,
-            role: decoded.role
+            roles: decoded.roles ?? decoded.role,
           };
         }
       }
@@ -53,11 +54,11 @@ export const isAuthenticated: RequestHandler = async (req, res, next) => {
     }
 
     // Fetch user details if role is missing
-    if (!userClaims.role) {
+    if (!userClaims.roles) {
       try {
         const user = await storage.getUser(userClaims.sub);
         if (user) {
-          userClaims.role = user.role || 'user';
+          userClaims.roles = (user.roles as string) ?? (user as any).role ?? 'user';
         }
       } catch (error) {
         console.warn('Could not fetch user role:', error);
@@ -76,15 +77,19 @@ export const isAuthenticated: RequestHandler = async (req, res, next) => {
 
 export const requireRole = (...allowedRoles: string[]): RequestHandler => {
   return (req, res, next) => {
-    if (!req.user?.claims?.role) {
+    const currentRoles = req.user?.claims?.roles;
+    if (!currentRoles) {
       return res.status(403).json({ message: "Access denied: No role assigned" });
     }
 
-    if (!allowedRoles.includes(req.user.claims.role)) {
+    // roles may be a comma-separated string or a single role
+    const roleList = typeof currentRoles === 'string' ? currentRoles.split(',').map(r => r.trim()) : Array.isArray(currentRoles) ? currentRoles : [String(currentRoles)];
+
+    if (!roleList.some(r => allowedRoles.includes(r))) {
       return res.status(403).json({ 
         message: "Access denied: Insufficient permissions",
         required: allowedRoles,
-        current: req.user.claims.role
+        current: currentRoles
       });
     }
 

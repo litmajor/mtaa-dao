@@ -13,7 +13,7 @@
  */
 
 import swaggerJsdoc from 'swagger-jsdoc';
-import { env } from '../shared/config';
+import { env } from '../../shared/config';
 
 const swaggerOptions = {
   definition: {

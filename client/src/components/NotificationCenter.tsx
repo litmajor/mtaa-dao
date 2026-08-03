@@ -2,24 +2,8 @@
 import React, { useState, useEffect } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useNotifications, useNotificationData } from '../hooks/useNotifications';
-import { Lucide } from '../lib/icons';
-// use a runtime-safe mapping to avoid compile-time missing-export errors across lucide versions
-const {
-  Bell,
-  X,
-  Check,
-  CheckCircle,
-  CheckCheck,
-  Trash2,
-  Settings,
-  Search,
-  FileText,
-  Clipboard,
-  DollarSign,
-  Users,
-  ArrowDown,
-  ArrowUp,
-} = (Lucide as any) || {};
+import { Bell, X, Check, CheckCircle, Trash2, Settings, Search, FileText, DollarSign, Users, ArrowDown, ArrowUp } from 'lucide-react';
+import { buildNotificationEndpoint } from '../lib/notificationEndpoints';
 import { Button } from './ui/button';
 import { Input } from './ui/input';
 import { Badge } from './ui/badge';
@@ -28,7 +12,7 @@ import { ScrollArea } from './ui/scroll-area';
 import { Separator } from './ui/separator';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from './ui/dialog';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from './ui/tabs';
-import formatDistanceToNow from 'date-fns/formatDistanceToNow';
+import {formatDistanceToNow} from 'date-fns/formatDistanceToNow';
 
 interface Notification {
   id: string;
@@ -70,7 +54,7 @@ export default function NotificationCenter({ trigger }: NotificationCenterProps)
     queryKey: ['notifications', 'search', searchTerm],
     queryFn: async () => {
       if (!searchTerm.trim()) return null;
-      const response = await fetch(`/api/notifications/search?q=${encodeURIComponent(searchTerm)}`);
+      const response = await fetch(`${buildNotificationEndpoint('/search')}?q=${encodeURIComponent(searchTerm)}`);
       if (!response.ok) throw new Error('Failed to search notifications');
       return response.json();
     },
@@ -79,7 +63,7 @@ export default function NotificationCenter({ trigger }: NotificationCenterProps)
 
   const markAsReadMutation = useMutation({
     mutationFn: async (notificationId: string) => {
-      const response = await fetch(`/api/notifications/${notificationId}/read`, {
+      const response = await fetch(buildNotificationEndpoint(`/${notificationId}/read`), {
         method: 'PATCH',
       });
       if (!response.ok) throw new Error('Failed to mark as read');
@@ -92,7 +76,7 @@ export default function NotificationCenter({ trigger }: NotificationCenterProps)
 
   const markAllAsReadMutation = useMutation({
     mutationFn: async () => {
-      const response = await fetch('/api/notifications/mark-all-read', {
+      const response = await fetch(buildNotificationEndpoint('/mark-all-read'), {
         method: 'PATCH',
       });
       if (!response.ok) throw new Error('Failed to mark all as read');
@@ -105,7 +89,7 @@ export default function NotificationCenter({ trigger }: NotificationCenterProps)
 
   const deleteNotificationMutation = useMutation({
     mutationFn: async (notificationId: string) => {
-      const response = await fetch(`/api/notifications/${notificationId}`, {
+      const response = await fetch(buildNotificationEndpoint(`/${notificationId}`), {
         method: 'DELETE',
       });
       if (!response.ok) throw new Error('Failed to delete notification');

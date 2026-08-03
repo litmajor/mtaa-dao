@@ -5,9 +5,9 @@ import type { NodePgDatabase } from 'drizzle-orm/node-postgres';
 import * as schema from "../shared/schema.js";
 import { metricsCollector } from './monitoring/metricsCollector';
 
-const DEFAULT_POOL_MAX = parseInt(process.env.DATABASE_POOL_MAX || '20', 10);
+const DEFAULT_POOL_MAX = parseInt(process.env.DATABASE_POOL_MAX || '50', 10);
 const DEFAULT_IDLE_TIMEOUT = parseInt(process.env.DATABASE_POOL_IDLE_TIMEOUT_MS || '30000', 10);
-const DEFAULT_CONN_TIMEOUT = parseInt(process.env.DATABASE_POOL_CONN_TIMEOUT_MS || '30000', 10);
+const DEFAULT_CONN_TIMEOUT = parseInt(process.env.DATABASE_POOL_CONN_TIMEOUT_MS || '120000', 10);
 
 if (!process.env.DATABASE_URL) {
   throw new Error(
@@ -30,8 +30,8 @@ export const pool = new Pool({
 });
 
 // Handle pool errors
-pool.on('error', (err) => {
-  console.error('Unexpected PostgreSQL pool error:', err);
+pool.on('error', (err: unknown) => {
+  console.error('Unexpected PostgreSQL pool error:', err instanceof Error ? err.message : String(err));
 });
 
 // Export a wait helper for startup to block until DB is available.
@@ -44,17 +44,17 @@ export async function waitForDatabase(options?: { retries?: number; initialDelay
   for (let i = 0; i < retries; i++) {
     try {
       const client = await pool.connect();
-      console.log('✅ PostgreSQL connected successfully');
+      console.log('PostgreSQL connected successfully');
       client.release();
       return;
-    } catch (err: any) {
+    } catch (err: unknown) {
       const attempt = i + 1;
       const delay = Math.min(initialDelayMs * Math.pow(2, i), maxDelayMs);
       if (attempt < retries) {
         console.log(`⏳ PostgreSQL connection attempt ${attempt}/${retries} failed, retrying in ${Math.round(delay/1000)}s...`);
         await new Promise(resolve => setTimeout(resolve, delay));
       } else {
-        console.error('❌ Failed to connect to PostgreSQL after retries:', err?.message || err);
+        console.error('❌ Failed to connect to PostgreSQL after retries:', err instanceof Error ? err.message : String(err));
         console.error('   Please check your DATABASE_URL and network connectivity');
         throw err;
       }
@@ -70,17 +70,25 @@ try {
   // report every 10s
   setInterval(() => {
     try {
-      const total = (pool as any).totalCount ?? 0;
-      const idle = (pool as any).idleCount ?? 0;
-      const waiting = (pool as any).waitingCount ?? 0;
+      const total = (pool as Pool & { totalCount?: number }).totalCount ?? 0;
+      const idle = (pool as Pool & { idleCount?: number }).idleCount ?? 0;
+      const waiting = (pool as Pool & { waitingCount?: number }).waitingCount ?? 0;
+      const active = Math.max(0, total - idle);
 
       // Report detailed pool gauges to metrics collector
       metricsCollector.reportDbPoolMetrics(total, idle, waiting);
-    } catch (err) {
+
+      const poolStatus = `total=${total}, idle=${idle}, active=${active}, waiting=${waiting}`;
+      if (waiting > 0 || idle <= 2 || active >= Math.max(1, DEFAULT_POOL_MAX - 2)) {
+        console.warn(`[DB POOL] ${poolStatus}`);
+      } else {
+        console.debug(`[DB POOL] ${poolStatus}`);
+      }
+    } catch (err: unknown) {
       // avoid crashing the process if metric collection fails
-      console.error('Error collecting DB pool metrics:', err);
+      console.error('Error collecting DB pool metrics:', err instanceof Error ? err.message : String(err));
     }
   }, 10000);
 } catch (err) {
-  console.error('Failed to start DB metrics emitter:', err);
+  console.error('Failed to start DB metrics emitter:', err instanceof Error ? err.message : String(err));
 }

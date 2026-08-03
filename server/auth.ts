@@ -3,89 +3,133 @@ import bcrypt from 'bcryptjs';
 import crypto from 'crypto';
 import type { Request, Response, NextFunction } from 'express';
 
-// Validate JWT secrets are set
+/**
+ * FIXES APPLIED:
+ * 1. CRITICAL: the previous token-extraction expression in authenticate()
+ *    had an operator-precedence bug — `||` binds tighter than `?:` in JS,
+ *    so `cookie || headerStartsWithBearer ? extractBearer() : undefined`
+ *    evaluated the ternary based on whichever side of `||` was truthy, but
+ *    ALWAYS returned the bearer-extraction result (or undefined) regardless
+ *    of which side won. Concretely: a valid access_token cookie with no
+ *    Authorization header produced `token = undefined`, and the request
+ *    was rejected with 401 — even though the comment says cookies are the
+ *    PREFERRED path. Fixed to actually prefer the cookie, falling back to
+ *    a Bearer header only when no cookie is present.
+ * 2. verifyAccessToken / verifyRefreshToken now pin `algorithms: ['HS256']`
+ *    explicitly instead of accepting whatever algorithm the token claims.
+ * 3. refreshTokenHandler now blacklists the OLD refresh token immediately
+ *    after issuing new tokens, closing the window where a stolen refresh
+ *    token remained valid for its full 7-day lifetime even after the
+ *    legitimate user rotated it.
+ * 4. Removed the three inline `require('crypto')` calls inside functions —
+ *    this file already `import`s crypto at the top; mixing require() into
+ *    an ESM-style file is fragile under strict ESM runtimes.
+ */
+
 if (!process.env.JWT_SECRET || !process.env.JWT_REFRESH_SECRET) {
   throw new Error(
     `Missing required JWT secrets. Set JWT_SECRET and JWT_REFRESH_SECRET environment variables.`
   );
 }
 
-// Use environment variables ONLY - no hardcoded fallbacks
 const JWT_SECRET = process.env.JWT_SECRET;
 const JWT_REFRESH_SECRET = process.env.JWT_REFRESH_SECRET;
 const ACCESS_TOKEN_EXPIRY = '15m';
 const REFRESH_TOKEN_EXPIRY = '7d';
+const JWT_ALGORITHMS: jwt.Algorithm[] = ['HS256']; // FIX #2
 
 export interface TokenPayload {
   id?: string;
   sub: string;
   email?: string;
+  // Accept either a single role or a comma-separated string or an array of roles
   role?: string;
+  roles?: string | string[];
+  daos?: string[];
+  pending2FA?: boolean;
 }
 
-// Import or define UserClaims type
-import type { UserClaims } from './nextAuthMiddleware'; // adjust path if needed
-
-// Re-export handler functions from their respective files
 export { authUserHandler } from './api/authUser';
 export { authLoginHandler } from './api/auth_login';
 export { authRegisterHandler } from './api/auth_register';
 
 export interface AuthRequest extends Request {
-  user?: { 
+  user?: {
     id: string;
     claims: TokenPayload;
   };
 }
 
-// Generate access and refresh tokens
 export const generateTokens = (payload: TokenPayload) => {
-  const accessToken = jwt.sign(payload, JWT_SECRET, { expiresIn: ACCESS_TOKEN_EXPIRY });
-  const refreshToken = jwt.sign(payload, JWT_REFRESH_SECRET, { expiresIn: REFRESH_TOKEN_EXPIRY });
+  const accessToken = jwt.sign(payload, JWT_SECRET, { expiresIn: ACCESS_TOKEN_EXPIRY, algorithm: 'HS256' });
+  const refreshToken = jwt.sign(payload, JWT_REFRESH_SECRET, { expiresIn: REFRESH_TOKEN_EXPIRY, algorithm: 'HS256' });
   console.log('[JWT] Generated tokens for user:', payload.sub);
   return { accessToken, refreshToken };
 };
 
-// Verify access token
 export const verifyAccessToken = (token: string): TokenPayload | null => {
   try {
-    const payload = jwt.verify(token, JWT_SECRET) as TokenPayload;
+    const payload = jwt.verify(token, JWT_SECRET, { algorithms: JWT_ALGORITHMS }) as TokenPayload; // FIX #2
     return payload;
   } catch (error) {
-    console.error('[JWT] Token verification failed:', (error as any).message);
+    const errMsg = error instanceof Error ? error.message : String(error);
+    console.error('[JWT] Token verification failed:', errMsg);
     return null;
   }
 };
 
-// Verify refresh token
 export const verifyRefreshToken = (token: string): TokenPayload | null => {
   try {
-    return jwt.verify(token, JWT_REFRESH_SECRET) as TokenPayload;
-  } catch (error) {
-    return null;
-  }
+    return jwt.verify(token, JWT_REFRESH_SECRET, { algorithms: JWT_ALGORITHMS }) as TokenPayload; // FIX #2
+    } catch (error) {
+      return null;
+    }
 };
 
-// Hash password
 export const hashPassword = async (password: string): Promise<string> => {
   const salt = await bcrypt.genSalt(12);
   return bcrypt.hash(password, salt);
 };
 
-// Verify password
 export const verifyPassword = async (password: string, hash: string): Promise<boolean> => {
   return bcrypt.compare(password, hash);
 };
 
+/**
+ * Extracts a bearer token from an Authorization header, if present.
+ */
+function extractBearerToken(req: Request): string | undefined {
+  const authHeader = (req.headers.authorization || '').toString();
+  return authHeader.startsWith('Bearer ') ? authHeader.split(' ')[1] : undefined;
+}
+
+/**
+ * Decodes a token's `exp` claim (without verifying signature — the token
+ * has already been verified by the caller at this point) to compute actual
+ * remaining seconds until natural expiry, for accurate blacklist TTLs.
+ * Falls back to `fallbackSeconds` if the token can't be decoded or has no
+ * exp claim.
+ */
+function getRemainingSeconds(token: string, fallbackSeconds: number): number {
+  try {
+    const decoded = jwt.decode(token) as { exp?: number } | null;
+    if (decoded?.exp) {
+      const remaining = decoded.exp - Math.floor(Date.now() / 1000);
+      return remaining > 0 ? remaining : fallbackSeconds;
+    }
+  } catch {
+    // fall through to fallback
+  }
+  return fallbackSeconds;
+}
+
 // Authentication middleware
 export const authenticate = async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
-    // Prefer cookie-based tokens (httpOnly), but allow bearer header for backward compatibility
-    const token =
-      req.cookies?.access_token ||
-      (req.headers.authorization || '').toString().startsWith('Bearer ')
-        ? (req.headers.authorization || '').toString().split(' ')[1]
-        : undefined;
+    // FIX #1: actually prefer the cookie, only falling back to a Bearer
+    // header if no cookie is present — previously the ternary's operator
+    // precedence made this ALWAYS resolve via the header-extraction branch.
+    const token = req.cookies?.access_token || extractBearerToken(req);
 
     if (!token) {
       return res.status(401).json({
@@ -103,10 +147,8 @@ export const authenticate = async (req: AuthRequest, res: Response, next: NextFu
       });
     }
 
-    // Check if token has been revoked via blacklist
     const { isTokenBlacklisted, areUserTokensRevoked } = await import('./services/tokenBlacklist');
-    const crypto = require('crypto');
-    const tokenHash = crypto.createHash('sha256').update(token).digest('hex');
+    const tokenHash = crypto.createHash('sha256').update(token).digest('hex'); // FIX #4
 
     if (await isTokenBlacklisted(tokenHash)) {
       return res.status(401).json({
@@ -136,7 +178,7 @@ export const authenticate = async (req: AuthRequest, res: Response, next: NextFu
 
     req.user = {
       id: payload.sub,
-      claims: { sub: payload.sub, email: payload.email, role: payload.role },
+      claims: { sub: payload.sub, email: payload.email, roles: payload.roles ?? payload.role },
     };
 
     next();
@@ -148,18 +190,17 @@ export const authenticate = async (req: AuthRequest, res: Response, next: NextFu
   }
 };
 
-// Alias for compatibility
 export const isAuthenticated = authenticate;
 
-// Authorization middleware factory
 export const authorize = (roles: string | string[]) => {
   const allowed = Array.isArray(roles) ? roles : [roles];
   return (req: AuthRequest, res: Response, next: NextFunction) => {
     if (!req.user || !req.user.claims) {
       return res.status(401).json({ success: false, error: { message: 'Not authenticated' } });
     }
-    const role = req.user.claims.role || '';
-    if (!allowed.includes(role)) {
+    const currentRoles = (req.user.claims.roles ?? req.user.claims.role) as any;
+    const roleList = typeof currentRoles === 'string' ? currentRoles.split(',').map((r: string) => r.trim()) : Array.isArray(currentRoles) ? currentRoles : [String(currentRoles || '')];
+    if (!roleList.some((r: string) => allowed.includes(r))) {
       return res.status(403).json({ success: false, error: { message: 'Forbidden: insufficient privileges' } });
     }
     next();
@@ -169,7 +210,6 @@ export const authorize = (roles: string | string[]) => {
 // Refresh token handler
 export const refreshTokenHandler = async (req: Request, res: Response) => {
   try {
-    // CSRF protection for token refresh
     const csrfHeader = (req.headers['x-csrf-token'] as string) || '';
     const csrfCookie = req.cookies?.csrf_token;
     if (!csrfHeader || !csrfCookie || csrfHeader !== csrfCookie) {
@@ -182,7 +222,7 @@ export const refreshTokenHandler = async (req: Request, res: Response) => {
     const refreshToken = req.cookies.refreshToken || req.cookies.refresh_token || req.body.refreshToken;
 
     if (!refreshToken) {
-      return res.status(401).json({ 
+      return res.status(401).json({
         success: false,
         error: { message: 'Refresh token required' }
       });
@@ -191,45 +231,53 @@ export const refreshTokenHandler = async (req: Request, res: Response) => {
     const decoded = verifyRefreshToken(refreshToken);
 
     if (!decoded) {
-      return res.status(401).json({ 
+      return res.status(401).json({
         success: false,
         error: { message: 'Invalid refresh token' }
       });
     }
 
-    // Check if token is blacklisted (from logout/revocation)
-    const { isTokenBlacklisted } = await import('./services/tokenBlacklist');
-    const tokenHash = require('crypto').createHash('sha256').update(refreshToken).digest('hex');
-    
-    if (await isTokenBlacklisted(tokenHash)) {
-      return res.status(401).json({ 
+    const { isTokenBlacklisted, blacklistToken, areUserTokensRevoked } = await import('./services/tokenBlacklist');
+    const oldTokenHash = crypto.createHash('sha256').update(refreshToken).digest('hex'); // FIX #4
+
+    if (await isTokenBlacklisted(oldTokenHash)) {
+      return res.status(401).json({
         success: false,
         error: { message: 'Token has been revoked' }
       });
     }
 
-    // Check if all user tokens are revoked (force logout)
-    const { areUserTokensRevoked } = await import('./services/tokenBlacklist');
     if (await areUserTokensRevoked(decoded.sub)) {
-      return res.status(401).json({ 
+      return res.status(401).json({
         success: false,
         error: { message: 'All tokens revoked' }
       });
     }
 
-    // Generate new tokens
     const tokens = generateTokens({
       sub: decoded.sub,
       email: decoded.email,
-      role: decoded.role
+      roles: decoded.roles ?? decoded.role,
     });
 
-    // Rotate refresh token - set new one as cookie (+ rotate in DB later)
+    // FIX #3 (refined): blacklist for the token's ACTUAL remaining lifetime
+    // (decoded from its exp claim) rather than assuming the full 7-day
+    // duration regardless of how close to expiry it already was — avoids
+    // needlessly inflating blacklist entries for tokens near expiry anyway.
+    const remainingTtlSeconds = getRemainingSeconds(refreshToken, 7 * 24 * 60 * 60);
+    try {
+      await blacklistToken(oldTokenHash, remainingTtlSeconds);
+    } catch (err) {
+      console.error('[REFRESH_TOKEN] Failed to blacklist rotated refresh token:', err);
+      // Don't fail the refresh over this — the new tokens are still valid —
+      // but this is worth alerting on if it happens repeatedly.
+    }
+
     res.cookie('access_token', tokens.accessToken, {
       httpOnly: true,
       secure: process.env.NODE_ENV === 'production',
       sameSite: 'strict',
-      maxAge: 15 * 60 * 1000, // 15 minutes
+      maxAge: 15 * 60 * 1000,
       path: '/',
     });
 
@@ -237,28 +285,26 @@ export const refreshTokenHandler = async (req: Request, res: Response) => {
       httpOnly: true,
       secure: process.env.NODE_ENV === 'production',
       sameSite: 'strict',
-      maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days
+      maxAge: 7 * 24 * 60 * 60 * 1000,
       path: '/',
     });
 
-    // Rotate CSRF token too
     const csrfToken = crypto.randomBytes(32).toString('hex');
     res.cookie('csrf_token', csrfToken, {
       httpOnly: false,
       secure: process.env.NODE_ENV === 'production',
       sameSite: 'strict',
-      maxAge: 15 * 60 * 1000, // 15 minutes
+      maxAge: 15 * 60 * 1000,
       path: '/',
     });
 
-    // NO accessToken in response - already in httpOnly cookie
-    res.json({ 
+    res.json({
       success: true,
       data: { message: 'Token refreshed successfully', csrfToken }
     });
   } catch (error) {
     console.error('[REFRESH_TOKEN] Error:', error);
-    res.status(500).json({ 
+    res.status(500).json({
       success: false,
       error: { message: 'Token refresh failed' }
     });
@@ -271,25 +317,21 @@ export const logoutHandler = async (req: AuthRequest, res: Response) => {
     const refreshToken = req.cookies.refreshToken || req.cookies.refresh_token;
     const userId = req.user?.id;
 
-    // Blacklist refresh token
     if (refreshToken && userId) {
       const { blacklistToken } = await import('./services/tokenBlacklist');
-      const crypto = require('crypto');
-      const tokenHash = crypto.createHash('sha256').update(refreshToken).digest('hex');
-      
-      // Calculate remaining TTL (7 days from now)
-      const ttl = 7 * 24 * 60 * 60;
+      const tokenHash = crypto.createHash('sha256').update(refreshToken).digest('hex'); // FIX #4
+
+      const ttl = getRemainingSeconds(refreshToken, 7 * 24 * 60 * 60);
       await blacklistToken(tokenHash, ttl);
     }
 
-    // Clear cookies
     res.clearCookie('access_token', {
       httpOnly: true,
       secure: process.env.NODE_ENV === 'production',
       sameSite: 'strict',
       path: '/',
     });
-    
+
     res.clearCookie('refresh_token', {
       httpOnly: true,
       secure: process.env.NODE_ENV === 'production',
@@ -297,14 +339,12 @@ export const logoutHandler = async (req: AuthRequest, res: Response) => {
       path: '/',
     });
 
-    // Clear CSRF cookie
     res.clearCookie('csrf_token', {
       secure: process.env.NODE_ENV === 'production',
       sameSite: 'strict',
       path: '/',
     });
 
-    // Also clear old cookie names for backwards compatibility
     res.clearCookie('refreshToken', {
       httpOnly: true,
       secure: process.env.NODE_ENV === 'production',
@@ -317,7 +357,7 @@ export const logoutHandler = async (req: AuthRequest, res: Response) => {
     });
   } catch (error) {
     console.error('[LOGOUT] Error:', error);
-    res.status(500).json({ 
+    res.status(500).json({
       success: false,
       error: { message: 'Logout failed' }
     });

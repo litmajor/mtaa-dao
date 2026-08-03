@@ -67,7 +67,7 @@
  *      const quote = await gatewayAggregator.getPrice(
  *        '0xcEnn...', // cEUR Celo address
  *        '0x765d...', // CELO Celo address
- *        '1000000000000000000' // 1 cEUR in Wei
+ *        '1000000000000000000' // 1 cEUR in Weigat
  *      );
  *      if (quote.valid) {
  *        executeSwap(quote); // Use best-price adapter
@@ -113,6 +113,7 @@
  */
 
 import { logger } from '../utils/logger.ts';
+import { cacheService } from './cacheService';
 
 // ── Uniswap V3 SDK ────────────────────────────────────────────────────────────
 import { createRequire } from 'module';
@@ -516,18 +517,57 @@ class UniswapV3Adapter implements DexAdapter {
     }
   }
 
+  private readonly uniswapV3SubgraphUrl = 'https://api.thegraph.com/subgraphs/name/ianlapham/uniswap-v3-celo';
+
   private async fetchPoolsForToken(token: string): Promise<Array<{
     address: string;
     liquidityUSD: number;
     feeTier: number;
     concentration: number;
   }>> {
-    // Production: query Uniswap V3 Subgraph for Celo
-    logger.warn(`Uniswap V3 (Celo): Subgraph query not implemented, returning placeholder`);
-    return [
-      { address: 'pool1', liquidityUSD: 2_000_000, feeTier: 500, concentration: 85 },
-      { address: 'pool2', liquidityUSD: 1_000_000, feeTier: 3000, concentration: 70 },
-    ];
+    const cacheKey = `uniswap-v3-celo:pools:${token.toLowerCase()}`;
+    const ttlSeconds = 120;
+
+    const cached = await cacheService.get<{ pools: Array<{ address: string; liquidityUSD: number; feeTier: number; concentration: number }> }>(cacheKey);
+    if (cached?.pools) {
+      logger.debug(`Uniswap V3 (Celo): cache hit for ${token}`);
+      return cached.pools;
+    }
+
+    logger.debug(`Uniswap V3 (Celo): cache miss for ${token}, querying subgraph`);
+
+    try {
+      const response = await fetch(this.uniswapV3SubgraphUrl, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          query: `query($token: String!) {
+            pools(where: {or: [{token0_: {id: $token}}, {token1_: {id: $token}}]}, orderBy: totalValueLockedUSD, orderDirection: desc, first: 10) {
+              id
+              feeTier
+              liquidity
+              totalValueLockedUSD
+            }
+          }`,
+          variables: { token: token.toLowerCase() },
+        }),
+      });
+
+      const json = await response.json();
+      const pools = json?.data?.pools || [];
+      const normalizedPools = pools.map((p: any) => ({
+        address: p.id,
+        liquidityUSD: parseFloat(p.totalValueLockedUSD || '0'),
+        feeTier: parseInt(p.feeTier, 10) || 0,
+        concentration: 75,
+      }));
+
+      await cacheService.set(cacheKey, { pools: normalizedPools }, ttlSeconds);
+      return normalizedPools;
+    } catch (error) {
+      logger.warn('Uniswap V3 subgraph failed', error);
+      return [];
+    }
   }
 
   async simulateTrade(
@@ -786,7 +826,22 @@ class UbeswapAdapter implements DexAdapter {
   }
 
   async getLiquidity(token: string): Promise<LiquidityDepth> {
-    logger.debug(`Ubeswap: Liquidity check for ${token}`);
+    const cacheKey = `ubeswap:liquidity:${token.toLowerCase()}`;
+    const ttlSeconds = 120;
+
+    const cached = await cacheService.get<{ totalLiquidity: number; pools: Array<{ id: string; liquidity: number; fee: number }> }>(cacheKey);
+    if (cached) {
+      logger.debug(`Ubeswap: cache hit for liquidity ${token}`);
+      return {
+        protocol: 'ubeswap',
+        token,
+        totalLiquidity: cached.totalLiquidity,
+        pools: cached.pools,
+        timestamp: new Date(),
+      };
+    }
+
+    logger.debug(`Ubeswap: cache miss for liquidity ${token}, querying subgraph`);
 
     try {
       // Query Ubeswap Subgraph
@@ -811,17 +866,27 @@ class UbeswapAdapter implements DexAdapter {
       });
 
       const data = await response.json();
-      const pairs = data.data?.pairs || [];
+      const pairs = (data.data?.pairs || []) as Array<{
+        id: string;
+        reserveUSD?: string | number;
+        token0?: { symbol?: string };
+        token1?: { symbol?: string };
+        volumeUSD?: string | number;
+      }>;
+      const pools = pairs.map(p => ({
+        id: p.id,
+        liquidity: parseFloat(String(p.reserveUSD || '0')),
+        fee: 30,
+      }));
+      const totalLiquidity = pools.reduce((sum: number, pool) => sum + pool.liquidity, 0);
+
+      await cacheService.set(cacheKey, { totalLiquidity, pools }, ttlSeconds);
 
       return {
         protocol: 'ubeswap',
         token,
-        totalLiquidity: pairs.reduce((sum: number, p: any) => sum + parseFloat(p.reserveUSD || '0'), 0),
-        pools: pairs.map((p: any) => ({
-          id: p.id,
-          liquidity: parseFloat(p.reserveUSD || '0'),
-          fee: 30,
-        })),
+        totalLiquidity,
+        pools,
         timestamp: new Date(),
       };
     } catch (error) {
@@ -944,7 +1009,22 @@ class SushiSwapAdapter implements DexAdapter {
   }
 
   async getLiquidity(token: string): Promise<LiquidityDepth> {
-    logger.debug(`SushiSwap (ETH): Liquidity check for ${token}`);
+    const cacheKey = `sushiswap-eth:liquidity:${token.toLowerCase()}`;
+    const ttlSeconds = 120;
+
+    const cached = await cacheService.get<{ totalLiquidity: number; pools: Array<{ id: string; liquidity: number; fee: number }> }>(cacheKey);
+    if (cached) {
+      logger.debug(`SushiSwap (ETH): cache hit for liquidity ${token}`);
+      return {
+        protocol: 'sushiswap-eth',
+        token,
+        totalLiquidity: cached.totalLiquidity,
+        pools: cached.pools,
+        timestamp: new Date(),
+      };
+    }
+
+    logger.debug(`SushiSwap (ETH): cache miss for liquidity ${token}, querying subgraph`);
 
     try {
       // Query SushiSwap Subgraph or fallback
@@ -970,17 +1050,26 @@ class SushiSwapAdapter implements DexAdapter {
       );
 
       const data = await response.json();
-      const pairs = data.data?.pairs || [];
+      const pairs = (data.data?.pairs || []) as Array<{
+        id: string;
+        reserveUSD?: string | number;
+        token0?: { symbol?: string };
+        token1?: { symbol?: string };
+      }>;
+      const pools = pairs.map(p => ({
+        id: p.id,
+        liquidity: parseFloat(String(p.reserveUSD || '0')),
+        fee: 30,
+      }));
+      const totalLiquidity = pools.reduce((sum: number, pool) => sum + pool.liquidity, 0);
+
+      await cacheService.set(cacheKey, { totalLiquidity, pools }, ttlSeconds);
 
       return {
         protocol: 'sushiswap-eth',
         token,
-        totalLiquidity: pairs.reduce((sum: number, p: any) => sum + parseFloat(p.reserveUSD), 0),
-        pools: pairs.map((p: any) => ({
-          id: p.id,
-          liquidity: parseFloat(p.reserveUSD),
-          fee: 30,
-        })),
+        totalLiquidity,
+        pools,
         timestamp: new Date(),
       };
     } catch (error) {
@@ -1124,7 +1213,22 @@ class PancakeSwapAdapter implements DexAdapter {
   }
 
   async getLiquidity(token: string): Promise<LiquidityDepth> {
-    logger.debug(`PancakeSwap: Liquidity check for ${token} on BSC`);
+    const cacheKey = `pancakeswap:liquidity:${token.toLowerCase()}`;
+    const ttlSeconds = 120;
+
+    const cached = await cacheService.get<{ totalLiquidity: number; pools: Array<{ id: string; liquidity: number; fee: number }> }>(cacheKey);
+    if (cached) {
+      logger.debug(`PancakeSwap: cache hit for liquidity ${token}`);
+      return {
+        protocol: 'pancakeswap',
+        token,
+        totalLiquidity: cached.totalLiquidity,
+        pools: cached.pools,
+        timestamp: new Date(),
+      };
+    }
+
+    logger.debug(`PancakeSwap: cache miss for liquidity ${token}, querying subgraph`);
 
     try {
       const response = await fetch(
@@ -1150,17 +1254,25 @@ class PancakeSwapAdapter implements DexAdapter {
       );
 
       const data = await response.json();
-      const pools = data.data?.pools || [];
+      const pools = (data.data?.pools || []) as Array<{
+        id: string;
+        liquidity?: string | number;
+        feeTier?: string | number;
+      }>;
+      const normalizedPools = pools.map(p => ({
+        id: p.id,
+        liquidity: parseFloat(String(p.liquidity || '0')),
+        fee: parseInt(String(p.feeTier || '0'), 10) / 100,
+      }));
+      const totalLiquidity = normalizedPools.reduce((sum: number, pool) => sum + pool.liquidity, 0);
+
+      await cacheService.set(cacheKey, { totalLiquidity, pools: normalizedPools }, ttlSeconds);
 
       return {
         protocol: 'pancakeswap',
         token,
-        totalLiquidity: pools.reduce((sum: number, p: any) => sum + parseFloat(p.liquidity), 0),
-        pools: pools.map((p: any) => ({
-          id: p.id,
-          liquidity: parseFloat(p.liquidity),
-          fee: parseInt(p.feeTier) / 100,
-        })),
+        totalLiquidity,
+        pools: normalizedPools,
         timestamp: new Date(),
       };
     } catch (error) {

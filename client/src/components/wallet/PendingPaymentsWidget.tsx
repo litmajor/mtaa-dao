@@ -4,7 +4,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../ui
 import { Badge } from '../ui/badge';
 import { Button } from '../ui/button';
 import { Clock, CheckCircle, AlertCircle } from 'lucide-react';
-import { useWebSocket } from '@/hooks/useWebSocket';
+import { useSharedSocket } from '@/hooks/useSharedSocket';
 import { useWalletOperatingStore } from '@/stores/wallet-operating-store';
 
 interface PendingPayment {
@@ -23,7 +23,7 @@ interface PendingPaymentsWidgetProps {
 }
 
 export default function PendingPaymentsWidget({ walletAddress, userId }: PendingPaymentsWidgetProps) {
-  const { socket, isConnected } = useWebSocket();
+  const { socket, isConnected } = useSharedSocket();
   const store = useWalletOperatingStore();
   
   const [payments, setPayments] = useState<PendingPayment[]>([]);
@@ -44,63 +44,33 @@ export default function PendingPaymentsWidget({ walletAddress, userId }: Pending
     fetchPendingPayments();
   }, [walletAddress, userId, store.transactions]);
 
-  // WebSocket real-time payment updates
+  // WebSocket real-time payment updates via notificationService
   useEffect(() => {
-    if (!isConnected) {
+    if (!socket || !isConnected) {
       setWsConnected(false);
       return;
     }
 
     setWsConnected(true);
 
-    // Handle payment activity updates (completion, failure, etc.)
-    const handleActivityLog = (data: any) => {
+    // Handle payment notifications from notificationService
+    const handleNotification = (data: any) => {
       try {
-        if (data.entityType === 'payment' || data.action?.includes('payment')) {
-          // Refresh pending payments when payment activity occurs
+        // Check if this is a payment-related notification
+        if (data.metadata?.entityType === 'payment' || data.type?.includes('payment')) {
+          // Refresh pending payments when payment notification occurs
           fetchPendingPayments();
         }
       } catch (error) {
-        console.error('Error processing payment activity:', error);
+        console.error('Error processing payment notification:', error);
       }
     };
 
-    // Handle payment alerts (failures, expirations, etc.)
-    const handleAlert = (data: any) => {
-      try {
-        if (data.severity || data.message) {
-          // Check if this is a payment-related alert
-          if (data.message?.toLowerCase().includes('payment') || 
-              data.entityType === 'payment') {
-            // Toast notification could be added here
-            fetchPendingPayments();
-          }
-        }
-      } catch (error) {
-        console.error('Error processing payment alert:', error);
-      }
-    };
-
-    // Handle status changes for payment processing
-    const handleStatusChange = (data: any) => {
-      try {
-        if (data.entityType === 'payment' || data.status?.includes('payment')) {
-          fetchPendingPayments();
-        }
-      } catch (error) {
-        console.error('Error processing status change:', error);
-      }
-    };
-
-    socket.on('activity:logged', handleActivityLog);
-    socket.on('alert:new', handleAlert);
-    socket.on('status:changed', handleStatusChange);
+    socket.on('notification_created', handleNotification);
 
     // Cleanup
     return () => {
-      socket.off('activity:logged', handleActivityLog);
-      socket.off('alert:new', handleAlert);
-      socket.off('status:changed', handleStatusChange);
+      socket.off('notification_created', handleNotification);
     };
   }, [socket, isConnected]);
 

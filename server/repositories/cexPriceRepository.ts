@@ -4,7 +4,7 @@
  */
 
 import { pool } from '../db';
-import { CEXPrice, QueryResult } from '../../types/cex.types';
+import { CEXPrice, QueryResult } from '../types/cex.types';
 
 export class CEXPriceRepository {
   /**

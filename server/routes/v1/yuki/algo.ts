@@ -1,57 +1,75 @@
 /**
  * ════════════════════════════════════════════════════════════════════════════════
- * YUKI ALGO Router - Algorithmic Trading Strategies
+ * YUKI ALGO Router - Algorithmic Trading Strategies (TWAP, VWAP)
  * ════════════════════════════════════════════════════════════════════════════════
- * 
- * 6 endpoints for strategy management, backtesting, hyperparameter optimization
- * DOMAIN RENAME: freqtrade → algo (no path changes except prefix)
  */
 
-import express from 'express';
-// TODO: Implement freqtrade API module at server/api/freqtrade.ts
-// Currently missing handlers: uploadStrategy, backtestStrategy, hyperoptStrategy, 
-// getStrategyPerformance, listStrategies, deployStrategy
-/*
-import {
-  uploadStrategy,
-  backtestStrategy,
-  hyperoptStrategy,
-  getStrategyPerformance,
-  listStrategies,
-  deployStrategy
-} from '../api/freqtrade';
-*/
+import express, { Request, Response } from 'express';
 import { rateLimit } from 'express-rate-limit';
+import { v4 as uuidv4 } from 'uuid';
+import { pool } from '../../../db';
+import { authenticate } from '../../../auth';
+import { logger } from '../../../utils/logger';
 
 const router = express.Router();
+router.use(authenticate);
+
+let algoJobsTableReady = false;
+
+async function ensureAlgoJobsTable(): Promise<void> {
+  if (algoJobsTableReady) return;
+
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS yuki_algo_jobs (
+      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+      user_id VARCHAR NOT NULL,
+      parent_id UUID,
+      strategy VARCHAR(30) NOT NULL,
+      order_type VARCHAR(30) NOT NULL,
+      symbol VARCHAR(50) NOT NULL,
+      side VARCHAR(10) NOT NULL CHECK (side IN ('buy', 'sell')),
+      amount NUMERIC(30, 12) NOT NULL,
+      execute_at TIMESTAMP NOT NULL,
+      status VARCHAR(30) NOT NULL DEFAULT 'scheduled',
+      metadata JSONB DEFAULT '{}'::jsonb,
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    );
+  `);
+
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_yuki_algo_jobs_user_id ON yuki_algo_jobs(user_id);`);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_yuki_algo_jobs_status ON yuki_algo_jobs(status);`);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_yuki_algo_jobs_execute_at ON yuki_algo_jobs(execute_at);`);
+
+  algoJobsTableReady = true;
+}
+
+function serializeAlgoJob(row: any) {
+  return {
+    id: row.id,
+    userId: row.user_id,
+    parentId: row.parent_id,
+    strategy: row.strategy,
+    orderType: row.order_type,
+    symbol: row.symbol,
+    side: row.side,
+    amount: Number(row.amount),
+    executeAt: row.execute_at?.toISOString ? row.execute_at.toISOString() : row.execute_at,
+    status: row.status,
+    metadata: row.metadata || {},
+    createdAt: row.created_at?.toISOString ? row.created_at.toISOString() : row.created_at,
+    updatedAt: row.updated_at?.toISOString ? row.updated_at.toISOString() : row.updated_at,
+  };
+}
 
 // ════════════════════════════════════════════════════════════════════════════════
 // RATE LIMITING
 // ════════════════════════════════════════════════════════════════════════════════
 
-const uploadLimiter = rateLimit({
+const writeLimiter = rateLimit({
   windowMs: 60 * 1000, // 1 minute
-  max: 10,
-  message: 'Too many strategy uploads, please try again later',
-  skip: (req) => req.user?.isAdmin
-});
-
-const backtestLimiter = rateLimit({
-  windowMs: 60 * 1000,
-  max: 5,
-  message: 'Too many backtest requests, please try again later'
-});
-
-const hyperoptLimiter = rateLimit({
-  windowMs: 60 * 1000,
-  max: 2,
-  message: 'Hyperopt is resource-intensive, limited to 2 requests per minute'
-});
-
-const deployLimiter = rateLimit({
-  windowMs: 60 * 1000,
-  max: 3,
-  message: 'Too many deployment attempts, please try again later'
+  max: 20,
+  message: 'Too many requests, please try again later'
 });
 
 const readLimiter = rateLimit({
@@ -61,67 +79,191 @@ const readLimiter = rateLimit({
 });
 
 // ════════════════════════════════════════════════════════════════════════════════
-// STRATEGY MANAGEMENT
+// ALGORITHMIC EXECUTION (TWAP / VWAP)
 // ════════════════════════════════════════════════════════════════════════════════
 
 /**
- * GET /v1/yuki/algo/strategies
- * List all available strategies
- * FROM: GET /freqtrade/strategies
- * TODO: Implement freqtrade API integration
+ * POST /v1/yuki/algo/twap
+ * Schedule a Time-Weighted Average Price order
  */
-// router.get('/strategies', readLimiter, listStrategies);
+router.post('/twap', writeLimiter, async (req: Request, res: Response) => {
+  try {
+    const { symbol, side, amount, durationMinutes, chunks } = req.body;
+    const userId = (req as any).user?.id;
+
+    if (!userId) return res.status(401).json({ error: 'Unauthorized' });
+    if (!symbol || !side || !amount || !durationMinutes || !chunks) {
+      return res.status(400).json({ error: 'Missing required parameters' });
+    }
+
+    const chunkAmount = amount / chunks;
+    const intervalMinutes = durationMinutes / chunks;
+    const parentId = uuidv4();
+
+    await ensureAlgoJobsTable();
+
+    const insertQuery = `
+      INSERT INTO yuki_algo_jobs (
+        user_id, parent_id, strategy, order_type, symbol, side, amount, execute_at, status, metadata
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+      RETURNING *
+    `;
+
+    for (let i = 0; i < chunks; i++) {
+      const executeAt = new Date(Date.now() + i * intervalMinutes * 60 * 1000);
+      await pool.query(insertQuery, [
+        userId,
+        parentId,
+        'twap',
+        'twap-chunk',
+        symbol,
+        side,
+        chunkAmount,
+        executeAt,
+        'scheduled',
+        JSON.stringify({
+          chunkIndex: i + 1,
+          totalChunks: chunks,
+          durationMinutes,
+          createdBy: userId,
+        }),
+      ]);
+    }
+
+    logger.info(`[Algo] Created TWAP order for ${userId}: ${amount} ${symbol} over ${durationMinutes}m in ${chunks} chunks`);
+    res.json({ success: true, parentId, message: 'TWAP order scheduled successfully' });
+  } catch (err: any) {
+    logger.error(`[Algo] Error creating TWAP: ${err.message}`);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
 
 /**
- * POST /v1/yuki/algo/strategies/upload
- * Upload a new strategy
- * FROM: POST /freqtrade/strategies/upload
- * TODO: Implement freqtrade API integration
+ * GET /v1/yuki/algo/orders
+ * List active algorithmic orders for the user
  */
-// router.post('/strategies/upload', uploadLimiter, uploadStrategy);
+router.get('/orders', readLimiter, async (req: Request, res: Response) => {
+  try {
+    const userId = (req as any).user?.id;
+    if (!userId) return res.status(401).json({ error: 'Unauthorized' });
 
-// ════════════════════════════════════════════════════════════════════════════════
-// BACKTESTING & OPTIMIZATION
-// ════════════════════════════════════════════════════════════════════════════════
+    await ensureAlgoJobsTable();
+
+    const result = await pool.query(`
+      SELECT * FROM yuki_algo_jobs
+      WHERE user_id = $1 AND status IN ('scheduled', 'running')
+      ORDER BY execute_at ASC, created_at DESC
+    `, [userId]);
+
+    res.json({ success: true, orders: result.rows.map(serializeAlgoJob) });
+  } catch (err: any) {
+    logger.error(`[Algo] Error listing orders: ${err.message}`);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
 
 /**
- * POST /v1/yuki/algo/:id/backtest
- * Backtest a strategy
- * FROM: POST /freqtrade/:strategyId/backtest
- * TODO: Implement freqtrade API integration
+ * PATCH /v1/yuki/algo/orders/:orderId
+ * Modify an active scheduled algo task
  */
-// router.post('/:id/backtest', backtestLimiter, backtestStrategy);
+router.patch('/orders/:orderId', writeLimiter, async (req: Request, res: Response) => {
+  try {
+    const userId = (req as any).user?.id;
+    if (!userId) return res.status(401).json({ error: 'Unauthorized' });
+
+    const { orderId } = req.params;
+    const { amount, executeAt, metadata, status } = req.body;
+
+    if (!orderId) return res.status(400).json({ error: 'Missing orderId' });
+    if (!amount && !executeAt && !metadata && !status) {
+      return res.status(400).json({ error: 'No fields provided to update' });
+    }
+
+    await ensureAlgoJobsTable();
+
+    const existing = await pool.query(
+      `SELECT * FROM yuki_algo_jobs WHERE id = $1 AND user_id = $2 AND status = 'scheduled' LIMIT 1`,
+      [orderId, userId]
+    );
+    if (existing.rowCount === 0) {
+      return res.status(404).json({ error: 'Scheduled algo job not found or cannot be modified' });
+    }
+
+    const updates: string[] = [];
+    const params: any[] = [];
+    let paramIndex = 1;
+
+    if (amount !== undefined) {
+      updates.push(`amount = $${paramIndex++}`);
+      params.push(amount);
+    }
+    if (executeAt !== undefined) {
+      const parsed = new Date(executeAt);
+      if (Number.isNaN(parsed.getTime())) {
+        return res.status(400).json({ error: 'executeAt must be a valid timestamp' });
+      }
+      updates.push(`execute_at = $${paramIndex++}`);
+      params.push(parsed);
+    }
+    if (metadata !== undefined) {
+      updates.push(`metadata = $${paramIndex++}`);
+      params.push(JSON.stringify(metadata));
+    }
+    if (status !== undefined) {
+      updates.push(`status = $${paramIndex++}`);
+      params.push(status);
+    }
+
+    if (updates.length === 0) {
+      return res.status(400).json({ error: 'Nothing to update' });
+    }
+
+    updates.push(`updated_at = CURRENT_TIMESTAMP`);
+
+    const query = `
+      UPDATE yuki_algo_jobs
+      SET ${updates.join(', ')}
+      WHERE id = $${paramIndex} AND user_id = $${paramIndex + 1}
+      RETURNING *
+    `;
+    params.push(orderId, userId);
+
+    const updated = await pool.query(query, params);
+    res.json({ success: true, order: serializeAlgoJob(updated.rows[0]) });
+  } catch (err: any) {
+    logger.error(`[Algo] Error updating order: ${err.message}`);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
 
 /**
- * POST /v1/yuki/algo/:id/hyperopt
- * Run hyperparameter optimization
- * FROM: POST /freqtrade/:strategyId/hyperopt
- * TODO: Implement freqtrade API integration
+ * DELETE /v1/yuki/algo/orders/:orderId
+ * Cancel an active scheduled algo job
  */
-// router.post('/:id/hyperopt', hyperoptLimiter, hyperoptStrategy);
+router.delete('/orders/:orderId', writeLimiter, async (req: Request, res: Response) => {
+  try {
+    const userId = (req as any).user?.id;
+    if (!userId) return res.status(401).json({ error: 'Unauthorized' });
 
-// ════════════════════════════════════════════════════════════════════════════════
-// DEPLOYMENT
-// ════════════════════════════════════════════════════════════════════════════════
+    const { orderId } = req.params;
+    if (!orderId) return res.status(400).json({ error: 'Missing orderId' });
 
-/**
- * POST /v1/yuki/algo/:id/deploy
- * Deploy a strategy to live trading
- * FROM: POST /freqtrade/:strategyId/deploy
- * TODO: Implement freqtrade API integration
- */
-// router.post('/:id/deploy', deployLimiter, deployStrategy);
+    await ensureAlgoJobsTable();
 
-// ════════════════════════════════════════════════════════════════════════════════
-// PERFORMANCE & MONITORING
-// ════════════════════════════════════════════════════════════════════════════════
+    const result = await pool.query(
+      `UPDATE yuki_algo_jobs SET status = 'canceled', updated_at = CURRENT_TIMESTAMP WHERE id = $1 AND user_id = $2 AND status = 'scheduled' RETURNING *`,
+      [orderId, userId]
+    );
 
-/**
- * GET /v1/yuki/algo/:id/performance
- * Get strategy performance metrics
- * FROM: GET /freqtrade/:strategyId/performance
- * TODO: Implement freqtrade API integration
- */
-// router.get('/:id/performance', readLimiter, getStrategyPerformance);
+    if (result.rowCount === 0) {
+      return res.status(404).json({ error: 'Scheduled algo job not found or cannot be canceled' });
+    }
+
+    res.json({ success: true, order: serializeAlgoJob(result.rows[0]) });
+  } catch (err: any) {
+    logger.error(`[Algo] Error canceling order: ${err.message}`);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
 
 export default router;

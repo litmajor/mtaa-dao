@@ -10,7 +10,7 @@
  */
 
 import { ccxtService } from './ccxtService';
-import { dexService } from './dexIntegrationService';
+import { dexService } from './dexRoutingService';
 import { tokenService } from './tokenService';
 import { logger } from '../utils/logger';
 import NodeCache from 'node-cache';
@@ -74,6 +74,21 @@ export interface ExecutionRecord {
   liquidityDepth?: number;
   orderSize: number;
   timestamp?: Date;
+}
+
+export interface ArbitrageRouteRecord {
+  id: string;
+  userId: string;
+  symbol: string;
+  buyVenue: string;
+  sellVenue: string;
+  buyPrice: number;
+  sellPrice: number;
+  profitPct: number;
+  confidence: number;
+  scannedAt: string;
+  createdAt?: string;
+  metadata?: Record<string, unknown>;
 }
 
 export interface ConfidenceScore {
@@ -157,6 +172,7 @@ export interface LimitOrder {
 class OrderRouter {
   private routingCache = new NodeCache({ stdTTL: 30 }); // 30-second cache for routing decisions
   private executionHistory = new Map<string, ExecutionRecord[]>(); // Track execution history for learning
+  private arbitrageRouteHistory = new Map<string, ArbitrageRouteRecord[]>(); // Track arbitrage routing events
   private performanceMemory = new Map<string, PerformanceMemory>(); // Real-time performance tracking
   private confidenceScores = new Map<string, ConfidenceScore>(); // Confidence scores by venue/symbol
   private readonly MEMORY_REDIS_KEY = 'orderrouter:performance:v1';
@@ -370,6 +386,18 @@ class OrderRouter {
     // Update performance memory (THIS IS THE SELF-CORRECTION)
     this.updatePerformanceMemory(record);
     this.updateConfidenceFromExecution(record);
+  }
+
+  recordArbitrageRoute(route: ArbitrageRouteRecord): void {
+    const key = `${route.userId}:${route.symbol}`;
+    if (!this.arbitrageRouteHistory.has(key)) {
+      this.arbitrageRouteHistory.set(key, []);
+    }
+    this.arbitrageRouteHistory.get(key)!.push({
+      ...route,
+      createdAt: route.createdAt || new Date().toISOString(),
+    });
+    logger.info(`[OrderRouter] Recorded arbitrage route ${route.id} for ${route.symbol}`);
   }
 
   /**

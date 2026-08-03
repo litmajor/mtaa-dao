@@ -1,4 +1,4 @@
-import { StrategyGraph } from '../models/StrategyGraph';
+import type { StrategyGraph } from '../models/StrategyGraph';
 
 export function getRootNodes(graph: StrategyGraph) {
   const targets = new Set(graph.edges.map((e) => e.targetNodeId || (e as any).target));

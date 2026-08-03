@@ -6,7 +6,6 @@
 import React from 'react';
 import { Card } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
-import { getBBColor } from '@/hooks/useTechnicalIndicators';
 
 interface BollingerBandsProps {
   upper: number;

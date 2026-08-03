@@ -64,7 +64,6 @@ export default function WalletSetup({ userId, onWalletCreated }: WalletSetupProp
         body: JSON.stringify({
           userId,
           wordCount: 12,
-          password: '' ,
           initialAssetPreference: assets[0]?.currency
         })
       });
@@ -75,8 +74,8 @@ export default function WalletSetup({ userId, onWalletCreated }: WalletSetupProp
         // Show seed phrase modal instead of just a toast
         setSeedPhraseModal({
           isOpen: true,
-          seedPhrase: data.data.mnemonic || data.data.wallet?.mnemonic || '',
-          walletAddress: data.data.wallet?.address || ''
+          seedPhrase: data.data?.mnemonic || data.data?.wallet?.mnemonic || '',
+          walletAddress: data.data?.wallet?.address || ''
         });
         // mark UNBACKED until user confirms backup
         setWalletSecurityState('UNBACKED');
@@ -270,6 +269,8 @@ export default function WalletSetup({ userId, onWalletCreated }: WalletSetupProp
             <li>Your keys are never stored by MtaaDAO</li>
             <li>No password reset exists</li>
             <li>Losing your phrase means permanent loss of access</li>
+            <li>Backing up your phrase is critical for security</li>
+            <li>Private keys are not shared with MtaaDAO or any third party</li>
           </ul>
         </CardContent>
       </Card>
@@ -420,7 +421,7 @@ export default function WalletSetup({ userId, onWalletCreated }: WalletSetupProp
               
               <Alert>
                 <AlertDescription>
-                  Your private key is encrypted and stored securely. Never share your private key with anyone.
+                  Your private key is only yours only. Never share your private key with anyone. Keep it to yourself
                 </AlertDescription>
               </Alert>
               

@@ -21,6 +21,7 @@ import express from 'express';
 import coreRouter from './core';
 import balanceRouter from './balance';
 import setupRouter from './setup';
+import walletVaultRouter from './walletvault';
 import sessionsRouter from './sessions';
 import paymentsRouter from './payments';
 import transfersRouter from './transfers';
@@ -60,6 +61,14 @@ router.use('/', balanceRouter);
  * Full lifecycle: create, import, recover, backup, unlock, etc.
  */
 router.use('/setup', setupRouter);
+
+/**
+ * Wallet vault backup and recovery endpoints
+ * POST /v1/wallets/setup/register
+ * POST /v1/wallets/vault/backup
+ * GET  /v1/wallets/vault/retrieve/:walletId
+ */
+router.use('/', walletVaultRouter);
 
 /**
  * Wallet session management (3 endpoints)

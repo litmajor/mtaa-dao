@@ -25,6 +25,8 @@ import { createWalletIfValid } from '../utils/cryptoWallet';
 import { ExchangeRateService } from './exchangeRateService';
 import { daoDeployHandler } from '../api/dao_deploy';
 import type { DaoDeployRequest } from '../api/dao_deploy';
+import { resolveProviderUrls } from './providerBootstrap';
+import { ResilientRpcProvider } from './resilientRpcProvider';
 
 const logger = new Logger('dao-spawn-service');
 
@@ -116,6 +118,10 @@ export async function getSpawnFeeQuote(daoType: string): Promise<{
  * logged and the transaction marked `spawn_failed` rather than re-trying
  * synchronously (to keep the webhook ACK fast).
  */
+import { commandBus } from '../domain/setup';
+import { PaymentCommandTypes } from '../domain/payments/PaymentCommands';
+import crypto from 'crypto';
+
 export async function triggerDAOSpawnFromPayment(txReference: string): Promise<void> {
   logger.info(`[DAOSpawn] Triggered for tx: ${txReference}`);
 
@@ -144,11 +150,18 @@ export async function triggerDAOSpawnFromPayment(txReference: string): Promise<v
   }
 
   try {
-    // 2. Mark spawn as in-progress
-    await db
-      .update(paymentTransactions)
-      .set({ metadata: { ...meta, spawnStatus: 'processing' } } as any)
-      .where(eq(paymentTransactions.reference, txReference));
+    // 2. Mark spawn as in-progress via CommandBus
+    await commandBus.dispatch({
+      id: crypto.randomUUID(),
+      type: PaymentCommandTypes.UpdatePaymentMetadata,
+      actor: 'system',
+      correlationId: crypto.randomUUID(),
+      timestamp: new Date(),
+      payload: {
+        reference: txReference,
+        metadata: { spawnStatus: 'processing' }
+      }
+    });
 
     // 3. Call DAOSpawnGateway.paySpawnFee() from platform wallet
     const vaultIndex = DAO_TYPE_TO_VAULT_INDEX[daoType] ?? 0;
@@ -166,32 +179,53 @@ export async function triggerDAOSpawnFromPayment(txReference: string): Promise<v
     }
 
     // 6. Mark spawn complete
-    await db
-      .update(paymentTransactions)
-      .set({ metadata: { ...meta, spawnStatus: 'completed', daoId, spawnTx } } as any)
-      .where(eq(paymentTransactions.reference, txReference));
+    await commandBus.dispatch({
+      id: crypto.randomUUID(),
+      type: PaymentCommandTypes.UpdatePaymentMetadata,
+      actor: 'system',
+      correlationId: crypto.randomUUID(),
+      timestamp: new Date(),
+      payload: {
+        reference: txReference,
+        metadata: { spawnStatus: 'completed', daoId, spawnTx }
+      }
+    });
 
     logger.info(`[DAOSpawn] Completed for tx: ${txReference} — daoId: ${daoId}`);
   } catch (err: any) {
     logger.error(`[DAOSpawn] Spawn failed for tx: ${txReference}`, err);
-    await db
-      .update(paymentTransactions)
-      .set({ metadata: { ...meta, spawnStatus: 'spawn_failed', spawnError: err.message } } as any)
-      .where(eq(paymentTransactions.reference, txReference));
+    await commandBus.dispatch({
+      id: crypto.randomUUID(),
+      type: PaymentCommandTypes.UpdatePaymentMetadata,
+      actor: 'system',
+      correlationId: crypto.randomUUID(),
+      timestamp: new Date(),
+      payload: {
+        reference: txReference,
+        metadata: { spawnStatus: 'spawn_failed', spawnError: err.message }
+      }
+    });
   }
 }
 
 // ── Internal helpers ──────────────────────────────────────────────────────────
 
 async function getPlatformWallet() {
-  const rpcUrl = process.env.CELO_RPC_URL || process.env.RPC_URL;
+  const providerUrls = resolveProviderUrls();
+  const rpcUrl = providerUrls.rpcUrl;
   const pk = process.env.PLATFORM_PRIVATE_KEY;
   if (!rpcUrl || !pk) throw new Error('PLATFORM_PRIVATE_KEY or CELO_RPC_URL not configured');
 
-  const provider = new ethers.JsonRpcProvider(rpcUrl);
+  const resilientProvider = new ResilientRpcProvider({
+    primary: { name: 'primary-rpc', httpUrl: rpcUrl },
+    fallback: providerUrls.fallbackRpcUrl ? { name: 'fallback-rpc', httpUrl: providerUrls.fallbackRpcUrl } : undefined,
+    cooldownMs: 60_000,
+    onFailover: (from, to, reason) => logger.warn(`DAO spawn RPC failover ${from} -> ${to}: ${reason}`),
+  });
+  const provider = resilientProvider.getRawProvider();
   const wallet = createWalletIfValid(pk, provider);
   if (!wallet) throw new Error('Invalid PLATFORM_PRIVATE_KEY');
-  return { wallet, provider };
+  return { wallet, provider, resilientProvider };
 }
 
 /**
@@ -209,13 +243,12 @@ async function callPaySpawnFee(
     throw new Error('DAO_SPAWN_GATEWAY_ADDRESS or MTAA_TOKEN_ADDRESS not configured');
   }
 
-  const { wallet } = await getPlatformWallet();
+  const { wallet, resilientProvider } = await getPlatformWallet();
 
-  const mtaa = new ethers.Contract(mtaaAddr, ERC20_ABI, wallet);
-  const gateway = new ethers.Contract(gatewayAddr, DAO_SPAWN_GATEWAY_ABI, wallet);
+  const credits = await resilientProvider.call((provider) =>
+    new ethers.Contract(gatewayAddr, DAO_SPAWN_GATEWAY_ABI, provider).spawnCredits(founderWallet, vaultIndex)
+  );
 
-  // Check existing credits first (idempotency) — check against founderWallet
-  const credits = await gateway.spawnCredits(founderWallet, vaultIndex);
   if (credits > 0n) {
     logger.info(`[DAOSpawn] Spawn credit already exists for ${founderWallet} type=${vaultIndex}`);
     return 'already_credited';
@@ -231,17 +264,24 @@ async function callPaySpawnFee(
   };
   const cost = SPAWN_COSTS[vaultIndex] ?? SPAWN_COSTS[0];
 
-  const allowance = await mtaa.allowance(wallet.address, gatewayAddr);
+  const allowance = await resilientProvider.call((provider) =>
+    new ethers.Contract(mtaaAddr, ERC20_ABI, provider).allowance(wallet.address, gatewayAddr)
+  );
   if (allowance < cost) {
-    const approveTx = await mtaa.approve(gatewayAddr, cost * 2n); // headroom
-    await approveTx.wait();
+    const approveTx = await resilientProvider.callWithSigner(wallet, (signer) =>
+      new ethers.Contract(mtaaAddr, ERC20_ABI, signer).approve(gatewayAddr, cost * 2n)
+    );
+    await resilientProvider.call((provider) => provider.waitForTransaction(approveTx.hash));
     logger.info(`[DAOSpawn] MTAA approved for gateway`);
   }
 
   // paySpawnFeeFor credits the founderWallet, paid by the platform wallet.
   // Platform wallet must hold sufficient MTAA (pre-funded before go-live).
-  const tx = await gateway.paySpawnFeeFor(founderWallet, vaultIndex);
-  const receipt = await tx.wait();
+  const tx = await resilientProvider.callWithSigner(wallet, (signer) =>
+    new ethers.Contract(gatewayAddr, DAO_SPAWN_GATEWAY_ABI, signer).paySpawnFeeFor(founderWallet, vaultIndex)
+  );
+  const receipt = await resilientProvider.call((provider) => provider.waitForTransaction(tx.hash));
+  if (!receipt) throw new Error('DAO spawn fee transaction was not mined before timeout');
   return receipt.hash;
 }
 
@@ -290,12 +330,13 @@ async function distributeFoundingReward(founderWallet: string, daoType: string):
   }
 
   try {
-    const { wallet } = await getPlatformWallet();
+    const { wallet, resilientProvider } = await getPlatformWallet();
     const rewardWei = DAO_FOUNDING_REWARD_MTAA[daoType] ?? DAO_FOUNDING_REWARD_MTAA.savings;
 
-    const mgr = new ethers.Contract(rewardsManagerAddr, MTAA_REWARDS_MANAGER_ABI, wallet);
-    const tx = await mgr.distribute(founderWallet, rewardWei);
-    await tx.wait();
+    const tx = await resilientProvider.callWithSigner(wallet, (signer) =>
+      new ethers.Contract(rewardsManagerAddr, MTAA_REWARDS_MANAGER_ABI, signer).distribute(founderWallet, rewardWei)
+    );
+    await resilientProvider.call((provider) => provider.waitForTransaction(tx.hash));
 
     logger.info(
       `[DAOSpawn] Founding MTAA reward distributed: ${ethers.formatUnits(rewardWei, 18)} MTAA → ${founderWallet}`

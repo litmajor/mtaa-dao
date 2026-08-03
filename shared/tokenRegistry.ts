@@ -2,8 +2,6 @@
 // Supports multi-chain tokens: CELO, cUSD, cEUR, USDT, BTC, ETH, USDC, MTAA
 // Integrated with cross-chain bridge support (LayerZero, Axelar, Wormhole)
 
-import type { SupportedChain } from './chainConfiguration';
-
 export interface TokenInfo {
   symbol: string;
   name: string;
@@ -24,16 +22,12 @@ export interface TokenInfo {
   celoNativeOnly?: boolean; // mark tokens that are Celo-native and shouldn't be treated as CEX-listed
   
   // Multi-chain support
-  chains?: {
-    [chain in SupportedChain]?: {
-      address: string;
-      decimals: number;
-      isActive: boolean;
-      bridges?: {
-        [targetChain in SupportedChain]?: BridgeRoute;
-      };
-    };
-  };
+  chains?: Record<string, {
+    address: string;
+    decimals: number;
+    isActive: boolean;
+    bridges?: Record<string, BridgeRoute>;
+  }>;
   
   metadata?: {
     riskScore?: 'low' | 'medium' | 'high';
@@ -185,7 +179,7 @@ export const TOKEN_REGISTRY: Record<string, TokenInfo> = {
     },
     decimals: 6, // Note: USDT typically uses 6 decimals
     category: 'bridged',
-    isActive: false, // Inactive on testnet until proper address is available
+    isActive: true,
     logoUrl: '/tokens/usdt.png',
     description: 'Tether USD bridged to Celo via Wormhole',
     priceApi: 'coingecko:tether',
@@ -196,7 +190,41 @@ export const TOKEN_REGISTRY: Record<string, TokenInfo> = {
       liquidityScore: 95,
       volatilityScore: 2,
       supportedExchanges: ['binance', 'coinbase', 'kraken', 'bybit', 'kucoin', 'okx']
-    }
+    },
+    chains: {
+      ethereum: {
+        address: '0xdAC17F958D2ee523a2206206994597C13D831ec7',
+        decimals: 6,
+        isActive: true,
+        bridges: {
+          celo: {
+            protocol: 'wormhole',
+            bridgeContract: '0xa321448d90d4e5b0A732867c18eA198e75CAC48E',
+            minimumAmount: '1000000',
+            maximumAmount: '100000000000',
+            estimatedTime: 900,
+            feePercentage: 0.1,
+            active: true,
+          },
+        },
+      },
+      celo: {
+        address: '0x88eeC49252c8cbc039DCdB394c0c2BA2f1637EA0',
+        decimals: 6,
+        isActive: true,
+        bridges: {
+          ethereum: {
+            protocol: 'wormhole',
+            bridgeContract: '0xa321448d90d4e5b0A732867c18eA198e75CAC48E',
+            minimumAmount: '1000000',
+            maximumAmount: '100000000000',
+            estimatedTime: 900,
+            feePercentage: 0.1,
+            active: true,
+          },
+        },
+      },
+    },
   },
 
   BTC: {
@@ -389,18 +417,37 @@ export class TokenRegistry {
    * Includes both native assets and tokens with no meaningful CEX presence.
    */
   static getCeloNativeSymbols(): Set<string> {
+    const allowedSymbols = new Set<string>([
+      'CELO',
+      'cUSD',
+      'cEUR',
+      'cKES',
+      'USDT',
+      'USDC',
+      'MTAA'
+    ]);
+
     return new Set(
       Object.values(TOKEN_REGISTRY)
-        .filter(t => 
-          t.category === 'native' || 
-          t.category === 'stablecoin' ||
-          t.symbol === 'MTAA'
-        )
+        .filter(t => allowedSymbols.has(t.symbol) || t.category === 'native' || t.category === 'stablecoin')
         .map(t => t.symbol)
     );
-    // Returns: Set { 'CELO', 'cUSD', 'cEUR', 'cKES', 'MTAA', 'USDT', 'USDC' }
-    // Note: USDT and USDC included because as bridged tokens on Celo,
-    // they behave differently than native USDT/USDC on Ethereum
+  }
+
+  static getCeloDEXTokens(): Map<string, TokenInfo> {
+    const allowedSymbols = new Set<string>([
+      'CELO',
+      'cUSD',
+      'cEUR',
+      'cKES',
+      'USDT',
+      'USDC',
+      'MTAA'
+    ]);
+
+    const celoTokens = Object.values(TOKEN_REGISTRY)
+      .filter(t => allowedSymbols.has(t.symbol) || t.category === 'native' || t.category === 'stablecoin');
+    return new Map(celoTokens.map(t => [t.symbol.toUpperCase(), t]));
   }
 
   static addCustomToken(symbol: string, tokenInfo: TokenInfo): void {

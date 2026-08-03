@@ -3,7 +3,7 @@
  */
 
 import type { Request, Response, NextFunction } from 'express';
-import { DexScreenerClient, type DexPair } from '../services/dexscreener_client';
+import { DexScreenerClient, type DexPair } from '../services/dexscreenerClient';
 import { logger } from '../utils/logger';
 
 type SyncStatus = {

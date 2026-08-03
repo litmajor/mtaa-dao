@@ -1,44 +1,48 @@
 import { redis } from './redis';
-import { notificationService } from '../notificationService';
-import nodemailer from 'nodemailer';
+import { EmailService } from './emailService';
 
-// OTP Configuration
+/**
+ * FIXES APPLIED:
+ * 1. CRITICAL: OTPService.generateOTP() previously generated a code
+ *    (`code`), then called storeOTP() which generates its OWN separate
+ *    random OTP internally and returns it — but that return value was
+ *    discarded. The SMS sent to the user carried `code`, while Redis
+ *    stored a completely different value, so verifyOTP() would ALWAYS
+ *    fail for every real phone-based OTP flow (the dev '000000' bypass
+ *    was the only path that ever worked). storeOTP() was already
+ *    correctly atomic — generate, store, return the same value — so the
+ *    fix is simply to use its return value as the one true code, instead
+ *    of generating and sending a second, never-stored one.
+ * 2. Added a short cooldown (30s) per identifier before another OTP can be
+ *    requested. Regenerating doesn't help an attacker brute-force (each
+ *    resend is a fresh random target), but unlimited free resends are a
+ *    real cost/abuse vector against SMS/email providers with no cooldown
+ *    at all.
+ */
+
 const OTP_LENGTH = 6;
 const OTP_EXPIRY_MINUTES = 5;
 const OTP_EXPIRY_SECONDS = OTP_EXPIRY_MINUTES * 60;
+const RESEND_COOLDOWN_SECONDS = 30;
 
 export interface OTPData {
   otp: string;
   expiresAt: number;
-  password: string; // Store hashed password temporarily
+  password: string;
   attempts: number;
 }
 
+export type OTPDeliveryChannel = 'email' | 'sms' | 'whatsapp';
+
 class OTPServiceInternal {
-  private emailTransporter: nodemailer.Transporter;
-
-  constructor() {
-    // Initialize email transporter
-    this.emailTransporter = nodemailer.createTransport({
-      host: process.env.SMTP_HOST || 'smtp.gmail.com',
-      port: Number(process.env.SMTP_PORT) || 587,
-      secure: false,
-      auth: {
-        user: process.env.SMTP_USER,
-        pass: process.env.SMTP_PASS,
-      },
-    });
-  }
-
-  /**
-   * Generate a 6-digit OTP
-   */
   generateOTP(): string {
     return Math.floor(100000 + Math.random() * 900000).toString();
   }
 
   /**
-   * Store OTP in Redis with expiration
+   * Store a freshly-generated OTP in Redis and return it. This is already
+   * atomic — callers should always use the RETURNED value as the code to
+   * send, never generate a separate one themselves (see FIX #1 above).
    */
   async storeOTP(identifier: string, password: string): Promise<string> {
     const otp = this.generateOTP();
@@ -58,16 +62,13 @@ class OTPServiceInternal {
     return otp;
   }
 
-  /**
-   * Verify OTP
-   */
   async verifyOTP(identifier: string, otp: string): Promise<{ valid: boolean; password?: string; error?: string }> {
     try {
-      console.log(`🔍 Verifying OTP for identifier: ${identifier}, OTP: ${otp}`);
+      console.log(`🔍 Verifying OTP for identifier: ${identifier}`);
 
-      // Development/Testing bypass: Accept 000000 as a test OTP
-      if (otp === '000000' && (process.env.NODE_ENV === 'development' || process.env.ALLOW_TEST_OTP === 'true')) {
-        console.log('⚠️  Using test OTP bypass (000000) - development mode');
+      const isDevBypassEnabled = otp === '000000' && process.env.NODE_ENV !== 'production' && process.env.ALLOW_TEST_OTP === 'true';
+      if (isDevBypassEnabled) {
+        console.log('⚠️  Using test OTP bypass (000000) - non-production mode');
         const data = await redis.get(`otp:${identifier}`);
 
         if (!data) {
@@ -84,51 +85,34 @@ class OTPServiceInternal {
 
       if (!data) {
         console.log(`❌ OTP not found in Redis for identifier: ${identifier}`);
-        console.log(`   Redis key checked: otp:${identifier}`);
-
-        // List all OTP keys in Redis for debugging
-        try {
-          // @ts-ignore: For debugging only; remove or implement in RedisService if needed
-          const keys = typeof (redis as any).keys === 'function' ? await (redis as any).keys('otp:*') : [];
-          console.log(`   Available OTP keys in Redis: ${keys.length > 0 ? keys.join(', ') : 'none'}`);
-        } catch (e) {
-          console.log('   Could not list Redis keys');
-        }
-
         return { valid: false, error: 'OTP not found or expired' };
       }
 
       const otpData: OTPData = JSON.parse(data);
       console.log(`✅ OTP data found. Expiry: ${new Date(otpData.expiresAt).toISOString()}, Attempts: ${otpData.attempts}/5`);
 
-      // Check expiration
       if (Date.now() > otpData.expiresAt) {
         console.log('❌ OTP has expired');
         await redis.delete(`otp:${identifier}`);
         return { valid: false, error: 'OTP has expired' };
       }
 
-      // Check attempts
       if (otpData.attempts >= 5) {
         console.log('❌ Too many failed attempts');
         await redis.delete(`otp:${identifier}`);
         return { valid: false, error: 'Too many failed attempts. Please request a new OTP.' };
       }
 
-      // Verify OTP
       if (otpData.otp !== otp) {
-        console.log(`❌ Invalid OTP. Expected: ${otpData.otp}, Got: ${otp}`);
-        // Increment attempts
+        console.log('❌ Invalid OTP provided');
         otpData.attempts++;
-        await redis.set(
-          `otp:${identifier}`,
-          JSON.stringify(otpData),
-          Math.floor((otpData.expiresAt - Date.now()) / 1000)
-        );
+        // Clamp to at least 1s — expiresAt - now could theoretically be
+        // very small/negative in a race right at expiry.
+        const remainingTtl = Math.max(1, Math.floor((otpData.expiresAt - Date.now()) / 1000));
+        await redis.set(`otp:${identifier}`, JSON.stringify(otpData), remainingTtl);
         return { valid: false, error: 'Invalid OTP' };
       }
 
-      // OTP is valid
       console.log('✅ OTP verified successfully');
       return { valid: true, password: otpData.password };
     } catch (error) {
@@ -137,76 +121,64 @@ class OTPServiceInternal {
     }
   }
 
-  /**
-   * Delete OTP after successful verification
-   */
   async deleteOTP(identifier: string): Promise<void> {
     await redis.delete(`otp:${identifier}`);
   }
 
-  /**
-   * Send OTP via email
-   */
   async sendEmailOTP(email: string, otp: string): Promise<void> {
-    // In development mode without SMTP configured, just log the OTP
-    const hasValidSMTP = process.env.SMTP_USER &&
-                         process.env.SMTP_PASS &&
-                         !process.env.SMTP_USER.includes('your_smtp') &&
-                         !process.env.SMTP_PASS.includes('your_smtp');
+    const result = await EmailService.send({
+      to: email,
+      subject: 'Your MtaaDAO Verification Code',
+      html: this.generateEmailTemplate(otp),
+    });
 
-    if (process.env.NODE_ENV === 'development' && !hasValidSMTP) {
+    if (!result.success) {
+      console.error('Failed to send OTP email via centralized EmailService:', result.error);
+      throw new Error(result.error || 'Failed to send verification code via email');
+    }
+
+    console.log(`✅ OTP email sent to ${email} via EmailService`);
+  }
+
+  async sendSMSOTP(phone: string, otp: string): Promise<void> {
+    try {
+      const isKenyanNumber = phone.startsWith('+254');
+      const hasAfricasTalking = Boolean(
+        process.env.AFRICAS_TALKING_API_KEY &&
+        process.env.AFRICAS_TALKING_USERNAME
+      );
+      const hasTwilio = Boolean(
+        process.env.TWILIO_ACCOUNT_SID &&
+        process.env.TWILIO_AUTH_TOKEN &&
+        process.env.TWILIO_PHONE_NUMBER
+      );
+
+      if (isKenyanNumber && hasAfricasTalking) {
+        await this.sendViaAfricasTalking(phone, otp);
+        return;
+      }
+
+      if (hasTwilio) {
+        await this.sendViaTwilio(phone, otp);
+        return;
+      }
+
+      if (hasAfricasTalking && !isKenyanNumber) {
+        throw new Error(
+          'Africa\'s Talking is configured, but the phone number is not Kenyan. Configure Twilio for international numbers.'
+        );
+      }
+
       console.log('\n════════════════════════════════════════');
-      console.log('📧 EMAIL OTP (Development Mode - No SMTP)');
+      console.log('📱 SMS OTP (Development Mode - No Provider)');
       console.log('════════════════════════════════════════');
-      console.log(`Email: ${email}`);
+      console.log(`Phone: ${phone}`);
       console.log(`OTP Code: ${otp}`);
       console.log(`Expires: ${OTP_EXPIRY_MINUTES} minutes`);
       console.log('════════════════════════════════════════\n');
-      return; // Skip actual email sending
-    }
 
-    try {
-      const mailOptions = {
-        from: process.env.SMTP_FROM || 'noreply@mtaadao.com',
-        to: email,
-        subject: 'Your MtaaDAO Verification Code',
-        html: this.generateEmailTemplate(otp),
-      };
-
-      await this.emailTransporter.sendMail(mailOptions);
-      console.log(`✅ OTP email sent to ${email}`);
-    } catch (error) {
-      console.error('Failed to send OTP email:', error);
-      throw new Error('Failed to send verification code via email');
-    }
-  }
-
-  /**
-   * Send OTP via SMS
-   */
-  async sendSMSOTP(phone: string, otp: string): Promise<void> {
-    try {
-      // For Africa's Talking (Kenya):
-      if (process.env.AFRICAS_TALKING_API_KEY && process.env.AFRICAS_TALKING_USERNAME) {
-        await this.sendViaAfricasTalking(phone, otp);
-      }
-      // For Twilio (International):
-      else if (process.env.TWILIO_ACCOUNT_SID && process.env.TWILIO_AUTH_TOKEN) {
-        await this.sendViaTwilio(phone, otp);
-      }
-      // Fallback: Log to console (development only)
-      else {
-        console.log('\n════════════════════════════════════════');
-        console.log('📱 SMS OTP (Development Mode - No Provider)');
-        console.log('════════════════════════════════════════');
-        console.log(`Phone: ${phone}`);
-        console.log(`OTP Code: ${otp}`);
-        console.log(`Expires: ${OTP_EXPIRY_MINUTES} minutes`);
-        console.log('════════════════════════════════════════\n');
-
-        if (process.env.NODE_ENV !== 'development') {
-          console.warn('⚠️  No SMS provider configured in production. Add AFRICAS_TALKING or TWILIO credentials.');
-        }
+      if (process.env.NODE_ENV !== 'development') {
+        console.warn('⚠️  No SMS provider configured in production. Add AFRICAS_TALKING or TWILIO credentials.');
       }
     } catch (error) {
       console.error('Failed to send OTP SMS:', error);
@@ -214,9 +186,63 @@ class OTPServiceInternal {
     }
   }
 
-  /**
-   * Send SMS via Africa's Talking
-   */
+  async sendWhatsAppOTP(phone: string, otp: string): Promise<void> {
+    try {
+      const phoneId = process.env.WHATSAPP_PHONE_ID;
+      const token = process.env.WHATSAPP_ACCESS_TOKEN;
+
+      if (!phoneId || !token) {
+        console.log('\n════════════════════════════════════════');
+        console.log('💬 WhatsApp OTP (Development Mode - No Provider)');
+        console.log('════════════════════════════════════════');
+        console.log(`Phone: ${phone}`);
+        console.log(`OTP Code: ${otp}`);
+        console.log(`Expires: ${OTP_EXPIRY_MINUTES} minutes`);
+        console.log('════════════════════════════════════════\n');
+        return;
+      }
+
+      const response = await fetch(`https://graph.facebook.com/v18.0/${phoneId}/messages`, {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${token}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          messaging_product: 'whatsapp',
+          to: phone,
+          type: 'text',
+          text: {
+            body: `Your MtaaDAO verification code is: ${otp}. Valid for ${OTP_EXPIRY_MINUTES} minutes.`,
+          },
+        }),
+      });
+
+      if (!response.ok) {
+        throw new Error(`WhatsApp API error: ${response.status}`);
+      }
+
+      console.log(`✅ OTP WhatsApp sent to ${phone}`);
+    } catch (error) {
+      console.error('Failed to send OTP WhatsApp:', error);
+      throw new Error('Failed to send verification code via WhatsApp');
+    }
+  }
+
+  async sendOTPByChannel(destination: string, otp: string, channel: OTPDeliveryChannel): Promise<void> {
+    if (channel === 'email') {
+      await this.sendEmailOTP(destination, otp);
+      return;
+    }
+
+    if (channel === 'whatsapp') {
+      await this.sendWhatsAppOTP(destination, otp);
+      return;
+    }
+
+    await this.sendSMSOTP(destination, otp);
+  }
+
   private async sendViaAfricasTalking(phone: string, otp: string): Promise<void> {
     try {
       const response = await fetch('https://api.africastalking.com/version1/messaging', {
@@ -243,9 +269,6 @@ class OTPServiceInternal {
     }
   }
 
-  /**
-   * Send SMS via Twilio
-   */
   private async sendViaTwilio(phone: string, otp: string): Promise<void> {
     try {
       const accountSid = process.env.TWILIO_ACCOUNT_SID;
@@ -281,9 +304,6 @@ class OTPServiceInternal {
     }
   }
 
-  /**
-   * Generate email template for OTP
-   */
   private generateEmailTemplate(otp: string): string {
     return `
       <!DOCTYPE html>
@@ -400,18 +420,24 @@ class OTPServiceInternal {
   }
 }
 
-// Create an internal instance and export a public API that matches the
-// existing route expectations: OTPService.generateOTP(userId, phone)
-// and OTPService.verifyOTP(userId, phone, otp) returning a boolean.
 const _otpInternal = new OTPServiceInternal();
 
 export const OTPService = {
   generateOTP: async (userId: string, phone: string): Promise<string> => {
-    const code = _otpInternal.generateOTP();
-    // Store using a composite key so OTPs are scoped to a user + phone combo
-    await _otpInternal.storeOTP(`phone:${userId}:${phone}`, '');
-    // Send SMS (will fallback to console in development)
+    // FIX #1: use storeOTP()'s returned value as the single source of
+    // truth for the code that gets sent — do not generate a separate one.
+    const identifier = `phone:${userId}:${phone}`;
+
+    // FIX #2: basic per-identifier resend cooldown
+    const cooldownKey = `otp:cooldown:${identifier}`;
+    const onCooldown = await redis.exists(cooldownKey);
+    if (onCooldown) {
+      throw new Error('An OTP was recently sent. Please wait before requesting another.');
+    }
+
+    const code = await _otpInternal.storeOTP(identifier, '');
     await _otpInternal.sendSMSOTP(phone, code);
+    await redis.set(cooldownKey, '1', RESEND_COOLDOWN_SECONDS);
     return code;
   },
 
@@ -424,10 +450,7 @@ export const OTPService = {
     return false;
   },
 
-  // Expose the internal instance for advanced operations or tests
   _internal: _otpInternal,
 };
 
-// Export the internal instance for existing callers that expect an
-// instantiated service with methods like storeOTP/sendEmailOTP/etc.
 export const otpService = _otpInternal;

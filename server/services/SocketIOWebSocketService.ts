@@ -15,7 +15,9 @@ import { Server as SocketIOServer, Socket } from 'socket.io';
 import { logger } from '../utils/logger';
 import { wsConnectionManager } from './WebSocketConnectionManager';
 import { wsHealthMonitor } from './WebSocketHealthMonitor';
-import { verifyAccessToken, AuthRequest } from '../auth';
+import { verifyAccessToken } from '../auth';
+import type {AuthRequest} from '../auth';
+import { corsAllowedOrigins } from '../../shared/config.js';
 
 interface ClientData {
   userId: string;
@@ -34,9 +36,14 @@ export class SocketIOWebSocketService {
 
   private constructor(server: HttpServer) {
     // Initialize Socket.IO with proper CORS and transports
+    const socketCorsOrigins = corsAllowedOrigins.length > 0
+      ? corsAllowedOrigins
+      : ['http://localhost:5173'];
+    const allowAllSocketOrigins = socketCorsOrigins.some((origin) => ['*', 'all'].includes(origin.toLowerCase()));
+
     this.io = new SocketIOServer(server, {
       cors: {
-        origin: process.env.CORS_ORIGIN || '*',
+        origin: allowAllSocketOrigins ? true : socketCorsOrigins,
         credentials: true,
         methods: ['GET', 'POST']
       },
@@ -117,7 +124,10 @@ export class SocketIOWebSocketService {
       socket.on('typing', (data: any) => this.handleTyping(socket, data));
 
       // Handle presence
-      socket.on('presence', (status: string) => this.handlePresence(socket, status));
+      socket.on('presence', (status: string) => {
+        const normalizedStatus = status === 'away' || status === 'offline' ? status : 'online';
+        this.handlePresence(socket, normalizedStatus as 'online' | 'away' | 'offline');
+      });
 
       // Handle disconnect
       socket.on('disconnect', () => this.handleDisconnect(socket));

@@ -18,20 +18,26 @@
  * ═══════════════════════════════════════════════════════════════════════════════
  */
 
-import express, { Request, Response, Router } from 'express';
+import express from 'express';
+import type { Request, Response, Router } from 'express';
 import { daoAbusePreventionService } from '../../../../services/daoAbusePreventionService';
 import { logger } from '../../../../utils/logger';
 
 const router: Router = express.Router({ mergeParams: true });
 
+interface RequestWithParams extends Request {
+  params: { daoId: string; [key: string]: string };
+  user?: { id?: string; claims?: { sub?: string } };
+}
+
 // Helper to get daoId from params
-function getDaoId(req: Request): string {
-  return (req as any).params?.daoId || '';
+function getDaoId(req: RequestWithParams): string {
+  return req.params?.daoId || '';
 }
 
 // Helper to get userId from request
-function getUserId(req: Request): string | null {
-  return (req.user as any)?.id || (req.user as any)?.claims?.sub || null;
+function getUserId(req: RequestWithParams): string | null {
+  return req.user?.id || req.user?.claims?.sub || null;
 }
 
 // ════════════════════════════════════════════════════════════════════════════════

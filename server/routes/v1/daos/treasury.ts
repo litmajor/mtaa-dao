@@ -5,7 +5,7 @@
  * 
  * Comprehensive DAO-scoped treasury management system with security guards
  * 
- * ⚠️ MtaaDAO Security Audit: "Unvalidated treasury transfers" (CRITICAL)
+ *  MtaaDAO Security Audit: "Unvalidated treasury transfers" (CRITICAL)
  * All write operations protected by treasuryAdminGuard (role: admin or elder)
  * All fund movements logged with severity: 'critical'
  * 

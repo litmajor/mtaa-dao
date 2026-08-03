@@ -4,6 +4,7 @@ import { dirname } from "path";
 import { fileURLToPath } from "url";
 const __dirname = dirname(fileURLToPath(import.meta.url));
 import fs from "fs";
+import compression from 'compression';
 import type { Server } from "http";
 import { nanoid } from "nanoid";
 
@@ -75,25 +76,41 @@ export function serveStatic(app: Express) {
       `❌ Could not find the build directory: ${distPath}, make sure to run 'npm run build' first`
     );
   }
+  // Compression for static assets
+  app.use(compression());
 
-  // Serve static files with caching
+  // Serve hashed build assets (Vite outputs into `assets/`) with long immutable cache
+  const assetsPath = path.join(distPath, 'assets');
+  if (fs.existsSync(assetsPath)) {
+    app.use('/assets', express.static(assetsPath, {
+      maxAge: '1y', // Cache assets for 1 year
+      immutable: true,
+      etag: true,
+      lastModified: true,
+    }));
+  }
+
+  // Serve remaining files (including favicons, manifests) with a shorter cache
   app.use(express.static(distPath, {
-    maxAge: '1y', // Cache assets for 1 year
-    immutable: true, // Assets are immutable (have hash in filename)
-    etag: true, // Enable ETag for conditional requests
+    maxAge: '1h',
+    etag: true,
     lastModified: true,
-    setHeaders: (res, path) => {
-      // Don't cache HTML files as aggressively
-      if (path.endsWith('.html')) {
+    setHeaders: (res, filePath) => {
+      if (filePath.endsWith('.html')) {
         res.setHeader('Cache-Control', 'public, max-age=300'); // 5 minutes
+      } else if (filePath.match(/\.(png|jpg|jpeg|webp|ico|json|webmanifest)$/)) {
+        res.setHeader('Cache-Control', 'public, max-age=3600'); // 1 hour
       }
     }
   }));
 
-  // Fallback for React Router SPA
-  app.use("*", (_req, res) => {
-    // Don't cache the main HTML file
+  // SPA fallback - exclude API routes so missing server routes return proper 404s
+  app.use((req, res, next) => {
+    const url = req.originalUrl || req.url || '';
+    if (url.startsWith('/api') || url.startsWith('/_next') || url.startsWith('/assets')) return next();
     res.setHeader('Cache-Control', 'no-cache');
-    res.sendFile(path.join(distPath, "index.html"));
+    res.sendFile(path.join(distPath, 'index.html'), (err) => {
+      if (err) return next(err);
+    });
   });
 }

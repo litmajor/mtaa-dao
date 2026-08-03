@@ -159,7 +159,8 @@ export class DaoAnalyzer {
       txByType: Object.fromEntries(txsByType.map(t => [t.type, t.count])),
       hasDescription: !!daoRecord.description,
       hasRules: false,
-      treasuryAddress: (daoRecord as any).treasuryAddress || null,
+      // prefer explicit treasury/vault fields present in schema
+      treasuryAddress: (daoRecord as any).vaultAddress || (daoRecord as any).chamaTreasuryAddress || (daoRecord as any).maonoVaultAddress || null,
       allowedTokens: []
     };
   }

@@ -45,7 +45,7 @@ export interface UserPreferences {
 }
 
 export interface SettingsState {
-  activeTab: 'profile' | 'security' | 'devices' | 'sessions' | 'preferences';
+  activeTab: 'profile' | 'security' | 'devices' | 'sessions' | 'preferences' | 'persona';
   profile: UserProfile;
   security: SecurityPreferences;
   devices: ConnectedDevice[];

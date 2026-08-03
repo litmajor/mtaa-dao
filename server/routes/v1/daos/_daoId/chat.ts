@@ -16,7 +16,8 @@
  * ═══════════════════════════════════════════════════════════════════════════════
  */
 
-import express, { Request, Response, Router } from 'express';
+import express from 'express';
+import type { Request, Response, Router } from 'express';
 import { chatService } from '../../../../services/chatService';
 import { logger } from '../../../../utils/logger';
 import path from 'path';

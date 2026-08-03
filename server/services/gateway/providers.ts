@@ -3,7 +3,7 @@
  * Aggregates prices from multiple sources with fallback logic
  */
 
-import { TokenPrice } from './types';
+import type { TokenPrice } from './types';
 
 export interface IPriceProvider {
   getPrice(token: string, chainId: number, source?: string): Promise<TokenPrice | null>;
@@ -94,7 +94,7 @@ export class AggregatedPriceProvider implements IPriceProvider {
  * Fetches and analyzes liquidity across DEXes
  */
 
-import { LiquidityInfo, SlippageAnalysis } from './types';
+import type { LiquidityInfo, SlippageAnalysis } from './types';
 
 export interface ILiquidityProvider {
   getLiquidity(tokenA: string, tokenB: string, chainId: number): Promise<LiquidityInfo | null>;
@@ -210,7 +210,7 @@ export class UniversalLiquidityProvider implements ILiquidityProvider {
  * Tracks gas prices across chains
  */
 
-import { GasPriceFeed } from './types';
+import type { GasPriceFeed } from './types';
 
 export interface IGasProvider {
   getGasPrices(chainId: number): Promise<GasPriceFeed | null>;
@@ -272,7 +272,7 @@ export class GasFeesProvider implements IGasProvider {
  * Tracks trading volume and market activity
  */
 
-import { VolumeData, ChainVolume } from './types';
+import type { VolumeData, ChainVolume } from './types';
 
 export interface IVolumeProvider {
   getVolume(pair: string, chainId: number, timeframe: string): Promise<VolumeData | null>;

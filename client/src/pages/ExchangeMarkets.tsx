@@ -65,7 +65,8 @@ import { ArbitrageOpportunitiesCard } from '@/components/ArbitrageOpportunitiesC
 import { FearGreedGauge } from '@/components/FearGreedGauge';
 import { MarketChangesVisualization } from '@/components/MarketChangesVisualization';
 import { BtcDominanceCard } from '@/components/BtcDominanceCard';
-import MarketSparkline, { SparklinePoint, SparklineStats } from '@/components/MarketSparkline';
+import MarketSparkline from '@/components/MarketSparkline';
+import type { SparklinePoint, SparklineStats } from '@/components/MarketSparkline';
 import { PageLoading } from '@/components/ui/page-loading';
 
 /**
@@ -291,8 +292,9 @@ const ExchangeMarkets: React.FC = () => {
   const { data: bestPrice, isLoading: bestPriceLoading } = useBestPrice(selectedAsset, selectedExchanges) as { data: any; isLoading: boolean };
   
   // Fetch real top assets from API - Now 500 tokens
-  const topAssetsQuery = useTopAssets(500);
-  const { data: topAssets = [], isLoading: topAssetsLoading, error: topAssetsError } = topAssetsQuery;
+  const topAssetsQuery = useTopAssets<EnhancedAsset>(500);
+  const topAssets = (topAssetsQuery.data ?? []) as EnhancedAsset[];
+  const { isLoading: topAssetsLoading, error: topAssetsError } = topAssetsQuery;
   
   const availableExchanges = (statusQuery.data as any)?.available || ['binance', 'coinbase', 'kraken', 'bybit', 'kucoin', 'okx'];
   const healthyExchanges = (statusQuery.data as any)?.health?.exchanges || {};
@@ -304,9 +306,9 @@ const ExchangeMarkets: React.FC = () => {
   // Extract unique symbols from top assets for CoinGecko batch query
   // Strip pair notation (e.g., "BTC/USDT" -> "BTC") for CoinGecko
   const topAssetSymbols = useMemo(() => {
-    const symbols = ((topAssets as any) || [])
-      .map((a: any) => a.symbol.split('/')[0])  // Extract base symbol before "/"
-      .filter((s: string, idx: number, arr: string[]) => arr.indexOf(s) === idx); // Remove duplicates
+    const symbols = topAssets
+      .map((a: EnhancedAsset) => a.symbol.split('/')[0])
+      .filter((s: string, idx: number, arr: string[]) => arr.indexOf(s) === idx);
     return symbols;
   }, [topAssets]);
   // Fetch CoinGecko data for all top assets
@@ -314,10 +316,9 @@ const ExchangeMarkets: React.FC = () => {
   const coinGeckoData: any = coinGeckoQuery?.data || {};
 
   // Filter and sort real assets
-  const filteredAssets = useMemo(() => {
-    return ((topAssets as any) || [])
-      .map((asset: any) => {
-        // Extract base symbol from pair notation (e.g., "BTC/USDT" -> "BTC")
+  const filteredAssets = useMemo<EnhancedAsset[]>(() => {
+    return topAssets
+      .map((asset: EnhancedAsset) => {
         const baseSymbol = asset.symbol.split('/')[0];
         return {
           ...asset,
@@ -326,13 +327,13 @@ const ExchangeMarkets: React.FC = () => {
           circulatingSupply: coinGeckoData[baseSymbol]?.circulatingSupply ?? asset.circulatingSupply ?? '—'
         };
       })
-      .filter((asset: any) => {
+      .filter((asset: EnhancedAsset) => {
         const matchesSearch = asset.symbol.toLowerCase().includes(topAssetsSearchTerm.toLowerCase()) ||
                             asset.name.toLowerCase().includes(topAssetsSearchTerm.toLowerCase());
         const matchesCategory = filterCategory === 'all' || asset.category === filterCategory;
         return matchesSearch && matchesCategory;
       })
-      .sort((a: any, b: any) => {
+      .sort((a: EnhancedAsset, b: EnhancedAsset) => {
         const multiplier = sortOrder === 'asc' ? 1 : -1;
         if (sortBy === 'rank') return (a.rank - b.rank) * multiplier;
         if (sortBy === 'price') return (a.price - b.price) * multiplier;
@@ -651,7 +652,7 @@ const ExchangeMarkets: React.FC = () => {
                     </tr>
                   </thead>
                   <tbody>
-                    {paginatedTopAssets.map((asset: any) => {
+                    {paginatedTopAssets.map((asset: EnhancedAsset) => {
                       const isPositive24h = asset.change24h > 0;
                       const isPositive1h = asset.change1h > 0;
                       const isPositive7d = asset.change7d > 0;
@@ -749,10 +750,10 @@ const ExchangeMarkets: React.FC = () => {
                           </td>
                           <td className="px-4 py-4">
                             <div className="w-32 h-12">
-                              <div style={{ height: '100%' }}>
+                              <div className="h-full">
                                 <Chart
                                   type="line"
-                                  data={{ labels: asset.sparkline.map((_, i) => i), datasets: [{ data: asset.sparkline, borderColor: isPositive7d ? '#10b981' : '#ef4444', backgroundColor: 'transparent', tension: 0.2, pointRadius: 0 }] }}
+                                  data={{ labels: asset.sparkline.map((_: number, i: number) => i), datasets: [{ data: asset.sparkline, borderColor: isPositive7d ? '#10b981' : '#ef4444', backgroundColor: 'transparent', tension: 0.2, pointRadius: 0 }] }}
                                   options={{ responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false }, tooltip: { enabled: false } }, scales: { x: { display: false }, y: { display: false } } }}
                                 />
                               </div>
@@ -1835,7 +1836,12 @@ const ExchangeMarkets: React.FC = () => {
  * Technical Indicators Component
  */
 const TechnicalIndicatorsSection: React.FC<{ symbol: string }> = ({ symbol }) => {
-  const { data: technicals, isLoading, error } = useTechnicalIndicators(symbol, 'binance', '1d');
+  const { data: technicals, isLoading, error } = useTechnicalIndicators({
+    symbol,
+    exchange: 'binance',
+    timeframe: '1d',
+    source: 'auto',
+  });
 
   if (isLoading) {
     return (
@@ -1855,7 +1861,7 @@ const TechnicalIndicatorsSection: React.FC<{ symbol: string }> = ({ symbol }) =>
     );
   }
 
-  const { indicators } = technicals;
+  const indicators = technicals;
   const signalStrength =
     indicators.signals.bullish > indicators.signals.bearish + 1
       ? 'Strong Bullish'

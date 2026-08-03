@@ -1,9 +1,11 @@
-import { ValidationIssue, ValidationSeverity } from './strategy-validator';
-import { StrategyNode } from '../models/StrategyNode';
+import { ValidationSeverity } from './strategy-validator';
+import type { ValidationIssue } from './strategy-validator';
+import type { AiNode, VaultNode, CrosschainNode } from '../models/StrategyNode';
 
-export function validateAiNode(node: StrategyNode): ValidationIssue[] {
+export function validateAiNode(node: AiNode): ValidationIssue[] {
   const issues: ValidationIssue[] = [];
-  const cfg = (node as any).config || {};
+  const cfg = node.config;
+
   if (!cfg.model) {
     issues.push({ severity: ValidationSeverity.ERROR, message: 'AI node missing model', nodeId: node.id });
   }
@@ -13,9 +15,10 @@ export function validateAiNode(node: StrategyNode): ValidationIssue[] {
   return issues;
 }
 
-export function validateVaultNode(node: StrategyNode): ValidationIssue[] {
+export function validateVaultNode(node: VaultNode): ValidationIssue[] {
   const issues: ValidationIssue[] = [];
-  const cfg = (node as any).config || {};
+  const cfg = node.config;
+
   if (!cfg.vaultAddress) {
     issues.push({ severity: ValidationSeverity.ERROR, message: 'Vault node missing vaultAddress', nodeId: node.id });
   }
@@ -25,9 +28,10 @@ export function validateVaultNode(node: StrategyNode): ValidationIssue[] {
   return issues;
 }
 
-export function validateCrosschainNode(node: StrategyNode): ValidationIssue[] {
+export function validateCrosschainNode(node: CrosschainNode): ValidationIssue[] {
   const issues: ValidationIssue[] = [];
-  const cfg = (node as any).config || {};
+  const cfg = node.config;
+
   if (!cfg.provider) {
     issues.push({ severity: ValidationSeverity.ERROR, message: 'Crosschain node missing provider', nodeId: node.id });
   }

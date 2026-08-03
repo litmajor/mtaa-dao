@@ -20,7 +20,7 @@ import {
   type InsertAccountAccessLog,
 } from "@shared/accountSchema";
 import { users, daos } from "@shared/schema";
-import { eq, and, gte, lte, desc, sum } from "drizzle-orm";
+import { eq, and, gte, lte, desc, sum, sql } from "drizzle-orm";
 
 /**
  * Generate unique account number
@@ -148,105 +148,99 @@ export async function closeAccount(
 export async function createAccountTransaction(
   data: InsertAccountTransaction
 ): Promise<any> {
-  // Get current account balance
-  const account = await getAccount(data.accountId);
-  if (!account) {
-    throw new Error("Account not found");
-  }
+  return await db.transaction(async (tx) => {
+    const accountResult = await tx.execute(sql`
+      SELECT * FROM accounts WHERE id = ${data.accountId} FOR UPDATE
+    `);
 
-  // Extract and convert numeric fields to prevent null reference errors
-  const balance = account.balance ?? "0";
-  const totalDep = account.totalDeposited ?? "0";
-  const totalWith = account.totalWithdrawn ?? "0";
-  const totalTrans = account.totalTransactions ?? 0;
+    const account = accountResult.rows[0] as any;
+    if (!account) {
+      throw new Error("Account not found");
+    }
 
-  const balanceBeforeNum = Number(balance);
-  let balanceAfterNum = balanceBeforeNum;
+    const balance = account.balance ?? "0";
+    const totalDep = account.totalDeposited ?? "0";
+    const totalWith = account.totalWithdrawn ?? "0";
+    const totalTrans = account.totalTransactions ?? 0;
 
-  // Calculate new balance based on transaction type
-  const amount = Number(data.amount);
-  switch (data.transactionType) {
-    case "deposit":
-      balanceAfterNum = balanceBeforeNum + amount;
-      break;
-    case "withdrawal":
-      balanceAfterNum = balanceBeforeNum - amount;
-      break;
-    case "transfer":
-      // If it's a transfer from this account
-      if (data.fromAccountId === data.accountId) {
-        balanceAfterNum = balanceBeforeNum - amount;
-      } else {
+    const balanceBeforeNum = Number(balance);
+    let balanceAfterNum = balanceBeforeNum;
+    const amount = Number(data.amount);
+
+    switch (data.transactionType) {
+      case "deposit":
         balanceAfterNum = balanceBeforeNum + amount;
-      }
-      break;
-    case "fee":
-      balanceAfterNum = balanceBeforeNum - amount;
-      break;
-    case "interest":
-      balanceAfterNum = balanceBeforeNum + amount;
-      break;
-  }
+        break;
+      case "withdrawal":
+        balanceAfterNum = balanceBeforeNum - amount;
+        break;
+      case "transfer":
+        if (data.fromAccountId === data.accountId) {
+          balanceAfterNum = balanceBeforeNum - amount;
+        } else {
+          balanceAfterNum = balanceBeforeNum + amount;
+        }
+        break;
+      case "fee":
+        balanceAfterNum = balanceBeforeNum - amount;
+        break;
+      case "interest":
+        balanceAfterNum = balanceBeforeNum + amount;
+        break;
+    }
 
-  // Create transaction
-  const transaction = await db
-    .insert(accountTransactions)
-    .values({
-      accountId: data.accountId,
-      transactionType: data.transactionType,
-      amount: data.amount,
-      currency: data.currency,
-      description: data.description,
-      reference: data.reference,
-      fromAccountId: data.fromAccountId,
-      toAccountId: data.toAccountId,
-      fromUserId: data.fromUserId,
-      toUserId: data.toUserId,
-      status: data.status || "completed",
-      balanceBefore: balanceBeforeNum.toString(),
-      balanceAfter: balanceAfterNum.toString(),
-      transactionHash: data.transactionHash,
-      chainId: data.chainId,
-      metadata: data.metadata,
-      ipAddress: data.ipAddress,
-      userAgent: data.userAgent,
-      createdAt: new Date(),
-    })
-    .returning();
+    if (balanceAfterNum < 0) {
+      throw new Error("Insufficient funds");
+    }
 
-  if (!transaction[0]) {
-    throw new Error("Failed to create transaction");
-  }
+    const transaction = await tx
+      .insert(accountTransactions)
+      .values({
+        accountId: data.accountId,
+        transactionType: data.transactionType,
+        amount: data.amount,
+        currency: data.currency,
+        description: data.description,
+        reference: data.reference,
+        fromAccountId: data.fromAccountId,
+        toAccountId: data.toAccountId,
+        fromUserId: data.fromUserId,
+        toUserId: data.toUserId,
+        status: data.status || "completed",
+        balanceBefore: balanceBeforeNum.toString(),
+        balanceAfter: balanceAfterNum.toString(),
+        transactionHash: data.transactionHash,
+        chainId: data.chainId,
+        metadata: data.metadata,
+        ipAddress: data.ipAddress,
+        userAgent: data.userAgent,
+        createdAt: new Date(),
+      })
+      .returning();
 
-  // Update account balance and activity
-  await updateAccount(data.accountId, {
-    balance: balanceAfterNum.toString(),
-    lastActivityAt: new Date(),
-  } as Partial<NewAccount>);
+    if (!transaction[0]) {
+      throw new Error("Failed to create transaction");
+    }
 
-  // Update account totals
-  if (data.transactionType === "deposit") {
-    // account.totalDeposited = Number(account.totalDeposited || 0) + amount;
-  } else if (data.transactionType === "withdrawal") {
-    // account.totalWithdrawn = Number(account.totalWithdrawn || 0) + amount;
-  }
+    await tx
+      .update(accounts)
+      .set({
+        balance: balanceAfterNum.toString(),
+        lastActivityAt: new Date(),
+        totalDeposited:
+          data.transactionType === "deposit"
+            ? (Number(totalDep) + amount).toString()
+            : totalDep,
+        totalWithdrawn:
+          data.transactionType === "withdrawal"
+            ? (Number(totalWith) + amount).toString()
+            : totalWith,
+        totalTransactions: totalTrans + 1,
+      })
+      .where(eq(accounts.id, data.accountId));
 
-  await db
-    .update(accounts)
-    .set({
-      totalDeposited:
-        data.transactionType === "deposit"
-          ? (Number(totalDep) + amount).toString()
-          : totalDep,
-      totalWithdrawn:
-        data.transactionType === "withdrawal"
-          ? (Number(totalWith) + amount).toString()
-          : totalWith,
-      totalTransactions: totalTrans + 1,
-    })
-    .where(eq(accounts.id, data.accountId));
-
-  return transaction[0];
+    return transaction[0];
+  });
 }
 
 /**

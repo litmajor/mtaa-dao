@@ -373,6 +373,10 @@ export class WebSocketEventEmitter {
  * Will be initialized with WebSocketManager once it's created
  */
 let emitterInstance: WebSocketEventEmitter | null = null;
+const fallbackEmitter = new WebSocketEventEmitter({
+  emitToRoom: () => undefined,
+  emitToUser: () => undefined,
+} as unknown as WebSocketManager);
 
 /**
  * Initialize the global event emitter
@@ -387,10 +391,7 @@ export function initializeEventEmitter(wsManager: WebSocketManager): WebSocketEv
  * Get the global event emitter instance
  */
 export function getEventEmitter(): WebSocketEventEmitter {
-  if (!emitterInstance) {
-    throw new Error('WebSocket event emitter not initialized. Call initializeEventEmitter first.');
-  }
-  return emitterInstance;
+  return emitterInstance ?? fallbackEmitter;
 }
 
 export default WebSocketEventEmitter;

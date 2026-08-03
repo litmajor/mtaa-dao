@@ -2,19 +2,26 @@
  * ═══════════════════════════════════════════════════════════════════════════════
  * NAV ORACLE SERVICE - Automated Vault NAV Calculation & Updates
  * ═══════════════════════════════════════════════════════════════════════════════
- * 
+ *
  * Production implementation with:
  * • Symbol Universe (asset metadata + deployments)
- * • Market Data Service (multi-source pricing)
+ * • priceOracle (shared, dynamic-registry, Redis-deduped USD pricing)
  * • Strategy Dashboard Service (strategy performance + TVL)
  * • External API Tracker (yield data + liquidation risk)
  * • ECDSA signature generation for blockchain submission
+ *
+ * NOTE ON PRICING: this service used to run its own independent multi-source
+ * pricing stack (CoinGecko + Binance + DEX Screener) in parallel with
+ * `priceOracle.ts`. That has been removed. All USD pricing now goes through
+ * the shared `priceOracle` singleton so vault NAV calculations can never
+ * disagree with prices shown elsewhere in the app, and so new/changed token
+ * mappings only need to be registered once (see integration notes below).
  */
 
-import axios from 'axios';
 import { Logger } from '../utils/logger';
 import { symbolUniverse } from '../core/symbol_universe';
 import { strategyDashboardService } from './strategyDashboardService';
+import { priceOracle } from './priceOracle';
 import crypto from 'crypto';
 import type { SupportedChain } from '../types/assetGraph';
 
@@ -91,7 +98,6 @@ class NavOracleService {
   private nonces: Map<string, number> = new Map();
   private updateInterval: any = null;
   private lastUpdates: Map<string, VaultNAVResult> = new Map();
-  private priceCache: Map<string, { data: PriceData; timestamp: number }> = new Map();
   private yieldCache: Map<string, { data: YieldData; timestamp: number }> = new Map();
   private signerAddress: string = '';
   private signerPrivateKey: string = '';
@@ -166,7 +172,7 @@ class NavOracleService {
           );
         }
 
-        const priceData = await this.getMultiSourcePrice(holding.symbol, chain);
+        const priceData = await this.getPriceForAsset(holding.symbol);
         for (const source of priceData.sources) {
           sources.add(source);
         }
@@ -230,170 +236,36 @@ class NavOracleService {
     return result;
   }
 
-  private async getMultiSourcePrice(
-    symbol: string,
-    chain: SupportedChain
-  ): Promise<PriceData> {
-    const cacheKey = `${symbol}:${chain}`;
-    const cached = this.priceCache.get(cacheKey);
-    
-    if (cached && Date.now() - cached.timestamp < 5 * 60 * 1000) {
-      return cached.data;
+  /**
+   * Get USD price for a single asset via the shared priceOracle.
+   *
+   * This replaces the old getMultiSourcePrice() stack (CoinGecko + Binance +
+   * DEX Screener run independently in this file). priceOracle already
+   * handles multi-source fallback (Gateway Agent -> CoinGecko), Redis-backed
+   * cross-instance deduplication, and rate-limit backoff internally, so none
+   * of that needs to be duplicated here.
+   *
+   * Confidence is no longer computed from cross-source price variance
+   * (there's only one source now, from this file's point of view).
+   * priceOracle returning a value at all already implies it passed through
+   * its own fallback chain successfully, so a found price is treated as
+   * full confidence. If priceOracle exposes a confidence/variance signal in
+   * the future, wire it through here instead of the flat 100.
+   */
+  private async getPriceForAsset(symbol: string): Promise<PriceData> {
+    const price = await priceOracle.getPrice(symbol);
+
+    if (!price || !(price.priceUsd > 0)) {
+      throw new Error(`No price data available for ${symbol} via priceOracle`);
     }
 
-    const sourceBreakdown = new Map<string, number>();
-    const prices: number[] = [];
-
-    try {
-      const cgPrice = await this.getPriceFromCoinGecko(symbol);
-      if (cgPrice > 0) {
-        prices.push(cgPrice);
-        sourceBreakdown.set('coingecko', cgPrice);
-        logger.debug(`[NavOracle] CoinGecko price for ${symbol}: $${cgPrice}`);
-      }
-    } catch (error) {
-      logger.debug(`[NavOracle] CoinGecko price failed for ${symbol}`);
-    }
-
-    try {
-      const binancePrice = await this.getPriceFromBinance(symbol);
-      if (binancePrice > 0) {
-        prices.push(binancePrice);
-        sourceBreakdown.set('binance', binancePrice);
-        logger.debug(`[NavOracle] Binance price for ${symbol}: $${binancePrice}`);
-      }
-    } catch (error) {
-      logger.debug(`[NavOracle] Binance price failed for ${symbol}`);
-    }
-
-    try {
-      const dexPrice = await this.getPriceFromDEXScreener(symbol, chain);
-      if (dexPrice > 0) {
-        prices.push(dexPrice);
-        sourceBreakdown.set('dex_screener', dexPrice);
-        logger.debug(`[NavOracle] DEX Screener price for ${symbol}: $${dexPrice}`);
-      }
-    } catch (error) {
-      logger.debug(`[NavOracle] DEX Screener price failed for ${symbol}`);
-    }
-
-    if (prices.length < 2) {
-      try {
-        const cgFallbackPrice = await this.getPriceFromCoinGeckoFallback(symbol);
-        if (cgFallbackPrice > 0 && !sourceBreakdown.has('coingecko')) {
-          prices.push(cgFallbackPrice);
-          sourceBreakdown.set('coingecko_fallback', cgFallbackPrice);
-          logger.debug(`[NavOracle] CoinGecko fallback price for ${symbol}: $${cgFallbackPrice}`);
-        }
-      } catch (error) {
-        logger.debug(`[NavOracle] CoinGecko fallback failed for ${symbol}`);
-      }
-    }
-
-    if (prices.length === 0) {
-      throw new Error(`No price data available for ${symbol} on ${chain}`);
-    }
-
-    const avgPrice = prices.reduce((a, b) => a + b, 0) / prices.length;
-    const variance = prices.reduce((sum, p) => sum + Math.abs(p - avgPrice), 0) / prices.length;
-    const variance_pct = (variance / avgPrice) * 100;
-    const confidence = Math.max(0, Math.min(100 - Math.min(variance_pct * 0.5, 25), 100));
-
-    const result: PriceData = {
-      usd: avgPrice,
-      sources: Array.from(sourceBreakdown.keys()),
-      confidence,
-      sourceBreakdown,
-      updateTime: Date.now(),
+    return {
+      usd: price.priceUsd,
+      sources: ['priceOracle'],
+      confidence: 100,
+      sourceBreakdown: new Map([['priceOracle', price.priceUsd]]),
+      updateTime: price.lastUpdated.getTime(),
     };
-
-    this.priceCache.set(cacheKey, {
-      data: result,
-      timestamp: Date.now(),
-    });
-
-    return result;
-  }
-
-  private async getPriceFromCoinGecko(symbol: string): Promise<number> {
-    try {
-      const coinGeckoId = this.mapSymbolToCoinGeckoId(symbol);
-      if (!coinGeckoId) return 0;
-
-      const response = await axios.get(
-        `https://api.coingecko.com/api/v3/simple/price?ids=${coinGeckoId}&vs_currencies=usd`,
-        { timeout: 5000 }
-      );
-
-      const price = response.data[coinGeckoId]?.usd;
-      return price || 0;
-    } catch (error) {
-      logger.debug(`[NavOracle] CoinGecko API error for ${symbol}:`, error instanceof Error ? error.message : '');
-      return 0;
-    }
-  }
-
-  private async getPriceFromBinance(symbol: string): Promise<number> {
-    try {
-      const binanceSymbol = this.mapSymbolToBinanceSymbol(symbol);
-      if (!binanceSymbol) return 0;
-
-      const response = await axios.get(
-        `https://api.binance.com/api/v3/ticker/price?symbol=${binanceSymbol}`,
-        { timeout: 5000 }
-      );
-
-      return parseFloat(response.data.price) || 0;
-    } catch (error) {
-      logger.debug(`[NavOracle] Binance API error for ${symbol}:`, error instanceof Error ? error.message : '');
-      return 0;
-    }
-  }
-
-  private async getPriceFromDEXScreener(symbol: string, chain: SupportedChain): Promise<number> {
-    try {
-      const dexChain = this.mapChainToDexScreenerChain(chain);
-      if (!dexChain) return 0;
-
-      const response = await axios.get(
-        `https://api.dexscreener.com/latest/dex/tokens/${symbol}`,
-        { timeout: 5000 }
-      );
-
-      if (response.data?.pairs && response.data.pairs.length > 0) {
-        const bestPair = response.data.pairs[0];
-        return parseFloat(bestPair.priceUsd) || 0;
-      }
-
-      return 0;
-    } catch (error) {
-      logger.debug(`[NavOracle] DEX Screener error for ${symbol}:`, error instanceof Error ? error.message : '');
-      return 0;
-    }
-  }
-
-  private async getPriceFromCoinGeckoFallback(symbol: string): Promise<number> {
-    try {
-      const response = await axios.get(
-        `https://api.coingecko.com/api/v3/search?query=${symbol}`,
-        { timeout: 5000 }
-      );
-
-      if (response.data?.coins && response.data.coins.length > 0) {
-        const topCoin = response.data.coins[0];
-        const priceResponse = await axios.get(
-          `https://api.coingecko.com/api/v3/simple/price?ids=${topCoin.id}&vs_currencies=usd`,
-          { timeout: 5000 }
-        );
-
-        return priceResponse.data[topCoin.id]?.usd || 0;
-      }
-
-      return 0;
-    } catch (error) {
-      logger.debug(`[NavOracle] CoinGecko fallback error for ${symbol}:`, error instanceof Error ? error.message : '');
-      return 0;
-    }
   }
 
   private async getYieldForAsset(
@@ -506,6 +378,7 @@ class NavOracleService {
 
   private async getAaveYield(symbol: string): Promise<YieldData | null> {
     try {
+      const axios = (await import('axios')).default;
       const response = await axios.get(
         'https://api.aave.com/data/rates.json',
         { timeout: 5000 }
@@ -530,6 +403,7 @@ class NavOracleService {
 
   private async getCompoundYield(symbol: string): Promise<YieldData | null> {
     try {
+      const axios = (await import('axios')).default;
       const response = await axios.get(
         'https://api.compound.finance/api/v3/markets',
         { timeout: 5000 }
@@ -569,6 +443,7 @@ class NavOracleService {
 
   private async getYearnYield(symbol: string): Promise<YieldData | null> {
     try {
+      const axios = (await import('axios')).default;
       const response = await axios.get(
         'https://yearn.finance/api/v1/chains/1/vaults/all',
         { timeout: 5000 }
@@ -773,37 +648,6 @@ class NavOracleService {
     return { valid: true, changePercent };
   }
 
-  private mapSymbolToCoinGeckoId(symbol: string): string {
-    const mappings: { [key: string]: string } = {
-      'BTC': 'bitcoin',
-      'ETH': 'ethereum',
-      'SOL': 'solana',
-      'USDC': 'usd-coin',
-      'DAI': 'dai',
-      'USDT': 'tether',
-      'AAVE': 'aave',
-      'COMPOUND': 'compound-governance-token',
-      'stETH': 'staked-ether',
-    };
-    return mappings[symbol] || symbol.toLowerCase();
-  }
-
-  private mapSymbolToBinanceSymbol(symbol: string): string {
-    return `${symbol.toUpperCase()}USDT`;
-  }
-
-  private mapChainToDexScreenerChain(chain: SupportedChain): string | null {
-    const mappings: { [key: string]: string } = {
-      'ethereum': 'ethereum',
-      'celo': 'celo',
-      'polygon': 'polygon',
-      'avalanche': 'avalanche',
-      'arbitrum': 'arbitrum',
-      'optimism': 'optimism',
-    };
-    return mappings[chain] || null;
-  }
-
   getLastNAV(vaultId: string): VaultNAVResult | undefined {
     return this.lastUpdates.get(vaultId);
   }
@@ -818,7 +662,6 @@ class NavOracleService {
     }
     this.lastUpdates.clear();
     this.nonces.clear();
-    this.priceCache.clear();
     this.yieldCache.clear();
   }
 }

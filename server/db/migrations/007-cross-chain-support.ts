@@ -175,24 +175,33 @@ export async function migrateCrossChainTables() {
     try {
       await pool.query(`CREATE INDEX IF NOT EXISTS idx_user_transfer ON cross_chain_transfers(user_id)`);
       await pool.query(`CREATE INDEX IF NOT EXISTS idx_status ON cross_chain_transfers(status)`);
-      await pool.query(`CREATE INDEX IF NOT EXISTS idx_chains_transfer ON cross_chain_transfers(source_chain, destination_chain)`);
-      
-      // Check if source_transaction_hash column exists before creating index
-      const hashColumnExists = await pool.query(`
-        SELECT EXISTS (
-          SELECT 1 FROM information_schema.columns 
-          WHERE table_schema = 'public'
-          AND table_name = 'cross_chain_transfers' 
-          AND column_name = 'source_transaction_hash'
-        )
+
+      // Detect whether the table uses 'destination_chain' or legacy 'target_chain'
+      const colsRes = await pool.query(`
+        SELECT column_name FROM information_schema.columns
+        WHERE table_schema = 'public' AND table_name = 'cross_chain_transfers'
       `);
-      
-      if (hashColumnExists.rows[0]?.exists) {
+      const cols = (colsRes.rows || []).map((r: any) => String(r.column_name));
+
+      if (cols.includes('source_chain') && cols.includes('destination_chain')) {
+        await pool.query(`CREATE INDEX IF NOT EXISTS idx_chains_transfer ON cross_chain_transfers(source_chain, destination_chain)`);
+      } else if (cols.includes('source_chain') && cols.includes('target_chain')) {
+        // Backwards-compatible: some SQL migrations call this 'target_chain'
+        await pool.query(`CREATE INDEX IF NOT EXISTS idx_chains_transfer ON cross_chain_transfers(source_chain, target_chain)`);
+      } else if (cols.includes('source_chain')) {
+        // Create index on source_chain only if present
+        await pool.query(`CREATE INDEX IF NOT EXISTS idx_chains_transfer_source ON cross_chain_transfers(source_chain)`);
+      }
+
+      // Check if source_transaction_hash column exists before creating index
+      const hashColumnExists = cols.includes('source_transaction_hash');
+
+      if (hashColumnExists) {
         await pool.query(`CREATE INDEX IF NOT EXISTS idx_tx_hash ON cross_chain_transfers(source_transaction_hash)`);
       } else {
         console.warn('⚠️ source_transaction_hash column not found, adding it now...');
         try {
-          await pool.query(`ALTER TABLE cross_chain_transfers ADD COLUMN source_transaction_hash VARCHAR(255)`);
+          await pool.query(`ALTER TABLE cross_chain_transfers ADD COLUMN IF NOT EXISTS source_transaction_hash VARCHAR(255)`);
           await pool.query(`CREATE INDEX IF NOT EXISTS idx_tx_hash ON cross_chain_transfers(source_transaction_hash)`);
         } catch (alterError: any) {
           if (!alterError.message?.includes('already exists')) {

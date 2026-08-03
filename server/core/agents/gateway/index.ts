@@ -6,7 +6,7 @@
 import { CircuitBreakerManager } from "./circuit-breaker";
 import { DataNormalizer } from "./normalizer";
 import { CacheManager } from "./cache-manager";
-import {
+import type {
   GatewayConfig,
   GatewayStatus,
   GatewayMessage,
@@ -367,12 +367,19 @@ export class GatewayAgent {
           return normalizedData;
         }
 
-        breaker.recordFailure(new Error(result.error || "Unknown error"));
+        const adapterError = result.error || "Unknown error";
+        console.error(`[${this.name}] ${adapterName} returned failure:`, adapterError);
+        if ((result as any).warning) {
+          console.warn(`[${this.name}] ${adapterName} warning:`, (result as any).warning);
+        }
+
+        breaker.recordFailure(new Error(adapterError));
       } catch (error) {
+        const msg = error instanceof Error ? error.message : String(error);
         breaker.recordFailure(error as Error);
         console.error(
           `[${this.name}] ${adapterName} failed:`,
-          (error as Error).message
+          msg
         );
       }
     }

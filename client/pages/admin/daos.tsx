@@ -1,7 +1,8 @@
 import React, { useEffect, useState } from 'react';
-import { AdminLayout } from '@/components/admin/AdminLayout';
-import { AdminTable } from '@/components/admin/AdminTable';
-import { Search, AlertTriangle } from '../../src/lib/icons';
+import { AdminLayout } from '../../components/admin/AdminLayout';
+import { AdminTable } from '../../components/admin/AdminTable';
+import { Search, AlertTriangle } from 'lucide-react';
+// @ts-ignore: CSS module types not declared in this workspace
 import styles from './daos.module.css';
 
 interface DAO {

@@ -53,11 +53,11 @@ interface PersonaContextType {
 
 const PersonaContext = createContext<PersonaContextType | undefined>(undefined);
 
-const SUBPROFILE_STORAGE_KEY = 'mtaa_dao_active_subprofile';
+const SUBPROFILE_STORAGE_KEY = 'mtaa_dao_active_subprofile';const SUBPROFILE_PREFERENCES_KEY = 'mtaa_dao_subprofile_preferences'; // New: preferences storage key
+const API_BASE_URL =
+  import.meta.env.VITE_API_URL ||
+  (typeof window !== 'undefined' ? `${window.location.origin}/api` : '/api');
 const SUBPROFILE_DETAILS_KEY = 'mtaa_dao_subprofile_details';
-const SUBPROFILE_PREFERENCES_KEY = 'mtaa_dao_subprofile_preferences'; // New: preferences storage key
-const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:3001/api';
-
 /**
  * PersonaProvider Component
  * Wraps app to provide subprofile context to all children

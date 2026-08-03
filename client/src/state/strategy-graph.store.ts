@@ -1,11 +1,18 @@
 import { useCallback, useState } from 'react';
-import { StrategyGraph, emptyGraph } from '../models/StrategyGraph';
-import { StrategyNode, Port } from '../models/StrategyNode';
-import { StrategyEdge } from '../models/StrategyEdge';
+import type { StrategyGraph } from '../models/StrategyGraph';
+import { emptyGraph } from '../models/StrategyGraph';
+import type { StrategyNode, Port } from '../models/StrategyNode';
+import type { StrategyEdge } from '../models/StrategyEdge';
 
-type BlockTemplate = any;
+type NodeConfigPatch = Partial<Record<string, unknown>>;
 
-function defaultPortsForType(type: string): Port[] {
+type BlockTemplate = Partial<StrategyNode> & {
+  type?: StrategyNode['type'];
+  config?: Partial<Record<string, unknown>>;
+  ports?: StrategyNode['ports'];
+};
+
+function defaultPortsForType(type: StrategyNode['type']): Port[] {
   switch (type) {
     case 'condition':
       return [
@@ -31,7 +38,7 @@ function fromTemplate(template: BlockTemplate): Partial<StrategyNode> {
     icon: template.icon || '▪',
     color: template.color || 'bg-slate-600',
     // config left as-is; typed nodes will accept proper shapes
-    config: { ...(template.config || {}) },
+    config: { ...(template.config || {}) } as StrategyNode['config'],
     ports: template.ports || defaultPortsForType(type),
   } as Partial<StrategyNode>;
 }
@@ -78,10 +85,17 @@ export function useStrategyGraph() {
     }));
   }, []);
 
-  const updateNodeConfig = useCallback((nodeId: string, patch: Record<string, any>) => {
+  const updateNodeConfig = useCallback((nodeId: string, patch: NodeConfigPatch) => {
     setGraph((prev) => ({
       ...prev,
-      nodes: prev.nodes.map((n) => (n.id === nodeId ? { ...n, config: { ...(n as any).config, ...patch } } : n)),
+      nodes: prev.nodes.map((n) => {
+        if (n.id !== nodeId) return n;
+
+        return {
+          ...n,
+          config: { ...(n.config || {}), ...patch } as typeof n.config,
+        } as StrategyNode;
+      }),
       metadata: { ...prev.metadata, updatedAt: new Date().toISOString() },
     }));
   }, []);

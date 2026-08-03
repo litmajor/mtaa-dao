@@ -3,9 +3,10 @@ import { db } from '../db';
 import { paymentTransactions } from '../../shared/schema';
 import { sql } from 'drizzle-orm';
 import { logger } from '../utils/logger';
-import { creditUserWalletOnDeposit } from '../services/ledgerService';
-import { KotanipayService } from '../services/kotanipayService';
 import { logConsolidatedAuditEvent } from '../services/auditConsolidated';
+import { commandBus } from '../domain/setup';
+import { PaymentCommandTypes } from '../domain/payments/PaymentCommands';
+import crypto from 'crypto';
 import {
   webhookReconciliationRuns,
   webhookReconciliationSuccess,
@@ -265,26 +266,69 @@ async function reconcileOnce() {
 }
 
 async function markCompleted(reference: string, additionalMetadata: Record<string, any> = {}) {
-  const [existing] = await db.select().from(paymentTransactions).where(sql`reference = ${reference}`).limit(1);
-  if (!existing) return;
-  if (existing.status === 'completed') return;
-
-  const merged = { ...(typeof existing.metadata === 'object' ? existing.metadata : {}), reconciledAt: new Date().toISOString(), ...additionalMetadata };
-  await db.update(paymentTransactions).set({ status: 'completed', metadata: merged, updatedAt: new Date() }).where(sql`reference = ${reference}`);
   try {
-    await creditUserWalletOnDeposit(reference);
+    const receiveResult = await commandBus.dispatch({
+      id: crypto.randomUUID(),
+      type: PaymentCommandTypes.ReceiveWebhook,
+      actor: 'system-reconciliation',
+      correlationId: crypto.randomUUID(),
+      timestamp: new Date(),
+      payload: { reference, providerData: additionalMetadata }
+    });
+
+    if (!receiveResult.success) {
+      logger.warn(`[RECONCILE] Failed to receive webhook for ${reference}: ${receiveResult.error}`);
+      return;
+    }
+
+    const completeResult = await commandBus.dispatch({
+      id: crypto.randomUUID(),
+      type: PaymentCommandTypes.CompletePayment,
+      actor: 'system-reconciliation',
+      correlationId: receiveResult.correlationId,
+      timestamp: new Date(),
+      payload: { reference, providerMetadata: { reconciledAt: new Date().toISOString(), ...additionalMetadata } }
+    });
+
+    if (!completeResult.success) {
+      logger.error(`[RECONCILE] Failed to complete payment for ${reference}: ${completeResult.error}`);
+    }
   } catch (err: any) {
-    logger.error('[RECONCILE][LEDGER_FAILED]', { reference, error: err.message });
+    logger.error('[RECONCILE][ERROR]', { reference, error: err.message });
   }
 }
 
 async function markFailed(reference: string, additionalMetadata: Record<string, any> = {}) {
-  const [existing] = await db.select().from(paymentTransactions).where(sql`reference = ${reference}`).limit(1);
-  if (!existing) return;
-  if (existing.status === 'failed') return;
+  try {
+    const receiveResult = await commandBus.dispatch({
+      id: crypto.randomUUID(),
+      type: PaymentCommandTypes.ReceiveWebhook,
+      actor: 'system-reconciliation',
+      correlationId: crypto.randomUUID(),
+      timestamp: new Date(),
+      payload: { reference, providerData: additionalMetadata }
+    });
 
-  const merged = { ...(typeof existing.metadata === 'object' ? existing.metadata : {}), reconciledAt: new Date().toISOString(), ...additionalMetadata };
-  await db.update(paymentTransactions).set({ status: 'failed', metadata: merged, updatedAt: new Date() }).where(sql`reference = ${reference}`);
+    if (!receiveResult.success) {
+      logger.warn(`[RECONCILE] Failed to receive webhook for ${reference}: ${receiveResult.error}`);
+      return;
+    }
+
+    const failResult = await commandBus.dispatch({
+      id: crypto.randomUUID(),
+      type: PaymentCommandTypes.FailPayment,
+      actor: 'system-reconciliation',
+      correlationId: receiveResult.correlationId,
+      timestamp: new Date(),
+      payload: { reference, reason: additionalMetadata.reason || 'Reconciliation marked as failed', providerData: { reconciledAt: new Date().toISOString(), ...additionalMetadata } }
+    });
+
+    if (!failResult.success) {
+      logger.error(`[RECONCILE] Failed to fail payment for ${reference}: ${failResult.error}`);
+    }
+  } catch (err: any) {
+    logger.error('[RECONCILE][ERROR]', { reference, error: err.message });
+  }
 }
 
 let intervalHandle: NodeJS.Timeout | null = null;

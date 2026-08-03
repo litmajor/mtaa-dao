@@ -4,13 +4,10 @@
  * Runs once during deployment
  */
 
-import { fileURLToPath } from 'url';
 import { db } from '../db';
-import { users, accounts } from '../../shared/schema';
-import { accounts as accountsTable } from '../../shared/accountSchema';
+import { accounts as accountsTable, ACCOUNT_TYPES, ACCOUNT_STATUSES, type AccountType, type AccountStatus } from '../../shared/accountSchema';
 import { sql } from 'drizzle-orm';
 
-const ACCOUNT_TYPES = ['wallet', 'trading', 'vault', 'escrow'];
 const CURRENCY = 'USDC';
 
 /**
@@ -42,18 +39,20 @@ export async function initializeUserAccounts() {
     let createdCount = 0;
 
     // For each user, create 4 default accounts
+    const accountTypeValues = Object.values(ACCOUNT_TYPES) as AccountType[];
+
     for (const row of usersWithoutAccounts.rows) {
-      const userId = row.id;
+      const userId = String(row.id);
 
       // Create all 4 account types for this user
-      for (const accountType of ACCOUNT_TYPES) {
+      for (const accountType of accountTypeValues) {
         try {
           await db.insert(accountsTable).values({
             userId,
             accountType,
             balance: '0',
             currency: CURRENCY,
-            status: 'active',
+            status: ACCOUNT_STATUSES.ACTIVE,
             locked: '0',
           });
 
@@ -65,7 +64,7 @@ export async function initializeUserAccounts() {
     }
 
     console.log(`✅ Successfully created ${createdCount} accounts`);
-    console.log(`📈 Initialized ${createdCount / ACCOUNT_TYPES.length} users with multi-account structure`);
+    console.log(`📈 Initialized ${createdCount / accountTypeValues.length} users with multi-account structure`);
 
   } catch (error) {
     console.error('❌ Error during account initialization:', error);
@@ -99,28 +98,6 @@ export async function getAccountInitializationSummary() {
     console.error('Error getting account summary:', error);
     throw error;
   }
-}
-
-// Run migration if this file is executed directly
-const __filename = fileURLToPath(import.meta.url);
-const isDirectExecution = process.argv[1] === __filename;
-
-if (isDirectExecution) {
-  initializeUserAccounts()
-    .then(async () => {
-      const summary = await getAccountInitializationSummary();
-      console.log('\n📋 Account Initialization Summary:');
-      console.log(`   Total Users with Accounts: ${summary.usersWithAccounts}`);
-      console.log('   Accounts by Type:');
-      summary.accountsByType.forEach((row: any) => {
-        console.log(`     - ${row.account_type}: ${row.count}`);
-      });
-      process.exit(0);
-    })
-    .catch((error) => {
-      console.error('Migration failed:', error);
-      process.exit(1);
-    });
 }
 
 export default initializeUserAccounts;

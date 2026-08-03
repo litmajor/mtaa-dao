@@ -1,24 +1,46 @@
 
-import express, { Request, Response } from 'express';
+import express from 'express'
+import type { Request, Response } from 'express';
 import { isAuthenticated } from '../nextAuthMiddleware';
-import { storage } from '../storage';
+import { storage, type Notification } from '../storage';
 import { z } from 'zod';
 import { insertNotificationSchema } from '../../shared/schema';
+import { notificationService } from '../notificationService';
 
 const router = express.Router();
+
+const sendNotificationBodySchema = z.object({
+  userIds: z.array(z.string().min(1)).min(1),
+  type: z.string().min(1),
+  title: z.string().min(1),
+  message: z.string().min(1),
+  metadata: z.record(z.any()).optional(),
+});
+
+const notificationInsertSchema = insertNotificationSchema.pick({
+  userId: true,
+  type: true,
+  title: true,
+  message: true,
+  priority: true,
+  metadata: true,
+});
 
 // Get user notifications
 router.get('/', isAuthenticated, async (req: Request, res: Response) => {
   try {
     const { limit = 20, offset = 0, read, type } = req.query;
-    const userId = (req.user as any).claims.sub;
-    
+    const userId = req.user?.claims.sub;
+    if (!userId) {
+      return res.status(401).json({ error: 'Unauthorized' });
+    }
+
     const notifications = await storage.getUserNotifications(
       userId,
       read === 'true' ? true : read === 'false' ? false : undefined,
       Number(limit),
       Number(offset),
-      type as string
+      typeof type === 'string' ? type : undefined
     );
     
     const unreadCount = await storage.getUnreadNotificationCount(userId);
@@ -40,8 +62,11 @@ router.get('/', isAuthenticated, async (req: Request, res: Response) => {
 router.patch('/:notificationId/read', isAuthenticated, async (req: Request, res: Response) => {
   try {
     const { notificationId } = req.params;
-    const userId = (req.user as any).claims.sub;
-    
+    const userId = req.user?.claims.sub;
+    if (!userId) {
+      return res.status(401).json({ error: 'Unauthorized' });
+    }
+
     const notification = await storage.markNotificationAsRead(notificationId, userId);
     
     if (!notification) {
@@ -60,8 +85,11 @@ router.patch('/:notificationId/read', isAuthenticated, async (req: Request, res:
 // Mark all notifications as read
 router.patch('/mark-all-read', isAuthenticated, async (req: Request, res: Response) => {
   try {
-    const userId = (req.user as any).claims.sub;
-    
+    const userId = req.user?.claims.sub;
+    if (!userId) {
+      return res.status(401).json({ error: 'Unauthorized' });
+    }
+
     await storage.markAllNotificationsAsRead(userId);
     
     res.json({ message: 'All notifications marked as read' });
@@ -77,8 +105,11 @@ router.patch('/mark-all-read', isAuthenticated, async (req: Request, res: Respon
 router.delete('/:notificationId', isAuthenticated, async (req: Request, res: Response) => {
   try {
     const { notificationId } = req.params;
-    const userId = (req.user as any).claims.sub;
-    
+    const userId = req.user?.claims.sub;
+    if (!userId) {
+      return res.status(401).json({ error: 'Unauthorized' });
+    }
+
     const deleted = await storage.deleteNotification(notificationId, userId);
     
     if (!deleted) {
@@ -97,8 +128,11 @@ router.delete('/:notificationId', isAuthenticated, async (req: Request, res: Res
 // Get notification preferences
 router.get('/preferences', isAuthenticated, async (req: Request, res: Response) => {
   try {
-    const userId = (req.user as any).claims.sub;
-    
+    const userId = req.user?.claims.sub;
+    if (!userId) {
+      return res.status(401).json({ error: 'Unauthorized' });
+    }
+
     const preferences = await storage.getUserNotificationPreferences(userId);
     
     res.json(preferences);
@@ -113,18 +147,29 @@ router.get('/preferences', isAuthenticated, async (req: Request, res: Response) 
 // Update notification preferences
 router.put('/preferences', isAuthenticated, async (req: Request, res: Response) => {
   try {
-    const userId = (req.user as any).claims.sub;
+    const userId = req.user?.claims.sub;
+    if (!userId) {
+      return res.status(401).json({ error: 'Unauthorized' });
+    }
     const { emailNotifications, pushNotifications, telegramNotifications, daoUpdates, proposalUpdates, taskUpdates } = req.body;
     
-    const preferences = await storage.updateUserNotificationPreferences(userId, {
+    const updates: {
+      emailNotifications?: boolean;
+      pushNotifications?: boolean;
+      telegramNotifications?: boolean;
+      daoUpdates?: boolean;
+      proposalUpdates?: boolean;
+      taskUpdates?: boolean;
+    } = {
       emailNotifications: emailNotifications ?? true,
       pushNotifications: pushNotifications ?? true,
       telegramNotifications: telegramNotifications ?? false,
       daoUpdates: daoUpdates ?? true,
       proposalUpdates: proposalUpdates ?? true,
       taskUpdates: taskUpdates ?? true,
-    });
-    
+    };
+
+    const preferences = await storage.updateUserNotificationPreferences(userId, updates);
     res.json(preferences);
   } catch (err) {
     res.status(500).json({ 
@@ -171,36 +216,68 @@ router.get('/telegram/bot-info', async (req: Request, res: Response) => {
 // Admin: Send notification to user(s)
 router.post('/send', isAuthenticated, async (req: Request, res: Response) => {
   try {
-    const senderId = (req.user as any).claims.sub;
-    const { userIds, type, message, title, metadata } = req.body;
-    
+    const senderId = req.user?.claims.sub;
+    if (!senderId) {
+      return res.status(401).json({ error: 'Unauthorized' });
+    }
+    const parsedBody = sendNotificationBodySchema.safeParse(req.body);
+
+    if (!parsedBody.success) {
+      return res.status(400).json({
+        error: 'Invalid notification payload',
+        details: parsedBody.error.flatten(),
+      });
+    }
+
+    const { userIds, type, message, title, metadata } = parsedBody.data;
+
     // Check if user has permission to send notifications (admin/moderator)
     const senderRole = (req.user as any).role;
     if (senderRole !== 'admin' && senderRole !== 'superuser' && senderRole !== 'moderator') {
       return res.status(403).json({ error: 'Insufficient permissions to send notifications' });
     }
-    
-    const notifications = await storage.createBulkNotifications(userIds, {
-      type,
-      message,
-      title,
-      metadata,
-      senderId
-    });
-    
-    res.status(201).json({ 
+
+    const createdNotifications: Notification[] = [];
+
+    for (const userId of userIds) {
+      const payload = notificationInsertSchema.parse({
+        userId,
+        type,
+        title,
+        message,
+        priority: 'medium',
+        metadata: metadata ?? {},
+      });
+
+      const createdNotification = await storage.createNotification(payload);
+      if (createdNotification) {
+        createdNotifications.push(createdNotification);
+      }
+
+      await notificationService.createNotification({
+        userId,
+        type,
+        title,
+        message,
+        priority: 'medium',
+        metadata: metadata ?? {},
+        persist: false,
+      });
+    }
+
+    res.status(201).json({
       message: 'Notifications sent successfully',
-      count: notifications.length 
+      count: createdNotifications.length,
+      preview: createdNotifications.slice(0, 3),
     });
   } catch (err) {
-    res.status(500).json({ 
+    res.status(500).json({
       error: 'Failed to send notifications',
       message: err instanceof Error ? err.message : String(err)
     });
   }
 });
 
-export default router;
 // Search notifications
 router.get('/search', isAuthenticated, async (req: Request, res: Response) => {
   try {
@@ -231,3 +308,5 @@ router.get('/search', isAuthenticated, async (req: Request, res: Response) => {
     });
   }
 });
+
+export default router;

@@ -6,7 +6,8 @@ import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { useToast } from '@/hooks/use-toast';
-import { Info, LoaderCircle, CheckCircle, AlertCircle, ArrowUpRight, Clock, DollarSign } from 'lucide-react';
+import { Info, LoaderCircle, CheckCircle, AlertCircle, ArrowUpRight, ArrowRight, Clock, DollarSign } from 'lucide-react';
+import { usePortfolio } from '@/hooks/usePortfolio';
 
 const SUPPORTED_CHAINS = [
   { id: 'ethereum', name: 'Ethereum', icon: '⟠', gas: '~$50-200' },
@@ -28,6 +29,7 @@ const BRIDGE_PROVIDERS = [
 
 export default function AdvancedBridge() {
   const { toast } = useToast();
+  const { refetch: refetchPortfolio } = usePortfolio();
   const [fromChain, setFromChain] = useState('ethereum');
   const [toChain, setToChain] = useState('polygon');
   const [token, setToken] = useState('USDC');
@@ -114,6 +116,8 @@ export default function AdvancedBridge() {
           title: '✅ Bridge Started!',
           description: `Bridging ${amount} ${token}. Check your wallet on ${toChain}`,
         });
+        // Post-bridge lifecycle hooks
+        refetchPortfolio();
       } else {
         toast({ title: '❌ Bridge failed', description: result.error || 'Unknown error', variant: 'destructive' });
       }

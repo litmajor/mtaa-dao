@@ -11,7 +11,8 @@
  * - Regulatory report generation
  */
 
-import { BaseAgent, AgentConfig, AgentStatus } from '../framework/base-agent';
+import { BaseAgent, AgentStatus } from '../framework/base-agent';
+import type { AgentConfig } from '../framework/base-agent';
 import { Logger } from '../../utils/logger';
 import { healthRegistry } from '../../core/consolidation/HealthRegistryConsolidation';
 import { circuitBreakerRegistry } from '../../core/consolidation/CircuitBreakerConsolidation';
@@ -299,12 +300,12 @@ export class ComplianceAgent extends BaseAgent {
     this.complianceChecks.push(complianceCheck);
 
     // Forward to audit service
-    await auditService.log({
-      action: 'compliance_check',
-      actor: this.config.id,
-      subject: transaction.id,
-      details: { result: complianceCheck.status, riskScore: complianceCheck.riskScore }
-    });
+    await auditService.logCompliance(
+      'compliance_check',
+      complianceCheck.type,
+      { result: complianceCheck.status, riskScore: complianceCheck.riskScore },
+      true
+    );
 
     // Escalate if needed
     if (complianceCheck.status === ComplianceStatus.VIOLATION) {

@@ -17,7 +17,8 @@
  * ═══════════════════════════════════════════════════════════════════════════════
  */
 
-import express, { Request, Response, Router } from 'express';
+import express from 'express';
+import type { Request, Response, Router } from 'express';
 import { db } from '../../../../db';
 import { daoMemberships, investmentPools, poolAssets, poolProposals, poolVotes, poolGovernanceSettings } from '../../../../../shared/schema';
 import { logger } from '../../../../utils/logger';
@@ -658,7 +659,20 @@ router.get('/:poolId/governance/proposals/:proposalId', async (req: Request, res
     const votes = await poolGovernanceService.getProposalVotes(proposalId);
     const result = await poolGovernanceService.checkAndFinalizeProposal(proposalId);
 
-    res.json({ proposal, votes, result });
+    // Tally votes directly from poolVotes table for audit trail
+    const voteRecords = await db
+      .select()
+      .from(poolVotes)
+      .where(eq(poolVotes.proposalId, proposalId));
+
+    const voteTally = {
+      forCount: voteRecords.filter(v => (v as any).voteType === 'for').length,
+      againstCount: voteRecords.filter(v => (v as any).voteType === 'against').length,
+      abstainCount: voteRecords.filter(v => (v as any).voteType === 'abstain').length,
+      totalVotes: voteRecords.length
+    };
+
+    res.json({ proposal, votes, result, voteTally, voteRecords });
   } catch (error) {
     logger.error('Error fetching proposal:', error);
     res.status(500).json({ error: 'Failed to fetch proposal' });

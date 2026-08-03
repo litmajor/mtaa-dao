@@ -14,6 +14,7 @@ export enum SupportedChain {
   TRON_SHASTA = 'tron-shasta',
   TON = 'ton',
   TON_TESTNET = 'ton-testnet'
+  , AVALANCHE = 'avalanche'
 }
 
 // FIX: Added distinct architecture types to protect execution loops
@@ -167,6 +168,17 @@ export const CHAIN_CONFIGS: Record<SupportedChain, ChainConfig> = {
     architecture: 'ton',
     nativeCurrency: { name: 'Toncoin', symbol: 'TON', decimals: 9 },
     isTestnet: true
+  }
+  ,
+  [SupportedChain.AVALANCHE]: {
+    chainId: 43114,
+    name: 'Avalanche C-Chain',
+    symbol: 'AVAX',
+    rpcUrl: process.env.AVALANCHE_RPC_URL || 'https://api.avax.network/ext/bc/C/rpc',
+    blockExplorer: 'https://snowtrace.io',
+    architecture: 'evm',
+    nativeCurrency: { name: 'Avalanche', symbol: 'AVAX', decimals: 18 },
+    isTestnet: false
   }
 };
 

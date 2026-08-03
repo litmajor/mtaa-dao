@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { X } from '../../lib/icons';
+import { X } from 'lucide-react';
 import { io, Socket } from 'socket.io-client';
 
 interface Props {

@@ -3,7 +3,7 @@
  * Prevents cascading failures and enables graceful degradation
  */
 
-import { CircuitBreakerConfig, CircuitBreakerState, CircuitBreakerMetrics } from "./types";
+import type { CircuitBreakerConfig, CircuitBreakerState, CircuitBreakerMetrics } from "./types";
 
 export class CircuitBreaker {
   private state: CircuitBreakerState = "closed";
@@ -13,6 +13,7 @@ export class CircuitBreaker {
   private lastSuccessTime?: Date;
   private transitionTime = new Date();
   private halfOpenTimeout?: NodeJS.Timeout;
+  private halfOpenActiveRequests = 0;
 
   constructor(
     private name: string,
@@ -20,6 +21,7 @@ export class CircuitBreaker {
       failureThreshold: 5,
       successThreshold: 2,
       timeout: 30000, // 30 seconds
+      halfOpenRequests: 3,
     }
   ) {}
 
@@ -28,6 +30,7 @@ export class CircuitBreaker {
    */
   recordSuccess(): void {
     this.lastSuccessTime = new Date();
+    this.decrementHalfOpenActiveRequests();
 
     if (this.state === "closed") {
       this.failureCount = 0;
@@ -50,6 +53,7 @@ export class CircuitBreaker {
   recordFailure(error: Error): void {
     this.lastFailureTime = new Date();
     this.failureCount++;
+    this.decrementHalfOpenActiveRequests();
 
     if (this.state === "closed" && this.failureCount >= this.config.failureThreshold) {
       this.transitionTo("open");
@@ -57,6 +61,12 @@ export class CircuitBreaker {
 
     if (this.state === "half-open") {
       this.transitionTo("open");
+    }
+  }
+
+  private decrementHalfOpenActiveRequests(): void {
+    if (this.halfOpenActiveRequests > 0) {
+      this.halfOpenActiveRequests--;
     }
   }
 
@@ -75,7 +85,14 @@ export class CircuitBreaker {
       return false;
     }
 
-    if (this.state === "half-open") return true;
+    if (this.state === "half-open") {
+      const allowed = this.config.halfOpenRequests ?? 3;
+      if (this.halfOpenActiveRequests >= allowed) {
+        return false;
+      }
+      this.halfOpenActiveRequests++;
+      return true;
+    }
 
     return false;
   }
@@ -115,6 +132,10 @@ export class CircuitBreaker {
     const previousState = this.state;
     this.state = newState;
     this.transitionTime = new Date();
+
+    if (previousState === "half-open" && newState !== "half-open") {
+      this.halfOpenActiveRequests = 0;
+    }
 
     // Clear half-open timeout if transitioning away from half-open
     if (this.halfOpenTimeout) {

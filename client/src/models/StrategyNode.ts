@@ -22,7 +22,7 @@ export interface ConditionConfig {
 
 export interface ActionConfig {
   actionType?: string; // e.g. 'buy' | 'sell' | 'swap'
-  params?: Record<string, any>;
+  params?: Record<string, unknown>;
 }
 
 export interface RiskConfig {
@@ -32,6 +32,30 @@ export interface RiskConfig {
 
 export interface ExecutionConfig {
   schedule?: string; // cron-like or trigger descriptor
+}
+
+export interface AiConfig {
+  model?: string;
+  prompt?: string;
+  maxTokens?: number;
+}
+
+export interface VaultConfig {
+  vaultAddress?: string;
+  token?: string;
+  amount?: number | string;
+}
+
+export interface CrosschainConfig {
+  provider?: string;
+  fromChain?: string;
+  toChain?: string;
+  token?: string;
+  amount?: number | string;
+}
+
+export interface LogicConfig {
+  [key: string]: unknown;
 }
 
 export interface ConditionNode extends StrategyNodeBase {
@@ -54,11 +78,32 @@ export interface ExecutionNode extends StrategyNodeBase {
   config: ExecutionConfig;
 }
 
-export interface LogicNode extends StrategyNodeBase {
-  type: 'logic';
-  config: Record<string, any>;
+export interface AiNode extends StrategyNodeBase {
+  type: 'ai';
+  config: AiConfig;
 }
 
-export type StrategyNode = ConditionNode | ActionNode | RiskNode | ExecutionNode | LogicNode;
+export interface VaultNode extends StrategyNodeBase {
+  type: 'vault';
+  config: VaultConfig;
+}
 
-export default StrategyNode;
+export interface CrosschainNode extends StrategyNodeBase {
+  type: 'crosschain';
+  config: CrosschainConfig;
+}
+
+export interface LogicNode extends StrategyNodeBase {
+  type: 'logic';
+  config: LogicConfig;
+}
+
+export type StrategyNode =
+  | ConditionNode
+  | ActionNode
+  | RiskNode
+  | ExecutionNode
+  | LogicNode
+  | AiNode
+  | VaultNode
+  | CrosschainNode;

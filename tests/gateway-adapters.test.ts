@@ -9,8 +9,39 @@ import { CoinGeckoAdapter } from "../server/core/agents/gateway/adapters/coingec
 import { MoolaAdapter } from "../server/core/agents/gateway/adapters/moola-adapter";
 import { BeefyfiAdapter } from "../server/core/agents/gateway/adapters/beefyfi-adapter";
 import { BlockchainAdapter } from "../server/core/agents/gateway/adapters/blockchain-adapter";
+import { initializeAdapters } from "../server/core/agents/gateway/initialize";
 
 describe("Gateway Adapters - Unit Tests", () => {
+  describe("Gateway adapter initialization", () => {
+    it("registers the Celo-native adapters in the startup registry", () => {
+      const adapters = initializeAdapters();
+
+      expect(adapters.has("chainlink")).toBe(true);
+      expect(adapters.has("uniswap")).toBe(true);
+      expect(adapters.has("mento")).toBe(true);
+      expect(adapters.has("ubeswap")).toBe(true);
+      expect(adapters.has("curve")).toBe(true);
+      expect(adapters.has("sushi")).toBe(true);
+    });
+  });
+
+  it("keeps the default gateway priority list aligned with the registered adapters", () => {
+    const { getDefaultGatewayConfig } = require("../server/core/agents/gateway/initialize");
+    const config = getDefaultGatewayConfig();
+
+    expect(config.priorityOrder).toEqual([
+      "chainlink",
+      "mento",
+      "ubeswap",
+      "curve",
+      "uniswap",
+      "sushi",
+      "coingecko",
+      "moola",
+      "beefyfi",
+      "blockchain",
+    ]);
+  });
   /**
    * CHAINLINK ADAPTER TESTS
    */

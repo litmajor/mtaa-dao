@@ -6,7 +6,7 @@ import { SecuritySettingsSection } from './sections/SecuritySettings';
 import { DeviceSettings } from './sections/DeviceSettings';
 import { SessionSettings } from './sections/SessionSettings';
 import { PreferencesSettings } from './sections/PreferencesSettings';
-import PersonaProfile from '../../components/PersonaProfile';
+import PersonaProfile from '../PersonaProfile';
 import styles from './Settings.module.css';
 
 /**

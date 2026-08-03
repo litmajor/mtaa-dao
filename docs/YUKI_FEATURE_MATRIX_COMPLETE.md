@@ -1,7 +1,296 @@
 # 🎯 YUKI TRADING PLATFORM - FEATURE MATRIX & TRADER CAPABILITIES
 
-**Date:** February 2, 2026  
-**Purpose:** At-a-glance view of everything available
+**Date:** July 5, 2026  
+**Purpose:** July 2026 refresh of Yuki’s feature surface, including the routes, services, hooks, pages, and client entry points that are actually wired in the repository.
+
+> This document was originally drafted in February 2026. The July revision aligns it with the current codebase and highlights what is implemented, partially wired, or still needs follow-through.
+
+---
+
+## 🔗 JULY 2026 IMPLEMENTATION MAP
+
+### Status legend
+- ✅ Wired in code
+- 🟡 Partially wired / shell exists
+- 🟠 Backend route/service exists, UI needs deeper integration
+
+| Capability | Backend routes / services | Client hooks / API client | Pages / UI surfaces | Status |
+|---|---|---|---|---|
+| Market intelligence | [server/routes/v1/yuki/market.ts](../server/routes/v1/yuki/market.ts), [server/routes/v1/yuki/analytics.ts](../server/routes/v1/yuki/analytics.ts) | [client/src/api/yukiApi.ts](../client/src/api/yukiApi.ts), [client/src/hooks/useExchangeData.ts](../client/src/hooks/useExchangeData.ts), [client/src/hooks/useTechnicalIndicators.ts](../client/src/hooks/useTechnicalIndicators.ts), [client/src/hooks/useMarketStream.ts](../client/src/hooks/useMarketStream.ts) | [client/src/pages/trading.tsx](../client/src/pages/trading.tsx), [client/src/components/trading/YukiDashboard.tsx](../client/src/components/trading/YukiDashboard.tsx) | ✅ |
+| Signals & alerts | [server/routes/v1/yuki/intelligence.ts](../server/routes/v1/yuki/intelligence.ts) | [client/src/hooks/useFearGreed.ts](../client/src/hooks/useFearGreed.ts), [client/src/api/yukiApi.ts](../client/src/api/yukiApi.ts) | [client/src/components/trading/YukiDashboard.tsx](../client/src/components/trading/YukiDashboard.tsx), [client/src/pages/trading.tsx](../client/src/pages/trading.tsx) | ✅ |
+| Swaps / DEX execution | [server/routes/v1/yuki/execute.ts](../server/routes/v1/yuki/execute.ts), [server/routes/v1/yuki/dex.ts](../server/routes/v1/yuki/dex.ts), [server/routes/v1/yuki/routing.ts](../server/routes/v1/yuki/routing.ts) | [client/src/api/yukiApi.ts](../client/src/api/yukiApi.ts), [client/hooks/useSmartRouter.ts](../client/hooks/useSmartRouter.ts) | [client/src/components/dex/AdvancedSwap.tsx](../client/src/components/dex/AdvancedSwap.tsx), [client/src/pages/CrossChainSwapPage.tsx](../client/src/pages/CrossChainSwapPage.tsx) | ✅ |
+| Bridge / cross-chain | [server/routes/v1/yuki/bridge.ts](../server/routes/v1/yuki/bridge.ts) | [client/src/api/yukiApi.ts](../client/src/api/yukiApi.ts) | [client/src/components/dex/AdvancedBridge.tsx](../client/src/components/dex/AdvancedBridge.tsx), [client/src/pages/CrossChainBridgePage.tsx](../client/src/pages/CrossChainBridgePage.tsx) | ✅ |
+| Orders / limits / routing | [server/routes/v1/yuki/orders.ts](../server/routes/v1/yuki/orders.ts), [server/routes/v1/yuki/routing.ts](../server/routes/v1/yuki/routing.ts) | [client/src/api/yukiApi.ts](../client/src/api/yukiApi.ts), [client/src/hooks/useTrading.ts](../client/src/hooks/useTrading.ts) | [client/src/components/trading/CexManager.tsx](../client/src/components/trading/CexManager.tsx), [client/src/pages/trading.tsx](../client/src/pages/trading.tsx) | 🟡 |
+| Strategy builder / deployment | [server/routes/v1/yuki/strategies.ts](../server/routes/v1/yuki/strategies.ts) | [client/src/api/yukiApi.ts](../client/src/api/yukiApi.ts) | [client/src/components/trading/VisualStrategyBuilder.tsx](../client/src/components/trading/VisualStrategyBuilder.tsx), [client/src/components/trading/StrategyDetail.tsx](../client/src/components/trading/StrategyDetail.tsx), [client/src/components/trading/StrategyMarketplace.tsx](../client/src/components/trading/StrategyMarketplace.tsx) | ✅ |
+| Strategy marketplace / copy / publish | [server/routes/v1/yuki/marketplace.ts](../server/routes/v1/yuki/marketplace.ts) | [client/src/api/yukiApi.ts](../client/src/api/yukiApi.ts) | [client/src/components/trading/StrategyMarketplace.tsx](../client/src/components/trading/StrategyMarketplace.tsx) | ✅ |
+| Staking / yield | [server/routes/v1/yuki/staking.ts](../server/routes/v1/yuki/staking.ts) | [client/src/utils/stakingApi.ts](../client/src/utils/stakingApi.ts) | [client/src/components/staking/StakingComponent.tsx](../client/src/components/staking/StakingComponent.tsx) | ✅ |
+| Dashboard entrypoints | [server/routes.ts](../server/routes.ts), [server/routes/v1/yuki/index.ts](../server/routes/v1/yuki/index.ts) | [client/src/api/dashboardApi.ts](../client/src/api/dashboardApi.ts) | [client/src/App.tsx](../client/src/App.tsx), [client/src/pages/YukiDashboard.tsx](../client/src/pages/YukiDashboard.tsx), [client/src/components/dashboard/PersonalizedDashboard.tsx](../client/src/components/dashboard/PersonalizedDashboard.tsx), [app/dashboard/page.tsx](../app/dashboard/page.tsx) | ✅ |
+
+### July 2026 implementation note
+The core Yuki stack is now present across routing, API clients, and key UI surfaces. The biggest remaining work is not foundational plumbing anymore; it is tightening the experience around advanced risk controls, deeper signal workflows, and richer cross-feature state between trading, staking, strategies, and portfolio views.
+
+---
+
+## 🧭 What Yuki Is
+
+Yuki is the active trading and DeFi persona inside Mtaa DAO. It is the execution layer for the broader MTAA ecosystem, connecting wallets, exchanges, bridges, staking, and strategy automation into one integrated workflow.
+
+Yuki is designed for traders who need:
+- real-time market intelligence across CeFi and DeFi
+- smart swap execution with best-rate routing
+- cross-chain bridging and transfer automation
+- staking/yield management and portfolio tracking
+- strategy building, deployment, and marketplace discovery
+- signals, alerts, and risk-aware decision support
+
+---
+
+## 🧩 Yuki Ecosystem Components
+
+### Market Intelligence
+
+Yuki gathers and surfaces live price, liquidity, and opportunity data:
+- CEX prices from multiple exchanges via CCXT
+- DEX prices and liquidity across smart-contract venues
+- technical indicators (RSI, MACD, moving averages, volatility)
+- arbitrage and cross-exchange opportunity scanning
+- market sentiment and signal generation
+
+Primary code surfaces:
+- `client/src/components/trading/YukiDashboard.tsx`
+- `server/routes/v1/yuki/market.ts`
+- `server/routes/v1/yuki/intelligence.ts`
+- `client/src/api/yukiApi.ts`
+
+### Swaps
+
+Yuki’s swap flow is the core execution engine for token trading:
+- user-facing swap preview and route comparison
+- smart routing across DEX protocols
+- slippage and fee estimation
+- multi-hop swap support
+- token selector and amount preview
+
+Primary code surfaces:
+- `client/src/components/dex/AdvancedSwap.tsx`
+- `client/src/pages/CrossChainSwapPage.tsx`
+- `server/routes/v1/yuki/execute.ts`
+- `server/services/dexRoutingService.ts`
+
+### Bridging
+
+Yuki’s bridge layer supports cross-chain transfer flows:
+- previews across bridge providers and protocols
+- destination chain selection
+- time and fee estimates
+- bridge execution and status tracking
+- Celo-native and multi-chain flows
+
+Primary code surfaces:
+- `client/src/components/dex/AdvancedBridge.tsx`
+- `client/src/pages/CrossChainBridgePage.tsx`
+- `server/services/bridgeIntegration.ts`
+- `server/services/crossChainService.ts`
+
+### Staking
+
+Yuki’s staking ecosystem supports yield creation and position visibility:
+- staking pool discovery and LP staking
+- solo staking flow and reward recap
+- staking dashboards and balance aggregation
+- vault-style yield access for native and bridged assets
+
+Primary code surfaces:
+- `client/src/components/staking/StakingComponent.tsx`
+- `client/src/utils/stakingApi.ts`
+- `client/src/components/wallet/BalanceAggregatorWidget.tsx`
+- `server/routes/v1/yuki/staking.ts`
+
+### Portfolio & Balance Aggregation
+
+Yuki unifies holdings across wallets, exchanges, and chain bridges:
+- wallet balance aggregation
+- provider-specific balances
+- USD and currency breakdowns
+- staking and vault integration
+- portfolio health summary
+
+Primary code surfaces:
+- `client/src/pages/hooks/useBalanceAggregator.ts`
+- `shared/types/wallet.ts`
+- `server/routes/v1/wallets/balance.ts`
+
+### Strategy Building and Marketplace
+
+Yuki’s strategy ecosystem includes:
+- visual strategy builder and block-based workflows
+- strategy deployment and monitoring
+- strategy marketplace for copyable templates
+- backtest and performance playback
+- risk and position sizing controls
+
+Primary code surfaces:
+- `client/src/components/trading/VisualStrategyBuilder.tsx`
+- `client/src/components/trading/StrategyMarketplace.tsx`
+- `client/src/components/trading/StrategyDetail.tsx`
+- `server/routes/v1/yuki/strategies.ts`
+
+### Alerts & Signals
+
+Yuki drives attention to actionable trading events:
+- price alerts, trend alerts, and strategy notifications
+- risk warnings for liquidation, volatility, and margin
+- arbitrage and execution signals
+- persistent feed in dashboard and intelligence panels
+
+Primary code surfaces:
+- `client/src/components/trading/YukiDashboard.tsx`
+- `client/src/components/dashboard/AmaraDashboard.tsx`
+- `client/src/components/dashboard/UnifiedDashboardPage.tsx`
+
+---
+
+## 🗺️ Yuki Page Map
+
+### Main entry points
+- `/dashboard?persona=yuki` — Yuki persona dashboard
+- `/trading` — full trading hub and execution workspace
+- `/CrossChainSwapPage` — dedicated swap page
+- `/CrossChainBridgePage` — dedicated bridge page
+- `/pages/YukiDashboard.tsx` — central hub component
+- `client/src/components/trading/YukiDashboard.tsx` — main UI surface
+
+### Supporting panels
+- `CexManager` — CEX account/position manager
+- `AdvancedSwap` — DEX swap execution
+- `AdvancedBridge` — bridge execution
+- `StrategyMarketplace` — strategy discovery
+- `VisualStrategyBuilder` — strategy authoring
+- `StakingComponent` — staking operations
+- `BalanceAggregatorWidget` — asset aggregation
+
+---
+
+## 🔗 How Yuki Works Together
+
+### Core flow
+1. user opens Yuki dashboard
+2. market intelligence loads live CEX/DEX prices and signals
+3. opportunities feed surfaces arbitrage and strategy triggers
+4. user chooses an execution path: swap, bridge, stake, or strategy
+5. the service layer evaluates best route and preview
+6. user confirms execution
+7. Yuki updates portfolio, alerts, and strategy state
+
+### Cross-feature wiring
+- swap execution can be seeded from market opportunities
+- bridge routing is used when trade execution requires cross-chain movement
+- staking views consume aggregated wallet + bridge balances
+- strategy builder can use signals and live indicators as triggers
+- alerts and risk warnings are available in the same dashboard context
+
+### Best practice
+- keep execution flow linear in the UI: choose instrument → preview route → confirm
+- preserve market context on every page via a shared Yuki state or query cache
+- tie strategy recommendations to current wallet/assets whenever possible
+
+---
+
+## 📱 Mobile vs Desktop Experience
+
+### Desktop
+- multi-column grid layout with persistent sidebar or right intelligence panel
+- tabs and sections visible simultaneously
+- table-heavy market explorer and order rows
+- strategy builder canvas and chart panels side-by-side
+- bridge and swap forms with large route comparison blocks
+
+### Mobile
+- single-column stacked cards
+- bottom navigation for main Yuki sections
+- collapsible opportunity and alert panels
+- wizard-style swap and bridge flows
+- compact strategy summaries and simplified action buttons
+- condensed charts and prioritized metrics
+
+### Mobile layout guidance
+- show only one major surface at a time
+- surface top-level market metrics first, then execution
+- keep confirmation buttons and totals sticky at the bottom
+- collapse secondary details under toggles like "Route details" and "Staking info"
+
+---
+
+## 🔄 Swaps, Bridging, and Staking in the Yuki Flow
+
+### Swaps
+- query best route via smart router
+- preview token amount, fees, slippage, and gas
+- allow manual route selection for advanced users
+- execute with a single confirm button
+- update watchlist and portfolio after fill
+
+### Bridging
+- preview cross-chain routes and expected arrival time
+- show source and destination chain fees separately
+- support native Celo bridging paths and major EVM chains
+- use bridge provider selection only if multiple routes are available
+- surface progress/status after execution
+
+### Staking
+- present staking opportunities with yield and risk labels
+- support native staking and liquidity pool staking
+- reward preview and duration
+- show staked vs unstaked balances in portfolio
+- wire staking state into aggregated balance and strategy triggers
+
+---
+
+## 🎯 Yuki Ecosystem Goals
+
+### Immediate goals
+- make Yuki the go-to interface for active traders in MTAA
+- ensure swap, bridge, and staking flows are consistent and connected
+- surface cross-venue intelligence clearly
+- keep the same persona across dashboard, trading, and strategy paths
+
+### Longer-term goals
+- unify Yuki and Amara persona experiences where appropriate
+- make strategy discovery and copy workflows first-class
+- bring portfolio and execution state into a shared, persistent context
+- add true end-to-end tracking for swap → bridge → stake journeys
+
+---
+
+## ✅ Implementation Checkpoints
+
+### Must-have wiring
+- `client/src/api/yukiApi.ts` used by all Yuki pages
+- shared state / query cache for Yuki market data
+- Yuki dashboard tabs mapped to real pages/components
+- swap preview + execute calls wired to server
+- bridge preview + execute calls wired to server
+- staking read/write flows wired to wallet state
+- strategy builder save/deploy flow wired to backend
+
+### Nice-to-have
+- live opportunity feed on every Yuki page
+- signal-driven quick actions on mobile
+- cross-chain portfolio summary in Yuki overview
+- strategy-to-alert handoff for deployed strategies
+- unified CEX/DEX/bridge risk dashboard
+
+---
+
+## ✅ JULY 2026 GAPS CLOSED & TIGHTENED
+
+| Area | Former status | Current Implemented State |
+|---|---|---|
+| Signal-to-action flow | 🟡 | **✅ Closed** - Clickable signals directly trigger pre-filled DEX swaps/Stake routes via useYukiStore |
+| Cross-feature state | 🟡 | **✅ Closed** - Shared Zustand store and YukiProvider context unify portfolio value, WS notifications, and active persona sync |
+| Risk controls | 🟡 | **✅ Closed** - RiskControls.tsx component exposes max slippage, drawdown, leverage, stop-loss, and sizing modes via Settings Modal |
+| Routing UX | 🟡 | **✅ Closed** - Multi-route comparison and execution fully polished in AdvancedSwap.tsx with lifecycle actions |
+| Dashboard entry consistency | 🟡 | **✅ Closed** - Standardized /dashboard/yuki, /trading, and PersonalizedDashboard entries into one coherent workspace |
 
 ---
 

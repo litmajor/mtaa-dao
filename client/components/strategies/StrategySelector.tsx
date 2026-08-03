@@ -1,7 +1,7 @@
 import React, { useState, useMemo } from 'react';
 import { Strategy } from '../../hooks/useStrategyRegistry';
-import { Lucide } from '../../src/lib/icons';
-const { ChartBar, TrendingUp, Box, Bolt, Cpu, Users, Settings, Search, Check } = (Lucide as any) || {};
+import { BarChart2, TrendingUp, Box, Zap, Cpu, Users, Settings, Search, Check, Bolt } from 'lucide-react';
+const ChartBar = BarChart2;
 
 // Icon mapping for categories (runtime-safe)
 const categoryIcons: Record<string, JSX.Element> = {

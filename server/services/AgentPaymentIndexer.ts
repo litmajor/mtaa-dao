@@ -3,9 +3,12 @@ import { db } from '../db';
 import { daoAgentSubscriptions, indexerCheckpoints, daos } from '../../shared/schema';
 import { eq, or } from 'drizzle-orm';
 import { logger } from '../utils/logger';
+import { resolveProviderUrls } from './providerBootstrap';
+import { ResilientRpcProvider } from './resilientRpcProvider';
 
 const AGENT_GATEWAY_ADDRESS = process.env.AGENT_PAYMENT_GATEWAY_ADDR || process.env.AGENT_GATEWAY_ADDR || '';
-const RPC_URL = process.env.RPC_URL || '';
+const providerUrls = resolveProviderUrls();
+const RPC_URL = providerUrls.rpcUrl;
 const DEPLOYMENT_BLOCK = parseInt(process.env.CONTRACT_DEPLOYMENT_BLOCK || '0', 10);
 const CHUNK_SIZE = 5000;
 
@@ -18,12 +21,19 @@ const GATEWAY_ABI = [
 
 export class AgentPaymentIndexer {
   private provider: ethers.JsonRpcProvider | null = null;
+  private resilientProvider: ResilientRpcProvider | null = null;
   private contract: ethers.Contract | null = null;
   private isRunning: boolean = false;
 
   constructor() {
     if (RPC_URL && AGENT_GATEWAY_ADDRESS) {
-      this.provider = new ethers.JsonRpcProvider(RPC_URL);
+      this.resilientProvider = new ResilientRpcProvider({
+        primary: { name: 'primary-rpc', httpUrl: RPC_URL },
+        fallback: providerUrls.fallbackRpcUrl ? { name: 'fallback-rpc', httpUrl: providerUrls.fallbackRpcUrl } : undefined,
+        cooldownMs: 60_000,
+        onFailover: (from, to, reason) => logger.warn(`Agent payment RPC failover ${from} -> ${to}: ${reason}`),
+      });
+      this.provider = this.resilientProvider.getRawProvider();
       this.contract = new ethers.Contract(AGENT_GATEWAY_ADDRESS, GATEWAY_ABI, this.provider);
     }
   }
@@ -49,7 +59,7 @@ export class AgentPaymentIndexer {
     if (!this.contract || !this.provider) return;
 
     logger.info('AgentPaymentIndexer: Starting history sync...');
-    const currentBlock = await this.provider.getBlockNumber();
+    const currentBlock = await this.resilientProvider!.call(async (provider) => provider.getBlockNumber());
     
     // 1. Determine where to start looking
     const checkpointRecords = await db.select().from(indexerCheckpoints).where(eq(indexerCheckpoints.id, INDEXER_ID));
@@ -68,8 +78,11 @@ export class AgentPaymentIndexer {
       while (fromBlock <= currentBlock) {
         const toBlock = Math.min(fromBlock + CHUNK_SIZE, currentBlock);
         
-        const activatedFilter = this.contract.filters.SubscriptionActivated();
-        const events = await this.contract.queryFilter(activatedFilter, fromBlock, toBlock);
+        const events = await this.resilientProvider!.call(async (provider) => {
+          const contract = new ethers.Contract(AGENT_GATEWAY_ADDRESS, GATEWAY_ABI, provider);
+          const activatedFilter = contract.filters.SubscriptionActivated();
+          return contract.queryFilter(activatedFilter, fromBlock, toBlock);
+        });
         
         if (events.length > 0) {
             await this.processEvents(events);

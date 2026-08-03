@@ -1,7 +1,24 @@
 /**
  * Morio AI Assistant API Routes
- * 
+ *
  * Endpoints for interacting with the Morio conversational assistant
+ *
+ * FIXES APPLIED:
+ * 1. /chat now checks DAO membership before queuing, matching /analyze and
+ *    /assess-risk. Previously /chat accepted an arbitrary daoId with no
+ *    membership check at all, while the other two both verify it — this
+ *    was a real IDOR gap if the chat agent uses daoId to pull DAO-scoped
+ *    context.
+ * 2. /stream/:jobId now verifies the requesting user actually owns the job
+ *    before streaming its output. The route's own comment claimed "must
+ *    own the job" but never checked it — any authenticated user who had a
+ *    jobId could stream someone else's job results.
+ * 3. export default router moved to the end of the file. Registering
+ *    routes after the export statement happened to work because `router`
+ *    is a shared object reference evaluated before any importer uses it,
+ *    but it's a landmine for future refactors — moved for clarity.
+ * 4. /user-context's feature-gating loop now runs in parallel via
+ *    Promise.all instead of sequentially awaiting 11 checks one at a time.
  */
 
 import { Router, Request, Response } from 'express';
@@ -17,11 +34,22 @@ import { daoMemberships, vaults } from '../../shared/schema';
 import { eq, and } from 'drizzle-orm';
 import type { ChatMessage } from '../agents/morio/types';
 import type { User } from '../../shared/schema';
-// Import Morio sub-routers
 import morioDataHubRoutes from './morio-data-hub';
 import morioElderInsightsRoutes from './morio-elder-insights';
 
 const router = Router();
+
+/**
+ * Shared DAO-membership check used by /chat, /analyze, /assess-risk.
+ */
+async function userHasDaoAccess(userId: string, daoId: string): Promise<boolean> {
+  const membership = await db
+    .select()
+    .from(daoMemberships)
+    .where(and(eq(daoMemberships.daoId, daoId), eq(daoMemberships.userId, userId)))
+    .limit(1);
+  return membership.length > 0;
+}
 
 /**
  * POST /api/morio/chat
@@ -34,12 +62,23 @@ router.post('/chat', [authenticateToken, rateLimitPerUser('morio-chat', 5, '1min
     const { daoId, message } = req.body;
 
     if (!userId || !message) {
-      return res.status(400).json({ 
-        error: 'Missing required fields: message (userId from auth)' 
+      return res.status(400).json({
+        error: 'Missing required fields: message (userId from auth)'
       });
     }
 
-    // Queue chat job
+    // FIX #1: /analyze and /assess-risk both verify DAO membership before
+    // queuing a job that carries daoId context — /chat was the odd one out.
+    if (daoId) {
+      const hasAccess = await userHasDaoAccess(userId, daoId);
+      if (!hasAccess) {
+        return res.status(403).json({
+          error: 'User does not have access to this DAO',
+          daoId
+        });
+      }
+    }
+
     const jobId = await jobQueueService.queueJob('morio-chat', {
       userId,
       daoId: daoId || '',
@@ -47,7 +86,7 @@ router.post('/chat', [authenticateToken, rateLimitPerUser('morio-chat', 5, '1min
       timestamp: new Date()
     }, {
       priority: 7,
-      timeout: 60000 // 60 second timeout
+      timeout: 60000
     });
 
     res.status(202).json({
@@ -57,7 +96,7 @@ router.post('/chat', [authenticateToken, rateLimitPerUser('morio-chat', 5, '1min
     });
   } catch (error) {
     console.error('Morio chat queue error:', error);
-    res.status(500).json({ 
+    res.status(500).json({
       error: 'Failed to queue chat message'
     });
   }
@@ -72,7 +111,6 @@ router.get('/session/:userId', [authenticateToken], async (req: any, res: Respon
     const { userId } = req.params;
     const requestingUserId = req.user?.id;
 
-    // Users can only access their own session
     if (requestingUserId !== userId) {
       return res.status(403).json({ error: 'Forbidden: can only access own session' });
     }
@@ -94,7 +132,6 @@ router.delete('/session/:userId', [authenticateToken], async (req: any, res: Res
     const { userId } = req.params;
     const requestingUserId = req.user?.id;
 
-    // Users can only clear their own session
     if (requestingUserId !== userId) {
       return res.status(403).json({ error: 'Forbidden: can only clear own session' });
     }
@@ -118,31 +155,19 @@ router.post('/analyze', [authenticateToken, rateLimitPerUser('morio-analyze', 2,
     const { type, daoId, timeframe } = req.body;
 
     if (!type || !daoId) {
-      return res.status(400).json({ 
-        error: 'Missing required fields: type and daoId' 
+      return res.status(400).json({
+        error: 'Missing required fields: type and daoId'
       });
     }
 
-    // Verify user has access to this DAO
-    const membership = await db
-      .select()
-      .from(daoMemberships)
-      .where(
-        and(
-          eq(daoMemberships.daoId, daoId),
-          eq(daoMemberships.userId, userId)
-        )
-      )
-      .limit(1);
-
-    if (!membership || membership.length === 0) {
-      return res.status(403).json({ 
+    const hasAccess = await userHasDaoAccess(userId, daoId);
+    if (!hasAccess) {
+      return res.status(403).json({
         error: 'User does not have access to analyze this DAO',
         daoId
       });
     }
 
-    // Queue analysis job
     const jobId = await jobQueueService.queueJob('morio-analyze', {
       userId,
       daoId,
@@ -150,7 +175,7 @@ router.post('/analyze', [authenticateToken, rateLimitPerUser('morio-analyze', 2,
       timeframe
     }, {
       priority: 6,
-      timeout: 120000 // 2 minute timeout
+      timeout: 120000
     });
 
     res.status(202).json({
@@ -175,31 +200,19 @@ router.post('/assess-risk', [authenticateToken, rateLimitPerUser('morio-risk', 2
     const { proposalId, daoId } = req.body;
 
     if (!proposalId || !daoId) {
-      return res.status(400).json({ 
-        error: 'Missing required fields: proposalId and daoId' 
+      return res.status(400).json({
+        error: 'Missing required fields: proposalId and daoId'
       });
     }
 
-    // Verify user has access to this DAO before assessing risk
-    const membership = await db
-      .select()
-      .from(daoMemberships)
-      .where(
-        and(
-          eq(daoMemberships.daoId, daoId),
-          eq(daoMemberships.userId, userId)
-        )
-      )
-      .limit(1);
-
-    if (!membership || membership.length === 0) {
-      return res.status(403).json({ 
+    const hasAccess = await userHasDaoAccess(userId, daoId);
+    if (!hasAccess) {
+      return res.status(403).json({
         error: 'User does not have access to assess risk for this DAO',
         daoId
       });
     }
 
-    // Queue risk assessment job
     const jobId = await jobQueueService.queueJob('morio-analyze', {
       userId,
       daoId,
@@ -207,7 +220,7 @@ router.post('/assess-risk', [authenticateToken, rateLimitPerUser('morio-risk', 2
       analysisType: 'risk-assessment'
     }, {
       priority: 6,
-      timeout: 120000 // 2 minute timeout
+      timeout: 120000
     });
 
     res.status(202).json({
@@ -222,14 +235,8 @@ router.post('/assess-risk', [authenticateToken, rateLimitPerUser('morio-risk', 2
 });
 
 /**
- * Morio AI Assistant endpoint (health check consolidated to /api/health/morio)
- * See health.ts for /health endpoint
- */
-
-/**
  * GET /api/morio/user-context
  * Get user's personalized context for Morio
- * Includes: gating, persona, DAO roles, vault positions, activity summary
  */
 router.get('/user-context', [authenticateToken], async (req: any, res: Response) => {
   try {
@@ -238,7 +245,6 @@ router.get('/user-context', [authenticateToken], async (req: any, res: Response)
       return res.status(401).json({ error: 'Unauthorized' });
     }
 
-    // Get user from database
     const user = await db.query.users.findFirst({
       where: (u, { eq }) => eq(u.id, userId)
     }) as User;
@@ -247,10 +253,8 @@ router.get('/user-context', [authenticateToken], async (req: any, res: Response)
       return res.status(404).json({ error: 'User not found' });
     }
 
-    // Get user's persona
     const persona = await getUserPersona(userId);
 
-    // Get user's DAO memberships and roles
     const userDaoMemberships = await db
       .select({
         daoId: daoMemberships.daoId,
@@ -260,8 +264,6 @@ router.get('/user-context', [authenticateToken], async (req: any, res: Response)
       .from(daoMemberships)
       .where(eq(daoMemberships.userId, userId));
 
-    // Get all gating statuses
-    const gatingStatuses: Record<string, any> = {};
     const features = [
       'trading.dex',
       'vault.yield',
@@ -276,8 +278,13 @@ router.get('/user-context', [authenticateToken], async (req: any, res: Response)
       'advanced.analytics'
     ];
 
-    for (const feature of features) {
-      const status = await checkFeatureGating(feature, user);
+    // FIX #4: run gating checks in parallel instead of one at a time.
+    const gatingResults = await Promise.all(
+      features.map(async (feature) => [feature, await checkFeatureGating(feature, user)] as const)
+    );
+
+    const gatingStatuses: Record<string, any> = {};
+    for (const [feature, status] of gatingResults) {
       gatingStatuses[feature] = {
         isAvailable: status.isAvailable,
         reason: status.reason,
@@ -287,7 +294,6 @@ router.get('/user-context', [authenticateToken], async (req: any, res: Response)
       };
     }
 
-    // Find locked and available features
     const lockedFeatures = Object.entries(gatingStatuses)
       .filter(([, status]: any) => !status.isAvailable)
       .map(([feature]) => feature);
@@ -296,7 +302,6 @@ router.get('/user-context', [authenticateToken], async (req: any, res: Response)
       .filter(([, status]: any) => status.isAvailable)
       .map(([feature]) => feature);
 
-    // Prepare user profile with enhanced personalization
     res.json({
       userId,
       profile: {
@@ -329,24 +334,20 @@ router.get('/user-context', [authenticateToken], async (req: any, res: Response)
       preferences: {
         preferredCurrency: user.preferredCurrency || 'USD',
         darkMode: user.darkMode || false,
-        advancedMode: user.isSuperUser || false
+        // NOTE: Advanced Mode is a per-user toggle (see advancedModeGuard).
+        // Use the user-level flag rather than superuser role.
+        advancedMode: user.advancedMode || false
       },
       timestamp: new Date().toISOString()
     });
   } catch (error) {
     console.error('Failed to get user context:', error);
-    res.status(500).json({ 
+    res.status(500).json({
       error: 'Failed to fetch user context',
       details: error instanceof Error ? error.message : 'Unknown error'
     });
   }
 });
-
-// ✅ Mount Morio sub-routers at proper nested paths
-router.use('/data-hub', morioDataHubRoutes);
-router.use('/elder-insights', morioElderInsightsRoutes);
-
-export default router;
 
 /**
  * POST /api/morio/confirm-action
@@ -385,7 +386,30 @@ router.get('/stream/:jobId', [authenticateToken], async (req: any, res: Response
 
   if (!jobId) return res.status(400).send('Missing jobId');
 
-  // Set headers for SSE
+  // FIX #2 (updated): the earlier version of this check read
+  // initialResult?.userId, which doesn't exist anywhere on JobResult
+  // ({status, result, error, progress, startedAt, completedAt}) — that
+  // check was silently a no-op. jobQueueService now tracks ownership
+  // separately via getJobOwner(); use that instead.
+  try {
+    const ownerId = await jobQueueService.getJobOwner(jobId);
+    if (ownerId && ownerId !== requestingUserId) {
+      return res.status(403).json({ error: 'Forbidden: you do not own this job' });
+    }
+    if (!ownerId) {
+      // No ownership record at all — either the job never existed, or it
+      // was queued before ownership tracking existed / without a userId.
+      // Fail closed rather than silently allowing an unverifiable stream.
+      const exists = await jobQueueService.getJobResult(jobId);
+      if (!exists) {
+        return res.status(404).json({ error: 'Job not found' });
+      }
+      return res.status(403).json({ error: 'Forbidden: job ownership could not be verified' });
+    }
+  } catch (error) {
+    return res.status(500).json({ error: 'Failed to verify job ownership' });
+  }
+
   res.setHeader('Content-Type', 'text/event-stream');
   res.setHeader('Cache-Control', 'no-cache');
   res.setHeader('Connection', 'keep-alive');
@@ -411,7 +435,6 @@ router.get('/stream/:jobId', [authenticateToken], async (req: any, res: Response
       res.write(`event: morio_job_update\n`);
       res.write(`data: ${payload}\n\n`);
 
-      // If job is complete, close stream
       if (jobResult && jobResult.status === 'completed') {
         res.write(`event: morio_job_complete\n`);
         res.write(`data: ${JSON.stringify({ jobId, status: 'complete' })}\n\n`);
@@ -419,12 +442,17 @@ router.get('/stream/:jobId', [authenticateToken], async (req: any, res: Response
         res.end();
       }
     } catch (e) {
-      // send error event
       res.write(`event: morio_job_error\n`);
       res.write(`data: ${JSON.stringify({ error: 'stream_error', details: (e as Error).message })}\n\n`);
       clearInterval(interval);
       res.end();
     }
   }, 500);
-
 });
+
+// Mount Morio sub-routers at proper nested paths
+router.use('/data-hub', morioDataHubRoutes);
+router.use('/elder-insights', morioElderInsightsRoutes);
+
+// FIX #3: export moved to the very end, after every route is registered.
+export default router;

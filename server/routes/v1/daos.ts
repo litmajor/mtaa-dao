@@ -58,8 +58,10 @@ router.get('/', isAuthenticated, async (req: Request, res: Response) => {
         treasuryBalance: daos.treasuryBalance,
         causeTags: daos.causeTags,
         primaryCause: daos.primaryCause,
+        founderName: users.name,
       })
-      .from(daos);
+      .from(daos)
+      .leftJoin(users, eq(users.id, daos.founderId));
 
     // Get member counts for each DAO
     const memberCounts = await db
@@ -138,6 +140,7 @@ router.get('/', isAuthenticated, async (req: Request, res: Response) => {
         primaryCause: dao.primaryCause || '',
         createdAt: dao.createdAt,
         founderId: dao.founderId,
+        founderName: dao.founderName,
       };
     }));
 
@@ -170,8 +173,10 @@ router.get('/featured', async (req: Request, res: Response) => {
         treasuryBalance: daos.treasuryBalance,
         causeTags: daos.causeTags,
         primaryCause: daos.primaryCause,
+        founderName: users.name,
       })
-      .from(daos);
+      .from(daos)
+      .leftJoin(users, eq(users.id, daos.founderId));
 
     if (allDAOs.length === 0) {
       return res.status(404).json({ 
@@ -249,6 +254,7 @@ router.get('/featured', async (req: Request, res: Response) => {
       primaryCause: featuredDao.primaryCause || '',
       createdAt: featuredDao.createdAt,
       founderId: featuredDao.founderId,
+      founderName: featuredDao.founderName,
     };
 
     res.json({

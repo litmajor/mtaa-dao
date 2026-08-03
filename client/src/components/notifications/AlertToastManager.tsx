@@ -1,5 +1,5 @@
 import React, { useEffect } from 'react';
-import { useWebSocket } from '@/hooks/useWebSocket';
+import { useSharedSocket } from '@/hooks/useSharedSocket';
 import useToast from '@/components/ui/use-toast';
 import { AlertCircle, CheckCircle, AlertTriangle, Info } from 'lucide-react';
 
@@ -15,7 +15,7 @@ import { AlertCircle, CheckCircle, AlertTriangle, Info } from 'lucide-react';
  * - low: Default info toast (3s duration)
  */
 export const AlertToastManager: React.FC = () => {
-  const { socket, isConnected } = useWebSocket();
+  const { socket, isConnected } = useSharedSocket();
   const { toast } = useToast();
 
   useEffect(() => {

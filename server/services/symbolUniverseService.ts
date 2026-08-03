@@ -556,67 +556,74 @@ export class SymbolUniverseService extends EventEmitter {
     const cached = this.priceCache.get(cacheKey);
     if (cached && Date.now() - cached.timestamp < 30_000) return cached;
 
+    const upperSymbol = symbol.toUpperCase();
     const cexSources = SYMBOL_UNIVERSE_CONFIG.priceSources.cex as Record<string, any>;
 
-    for (const exchangeName of Object.keys(cexSources)) {
-      const exchange = cexSources[exchangeName];
-      if (!exchange.enabled) continue;
+    if (CEX_INCOMPATIBLE.has(upperSymbol)) {
+      logger.debug(
+        `[getPrice] ${upperSymbol} is CEX-incompatible; skipping CCXT sources for ${pair}`
+      );
+    } else {
+      for (const exchangeName of Object.keys(cexSources)) {
+        const exchange = cexSources[exchangeName];
+        if (!exchange.enabled) continue;
 
-      try {
-        const ticker = await ccxtService.getTickerFromExchange(exchangeName, pair);
-        if (!ticker) continue;
+        try {
+          const ticker = await ccxtService.getTickerFromExchange(exchangeName, pair);
+          if (!ticker) continue;
 
-        // FIX #6: volume fallback mirrors ccxtService fix
-        const volume =
-          (ticker as any).volume ||
-          (ticker as any).quoteVolume ||
-          (ticker as any).baseVolume ||
-          0;
+          // FIX #6: volume fallback mirrors ccxtService fix
+          const volume =
+            (ticker as any).volume ||
+            (ticker as any).quoteVolume ||
+            (ticker as any).baseVolume ||
+            0;
 
-        const price: SymbolPrice = {
-          symbol,
-          quote,
-          price: (ticker as any).last || (ticker as any).bid || 0,
-          source: 'cex',
-          exchange: exchangeName,
-          timestamp: Date.now(),
-          change24h: (ticker as any).percentage,
-          volume24h: volume,
-        };
+          const price: SymbolPrice = {
+            symbol,
+            quote,
+            price: (ticker as any).last || (ticker as any).bid || 0,
+            source: 'cex',
+            exchange: exchangeName,
+            timestamp: Date.now(),
+            change24h: (ticker as any).percentage,
+            volume24h: volume,
+          };
 
-        this.priceCache.set(cacheKey, price);
-        this.emit('price-update', {
-          symbol,
-          price: price.price,
-          source: 'cex',
-          timestamp: Date.now(),
-        });
-        return price;
+          this.priceCache.set(cacheKey, price);
+          this.emit('price-update', {
+            symbol,
+            price: price.price,
+            source: 'cex',
+            timestamp: Date.now(),
+          });
+          return price;
 
-      } catch (error: any) {
-        // FIX #4: Typed error handling
-        if (error instanceof CCXTSymbolError) {
-          // Pair doesn't exist on this exchange — skip to next, no noise
-          logger.debug(
-            `[getPrice] ${exchangeName} does not list ${pair}, skipping`
-          );
-          continue;
-        }
+        } catch (error: any) {
+          // FIX #4: Typed error handling
+          if (error instanceof CCXTSymbolError) {
+            // Pair doesn't exist on this exchange — skip to next, no noise
+            logger.debug(
+              `[getPrice] ${exchangeName} does not list ${pair}, skipping`
+            );
+            continue;
+          }
 
-        if (error instanceof CCXTRateLimitError) {
-          // Exchange is rate-limiting us — stop trying it for this call
+          if (error instanceof CCXTRateLimitError) {
+            // Exchange is rate-limiting us — stop trying it for this call
+            logger.warn(
+              `[getPrice] Rate limit hit on ${exchangeName} for ${pair}, ` +
+              `skipping remaining attempts on this exchange`
+            );
+            continue;
+          }
+
+          // Network or unknown error — log at warn level and try next exchange
           logger.warn(
-            `[getPrice] Rate limit hit on ${exchangeName} for ${pair}, ` +
-            `skipping remaining attempts on this exchange`
+            `[getPrice] ${exchangeName} failed for ${pair}: ${error.message}`
           );
           continue;
         }
-
-        // Network or unknown error — log at warn level and try next exchange
-        logger.warn(
-          `[getPrice] ${exchangeName} failed for ${pair}: ${error.message}`
-        );
-        continue;
       }
     }
 

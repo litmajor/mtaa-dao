@@ -184,6 +184,26 @@ mtaa-dao/
 
 ---
 
+## 🧭 Architecture Baseline
+
+The platform is now organized around six bounded contexts:
+- dao-governance
+- treasury-and-vaults
+- payments-and-recovery
+- trading-and-market-data
+- identity-and-access
+- observability-and-control
+
+The server exposes a control-plane module at /api/control-plane and an event-fabric surface at /api/control-plane/snapshot for operational state and event publication.
+
+To generate a repository architecture report, run:
+
+```bash
+node scripts/architecture-report.mjs
+```
+
+The report is written to visibility/architecture-report.json.
+
 ## 📦 Getting Started
 
 ### Prerequisites

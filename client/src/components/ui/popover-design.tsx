@@ -1,7 +1,9 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { Card } from './card-design';
+import { Card } from './card';
 import { Button } from './button';
 import { Icon } from './icon-design';
+
+export type PopoverPlacement = 'top' | 'bottom' | 'left' | 'right';
 
 export interface PopoverProps {
   // Structure
@@ -13,7 +15,7 @@ export interface PopoverProps {
   onOpenChange?: (open: boolean) => void;
   
   // Positioning
-  placement?: 'top' | 'bottom' | 'left' | 'right';
+  placement?: PopoverPlacement;
   offset?: number;
   showArrow?: boolean;
   
@@ -73,10 +75,10 @@ function usePopover(props: UsePopoverProps) {
 function calculatePopoverPosition(
   triggerEl: HTMLElement,
   contentEl: HTMLElement | null,
-  placement: string = 'bottom',
+  placement: PopoverPlacement = 'bottom',
   offset: number = 12,
   showArrow: boolean = true
-) {
+): { top: number; left: number; placement: PopoverPlacement } {
   const triggerRect = triggerEl.getBoundingClientRect();
   const contentHeight = contentEl?.offsetHeight || 200;
   const contentWidth = contentEl?.offsetWidth || 250;
@@ -149,7 +151,7 @@ export const Popover = React.forwardRef<HTMLDivElement, PopoverProps>(
     ref
   ) => {
     const { isOpen, triggerRef, contentRef, handleOpenChange } = usePopover({});
-    const [position, setPosition] = useState({ top: 0, left: 0, placement });
+    const [position, setPosition] = useState<{ top: number; left: number; placement: PopoverPlacement }>({ top: 0, left: 0, placement });
 
     // Update position when open
     useEffect(() => {

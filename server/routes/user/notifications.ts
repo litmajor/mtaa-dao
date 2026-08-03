@@ -11,6 +11,8 @@ import { AppError } from '../../utils/appError';
 
 const router = Router();
 
+console.warn('[DEPRECATION] /api/user/notifications is deprecated and will be removed after the UI migrates to /api/notifications.');
+
 /**
  * GET /
  * Get user's notifications (paginated)

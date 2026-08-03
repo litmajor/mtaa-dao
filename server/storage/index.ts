@@ -3,14 +3,30 @@
  * Maintains backwards compatibility with legacy DatabaseStorage API
  */
 
-import { userStorage, UserStorage } from './storage-user';
-import { daoStorage, DaoStorage } from './storage-dao';
-import { proposalStorage, ProposalStorage } from './storage-proposals';
-import { contributionStorage, ContributionStorage, isDaoPremium, type WalletTransactionInput } from './storage-contributions';
-import { taskStorage, TaskStorage } from './storage-tasks';
-import { financialStorage, FinancialStorage, type DaoAnalytics } from './storage-financial';
-import { lowPriorityStorage, LowPriorityStorage } from './storage-low-priority';
+import { userStorage } from './storage-user';
+import type { UserStorage } from './storage-user';
+import { daoStorage } from './storage-dao';
+import type { DaoStorage } from './storage-dao';
+import { proposalStorage } from './storage-proposals';
+import type { ProposalStorage } from './storage-proposals';
+import { contributionStorage, isDaoPremium } from './storage-contributions';
+import type { ContributionStorage } from './storage-contributions';
+import { taskStorage } from './storage-tasks';
+import type { TaskStorage } from './storage-tasks';
+import { financialStorage } from './storage-financial';
+import type { FinancialStorage, DaoAnalytics } from './storage-financial';
+import { lowPriorityStorage } from './storage-low-priority';
+import type { LowPriorityStorage } from './storage-low-priority';
+import type { WalletTransactionInput, WalletTransaction } from '../storage';
 import { db } from '../db';
+import { eq, and, sql } from 'drizzle-orm';
+import { budgetPlans } from '../../shared/schema';
+
+// Import Drizzle-derived types from schema
+import type { 
+  User, Dao, DaoMembership, Proposal, Vote, Contribution, Vault, BudgetPlan, Task,
+  ProposalComment, ProposalLike, CommentLike, BillingHistory
+} from '../storage';
 
 /**
  * Combined storage interface for backwards compatibility
@@ -18,223 +34,224 @@ import { db } from '../db';
  */
 export interface IStorage {
   // User methods
-  getUser(userId: string): Promise<any>;
-  getUserByEmail(email: string): Promise<any>;
-  getUserByPhone(phone: string): Promise<any>;
-  createUser(userData: any): Promise<any>;
-  updateUser(userId: string, update: any): Promise<any>;
-  loginUser(email: string): Promise<any>;
-  getUserProfile(userId: string): Promise<any>;
-  updateUserProfile(userId: string, data: any): Promise<any>;
-  getUserSocialLinks(userId: string): Promise<any>;
-  updateUserSocialLinks(userId: string, data: any): Promise<any>;
-  getUserWallet(userId: string): Promise<any>;
-  updateUserWallet(userId: string, data: any): Promise<any>;
-  getUserSettings(userId: string): Promise<any>;
-  updateUserSettings(userId: string, data: any): Promise<any>;
-  getUserSessions(userId: string): Promise<any[]>;
+  getUser(userId: string): Promise<User | null>;
+  getUserByEmail(email: string): Promise<User | null>;
+  getUserByPhone(phone: string): Promise<User | null>;
+  createUser(userData: Partial<User>): Promise<User>;
+  updateUser(userId: string, update: Partial<User>): Promise<User>;
+  loginUser(email: string): Promise<User | null>;
+  getUserProfile(userId: string): Promise<User | null>;
+  updateUserProfile(userId: string, data: Partial<User>): Promise<User | null>;
+  getUserSocialLinks(userId: string): Promise<Record<string, string> | null>;
+  updateUserSocialLinks(userId: string, data: Record<string, string>): Promise<Record<string, string> | null>;
+  getUserWallet(userId: string): Promise<Record<string, any> | null>;
+  updateUserWallet(userId: string, data: Record<string, any>): Promise<Record<string, any> | null>;
+  getUserSettings(userId: string): Promise<Record<string, any> | null>;
+  updateUserSettings(userId: string, data: Record<string, any>): Promise<Record<string, any> | null>;
+  getUserSessions(userId: string): Promise<Array<Record<string, any>>>;
   revokeUserSession(userId: string, sessionId: string): Promise<void>;
   revokeAllUserSessions(userId: string): Promise<void>;
   deleteUserAccount(userId: string): Promise<void>;
-  getUserReferralStats(userId: string): Promise<any>;
-  getReferralLeaderboard(limit?: number): Promise<any>;
-  updateUserTelegramInfo(userId: string, telegramInfo: any): Promise<any>;
-  getUserTelegramInfo(userId: string): Promise<any>;
+  getUserReferralStats(userId: string): Promise<Record<string, any> | null>;
+  getReferralLeaderboard(limit?: number): Promise<Array<Record<string, any>>>;
+  updateUserTelegramInfo(userId: string, telegramInfo: Record<string, any>): Promise<Record<string, any> | null>;
+  getUserTelegramInfo(userId: string): Promise<Record<string, any> | null>;
   // Medium Gap #1: Session audit logs
-  createSessionAuditLog(logData: any): Promise<any>;
-  getSessionAuditLogs(userId: string, options?: any): Promise<any[]>;
-  getCriticalSessionEvents(userId: string, daysBack?: number): Promise<any[]>;
+  createSessionAuditLog(logData: Record<string, any>): Promise<Record<string, any>>;
+  getSessionAuditLogs(userId: string, options?: Record<string, any>): Promise<Array<Record<string, any>>>;
+  getCriticalSessionEvents(userId: string, daysBack?: number): Promise<Array<Record<string, any>>>;
   // Gap #4: Wallet addresses
-  addWalletAddress(userId: string, walletData: any): Promise<any>;
-  getWalletAddresses(userId: string, chainId?: number): Promise<any[]>;
-  setPrimaryWallet(userId: string, walletId: string, chainId: number): Promise<any>;
-  verifyWalletAddress(walletId: string, signature: string): Promise<any>;
+  addWalletAddress(userId: string, walletData: Record<string, any>): Promise<Record<string, any>>;
+  getWalletAddresses(userId: string, chainId?: number): Promise<Array<Record<string, any>>>;
+  setPrimaryWallet(userId: string, walletId: string, chainId: number): Promise<Record<string, any>>;
+  verifyWalletAddress(walletId: string, signature: string): Promise<Record<string, any>>;
   deleteWalletAddress(walletId: string): Promise<boolean>;
 
   // DAO methods
-  createDao(dao: any): Promise<any>;
-  getDao(daoId: string): Promise<any>;
-  getAllDaos(args?: { limit?: number; offset?: number }): Promise<any[]>;
+  createDao(dao: Partial<Dao>): Promise<Dao>;
+  getDao(daoId: string): Promise<Dao | null>;
+  getAllDaos(args?: { limit?: number; offset?: number }): Promise<Dao[]>;
   getDaoCount(): Promise<number>;
-  incrementDaoMemberCount(daoId: string): Promise<any>;
-  setDaoInviteCode(daoId: string, code: string): Promise<any>;
-  getDaoByInviteCode(code: string): Promise<any>;
-  createDaoMembership(args: any): Promise<any>;
-  getDaoMembership(daoId: string, userId: string): Promise<any>;
-  getDaoMembers(daoId: string, userId?: string, status?: string, role?: string, limit?: number, offset?: number): Promise<any[]>;
-  getDaoMembershipsByStatus(daoId: string, status: any): Promise<any>;
-  updateDaoMembershipStatus(membershipId: string, status: any): Promise<any>;
-  getDaoPlan(daoId: string): Promise<any>;
-  setDaoPlan(daoId: string, plan: string, planExpiresAt: Date | null): Promise<any>;
+  incrementDaoMemberCount(daoId: string): Promise<Dao | null>;
+  setDaoInviteCode(daoId: string, code: string): Promise<Dao | null>;
+  getDaoByInviteCode(code: string): Promise<Dao | null>;
+  createDaoMembership(args: Partial<DaoMembership>): Promise<DaoMembership>;
+  getDaoMembership(daoId: string, userId: string): Promise<DaoMembership | null>;
+  getDaoMembers(daoId: string, userId?: string, status?: string, role?: string, limit?: number, offset?: number): Promise<DaoMembership[]>;
+  getDaoMembershipsByStatus(daoId: string, status: string): Promise<DaoMembership[]>;
+  updateDaoMembershipStatus(membershipId: string, status: string): Promise<DaoMembership | null>;
+  getDaoPlan(daoId: string): Promise<Record<string, any> | null>;
+  setDaoPlan(daoId: string, plan: string, planExpiresAt: Date | null): Promise<Dao | null>;
   // Gap #1: DAO settings
-  getDaoSetting(daoId: string, settingKey: string): Promise<any>;
-  getDaoSettings(daoId: string): Promise<any[]>;
-  upsertDaoSetting(daoId: string, settingKey: string, settingValue: any, metadata?: any): Promise<any>;
+  getDaoSetting(daoId: string, settingKey: string): Promise<Record<string, any> | null>;
+  getDaoSettings(daoId: string): Promise<Array<Record<string, any>>>;
+  upsertDaoSetting(daoId: string, settingKey: string, settingValue: Record<string, any>, metadata?: Record<string, any>): Promise<Record<string, any>>;
   deleteDaoSetting(daoId: string, settingKey: string): Promise<boolean>;
   // Medium Gap #2: Referral rewards per DAO
-  createDaoReferralReward(rewardData: any): Promise<any>;
-  getDaoReferralRewards(daoId: string, options?: any): Promise<any[]>;
-  getDaoReferralRewardsByReferrer(referrerId: string, daoId: string): Promise<any[]>;
+  createDaoReferralReward(rewardData: Record<string, any>): Promise<Record<string, any>>;
+  getDaoReferralRewards(daoId: string, options?: Record<string, any>): Promise<Array<Record<string, any>>>;
+  getDaoReferralRewardsByReferrer(referrerId: string, daoId: string): Promise<Array<Record<string, any>>>;
   getDaoReferralRewardsTotal(daoId: string, referrerId: string): Promise<number>;
-  updateDaoReferralRewardStatus(rewardId: string, status: string): Promise<any>;
+  updateDaoReferralRewardStatus(rewardId: string, status: string): Promise<Record<string, any>>;
 
   // Proposal methods
-  createProposal(proposal: any): Promise<any>;
-  getProposals(): Promise<any>;
-  getProposal(id: string): Promise<any>;
-  updateProposal(id: string, data: any, userId: string): Promise<any>;
+  createProposal(proposal: Partial<Proposal>): Promise<Proposal>;
+  getProposals(): Promise<Proposal[]>;
+  getProposal(id: string): Promise<Proposal | null>;
+  updateProposal(id: string, data: Partial<Proposal>, userId: string): Promise<Proposal>;
   deleteProposal(id: string, userId: string): Promise<void>;
-  updateProposalVotes(proposalId: string, voteType: string): Promise<any>;
-  createVote(vote: any): Promise<any>;
-  getVote(proposalId: string, userId: string): Promise<any>;
-  getVotesByProposal(proposalId: string): Promise<any>;
-  getVotesByUserAndDao(userId: string, daoId: string): Promise<any>;
+  updateProposalVotes(proposalId: string, voteType: string): Promise<Proposal | null>;
+  createVote(vote: Partial<Vote>): Promise<Vote>;
+  getVote(proposalId: string, userId: string): Promise<Vote | null>;
+  getVotesByProposal(proposalId: string): Promise<Vote[]>;
+  getVotesByUserAndDao(userId: string, daoId: string): Promise<Vote[]>;
   getVotesCount(daoId: string, proposalId: string): Promise<number>;
-  createProposalComment(comment: any): Promise<any>;
-  getProposalComments(proposalId: string, limit?: number, offset?: number): Promise<any[]>;
-  updateProposalComment(commentId: string, updates: any): Promise<any>;
+  createProposalComment(comment: Partial<ProposalComment>): Promise<ProposalComment>;
+  getProposalComments(proposalId: string, limit?: number, offset?: number): Promise<ProposalComment[]>;
+  updateProposalComment(commentId: string, updates: Partial<ProposalComment>): Promise<ProposalComment | null>;
   deleteProposalComment(commentId: string): Promise<boolean>;
-  toggleProposalLike(proposalId: string, userId: string): Promise<any>;
-  getProposalLikes(proposalId: string): Promise<any[]>;
-  toggleCommentLike(commentId: string, userId: string): Promise<any>;
-  getCommentLikes(commentId: string): Promise<any[]>;
+  toggleProposalLike(proposalId: string, userId: string): Promise<ProposalLike | null>;
+  getProposalLikes(proposalId: string): Promise<ProposalLike[]>;
+  toggleCommentLike(commentId: string, userId: string): Promise<CommentLike | null>;
+  getCommentLikes(commentId: string): Promise<CommentLike[]>;
   // Gap #3: Proposal drafts
-  saveProposalDraft(draftData: any): Promise<any>;
-  getDraftProposals(daoId: string, proposerId?: string): Promise<any[]>;
-  publishDraft(proposalId: string, publishData?: any): Promise<any>;
+  saveProposalDraft(draftData: Partial<Proposal>): Promise<Proposal>;
+  getDraftProposals(daoId: string, proposerId?: string): Promise<Proposal[]>;
+  publishDraft(proposalId: string, publishData?: Partial<Proposal>): Promise<Proposal>;
   deleteDraft(proposalId: string): Promise<boolean>;
 
   // Contribution methods
-  createContribution(contribution: any): Promise<any>;
-  getContributions(userId?: string, daoId?: string): Promise<any>;
+  createContribution(contribution: Partial<Contribution>): Promise<Contribution>;
+  getContributions(userId?: string, daoId?: string): Promise<Contribution[]>;
   getContributionsCount(userId: string, daoId: string): Promise<number>;
-  getUserContributionStats(userId: string): Promise<any>;
+  getUserContributionStats(userId: string): Promise<Record<string, any> | null>;
+  getBudgetPlanCount(userId: string, month: string): Promise<number>;
   hasActiveContributions(userId: string, daoId: string): Promise<boolean>;
-  getUserVaults(userId: string): Promise<any>;
-  upsertVault(vault: any): Promise<any>;
-  getVaultTransactions(vaultId: string, limit?: number, offset?: number): Promise<any[]>;
-  createWalletTransaction(data: WalletTransactionInput): Promise<any>;
+  getUserVaults(userId: string): Promise<Vault[]>;
+  upsertVault(vault: Partial<Vault>): Promise<Vault>;
+  getVaultTransactions(vaultId: string, limit?: number, offset?: number): Promise<Array<Record<string, any>>>;
+  createWalletTransaction(data: WalletTransactionInput): Promise<WalletTransaction>;
   deductVaultFee(vaultId: string, fee: number): Promise<boolean>;
   // Gap #5: Vault balance history
-  recordBalanceChange(vaultId: string, changeData: any): Promise<any>;
-  getBalanceHistory(vaultId: string, options?: any): Promise<any[]>;
-  getVaultBalanceAtDate(vaultId: string, date: Date): Promise<any | null>;
-  getBalanceChangeStats(vaultId: string, timeframeInDays?: number): Promise<any>;
+  recordBalanceChange(vaultId: string, changeData: Record<string, any>): Promise<Record<string, any>>;
+  getBalanceHistory(vaultId: string, options?: Record<string, any>): Promise<Array<Record<string, any>>>;
+  getVaultBalanceAtDate(vaultId: string, date: Date): Promise<Record<string, any> | null>;
+  getBalanceChangeStats(vaultId: string, timeframeInDays?: number): Promise<Record<string, any>>;
   // Medium Gap #3: Budget detail tracking
-  createBudgetDetail(detailData: any): Promise<any>;
-  getBudgetDetails(budgetPlanId: string): Promise<any[]>;
-  updateBudgetDetailSpending(detailId: string, spentAmount: number): Promise<any>;
-  getBudgetDetailsByCategory(budgetPlanId: string, category: string): Promise<any[]>;
-  getBudgetDetailsByUser(budgetPlanId: string, userId: string): Promise<any[]>;
+  createBudgetDetail(detailData: Partial<BudgetPlan>): Promise<BudgetPlan>;
+  getBudgetDetails(budgetPlanId: string): Promise<Array<Record<string, any>>>;
+  updateBudgetDetailSpending(detailId: string, spentAmount: number): Promise<Record<string, any>>;
+  getBudgetDetailsByCategory(budgetPlanId: string, category: string): Promise<Array<Record<string, any>>>;
+  getBudgetDetailsByUser(budgetPlanId: string, userId: string): Promise<Array<Record<string, any>>>;
 
   // Task methods
-  getTasks(daoId?: string, status?: string): Promise<any>;
-  createTask(task: any): Promise<any>;
-  updateTask(id: string, data: any, userId: string): Promise<any>;
-  claimTask(taskId: string, userId: string): Promise<any>;
+  getTasks(daoId?: string, status?: string): Promise<Task[]>;
+  createTask(task: Partial<Task>): Promise<Task>;
+  updateTask(id: string, data: Partial<Task>, userId: string): Promise<Task>;
+  claimTask(taskId: string, userId: string): Promise<Task | null>;
   getTaskCount(daoId: string, status?: string): Promise<number>;
   // Gap #2: Task attachments
-  attachFileToTask(taskId: string, fileData: any): Promise<any>;
-  getTaskAttachments(taskId: string): Promise<any[]>;
+  attachFileToTask(taskId: string, fileData: Record<string, any>): Promise<Record<string, any>>;
+  getTaskAttachments(taskId: string): Promise<Array<Record<string, any>>>;
   deleteTaskAttachment(attachmentId: string): Promise<boolean>;
-  updateAttachmentStatus(attachmentId: string, verificationStatus: string): Promise<any>;
+  updateAttachmentStatus(attachmentId: string, verificationStatus: string): Promise<Record<string, any>>;
   // Medium Gap #4: Notification metadata
-  createNotificationMetadata(metadataData: any): Promise<any>;
-  getNotificationMetadata(userId: string, options?: any): Promise<any[]>;
-  markNotificationMetadataAsRead(metadataId: string): Promise<any>;
-  recordNotificationAction(metadataId: string, actionTaken: string): Promise<any>;
-  getHighPriorityNotifications(userId: string): Promise<any[]>;
-  getUnactionedNotifications(userId: string): Promise<any[]>;
+  createNotificationMetadata(metadataData: Record<string, any>): Promise<Record<string, any>>;
+  getNotificationMetadata(userId: string, options?: Record<string, any>): Promise<Array<Record<string, any>>>;
+  markNotificationMetadataAsRead(metadataId: string): Promise<Record<string, any>>;
+  recordNotificationAction(metadataId: string, actionTaken: string): Promise<Record<string, any>>;
+  getHighPriorityNotifications(userId: string): Promise<Array<Record<string, any>>>;
+  getUnactionedNotifications(userId: string): Promise<Array<Record<string, any>>>;
 
   // Notification methods
-  createNotification(data: any): Promise<any>;
-  createBulkNotifications(userIds: string[], notificationData: any): Promise<any[]>;
-  getUserNotifications(userId: string, read?: boolean, limit?: number, offset?: number, type?: string): Promise<any[]>;
+  createNotification(data: Record<string, any>): Promise<Record<string, any>>;
+  createBulkNotifications(userIds: string[], notificationData: Record<string, any>): Promise<Array<Record<string, any>>>;
+  getUserNotifications(userId: string, read?: boolean, limit?: number, offset?: number, type?: string): Promise<Array<Record<string, any>>>;
   getUnreadNotificationCount(userId: string): Promise<number>;
-  markNotificationAsRead(notificationId: string, userId: string): Promise<any>;
+  markNotificationAsRead(notificationId: string, userId: string): Promise<Record<string, any>>;
   markAllNotificationsAsRead(userId: string): Promise<void>;
   deleteNotification(notificationId: string, userId: string): Promise<boolean>;
-  getUserNotificationPreferences(userId: string): Promise<any>;
-  updateUserNotificationPreferences(userId: string, updates: any): Promise<any>;
-  createNotificationHistory(userId: string, type: string, title: string, message: string, metadata?: any): Promise<any>;
-  getUserNotificationHistory(userId: string, args?: { limit?: number; offset?: number }): Promise<any[]>;
+  getUserNotificationPreferences(userId: string): Promise<Record<string, any> | null>;
+  updateUserNotificationPreferences(userId: string, updates: Record<string, any>): Promise<Record<string, any>>;
+  createNotificationHistory(userId: string, type: string, title: string, message: string, metadata?: Record<string, any>): Promise<Record<string, any>>;
+  getUserNotificationHistory(userId: string, args?: { limit?: number; offset?: number }): Promise<Array<Record<string, any>>>;
 
   // Proposal comment methods  
   // Medium Gap #5: Comment edit history
-  recordCommentEditHistory(commentId: string, previousContent: string, newContent: string, editedBy: string): Promise<any>;
-  getCommentEditHistory(commentId: string): Promise<any>;
-  getCommentsByEditor(userId: string): Promise<any[]>;
-  updateProposalComment(commentId: string, newContent: string, userId: string): Promise<any>;
+  recordCommentEditHistory(commentId: string, previousContent: string, newContent: string, editedBy: string): Promise<Record<string, any>>;
+  getCommentEditHistory(commentId: string): Promise<Array<Record<string, any>>>;
+  getCommentsByEditor(userId: string): Promise<ProposalComment[]>;
+  updateProposalComment(commentId: string, newContent: string, userId: string): Promise<ProposalComment | null>;
 
   // Financial/Analytics methods
-  getPlatformFeeInfo(): Promise<any>;
-  getDaoBillingHistory(daoId: string): Promise<any>;
-  getAllDaoBillingHistory(): Promise<any>;
-  addDaoBillingHistory(entry: any): Promise<any>;
+  getPlatformFeeInfo(): Promise<Record<string, any>>;
+  getDaoBillingHistory(daoId: string): Promise<BillingHistory[]>;
+  getAllDaoBillingHistory(): Promise<BillingHistory[]>;
+  addDaoBillingHistory(entry: Partial<BillingHistory>): Promise<BillingHistory>;
   getBillingCount(): Promise<number>;
-  getDAOStats(): Promise<any>;
+  getDAOStats(): Promise<Record<string, any>>;
   getDaoAnalytics(daoId: string): Promise<DaoAnalytics>;
-  getTopMembers(args?: { limit?: number }): Promise<any>;
-  getAllUsers(args?: { limit?: number; offset?: number }): Promise<any[]>;
+  getTopMembers(args?: { limit?: number }): Promise<Array<{ userId: string; count: number }>>;
+  getAllUsers(args?: { limit?: number; offset?: number }): Promise<User[]>;
   getUserCount(): Promise<number>;
-  createAuditLog(entry: any): Promise<any>;
-  getAuditLogs(args?: { limit?: number; offset?: number; userId?: string; severity?: string }): Promise<any[]>;
-  createSystemLog(level: string, message: string, service?: string, metadata?: any): Promise<any>;
-  getSystemLogs(args?: { limit?: number; offset?: number; level?: string; service?: string }): Promise<any[]>;
+  createAuditLog(entry: Record<string, any>): Promise<Record<string, any>>;
+  getAuditLogs(args?: { limit?: number; offset?: number; userId?: string; severity?: string }): Promise<Array<Record<string, any>>>;
+  createSystemLog(level: string, message: string, service?: string, metadata?: Record<string, any>): Promise<Record<string, any>>;
+  getSystemLogs(args?: { limit?: number; offset?: number; level?: string; service?: string }): Promise<Array<Record<string, any>>>;
   getLogCount(): Promise<number>;
-  getChainInfo(): Promise<any>;
+  getChainInfo(): Promise<Record<string, any>>;
 
   // ===== LOW-PRIORITY GAPS =====
   // Gap #1: Snapshot History
-  createSnapshotHistory(snapshotData: any): Promise<any>;
-  getSnapshotHistory(daoId: string, snapshotType?: string, limit?: number, offset?: number): Promise<any[]>;
-  getSnapshotById(snapshotId: string): Promise<any>;
+  createSnapshotHistory(snapshotData: Record<string, any>): Promise<Record<string, any>>;
+  getSnapshotHistory(daoId: string, snapshotType?: string, limit?: number, offset?: number): Promise<Array<Record<string, any>>>;
+  getSnapshotById(snapshotId: string): Promise<Record<string, any> | null>;
   
   // Gap #2: Activity Feeds
-  createActivityFeed(feedData: any): Promise<any>;
-  getUserActivityFeed(userId: string, limit?: number, offset?: number): Promise<any[]>;
-  getDaoActivityFeed(daoId: string, limit?: number, offset?: number): Promise<any[]>;
-  getActivityFeedByType(activityType: string, limit?: number): Promise<any[]>;
+  createActivityFeed(feedData: Record<string, any>): Promise<Record<string, any>>;
+  getUserActivityFeed(userId: string, limit?: number, offset?: number): Promise<Array<Record<string, any>>>;
+  getDaoActivityFeed(daoId: string, limit?: number, offset?: number): Promise<Array<Record<string, any>>>;
+  getActivityFeedByType(activityType: string, limit?: number): Promise<Array<Record<string, any>>>;
   
   // Gap #3: Message Logs
-  createMessageLog(messageData: any): Promise<any>;
-  getConversation(userId1: string, userId2: string, limit?: number, offset?: number): Promise<any[]>;
-  markMessagesAsRead(userId: string, senderId: string): Promise<any>;
+  createMessageLog(messageData: Record<string, any>): Promise<Record<string, any>>;
+  getConversation(userId1: string, userId2: string, limit?: number, offset?: number): Promise<Array<Record<string, any>>>;
+  markMessagesAsRead(userId: string, senderId: string): Promise<Record<string, any>>;
   getUnreadMessageCount(userId: string): Promise<number>;
   
   // Gap #4: Type Definitions
-  createTypeDefinition(typeData: any): Promise<any>;
-  getTypeDefinitions(daoId: string, entityType: string): Promise<any[]>;
-  getTypeDefinitionById(typeId: string): Promise<any>;
+  createTypeDefinition(typeData: Record<string, any>): Promise<Record<string, any>>;
+  getTypeDefinitions(daoId: string, entityType: string): Promise<Array<Record<string, any>>>;
+  getTypeDefinitionById(typeId: string): Promise<Record<string, any> | null>;
   
   // Gap #5: Feature Flags
-  createFeatureFlag(flagData: any): Promise<any>;
-  getFeatureFlag(flagName: string, context?: { daoId?: string; userId?: string }): Promise<any>;
-  updateFeatureFlag(flagId: string, updates: any): Promise<any>;
+  createFeatureFlag(flagData: Record<string, any>): Promise<Record<string, any>>;
+  getFeatureFlag(flagName: string, context?: { daoId?: string; userId?: string }): Promise<Record<string, any> | null>;
+  updateFeatureFlag(flagId: string, updates: Record<string, any>): Promise<Record<string, any>>;
   
   // Gap #6: Analytics Events
-  logAnalyticsEvent(eventData: any): Promise<any>;
-  getAnalyticsEvents(filters: any, limit?: number): Promise<any[]>;
+  logAnalyticsEvent(eventData: Record<string, any>): Promise<Record<string, any>>;
+  getAnalyticsEvents(filters: Record<string, any>, limit?: number): Promise<Array<Record<string, any>>>;
   
   // Gap #7: API Keys
-  createApiKey(keyData: any): Promise<any>;
-  getApiKeysByUser(userId: string): Promise<any[]>;
-  updateApiKeyUsage(keyId: string): Promise<any>;
+  createApiKey(keyData: Record<string, any>): Promise<Record<string, any>>;
+  getApiKeysByUser(userId: string): Promise<Array<Record<string, any>>>;
+  updateApiKeyUsage(keyId: string): Promise<Record<string, any>>;
   
   // Gap #8: User Preferences
-  createOrUpdateUserPreferences(userId: string, preferences: any): Promise<any>;
-  getUserPreferences(userId: string): Promise<any>;
+  createOrUpdateUserPreferences(userId: string, preferences: Record<string, any>): Promise<Record<string, any>>;
+  getUserPreferences(userId: string): Promise<Record<string, any> | null>;
   
   // Gap #9: Caching Metadata
-  recordCacheHit(cacheKey: string): Promise<any>;
-  recordCacheMiss(cacheKey: string): Promise<any>;
-  invalidateCache(cacheKey: string, reason: string): Promise<any>;
-  getCacheMetadata(cacheKey: string): Promise<any>;
+  recordCacheHit(cacheKey: string): Promise<Record<string, any>>;
+  recordCacheMiss(cacheKey: string): Promise<Record<string, any>>;
+  invalidateCache(cacheKey: string, reason: string): Promise<Record<string, any>>;
+  getCacheMetadata(cacheKey: string): Promise<Record<string, any> | null>;
   
   // Gap #10: Audit Events
-  createAuditEvent(auditData: any): Promise<any>;
-  getAuditEvents(daoId?: string, filters?: any, limit?: number): Promise<any[]>;
-  getCriticalAuditEvents(daoId: string, daysBack?: number): Promise<any[]>;
+  createAuditEvent(auditData: Record<string, any>): Promise<Record<string, any>>;
+  getAuditEvents(daoId?: string, filters?: Record<string, any>, limit?: number): Promise<Array<Record<string, any>>>;
+  getCriticalAuditEvents(daoId: string, daysBack?: number): Promise<Array<Record<string, any>>>;
 }
 
 /**
@@ -345,7 +362,12 @@ export class DatabaseStorage implements IStorage {
   async getCommentEditHistory(commentId: string) { return this.proposalStorage.getCommentEditHistory(commentId); }
   async getCommentsByEditor(userId: string) { return this.proposalStorage.getCommentsByEditor(userId); }
   async updateCommentWithEditTracking(commentId: string, newContent: string, userId: string) { 
-    return this.proposalStorage.updateProposalComment(commentId, newContent, userId); 
+    return this.proposalStorage.updateProposalComment(commentId, {
+      content: newContent,
+      lastEditedBy: userId,
+      lastEditedAt: new Date(),
+      updatedAt: new Date(),
+    } as any); 
   }
 
   // Contribution methods
@@ -354,6 +376,12 @@ export class DatabaseStorage implements IStorage {
   async getContributionsCount(userId: string, daoId: string) { return this.contributionStorage.getContributionsCount(userId, daoId); }
   async getUserContributionStats(userId: string) { return this.contributionStorage.getUserContributionStats(userId); }
   async hasActiveContributions(userId: string, daoId: string) { return this.contributionStorage.hasActiveContributions(userId, daoId); }
+  async getBudgetPlanCount(userId: string, month: string) {
+    if (!userId || !month) throw new Error('User ID and month required');
+    const result = await db.select({ count: sql`count(*)` }).from(budgetPlans)
+      .where(and(eq(budgetPlans.userId, userId), eq(budgetPlans.month, month)));
+    return Number(result[0]?.count) || 0;
+  }
   async getUserVaults(userId: string) { return this.contributionStorage.getUserVaults(userId); }
   async upsertVault(vault: any) { return this.contributionStorage.upsertVault(vault); }
   async getVaultTransactions(vaultId: string, limit?: number, offset?: number) { return this.contributionStorage.getVaultTransactions(vaultId, limit, offset); }
@@ -479,15 +507,13 @@ export class DatabaseStorage implements IStorage {
 export const storage = new DatabaseStorage();
 
 // Export type definitions
-export type { DaoAnalytics, WalletTransactionInput, IStorage };
+export type { DaoAnalytics, WalletTransactionInput };
 
 // Export utility functions
 export { isDaoPremium };
 
 // Re-export all submodules for direct access if needed
 export { userStorage, daoStorage, proposalStorage, contributionStorage, taskStorage, financialStorage, lowPriorityStorage };
-export { UserStorage, DaoStorage, ProposalStorage, ContributionStorage, TaskStorage, FinancialStorage, LowPriorityStorage };
-
 // Export db for convenience
 export { db };
 

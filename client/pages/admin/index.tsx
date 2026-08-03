@@ -8,7 +8,7 @@ import {
   DollarSign,
   TrendingUp,
   AlertCircle,
-} from '../../src/lib/icons';
+} from 'lucide-react';
 import styles from './dashboard.module.css';
 
 interface DashboardStats {

@@ -3,7 +3,8 @@
  * Handles callbacks from Flutterwave, Paystack, Paychant, Kotani, M-Pesa, Airtel, Onramper
  */
 
-import express, { Router, Request, Response } from 'express';
+import express, { Router } from 'express';
+import type { Request, Response } from 'express';
 import crypto from 'crypto';
 import { db } from '../../../../db';
 import { deposits, withdrawals } from '@shared/transactionFlowSchema';
@@ -100,6 +101,10 @@ function verifyWebhookSignature(
       break;
     case 'kotani':
       secret = kotaniConfig.secretKey || '';
+      algorithm = 'sha256';
+      break;
+    case 'mpesa':
+      secret = mpesaConfig.secretKey || '';
       algorithm = 'sha256';
       break;
     case 'airtel':

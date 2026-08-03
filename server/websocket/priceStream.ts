@@ -1,6 +1,6 @@
 /**
  * WebSocket Price Stream Server
- * 
+ *
  * Real-time price streaming for CCXT exchange integration
  * Features:
  * - Subscribe/unsubscribe to price updates per symbol/exchange
@@ -8,14 +8,30 @@
  * - Real-time arbitrage detection
  * - Order status updates
  * - Broadcast to multiple clients simultaneously
+ *
+ * FIXES APPLIED:
+ * 1. Added token-based auth on connection (query param), matching the
+ *    Gateway WS's auth model. Previously this endpoint had none at all.
+ * 2. Per-tick fetches are parallelized with Promise.all instead of a
+ *    sequential for-await loop, and a tick-overlap guard (isTickRunning)
+ *    prevents a slow tick from stacking concurrent runs on top of itself.
+ * 3. Prices are now fetched once per (symbol) per tick and reused by both
+ *    broadcastPrices and findArbitrageOpportunities, instead of fetching
+ *    the same data twice.
+ * 4. lastArbitrageAlerts entries are pruned periodically instead of
+ *    growing forever.
+ * 5. Added caps on subscription set sizes to bound per-client resource use.
+ * 6. Added a real shutdown() that clears the interval and closes sockets.
+ * 7. NodeJS.Timeout used instead of the deprecated NodeJS.Timer alias.
  */
 
 import WebSocket, { WebSocketServer } from 'ws';
 import { Server as HTTPServer } from 'http';
+import { IncomingMessage } from 'http';
 import { ccxtService } from '../services/ccxtService';
-import { orderRouter } from '../services/orderRouter';
 import { logger } from '../utils/logger';
 import { v4 as uuidv4 } from 'uuid';
+import { verifyAccessToken } from '../auth';
 
 /**
  * Type Definitions
@@ -51,11 +67,16 @@ interface ArbitrageOpportunity {
   timestamp: number;
 }
 
+const MAX_SYMBOLS_PER_CLIENT = 50;
+const MAX_EXCHANGES_PER_CLIENT = 20;
+const ALERT_PRUNE_INTERVAL_MS = 5 * 60 * 1000; // sweep stale debounce entries every 5 min
+
 class PriceStreamServer {
   private wss: WebSocketServer | null = null;
-  private clients: Map<string, { subscription: ClientSubscription; ws: WebSocket }> = new Map();
-  private priceCache: Map<string, any> = new Map();
-  private streamingInterval: NodeJS.Timer | null = null;
+  private clients: Map<string, { subscription: ClientSubscription; ws: WebSocket; userId?: string }> = new Map();
+  private streamingInterval: NodeJS.Timeout | null = null;
+  private alertPruneInterval: NodeJS.Timeout | null = null;
+  private isTickRunning = false;
   private arbitrageThreshold = 0.5; // 0.5% spread threshold for alerts
   private lastArbitrageAlerts: Map<string, number> = new Map(); // Debounce alerts
   private arbitrageDebounceMs = 60000; // Don't alert same pair more than once per minute
@@ -63,18 +84,23 @@ class PriceStreamServer {
   /**
    * Initialize WebSocket server
    */
-  initialize(httpServer: HTTPServer): void {
+  initialize(httpServer: HTTPServer, options: { requireAuth?: boolean } = {}): void {
     try {
-      this.wss = new WebSocketServer({ 
+      this.wss = new WebSocketServer({
         server: httpServer,
-        path: '/ws/prices'
+        path: '/ws/prices',
+        // FIX #1: verify auth token during the HTTP upgrade, before the
+        // socket is ever handed to a connection handler.
+        verifyClient: options.requireAuth === false
+          ? undefined
+          : (info, callback) => this.verifyClient(info, callback),
       });
 
       this.wss.on('connection', this.handleClientConnection.bind(this));
       logger.info('✅ WebSocket Price Stream Server initialized at /ws/prices');
-      
-      // Start price streaming
+
       this.startPriceStreaming();
+      this.startAlertPruning();
     } catch (error: any) {
       logger.error('Error initializing WebSocket server:', error);
       throw error;
@@ -82,41 +108,67 @@ class PriceStreamServer {
   }
 
   /**
+   * FIX #1: Reject connections without a valid access token.
+   * Token is expected as a `token` query param since raw `ws` handshakes
+   * don't have a structured auth payload like Socket.IO's `auth` option.
+   */
+  private verifyClient(
+    info: { req: IncomingMessage },
+    callback: (res: boolean, code?: number, message?: string) => void
+  ): void {
+    try {
+      const url = new URL(info.req.url || '', 'http://localhost');
+      const token = url.searchParams.get('token');
+
+      if (!token) {
+        callback(false, 401, 'Missing auth token');
+        return;
+      }
+
+      const payload = verifyAccessToken(token);
+      if (!payload) {
+        callback(false, 401, 'Invalid or expired token');
+        return;
+      }
+
+      (info.req as any).userId = payload.sub;
+      callback(true);
+    } catch (error: any) {
+      logger.warn('WebSocket auth verification failed:', error.message);
+      callback(false, 401, 'Authentication error');
+    }
+  }
+
+  /**
    * Handle new client connection
    */
-  private handleClientConnection(ws: WebSocket): void {
+  private handleClientConnection(ws: WebSocket, req: IncomingMessage): void {
     const clientId = uuidv4();
-    logger.info(`📱 Client connected: ${clientId}`);
+    const userId = (req as any).userId;
+    logger.info(`📱 Client connected: ${clientId}${userId ? ` (user: ${userId})` : ''}`);
 
-    // Initialize client subscription
     const subscription: ClientSubscription = {
       clientId,
       symbols: new Set(),
       exchanges: new Set()
     };
-    this.clients.set(clientId, { subscription, ws });
+    this.clients.set(clientId, { subscription, ws, userId });
 
-    // Handle incoming messages
     ws.on('message', (message: string) => {
       try {
         const data = JSON.parse(message);
         this.handleClientMessage(clientId, data, ws);
       } catch (error: any) {
         logger.error(`Error parsing message from ${clientId}:`, error.message);
-        this.sendToClient(ws, {
-          type: 'error',
-          message: 'Invalid message format'
-        });
+        this.sendToClient(ws, { type: 'error', message: 'Invalid message format' });
       }
     });
 
-    // Handle client disconnect
     ws.on('close', () => {
       this.clients.delete(clientId);
       logger.info(`📱 Client disconnected: ${clientId}`);
     });
 
-    // Handle errors
     ws.on('error', (error: any) => {
       logger.error(`WebSocket error for ${clientId}:`, error.message);
     });
@@ -133,11 +185,24 @@ class PriceStreamServer {
     }
 
     const subscription = clientData.subscription;
-    const { action, symbols = [], exchanges = [] } = data;
+    const { action, symbols = [], exchanges = [] } = data || {};
+
+    if (!Array.isArray(symbols) || !Array.isArray(exchanges)) {
+      this.sendToClient(ws, { type: 'error', message: 'symbols and exchanges must be arrays' });
+      return;
+    }
 
     if (action === 'subscribe') {
-      symbols.forEach((symbol: string) => subscription.symbols.add(symbol));
-      exchanges.forEach((exchange: string) => subscription.exchanges.add(exchange));
+      // FIX #5: cap subscription set sizes
+      const remainingSymbolSlots = MAX_SYMBOLS_PER_CLIENT - subscription.symbols.size;
+      const remainingExchangeSlots = MAX_EXCHANGES_PER_CLIENT - subscription.exchanges.size;
+
+      symbols.slice(0, Math.max(0, remainingSymbolSlots)).forEach((s: string) => subscription.symbols.add(s));
+      exchanges.slice(0, Math.max(0, remainingExchangeSlots)).forEach((e: string) => subscription.exchanges.add(e));
+
+      if (symbols.length > remainingSymbolSlots || exchanges.length > remainingExchangeSlots) {
+        logger.warn(`Client ${clientId} hit subscription cap (symbols=${MAX_SYMBOLS_PER_CLIENT}, exchanges=${MAX_EXCHANGES_PER_CLIENT})`);
+      }
 
       logger.info(
         `📌 Client ${clientId} subscribed to symbols: ${[...subscription.symbols].join(',')}`
@@ -148,7 +213,7 @@ class PriceStreamServer {
         symbols: [...subscription.symbols],
         exchanges: [...subscription.exchanges],
         message: 'Successfully subscribed'
-      });
+      } as any);
     } else if (action === 'unsubscribe') {
       symbols.forEach((symbol: string) => subscription.symbols.delete(symbol));
       exchanges.forEach((exchange: string) => subscription.exchanges.delete(exchange));
@@ -160,13 +225,10 @@ class PriceStreamServer {
         symbols: [...subscription.symbols],
         exchanges: [...subscription.exchanges],
         message: 'Successfully unsubscribed'
-      });
+      } as any);
     } else {
       logger.warn(`Unknown action from ${clientId}: ${action}`);
-      this.sendToClient(ws, {
-        type: 'error',
-        message: `Unknown action: ${action}`
-      });
+      this.sendToClient(ws, { type: 'error', message: `Unknown action: ${action}` });
     }
   }
 
@@ -182,13 +244,30 @@ class PriceStreamServer {
     logger.info('🔄 Starting price streaming (500ms interval)');
 
     this.streamingInterval = setInterval(async () => {
-      try {
-        await this.broadcastPrices();
-        await this.checkArbitrageOpportunities();
-      } catch (error: any) {
-        logger.error('Error in price streaming:', error.message);
+      // FIX #2: skip this tick entirely if the previous one is still running,
+      // instead of letting ticks stack up under load.
+      if (this.isTickRunning) {
+        logger.debug('Skipping price stream tick — previous tick still in flight');
+        return;
       }
-    }, 500); // Stream prices every 500ms
+      this.isTickRunning = true;
+      try {
+        await this.runTick();
+      } catch (error: any) {
+        logger.error('Error in price streaming tick:', error.message);
+      } finally {
+        this.isTickRunning = false;
+      }
+    }, 500);
+  }
+
+  private startAlertPruning(): void {
+    this.alertPruneInterval = setInterval(() => {
+      const cutoff = Date.now() - this.arbitrageDebounceMs * 3;
+      for (const [key, ts] of this.lastArbitrageAlerts.entries()) {
+        if (ts < cutoff) this.lastArbitrageAlerts.delete(key);
+      }
+    }, ALERT_PRUNE_INTERVAL_MS);
   }
 
   /**
@@ -200,142 +279,136 @@ class PriceStreamServer {
       this.streamingInterval = null;
       logger.info('⏹️ Stopped price streaming');
     }
+    if (this.alertPruneInterval) {
+      clearInterval(this.alertPruneInterval);
+      this.alertPruneInterval = null;
+    }
   }
 
   /**
-   * Broadcast current prices to all subscribed clients
+   * FIX #2 + FIX #3: One combined tick that fetches prices for every unique
+   * (symbol, exchange-set) once, in parallel, and reuses the result for both
+   * broadcasting to subscribers and arbitrage detection — instead of two
+   * separate passes that each independently fetched the same data.
    */
-  private async broadcastPrices(): Promise<void> {
+  private async runTick(): Promise<void> {
     if (this.clients.size === 0) return;
 
-    // Collect all unique symbols and exchanges
     const allSymbols = new Set<string>();
     const allExchanges = new Set<string>();
 
     for (const { subscription } of this.clients.values()) {
-      subscription.symbols.forEach(s => allSymbols.add(s));
-      subscription.exchanges.forEach(e => allExchanges.add(e));
+      subscription.symbols.forEach((s) => allSymbols.add(s));
+      subscription.exchanges.forEach((e) => allExchanges.add(e));
     }
 
     if (allSymbols.size === 0 || allExchanges.size === 0) return;
 
-    try {
-      // Fetch prices for all symbols/exchanges
-      for (const symbol of allSymbols) {
-        const prices = await ccxtService.getPricesFromMultipleExchanges(
-          symbol,
-          Array.from(allExchanges)
-        );
+    const exchangeList = Array.from(allExchanges);
 
-        // Broadcast to subscribed clients
-        for (const [clientId, clientData] of this.clients.entries()) {
+    // Fetch every symbol's prices across the union of subscribed exchanges,
+    // in parallel, once per tick.
+    const symbolList = Array.from(allSymbols);
+    const priceResults = await Promise.allSettled(
+      symbolList.map((symbol) => ccxtService.getPricesFromMultipleExchanges(symbol, exchangeList))
+    );
+
+    const pricesBySymbol = new Map<string, Record<string, any>>();
+    symbolList.forEach((symbol, idx) => {
+      const result = priceResults[idx];
+      if (result.status === 'fulfilled') {
+        pricesBySymbol.set(symbol, result.value);
+      } else {
+        logger.debug(`Price fetch failed for ${symbol}:`, (result.reason as Error)?.message);
+      }
+    });
+
+    this.broadcastPrices(pricesBySymbol);
+    this.checkArbitrageOpportunities(pricesBySymbol);
+  }
+
+  /**
+   * Broadcast current prices to all subscribed clients using already-fetched data.
+   */
+  private broadcastPrices(pricesBySymbol: Map<string, Record<string, any>>): void {
+    for (const [symbol, prices] of pricesBySymbol.entries()) {
+      for (const clientData of this.clients.values()) {
+        const { subscription, ws } = clientData;
+        if (!subscription.symbols.has(symbol)) continue;
+        if (ws.readyState !== WebSocket.OPEN) continue;
+
+        for (const [exchange, priceData] of Object.entries(prices)) {
+          if (!subscription.exchanges.has(exchange) || !priceData) continue;
+
+          this.sendToClient(ws, {
+            type: 'price',
+            symbol,
+            exchange,
+            bid: (priceData as any).bid,
+            ask: (priceData as any).ask,
+            timestamp: (priceData as any).timestamp || Date.now()
+          });
+        }
+      }
+    }
+  }
+
+  /**
+   * Check for arbitrage opportunities using already-fetched data and alert clients.
+   */
+  private checkArbitrageOpportunities(pricesBySymbol: Map<string, Record<string, any>>): void {
+    for (const [symbol, prices] of pricesBySymbol.entries()) {
+      const opportunities = this.findArbitrageOpportunities(symbol, prices);
+      if (opportunities.length === 0) continue;
+
+      for (const opportunity of opportunities) {
+        for (const clientData of this.clients.values()) {
           const { subscription, ws } = clientData;
           if (!subscription.symbols.has(symbol)) continue;
+          if (ws.readyState !== WebSocket.OPEN) continue;
 
-          for (const [exchange, priceData] of Object.entries(prices)) {
-            if (!subscription.exchanges.has(exchange)) continue;
-            if (!priceData) continue;
-
-            const update: PriceUpdate = {
-              type: 'price',
-              symbol,
-              exchange,
-              bid: priceData.bid,
-              ask: priceData.ask,
-              timestamp: priceData.timestamp || Date.now()
-            };
-
-            if (ws && ws.readyState === WebSocket.OPEN) {
-              this.sendToClient(ws, update);
-            }
-          }
+          this.sendToClient(ws, {
+            type: 'arbitrage',
+            symbol: opportunity.symbol,
+            buyExchange: opportunity.buyExchange,
+            sellExchange: opportunity.sellExchange,
+            buyPrice: opportunity.buyPrice,
+            sellPrice: opportunity.sellPrice,
+            spreadPct: opportunity.spreadPct,
+            profit: opportunity.profit,
+            timestamp: opportunity.timestamp
+          } as any);
         }
       }
-    } catch (error: any) {
-      logger.error('Error broadcasting prices:', error.message);
     }
   }
 
   /**
-   * Check for arbitrage opportunities and alert clients
+   * Find arbitrage opportunities for a symbol from already-fetched prices
+   * (no network call here anymore — FIX #3).
    */
-  private async checkArbitrageOpportunities(): Promise<void> {
-    if (this.clients.size === 0) return;
-
-    // Collect all unique symbols
-    const allSymbols = new Set<string>();
-    for (const { subscription } of this.clients.values()) {
-      subscription.symbols.forEach(s => allSymbols.add(s));
-    }
-
-    if (allSymbols.size === 0) return;
-
-    try {
-      // Check each symbol for arbitrage
-      for (const symbol of allSymbols) {
-        const opportunities = await this.findArbitrageOpportunities(symbol);
-
-        // Broadcast arbitrage alerts to all clients
-        for (const opportunity of opportunities) {
-          for (const [clientId, clientData] of this.clients.entries()) {
-            const { subscription, ws } = clientData;
-            if (!subscription.symbols.has(symbol)) continue;
-
-            if (ws && ws.readyState === WebSocket.OPEN) {
-              this.sendToClient(ws, {
-                type: 'arbitrage',
-                symbol: opportunity.symbol,
-                buyExchange: opportunity.buyExchange,
-                sellExchange: opportunity.sellExchange,
-                buyPrice: opportunity.buyPrice,
-                sellPrice: opportunity.sellPrice,
-                spreadPct: opportunity.spreadPct,
-                profit: opportunity.profit,
-                timestamp: opportunity.timestamp
-              });
-            }
-          }
-        }
-      }
-    } catch (error: any) {
-      logger.error('Error checking arbitrage:', error.message);
-    }
-  }
-
-  /**
-   * Find arbitrage opportunities for a symbol
-   */
-  private async findArbitrageOpportunities(symbol: string): Promise<ArbitrageOpportunity[]> {
+  private findArbitrageOpportunities(symbol: string, prices: Record<string, any>): ArbitrageOpportunity[] {
     const opportunities: ArbitrageOpportunity[] = [];
 
     try {
-      // Get all enabled exchanges
-      const exchanges = await ccxtService.getAvailableExchanges();
-
-      // Get prices from all exchanges
-      const prices = await ccxtService.getPricesFromMultipleExchanges(symbol, exchanges);
-
-      // Find pairs with spreads > threshold
       const exchangeList = Object.entries(prices)
-        .filter(([_, priceData]) => priceData !== null)
+        .filter(([, priceData]) => priceData !== null && priceData !== undefined)
         .map(([exchange, priceData]) => ({
           exchange,
           bid: (priceData as any).bid,
           ask: (priceData as any).ask
         }))
-        .sort((a, b) => a.ask - b.ask); // Sort by ask price
+        .filter((e) => Number.isFinite(e.bid) && Number.isFinite(e.ask) && e.ask > 0)
+        .sort((a, b) => a.ask - b.ask);
 
-      // Check each pair
       for (let i = 0; i < exchangeList.length; i++) {
         for (let j = i + 1; j < exchangeList.length; j++) {
-          const buyEx = exchangeList[i]; // Lower ask price (good for buying)
-          const sellEx = exchangeList[j]; // Higher bid price (good for selling)
+          const buyEx = exchangeList[i];
+          const sellEx = exchangeList[j];
 
           const spreadPct = ((sellEx.bid - buyEx.ask) / buyEx.ask) * 100;
 
-          // Only alert if spread exceeds threshold
           if (spreadPct > this.arbitrageThreshold) {
-            // Debounce alerts for same pair
             const pairKey = `${symbol}:${buyEx.exchange}-${sellEx.exchange}`;
             const lastAlert = this.lastArbitrageAlerts.get(pairKey) || 0;
 
@@ -349,7 +422,7 @@ class PriceStreamServer {
                 buyPrice: buyEx.ask,
                 sellPrice: sellEx.bid,
                 spreadPct,
-                profit: (sellEx.bid - buyEx.ask) * 100, // Profit on 100 coins
+                profit: (sellEx.bid - buyEx.ask) * 100,
                 timestamp: Date.now()
               });
 
@@ -374,9 +447,7 @@ class PriceStreamServer {
   private sendToClient(ws: WebSocket, message: PriceUpdate): void {
     if (ws.readyState === WebSocket.OPEN) {
       ws.send(JSON.stringify(message), (error) => {
-        if (error) {
-          logger.error('Error sending message to client:', error);
-        }
+        if (error) logger.error('Error sending message to client:', error);
       });
     }
   }
@@ -386,24 +457,15 @@ class PriceStreamServer {
    */
   broadcastToAll(message: PriceUpdate): void {
     if (!this.wss) return;
-
     for (const { ws } of this.clients.values()) {
-      if (ws.readyState === WebSocket.OPEN) {
-        ws.send(JSON.stringify(message));
-      }
+      this.sendToClient(ws, message);
     }
   }
 
-  /**
-   * Get number of connected clients
-   */
   getClientCount(): number {
     return this.clients.size;
   }
 
-  /**
-   * Get server statistics
-   */
   getStats(): {
     clientCount: number;
     totalSubscriptions: number;
@@ -416,8 +478,8 @@ class PriceStreamServer {
 
     for (const { subscription } of this.clients.values()) {
       totalSubscriptions += subscription.symbols.size + subscription.exchanges.size;
-      subscription.symbols.forEach(s => uniqueSymbols.add(s));
-      subscription.exchanges.forEach(e => uniqueExchanges.add(e));
+      subscription.symbols.forEach((s) => uniqueSymbols.add(s));
+      subscription.exchanges.forEach((e) => uniqueExchanges.add(e));
     }
 
     return {
@@ -426,6 +488,30 @@ class PriceStreamServer {
       uniqueSymbols: uniqueSymbols.size,
       uniqueExchanges: uniqueExchanges.size
     };
+  }
+
+  /**
+   * FIX #6: graceful shutdown — clears intervals and closes all sockets/server.
+   */
+  async shutdown(): Promise<void> {
+    logger.info('[PriceStreamServer] Shutting down...');
+    this.stopPriceStreaming();
+
+    for (const { ws } of this.clients.values()) {
+      try {
+        ws.close(1001, 'Server shutting down');
+      } catch {
+        // ignore
+      }
+    }
+    this.clients.clear();
+
+    await new Promise<void>((resolve) => {
+      if (!this.wss) return resolve();
+      this.wss.close(() => resolve());
+    });
+
+    logger.info('[PriceStreamServer] Shutdown complete');
   }
 }
 

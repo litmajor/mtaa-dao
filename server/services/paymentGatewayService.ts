@@ -1,6 +1,14 @@
 /**
  * PAYMENT GATEWAY SERVICE
- * Resilient multi-provider payment orchestration core engine including Kotani Pay
+ * Resilient multi-provider payment orchestration core engine 
+ *
+ * CHANGES:
+ * - Replaced local idempotencyManager with SharedIdempotencyManager for 
+ *   cross-service duplicate-request prevention.
+ * - Validation now happens BEFORE idempotency lock acquisition.
+ * - Error classification uses structured PaymentErrorCode first, 
+ *   heuristic text-parsing second.
+ * - Recovery workflow trigger receives structured error metadata.
  */
 
 import { db } from '../storage';
@@ -18,7 +26,11 @@ import {
   DEFAULT_RETRY_POLICIES
 } from './retryService';
 import { PaymentErrorMonitoringService } from './paymentErrorMonitoringService';
-import { distributedLockManager, idempotencyManager } from './concurrencyControl';
+import { sharedIdempotencyManager } from './sharedIdempotencyManager';
+import { paymentRecoveryWorkflowService } from './paymentRecoveryWorkflowService';
+import { commandBus } from '../domain/setup';
+import { PaymentCommandTypes } from '../domain/payments/PaymentCommands';
+import crypto from 'crypto';
 
 export interface PaymentGatewayConfig {
   provider: 'flutterwave' | 'paystack' | 'mpesa' | 'mtn' | 'airtel' | 'stripe' | 'kotanipay';
@@ -61,9 +73,8 @@ export class PaymentGatewayService {
   }
 
   private initializeProviders() {
-    // FIX: Appended kotanipay directly into the service environment validation block
     const environments = ['flutterwave', 'paystack', 'mpesa', 'mtn', 'airtel', 'stripe', 'kotanipay'] as const;
-    
+
     for (const provider of environments) {
       const upper = provider.toUpperCase();
       const pubKey = process.env[`${upper}_PUBLIC_KEY`] || process.env[`${upper}_CONSUMER_KEY`];
@@ -81,9 +92,6 @@ export class PaymentGatewayService {
     }
   }
 
-  /**
-   * Universal Resilient Fetch Wrapper protecting system threads against hanging gateway sockets
-   */
   private async requestWithTimeout(url: string, options: RequestInit, timeoutMs = 25000): Promise<Response> {
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
@@ -101,28 +109,118 @@ export class PaymentGatewayService {
     }
   }
 
-  async initiateDeposit(provider: string, request: PaymentRequest & { idempotencyKey?: string }): Promise<PaymentResponse | ReturnType<typeof PaymentErrorHandler.toResponse>> {
+  /**
+   * Maps a provider failure to a coarse error category the recovery workflow 
+   * can pattern-match. Uses structured codes first, heuristics second.
+   */
+  private classifyProviderFailure(error: PaymentError | Error | any): string {
+    if (error instanceof PaymentError) {
+      switch (error.code) {
+        case PaymentErrorCode.TIMEOUT: return 'TIMEOUT';
+        case PaymentErrorCode.RATE_LIMIT_EXCEEDED: return 'RATE_LIMIT_EXCEEDED';
+        case PaymentErrorCode.INSUFFICIENT_FUNDS: return 'INSUFFICIENT_FUNDS';
+        case PaymentErrorCode.SERVICE_UNAVAILABLE: return 'SERVICE_UNAVAILABLE';
+        case PaymentErrorCode.PROVIDER_API_ERROR: return 'PROVIDER_API_ERROR';
+        default: return 'PROVIDER_UNKNOWN_ERROR';
+      }
+    }
+
+    const m = (error?.message || '').toLowerCase();
+    if (m.includes('timeout') || m.includes('timed out')) return 'TIMEOUT';
+    if (m.includes('rate limit')) return 'RATE_LIMIT_EXCEEDED';
+    if (m.includes('insufficient')) return 'INSUFFICIENT_FUNDS';
+    if (m.includes('circuit') || m.includes('unavailable')) return 'SERVICE_UNAVAILABLE';
+    if (m.includes('provider') || m.includes('gateway')) return 'PROVIDER_ERROR';
+    return 'PROVIDER_UNKNOWN_ERROR';
+  }
+
+  private async triggerRecoveryWorkflow(
+    operation: 'deposit' | 'withdrawal',
+    provider: string,
+    request: PaymentRequest,
+    reference: string,
+    amount: number,
+    error: PaymentError | Error | any
+  ): Promise<void> {
+    try {
+      await paymentRecoveryWorkflowService.createRecoveryWorkflow(reference, request.userId, {
+        errorCode: this.classifyProviderFailure(error),
+        amount,
+        currency: request.currency,
+        provider,
+        operation,
+        method: request.method,
+        metadata: request.metadata
+      });
+    } catch (recoveryErr) {
+      logger.error('[GATEWAY] Failed to hand off failed payment to recovery workflow', {
+        recoveryErr,
+        reference,
+        provider,
+        operation
+      });
+    }
+  }
+
+  async initiateDeposit(
+    provider: string, 
+    request: PaymentRequest & { idempotencyKey?: string }
+  ): Promise<PaymentResponse | ReturnType<typeof PaymentErrorHandler.toResponse>> {
+    
+    // 1. VALIDATE FIRST (no lock needed for invalid input)
     const validProvider = PaymentValidator.validateProvider(provider);
     const validAmount = PaymentValidator.validateAmount(request.amount);
     const validUserId = PaymentValidator.validateUserId(request.userId);
     const validCurrency = PaymentValidator.validateCurrency(request.currency);
 
-    const phoneFingerprint = request.metadata?.phone ? `:${request.metadata.phone.replace(/\D/g, '').slice(-9)}` : '';
-    const idempotencyKey = request.idempotencyKey || `deposit:${validUserId}:${validAmount}:${validCurrency}${phoneFingerprint}`;
-    
-    try {
-      const cachedResult = await idempotencyManager.getResult(idempotencyKey);
-      if (cachedResult) {
-        logger.info(`[IDEMPOTENCY CACHE HIT] Deposit processed for user ${validUserId}`, { idempotencyKey });
-        return cachedResult as PaymentResponse;
-      }
+    const phoneFingerprint = request.metadata?.phone 
+      ? `:${request.metadata.phone.replace(/\D/g, '').slice(-9)}` 
+      : '';
+    const idempotencyKey = request.idempotencyKey 
+      || `deposit:${validUserId}:${validAmount}:${validCurrency}${phoneFingerprint}`;
 
+    const validatedRequest: PaymentRequest = {
+      ...request,
+      userId: validUserId,
+      amount: validAmount.toString(),
+      currency: validCurrency
+    };
+
+    // 2. CHECK IDEMPOTENCY
+    const cached = await sharedIdempotencyManager.getResult(idempotencyKey);
+    if (cached === 'pending') {
+      return {
+        success: false,
+        transactionId: '',
+        reference: idempotencyKey,
+        status: 'processing',
+        message: 'This deposit is already being processed.'
+      };
+    }
+    if (cached && cached !== 'pending') {
+      logger.info(`[IDEMPOTENCY CACHE HIT] Deposit for user ${validUserId}`, { idempotencyKey });
+      return cached as PaymentResponse;
+    }
+
+    // 3. ACQUIRE LOCK
+    const acquired = await sharedIdempotencyManager.startProcessing(idempotencyKey);
+    if (!acquired) {
+      return {
+        success: false,
+        transactionId: '',
+        reference: idempotencyKey,
+        status: 'processing',
+        message: 'This deposit is already being processed.'
+      };
+    }
+
+    try {
       const config = this.configs.get(validProvider);
       if (!config) {
         throw PaymentErrorHandler.createError(
           PaymentErrorCode.PROVIDER_NOT_CONFIGURED,
           `Payment provider ${validProvider} configuration missing.`,
-          { provider: validProvider }
+          { operation: 'initiateDeposit', service: 'gateway', provider: validProvider }
         );
       }
 
@@ -130,17 +228,10 @@ export class PaymentGatewayService {
       if (validAmount > limits.dailyLimit) {
         throw PaymentErrorHandler.createError(
           PaymentErrorCode.DAILY_LIMIT_EXCEEDED,
-          `Transaction exceeds verification daily limit of ${limits.dailyLimit} ${validCurrency}`,
-          { amount: validAmount, limit: limits.dailyLimit, currency: validCurrency, tier: limits.tier }
+          `Transaction exceeds daily limit of ${limits.dailyLimit} ${validCurrency}`,
+          { operation: 'initiateDeposit', service: 'gateway', amount: validAmount, limit: limits.dailyLimit, currency: validCurrency, tier: limits.tier }
         );
       }
-
-      const validatedRequest = {
-        ...request,
-        userId: validUserId,
-        amount: validAmount.toString(),
-        currency: validCurrency
-      };
 
       const result = await RetryService.executeWithRetryAndTimeout(
         () => this.executeDeposit(validProvider, config, validatedRequest),
@@ -149,16 +240,23 @@ export class PaymentGatewayService {
         { provider: validProvider, userId: validUserId }
       );
 
-      await idempotencyManager.recordResult(idempotencyKey, result, 3600);
+      // Provider methods resolve with { success: false } on business errors.
+      // We must hand these off to recovery just like thrown errors.
+      if (!result.success) {
+        await this.triggerRecoveryWorkflow('deposit', validProvider, validatedRequest, result.reference, validAmount, 
+          new Error(result.message || 'Provider returned failure'));
+      }
+
+      await sharedIdempotencyManager.recordResult(idempotencyKey, result, 3600);
       return result;
 
     } catch (error: any) {
       const category = error instanceof PaymentError ? 'validation' : 'provider';
-      const normalizedError = error instanceof PaymentError 
-        ? error 
-        : PaymentErrorHandler.handleProviderError(validProvider, error, { operation: 'initiateDeposit' });
+      const normalizedError = error instanceof PaymentError
+        ? error
+        : PaymentErrorHandler.handleProviderError(validProvider, error, { operation: 'initiateDeposit', service: 'gateway' });
 
-      logger.error('Deposit initiation workflow aborted', {
+      logger.error('Deposit initiation aborted', {
         code: normalizedError.code,
         message: normalizedError.message,
         provider: validProvider
@@ -176,14 +274,229 @@ export class PaymentGatewayService {
           retryCount: 0,
           statusCode: normalizedError.statusCode,
           message: normalizedError.message,
-          context: normalizedError.metadata,
+          context: normalizedError.context,
         });
       } catch (monitorErr) {
-        logger.error('Telemetry logging failed alongside active gateway error resolution.', { monitorErr });
+        logger.error('Telemetry logging failed alongside active gateway error.', { monitorErr });
       }
+
+      // Only retryable provider failures go to recovery; validation failures do not.
+      if (category === 'provider') {
+        const syntheticReference = `FAILED-${validProvider}-${Date.now()}`;
+        await this.triggerRecoveryWorkflow('deposit', validProvider, validatedRequest, syntheticReference, validAmount, normalizedError);
+      }
+
+      const response = PaymentErrorHandler.toResponse(normalizedError);
+      await sharedIdempotencyManager.recordResult(idempotencyKey, response, 3600);
+      return response;
+    }
+  }
+
+  async initiateWithdrawal(
+    provider: string, 
+    request: PaymentRequest & { idempotencyKey?: string }
+  ): Promise<PaymentResponse | ReturnType<typeof PaymentErrorHandler.toResponse>> {
+    
+    const validProvider = PaymentValidator.validateProvider(provider);
+    const validAmount = PaymentValidator.validateAmount(request.amount);
+    const validUserId = PaymentValidator.validateUserId(request.userId);
+    const validCurrency = PaymentValidator.validateCurrency(request.currency);
+
+    const phoneFingerprint = request.metadata?.phone 
+      ? `:${request.metadata.phone.replace(/\D/g, '').slice(-9)}` 
+      : '';
+    const idempotencyKey = request.idempotencyKey 
+      || `withdrawal:${validUserId}:${validAmount}:${validCurrency}${phoneFingerprint}`;
+
+    const validatedRequest: PaymentRequest = {
+      ...request,
+      userId: validUserId,
+      amount: validAmount.toString(),
+      currency: validCurrency
+    };
+
+    const cached = await sharedIdempotencyManager.getResult(idempotencyKey);
+    if (cached === 'pending') {
+      return {
+        success: false,
+        transactionId: '',
+        reference: idempotencyKey,
+        status: 'processing',
+        message: 'This withdrawal is already being processed.'
+      };
+    }
+    if (cached && cached !== 'pending') {
+      logger.info(`[IDEMPOTENCY CACHE HIT] Withdrawal for user ${validUserId}`, { idempotencyKey });
+      return cached as PaymentResponse;
+    }
+
+    const acquired = await sharedIdempotencyManager.startProcessing(idempotencyKey);
+    if (!acquired) {
+      return {
+        success: false,
+        transactionId: '',
+        reference: idempotencyKey,
+        status: 'processing',
+        message: 'This withdrawal is already being processed.'
+      };
+    }
+
+    try {
+      const config = this.configs.get(validProvider);
+      if (!config) {
+        throw PaymentErrorHandler.createError(
+          PaymentErrorCode.PROVIDER_NOT_CONFIGURED,
+          `Payment provider ${validProvider} configuration missing.`,
+          { operation: 'initiateWithdrawal', service: 'gateway', provider: validProvider }
+        );
+      }
+
+      const result = await RetryService.executeWithRetryAndTimeout(
+        () => this.executeWithdrawal(validProvider, config, validatedRequest),
+        DEFAULT_RETRY_POLICIES.provider,
+        30000,
+        { provider: validProvider, userId: validUserId }
+      );
+
+      if (!result.success) {
+        await this.triggerRecoveryWorkflow('withdrawal', validProvider, validatedRequest, result.reference, validAmount,
+          new Error(result.message || 'Provider returned failure'));
+      }
+
+      await sharedIdempotencyManager.recordResult(idempotencyKey, result, 3600);
+      return result;
+
+    } catch (error: any) {
+      const category = error instanceof PaymentError ? 'validation' : 'provider';
+      const normalizedError = error instanceof PaymentError
+        ? error
+        : PaymentErrorHandler.handleProviderError(validProvider, error, { operation: 'initiateWithdrawal', service: 'gateway' });
+
+      logger.error('Withdrawal initiation aborted', {
+        code: normalizedError.code,
+        message: normalizedError.message,
+        provider: validProvider
+      });
+
+      try {
+        PaymentErrorMonitoringService.recordError({
+          timestamp: new Date(),
+          errorCode: normalizedError.code,
+          errorCategory: category,
+          provider: validProvider,
+          operation: 'withdrawal',
+          userId: validUserId,
+          count: 1,
+          retryCount: 0,
+          statusCode: normalizedError.statusCode,
+          message: normalizedError.message,
+          context: normalizedError.context,
+        });
+      } catch (monitorErr) {
+        logger.error('Telemetry logging failed alongside active gateway error.', { monitorErr });
+      }
+
+      if (category === 'provider') {
+        const syntheticReference = `FAILED-${validProvider}-${Date.now()}`;
+        await this.triggerRecoveryWorkflow('withdrawal', validProvider, validatedRequest, syntheticReference, validAmount, normalizedError);
+      }
+
+      const response = PaymentErrorHandler.toResponse(normalizedError);
+      await sharedIdempotencyManager.recordResult(idempotencyKey, response, 3600);
+      return response;
+    }
+  }
+
+  async verifyTransaction(
+    provider: string, 
+    reference: string
+  ): Promise<PaymentResponse | ReturnType<typeof PaymentErrorHandler.toResponse>> {
+    const validProvider = PaymentValidator.validateProvider(provider);
+
+    if (!reference || reference.trim().length === 0) {
+      throw PaymentErrorHandler.createError(
+        PaymentErrorCode.TRANSACTION_NOT_FOUND,
+        'Reference is required for transaction verification.',
+        { operation: 'verifyTransaction', service: 'gateway', provider: validProvider }
+      );
+    }
+
+    try {
+      const [transaction] = await db
+        .select()
+        .from(paymentTransactions)
+        .where(eq(paymentTransactions.reference, reference))
+        .limit(1);
+
+      if (!transaction) {
+        throw PaymentErrorHandler.createError(
+          PaymentErrorCode.TRANSACTION_NOT_FOUND,
+          `Transaction with reference ${reference} was not found.`,
+          { operation: 'verifyTransaction', service: 'gateway', provider: validProvider, reference }
+        );
+      }
+
+      if (transaction.provider !== validProvider) {
+        throw PaymentErrorHandler.createError(
+          PaymentErrorCode.TRANSACTION_NOT_FOUND,
+          `No transaction found for provider ${validProvider} and reference ${reference}.`,
+          { operation: 'verifyTransaction', service: 'gateway', provider: validProvider, reference }
+        );
+      }
+
+      return {
+        success: transaction.status === 'completed',
+        transactionId: transaction.id,
+        reference: transaction.reference,
+        status: transaction.status as PaymentResponse['status'],
+        message: transaction.status === 'completed'
+          ? 'Transaction completed successfully.'
+          : `Transaction is currently ${transaction.status}.`
+      };
+    } catch (error: any) {
+      const normalizedError = error instanceof PaymentError
+        ? error
+        : PaymentErrorHandler.handleProviderError(validProvider, error, { operation: 'verifyTransaction', service: 'gateway', reference });
+
+      logger.error('Transaction verification aborted', {
+        code: normalizedError.code,
+        message: normalizedError.message,
+        provider: validProvider,
+        reference
+      });
 
       return PaymentErrorHandler.toResponse(normalizedError);
     }
+  }
+
+  private async executeWithdrawal(
+    provider: string,
+    config: PaymentGatewayConfig,
+    request: PaymentRequest
+  ): Promise<PaymentResponse> {
+    const reference = `WD-${Date.now()}-${Math.random().toString(36).substring(2, 11).toUpperCase()}`;
+
+    await this.recordTransaction(
+      request.userId,
+      reference,
+      'withdrawal',
+      request.amount,
+      request.currency,
+      provider,
+      'pending',
+      {
+        method: request.method,
+        metadata: request.metadata
+      }
+    );
+
+    return {
+      success: true,
+      transactionId: reference,
+      reference,
+      status: 'pending',
+      message: `Withdrawal request queued for ${provider}.`
+    };
   }
 
   private async executeDeposit(
@@ -195,20 +508,18 @@ export class PaymentGatewayService {
       case 'flutterwave': return this.flutterwaveDeposit(config, request);
       case 'paystack': return this.paystackDeposit(config, request);
       case 'mpesa': return this.mpesaDeposit(config, request);
-      case 'kotanipay': return this.kotaniPayDeposit(config, request); // FIX: Exposed structural route
+      case 'kotanipay': return this.kotaniPayDeposit(config, request);
       default:
         throw PaymentErrorHandler.createError(
           PaymentErrorCode.INVALID_PROVIDER,
-          `Provider operational channel [${provider}] is either unsupported or currently deactivated.`
+          `Provider operational channel [${provider}] is either unsupported or currently deactivated.`,
+          { operation: 'executeDeposit', service: 'gateway', provider }
         );
     }
   }
 
-  /**
-   * Enterprise M-Pesa Token Handler featuring atomic thread checks and an integrated TTL safety margin
-   */
   private async getMpesaToken(config: PaymentGatewayConfig): Promise<string> {
-    const bufferMarginMs = 5 * 60 * 1000; 
+    const bufferMarginMs = 5 * 60 * 1000;
     const now = Date.now();
 
     if (this.mpesaTokenCache && this.mpesaTokenCache.expiryTime > now + bufferMarginMs) {
@@ -232,12 +543,12 @@ export class PaymentGatewayService {
         }, 10000);
 
         if (!response.ok) {
-          throw new Error(`Safaricom Token Service returned status validation code: ${response.status}`);
+          throw new Error(`Safaricom Token Service returned status: ${response.status}`);
         }
 
         const data = await response.json();
         if (!data.access_token || !data.expires_in) {
-          throw new Error('Malformed token response footprint mapped from gateway authentication pipeline.');
+          throw new Error('Malformed token response from gateway authentication pipeline.');
         }
 
         this.mpesaTokenCache = {
@@ -254,22 +565,18 @@ export class PaymentGatewayService {
     return this.mpesaTokenPromise;
   }
 
-  /**
-   * Production-Hardened Kotani Pay Fiat-to-Crypto Core Integration
-   */
   private async kotaniPayDeposit(config: PaymentGatewayConfig, request: PaymentRequest): Promise<PaymentResponse> {
     const reference = `KOT-${Date.now()}-${Math.random().toString(36).substring(2, 11).toUpperCase()}`;
-    
+
     try {
       const rawPhone = request.metadata?.phone?.replace(/\D/g, '');
       if (!rawPhone) {
         throw new Error('Kotani Pay mobile money payment demands an explicit MSISDN destination.');
       }
 
-      // Kotani Pay crypto rails require explicit wallet target configurations to route digital assets safely
       const destinationWallet = request.metadata?.walletAddress || request.metadata?.publicKey;
       if (!destinationWallet) {
-        throw new Error('Kotani Pay transactions require an explicit on-chain target wallet address execution path.');
+        throw new Error('Kotani Pay transactions require an explicit on-chain target wallet address.');
       }
 
       const payload = {
@@ -277,11 +584,11 @@ export class PaymentGatewayService {
         amount: parseFloat(request.amount),
         currency: request.currency,
         phoneNumber: rawPhone,
-        network: request.metadata?.network || 'CELO', // e.g. CELO, POLYGON
-        stablecoin: request.metadata?.stablecoin || 'cUSD', // e.g. cUSD, USDC
+        network: request.metadata?.network || 'CELO',
+        stablecoin: request.metadata?.stablecoin || 'cUSD',
         walletAddress: destinationWallet,
         txRef: reference,
-        callbackUrl: request.callbackUrl || `${process.env.APP_URL}/api/payment-gateway/kotanipay/callback`
+        callbackUrl: request.callbackUrl || `${process.env.APP_URL}/api/payments/webhooks/kotanipay`
       };
 
       const apiUrl = config.environment === 'production'
@@ -333,18 +640,18 @@ export class PaymentGatewayService {
 
   private async mpesaDeposit(config: PaymentGatewayConfig, request: PaymentRequest): Promise<PaymentResponse> {
     const reference = `MPE-${Date.now()}-${Math.random().toString(36).substring(2, 11).toUpperCase()}`;
-    
+
     try {
       const rawPhone = request.metadata?.phone?.replace(/\D/g, '');
       if (!rawPhone || rawPhone.length < 9) {
-        throw new Error('STK push initialization requires a valid MSISDN compilation footprint.');
+        throw new Error('STK push initialization requires a valid MSISDN.');
       }
       const formattedPhone = rawPhone.startsWith('254') ? rawPhone : `254${rawPhone.slice(-9)}`;
 
       const shortcode = process.env.MPESA_SHORTCODE;
       const passkey = process.env.MPESA_PASSKEY;
       if (!shortcode || !passkey) {
-        throw new Error('Critical backend systemic failure: M-Pesa organizational parameters are unconfigured.');
+        throw new Error('Critical backend failure: M-Pesa organizational parameters are unconfigured.');
       }
 
       const authToken = await this.getMpesaToken(config);
@@ -360,7 +667,7 @@ export class PaymentGatewayService {
         PartyA: formattedPhone,
         PartyB: shortcode,
         PhoneNumber: formattedPhone,
-        CallBackURL: `${process.env.APP_URL}/api/payment-gateway/mpesa/callback`,
+        CallBackURL: `${process.env.APP_URL}/api/payments/webhooks/mpesa`,
         AccountReference: `MTAA-${request.userId.slice(0, 8).toUpperCase()}`,
         TransactionDesc: request.metadata?.description || 'DAO System Wallet Deposit Load'
       };
@@ -382,12 +689,12 @@ export class PaymentGatewayService {
 
       if (data.ResponseCode === '0') {
         await this.recordTransaction(
-          request.userId, 
-          reference, 
-          'deposit', 
-          request.amount, 
-          request.currency, 
-          'mpesa', 
+          request.userId,
+          reference,
+          'deposit',
+          request.amount,
+          request.currency,
+          'mpesa',
           'pending',
           { checkoutRequestID: data.CheckoutRequestID, merchantRequestID: data.MerchantRequestID }
         );
@@ -397,18 +704,17 @@ export class PaymentGatewayService {
           transactionId: data.CheckoutRequestID,
           reference,
           status: 'pending',
-          message: `STK push execution dispatches sent out to system customer endpoint: ${formattedPhone}.`
+          message: `STK push dispatched to customer endpoint: ${formattedPhone}.`
         };
       }
 
-      throw new Error(data.ResponseDescription || 'STK Push tracking pipeline interface rejected the request.');
+      throw new Error(data.ResponseDescription || 'STK Push interface rejected the request.');
     } catch (error: any) {
       try {
         await this.recordTransaction(request.userId, reference, 'deposit', request.amount, request.currency, 'mpesa', 'failed', { error: error.message });
       } catch (dbLogErr) {
-        logger.error('[CRITICAL LOSS OF STATE] Failed writing transaction breakdown log inside error resolution scope.', { dbLogErr, reference });
+        logger.error('[CRITICAL LOSS OF STATE] Failed writing M-Pesa breakdown log.', { dbLogErr, reference });
       }
-      
       return { success: false, transactionId: '', reference, status: 'failed', message: error.message };
     }
   }
@@ -416,7 +722,7 @@ export class PaymentGatewayService {
   private async paystackDeposit(config: PaymentGatewayConfig, request: PaymentRequest): Promise<PaymentResponse> {
     const reference = `PSK-${Date.now()}-${Math.random().toString(36).substring(2, 11).toUpperCase()}`;
     const exactAmountInKobo = Math.round(parseFloat(request.amount) * 100);
-    
+
     const payload = {
       email: request.metadata?.email || 'no-reply@mtaadao.com',
       amount: exactAmountInKobo,
@@ -463,7 +769,7 @@ export class PaymentGatewayService {
 
   private async flutterwaveDeposit(config: PaymentGatewayConfig, request: PaymentRequest): Promise<PaymentResponse> {
     const reference = `FLW-${Date.now()}-${Math.random().toString(36).substring(2, 11).toUpperCase()}`;
-    
+
     const payload = {
       tx_ref: reference,
       amount: request.amount,
@@ -529,30 +835,65 @@ export class PaymentGatewayService {
   ): Promise<void> {
     try {
       await RetryService.executeWithRetry(
-        () => db.insert(paymentTransactions).values({
-          userId,
-          reference,
-          type,
-          amount,
-          currency,
-          provider,
-          status,
-          metadata: { timestamp: new Date().toISOString(), ...additionalMetadata }
-        }),
+        async () => {
+          // 1. Dispatch CreatePayment to get it into the system initially
+          // (if it already exists, idempotency in the handler handles it)
+          const createResult = await commandBus.dispatch({
+            id: crypto.randomUUID(),
+            type: PaymentCommandTypes.CreatePayment,
+            actor: userId,
+            correlationId: crypto.randomUUID(),
+            timestamp: new Date(),
+            payload: {
+              reference,
+              userId,
+              provider: provider as 'paystack' | 'flutterwave' | 'mpesa',
+              amount,
+              currency: currency as 'KES' | 'NGN' | 'cUSD' | 'MTAA',
+              type: type as 'deposit' | 'dao_spawn_fee' | 'redemption',
+              metadata: { timestamp: new Date().toISOString(), ...additionalMetadata }
+            }
+          });
+
+          if (!createResult.success) {
+            logger.warn(`[PaymentGatewayService] Failed to create payment via CommandBus: ${createResult.error}`);
+            // Could be a duplicate error, which is fine, we continue to check status update below
+          }
+
+          // 2. If status is completed or failed (not just pending), dispatch the finalization command
+          if (status === 'completed') {
+            await commandBus.dispatch({
+              id: crypto.randomUUID(),
+              type: PaymentCommandTypes.CompletePayment,
+              actor: userId,
+              correlationId: createResult.correlationId || crypto.randomUUID(),
+              timestamp: new Date(),
+              payload: { reference, providerMetadata: additionalMetadata }
+            });
+          } else if (status === 'failed') {
+            await commandBus.dispatch({
+              id: crypto.randomUUID(),
+              type: PaymentCommandTypes.FailPayment,
+              actor: userId,
+              correlationId: createResult.correlationId || crypto.randomUUID(),
+              timestamp: new Date(),
+              payload: { reference, reason: additionalMetadata.error || 'Payment initialization failed', providerData: additionalMetadata }
+            });
+          }
+        },
         DEFAULT_RETRY_POLICIES.database,
         { operation: 'recordTransaction', reference }
       );
-      
-      logger.info('Database transaction state committed', { reference, status, amount });
+
+      logger.info('Database transaction state committed via CommandBus', { reference, status, amount });
     } catch (error: any) {
-      if (error.code === '23505' || error.constraint?.includes('unique') || error.message?.includes('unique')) {
-        logger.warn('Idempotent skip: Transaction log entry already compiled inside active schemas.', { reference });
+      if (error.code === '23505' || error.constraint?.includes('unique') || error.message?.includes('unique') || error.message?.includes('DUPLICATE')) {
+        logger.warn('Idempotent skip: Transaction log entry already compiled.', { reference });
         return;
       }
 
-      const dbError = PaymentErrorHandler.handleDatabaseError(error, 'recordTransaction', { reference, userId });
-      logger.error('Fatal data persistence error during structural logging execution.', { code: dbError.code, reference });
-      throw dbError;
+      logger.error('CRITICAL PAYMENT STATE LOSS: Failed committing transactional snapshot.', { error: error.message, reference });
+      throw error;
     }
   }
 
@@ -560,7 +901,7 @@ export class PaymentGatewayService {
     try {
       const user = await db.select().from(users).where(eq(users.id, userId)).limit(1);
       if (!user.length) {
-        throw PaymentErrorHandler.createError(PaymentErrorCode.INVALID_USER, 'Target user registry index missing.', { userId });
+        throw PaymentErrorHandler.createError(PaymentErrorCode.INVALID_USER, 'Target user registry index missing.', { operation: 'getTransactionLimits', service: 'gateway', userId });
       }
 
       const verificationLevel = (user[0] as any).verificationLevel || 'none';
@@ -574,9 +915,60 @@ export class PaymentGatewayService {
       return limits[verificationLevel as keyof typeof limits] || limits.none;
     } catch (error: any) {
       if (error instanceof PaymentError) throw error;
-      throw PaymentErrorHandler.handleDatabaseError(error, 'getTransactionLimits', { userId });
+      throw PaymentErrorHandler.handleDatabaseError(error, 'getTransactionLimits', { service: 'gateway', userId });
     }
   }
 }
 
 export const paymentGatewayService = new PaymentGatewayService();
+
+// ---------------------------------------------------------------------------
+// Wiring: register this service as the executor the recovery workflow calls
+// back into. One-way import direction avoids circular dependency.
+// ---------------------------------------------------------------------------
+paymentRecoveryWorkflowService.registerDepositExecutor(async (provider, request) => {
+  try {
+    const result = await paymentGatewayService.initiateDeposit(provider, request as any);
+    // If gateway returned an error-style response, normalize to ExecutorPaymentResponse
+    if ((result as any)?.success === false && (result as any).error) {
+      const err = (result as any).error;
+      return {
+        success: false,
+        transactionId: '',
+        reference: err.context?.reference || '',
+        status: 'failed',
+        message: err.message || 'Provider error'
+      };
+    }
+
+    // Otherwise assume it's a valid PaymentResponse
+    return result as any;
+  } catch (e: any) {
+    if (e instanceof PaymentError) {
+      return { success: false, transactionId: '', reference: e.context?.reference || '', status: 'failed', message: e.message };
+    }
+    return { success: false, transactionId: '', reference: '', status: 'failed', message: e?.message || 'Unknown error' };
+  }
+});
+
+paymentRecoveryWorkflowService.registerWithdrawalExecutor(async (provider, request) => {
+  try {
+    const result = await paymentGatewayService.initiateWithdrawal(provider, request as any);
+    if ((result as any)?.success === false && (result as any).error) {
+      const err = (result as any).error;
+      return {
+        success: false,
+        transactionId: '',
+        reference: err.context?.reference || '',
+        status: 'failed',
+        message: err.message || 'Provider error'
+      };
+    }
+    return result as any;
+  } catch (e: any) {
+    if (e instanceof PaymentError) {
+      return { success: false, transactionId: '', reference: e.context?.reference || '', status: 'failed', message: e.message };
+    }
+    return { success: false, transactionId: '', reference: '', status: 'failed', message: e?.message || 'Unknown error' };
+  }
+});

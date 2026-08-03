@@ -5,9 +5,8 @@ import { StrategyConfigurator } from './StrategyConfigurator';
 import { RiskControlPanel } from './RiskControlPanel';
 import { ExchangeSelector } from './ExchangeSelector';
 import { DeploymentPreview } from './DeploymentPreview';
-import { Lucide } from '../../src/lib/icons';
-const { Target, Settings, Shield, Globe, Eye, Loader, PartyPopper, Check } = (Lucide as any) || {};
-
+import { Target, Settings, Shield, Globe, Eye, Loader2, PartyPopper, Check } from 'lucide-react';
+const Loader = Loader2;
 type WizardStep = 'select' | 'configure' | 'risk' | 'exchanges' | 'preview' | 'deploying' | 'success';
 
 interface StrategyDeploymentWizardProps {

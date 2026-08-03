@@ -6,26 +6,25 @@
 import { createHash } from 'crypto';
 import { EventEmitter } from 'events';
 import { v4 as uuidv4 } from 'uuid';
-import {
+import type{
   SystemMetadata,
   ServiceInstance,
   ServiceDependency,
   DependencyGraph,
-  DependencyType,
   RiskZone,
   ArchitectureGap,
   ArchitectureValidationReport,
-  ServiceHealthStatus,
-  ServiceType,
-  PrivilegeLevel,
   OperationalFrameworkConfig,
 } from '../types';
+import {ServiceHealthStatus, ServiceType, PrivilegeLevel,  DependencyType} from '../types';
 import { getDiscovery } from '../discovery/discovery';
+import { promises as fs } from 'fs';
+import path from 'path';
 
 export class SystemMetadataModel extends EventEmitter {
   private metadata: SystemMetadata | null = null;
   private dependencyGraph: DependencyGraph | null = null;
-  private previousTopologyHash: string | null = null;
+  private previousTopologyHash?: string;
   private config: OperationalFrameworkConfig;
 
   constructor(config: OperationalFrameworkConfig) {
@@ -68,7 +67,7 @@ export class SystemMetadataModel extends EventEmitter {
       missingServices,
       unexpectedServices,
       topologyHash,
-      previousTopologyHash: this.previousTopologyHash,
+      previousTopologyHash: this.previousTopologyHash ?? undefined,
       changesSinceLastCapture,
     };
 
@@ -85,7 +84,7 @@ export class SystemMetadataModel extends EventEmitter {
       `[SystemMetadata] Generated metadata: ${discoveredServices.length} services, ${changesSinceLastCapture.length} changes`
     );
 
-    return this.metadata;
+    return this.metadata as SystemMetadata;
   }
 
   /**
@@ -126,7 +125,7 @@ export class SystemMetadataModel extends EventEmitter {
             targetServiceId: depId,
             type: this.inferDependencyType(service.type, depService.type),
             dataClassification: this.inferDataClassification(service.type, depService.type),
-            privilegeRequired: Math.max(service.privilegeLevel as any, depService.privilegeLevel as any),
+            privilegeRequired: this.getHigherPrivilege(service.privilegeLevel, depService.privilegeLevel),
             isAuthenticatedConnection: this.requiresAuthentication(service.type, depService.type),
             potentialEscalationPath: this.detectEscalationPath(service, depService),
             circularDependency: false, // Will be updated after full graph
@@ -165,6 +164,16 @@ export class SystemMetadataModel extends EventEmitter {
       cycles: detectedCycles,
       riskZones,
     };
+  }
+
+  /**
+   * Determine the higher privilege between two services based on an ordered list
+   */
+  private getHigherPrivilege(a: PrivilegeLevel, b: PrivilegeLevel): PrivilegeLevel {
+    const order = [PrivilegeLevel.ROOT, PrivilegeLevel.ADMIN, PrivilegeLevel.SERVICE, PrivilegeLevel.USER, PrivilegeLevel.GUEST];
+    const ia = order.indexOf(a);
+    const ib = order.indexOf(b);
+    return ia <= ib ? a : b;
   }
 
   /**
@@ -418,10 +427,12 @@ export class SystemMetadataModel extends EventEmitter {
       }
 
       // Response time changed significantly (> 50% delta)
-      if (Math.abs(currentService.lastResponseTime - previousService.lastResponseTime) > 
-          previousService.lastResponseTime * 0.5) {
+      // Compare responseTimes if available
+      const prevResp = previousService.responseTimes && previousService.responseTimes.length > 0 ? previousService.responseTimes[previousService.responseTimes.length - 1] : undefined;
+      const currResp = currentService.responseTimes && currentService.responseTimes.length > 0 ? currentService.responseTimes[currentService.responseTimes.length - 1] : undefined;
+      if (typeof prevResp === 'number' && typeof currResp === 'number' && Math.abs(currResp - prevResp) > prevResp * 0.5) {
         changeDetails.push(
-          `response_time: ${previousService.lastResponseTime}ms → ${currentService.lastResponseTime}ms`
+          `response_time: ${prevResp}ms → ${currResp}ms`
         );
       }
 
@@ -449,8 +460,10 @@ export class SystemMetadataModel extends EventEmitter {
       }
 
       // Last check time changed (indicates activity)
-      if (currentService.lastHealthCheck.getTime() !== previousService.lastHealthCheck.getTime()) {
-        const failureCount = currentService.consecutiveFailures - previousService.consecutiveFailures;
+      if (currentService.lastHealthCheck && previousService.lastHealthCheck && currentService.lastHealthCheck.getTime() !== previousService.lastHealthCheck.getTime()) {
+        const prevFailures = (previousService as any).consecutiveFailures ?? 0;
+        const currFailures = (currentService as any).consecutiveFailures ?? 0;
+        const failureCount = currFailures - prevFailures;
         if (failureCount !== 0) {
           changeDetails.push(`consecutive_failures: ${failureCount > 0 ? '+' : ''}${failureCount}`);
         }
@@ -554,6 +567,30 @@ export class ArchitectureValidator extends EventEmitter {
     });
 
     console.log(`[ArchitectureValidator] Validation complete: ${gaps.length} gaps found, status=${healthStatus}`);
+
+    // Emit full report event for listeners
+    try {
+      this.emit('validation:report', report);
+    } catch (err) {
+      console.error('[ArchitectureValidator] Error emitting validation:report event:', err);
+    }
+
+    // Persist full report to server/logs for easy inspection
+    (async () => {
+      try {
+        const outDir = path.join(process.cwd(), 'server', 'logs');
+        await fs.mkdir(outDir, { recursive: true });
+        const ts = report.generatedAt.toISOString().replace(/[:.]/g, '-');
+        const filename = `architecture-validation-${ts}.json`;
+        const filePath = path.join(outDir, filename);
+        await fs.writeFile(filePath, JSON.stringify(report, null, 2), 'utf8');
+        // also write a latest snapshot
+        await fs.writeFile(path.join(outDir, 'latest-architecture-validation.json'), JSON.stringify(report, null, 2), 'utf8');
+        console.log(`[ArchitectureValidator] Wrote validation report to ${filePath}`);
+      } catch (err) {
+        console.error('[ArchitectureValidator] Failed to write validation report:', err);
+      }
+    })();
 
     return report;
   }

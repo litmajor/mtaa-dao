@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { AdminLayout } from '@/components/admin/AdminLayout';
 import { AdminTable } from '@/components/admin/AdminTable';
-import { Search, Plus } from '../../src/lib/icons';
+import { Search, Plus } from 'lucide-react';
 import styles from './users.module.css';
 
 interface User {

@@ -293,7 +293,7 @@ export interface ArchitectureValidationReport {
   offlineServices: number;
   totalDependencies: number;
   brokenDependencies: number;
-  circularDependencies: number[];
+  circularDependencies: string[][];
   
   recommendations: string[];
 }

@@ -7,6 +7,15 @@
 import { Router, Request, Response, NextFunction } from "express";
 import { GatewayAgentService } from "../core/agents/gateway/service";
 import { getGatewayAgentService } from "../core/agents/gateway/service";
+import { marketDataClient } from "../services/marketDataClient";
+import { authenticateToken } from "../middleware/auth";
+import { rateLimitPerUser } from "../middleware/rateLimit";
+
+const gatewayAgentRateLimiter = rateLimitPerUser(
+  'gateway-agent',
+  Number(process.env.GATEWAY_RATE_LIMIT_MAX || 60),
+  process.env.GATEWAY_RATE_LIMIT_WINDOW || '1min',
+);
 
 // Local type definition to avoid circular imports
 interface GatewayResponse<T = any> {
@@ -32,6 +41,11 @@ export function createGatewayRoutes(service?: GatewayAgentService): Router {
   const router = Router();
   const gatewayService = service || getGatewayAgentService();
 
+  if (process.env.GATEWAY_REQUIRE_AUTH !== 'false') {
+    router.use(authenticateToken as any);
+  }
+  router.use(gatewayAgentRateLimiter as any);
+
   /**
    * GET /api/v1/gateway/prices
    * Request prices for multiple assets
@@ -45,6 +59,14 @@ export function createGatewayRoutes(service?: GatewayAgentService): Router {
    */
   router.get("/prices", async (req: Request, res: Response, next: NextFunction) => {
     try {
+      if (!gatewayService.isHealthy()) {
+        return sendResponse(res, 503, {
+          success: false,
+          error: 'Gateway service unavailable',
+          requestId: generateRequestId(),
+          timestamp: new Date().toISOString(),
+        });
+      }
       const requestId = generateRequestId();
       const startTime = Date.now();
 
@@ -62,26 +84,21 @@ export function createGatewayRoutes(service?: GatewayAgentService): Router {
       }
 
       // Request through message bus
-      const request = await gatewayService.requestPrices(
-        symbols,
-        chains,
-        preferredSource
+      const prices = await Promise.all(
+        symbols.map((symbol) => marketDataClient.getPrice(symbol, Number(chains?.[0] || 42220), preferredSource))
       );
-
-      // Wait a bit for response (in production, use response handlers/callbacks)
-      await new Promise((resolve) => setTimeout(resolve, 100));
 
       const latencyMs = Date.now() - startTime;
 
       return sendResponse(res, 200, {
         success: true,
-        data: request?.payload?.data || [],
+        data: prices.filter(Boolean),
         timestamp: new Date().toISOString(),
         requestId,
         metadata: {
-          source: preferredSource || "auto-failover",
+          source: preferredSource || "market-data-plane",
           latencyMs,
-          cacheHit: (request?.payload as any)?.cacheHit || false,
+          cacheHit: false,
         },
       });
     } catch (error) {
@@ -102,6 +119,14 @@ export function createGatewayRoutes(service?: GatewayAgentService): Router {
    */
   router.get("/liquidity", async (req: Request, res: Response, next: NextFunction) => {
     try {
+      if (!gatewayService.isHealthy()) {
+        return sendResponse(res, 503, {
+          success: false,
+          error: 'Gateway service unavailable',
+          requestId: generateRequestId(),
+          timestamp: new Date().toISOString(),
+        });
+      }
       const requestId = generateRequestId();
       const startTime = Date.now();
 
@@ -118,21 +143,23 @@ export function createGatewayRoutes(service?: GatewayAgentService): Router {
         });
       }
 
-      const request = await gatewayService.requestLiquidity(pools, protocols, chain);
-
-      await new Promise((resolve) => setTimeout(resolve, 100));
+      const liquidity = await Promise.all(
+        (pools.length ? pools : ['default']).map((pool) =>
+          marketDataClient.getLiquidity(pool, pool, Number(chain === 'celo' ? 42220 : 1))
+        )
+      );
 
       const latencyMs = Date.now() - startTime;
 
       return sendResponse(res, 200, {
         success: true,
-        data: request?.payload?.data || [],
+        data: liquidity.filter(Boolean),
         timestamp: new Date().toISOString(),
         requestId,
         metadata: {
-          source: protocols.join(","),
+          source: protocols.join(",") || 'market-data-plane',
           latencyMs,
-          cacheHit: (request?.payload as any)?.cacheHit || false,
+          cacheHit: false,
         },
       });
     } catch (error) {
@@ -153,6 +180,14 @@ export function createGatewayRoutes(service?: GatewayAgentService): Router {
    */
   router.get("/apy", async (req: Request, res: Response, next: NextFunction) => {
     try {
+      if (!gatewayService.isHealthy()) {
+        return sendResponse(res, 503, {
+          success: false,
+          error: 'Gateway service unavailable',
+          requestId: generateRequestId(),
+          timestamp: new Date().toISOString(),
+        });
+      }
       const requestId = generateRequestId();
       const startTime = Date.now();
 
@@ -202,6 +237,14 @@ export function createGatewayRoutes(service?: GatewayAgentService): Router {
    */
   router.get("/risk", async (req: Request, res: Response, next: NextFunction) => {
     try {
+      if (!gatewayService.isHealthy()) {
+        return sendResponse(res, 503, {
+          success: false,
+          error: 'Gateway service unavailable',
+          requestId: generateRequestId(),
+          timestamp: new Date().toISOString(),
+        });
+      }
       const requestId = generateRequestId();
       const startTime = Date.now();
 
@@ -253,6 +296,14 @@ export function createGatewayRoutes(service?: GatewayAgentService): Router {
    */
   router.get("/price/:symbol", async (req: Request, res: Response, next: NextFunction) => {
     try {
+      if (!gatewayService.isHealthy()) {
+        return sendResponse(res, 503, {
+          success: false,
+          error: 'Gateway service unavailable',
+          requestId: generateRequestId(),
+          timestamp: new Date().toISOString(),
+        });
+      }
       const requestId = generateRequestId();
       const startTime = Date.now();
 
@@ -269,21 +320,19 @@ export function createGatewayRoutes(service?: GatewayAgentService): Router {
         });
       }
 
-      const request = await gatewayService.requestPrices([symbol], chains, source);
-
-      await new Promise((resolve) => setTimeout(resolve, 100));
+      const price = await marketDataClient.getPrice(symbol, Number(chains?.[0] || 42220), source);
 
       const latencyMs = Date.now() - startTime;
 
       return sendResponse(res, 200, {
         success: true,
-        data: request?.payload?.data?.[0] || null,
+        data: price || null,
         timestamp: new Date().toISOString(),
         requestId,
         metadata: {
-          source: source || "auto-failover",
+          source: source || "market-data-plane",
           latencyMs,
-          cacheHit: (request?.payload as any)?.cacheHit || false,
+          cacheHit: false,
         },
       });
     } catch (error) {
@@ -300,6 +349,15 @@ export function createGatewayRoutes(service?: GatewayAgentService): Router {
   router.get("/health", async (req: Request, res: Response, next: NextFunction) => {
     try {
       const requestId = generateRequestId();
+      if (!gatewayService.isHealthy()) {
+        return sendResponse(res, 503, {
+          success: false,
+          error: 'Gateway service unavailable',
+          timestamp: new Date().toISOString(),
+          requestId,
+        });
+      }
+
       const status = await gatewayService.getStatus();
 
       return sendResponse(res, 200, {

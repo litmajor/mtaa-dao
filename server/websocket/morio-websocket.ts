@@ -1,43 +1,71 @@
 /**
  * Morio Data Hub WebSocket Integration
- * 
+ *
  * Provides real-time data streaming to dashboard clients
+ *
+ * FIXES APPLIED:
+ * 1. Distinct Socket.IO `path` — prevents collision with Admin/Gateway/
+ *    Coordinator WS servers on the same HTTP server.
+ * 2. subscribe:dashboard / subscribe:alerts / subscribe:section now check
+ *    that the authenticated user actually belongs to the requested daoId
+ *    (or is a superuser) before joining that DAO's room. Previously any
+ *    authenticated user could pass an arbitrary daoId and receive another
+ *    DAO's dashboard/alert stream.
+ * 3. Periodic updates now target the actual rooms clients joined
+ *    (`this.io.to(room).emit(...)`) instead of `this.io.emit(...)`, which
+ *    broadcast every tick to literally every connected socket regardless
+ *    of subscription — making the room structure meaningless for anything
+ *    except the one-time initial push.
+ * 4. DAO-scoped alert rooms now get their own periodic refresh (previously
+ *    only the global alerts feed was ever refreshed on an interval; a
+ *    DAO-specific subscriber got one push at subscribe time and nothing
+ *    after that).
+ * 5. subscribe:section validates `section` against a known enum.
  */
 
 import { Server as SocketIOServer } from 'socket.io';
 import { Server as HttpServer } from 'http';
-import { authenticateToken } from '../middleware/auth';
+import socketAuthMiddleware from '../middleware/socketAuth';
 import { morioDataHubService } from '../services/morio-data-hub.service';
+import { WS_PATHS, MorioWS } from './websocket-events';
+import { corsAllowedOrigins } from '../../shared/config.js';
+
+const KNOWN_SECTIONS = new Set(['scry', 'kaizen', 'lumen', 'agents', 'treasury', 'governance']);
 
 export class MorioWebSocketServer {
   private io: SocketIOServer;
   private updateIntervals: Map<string, NodeJS.Timeout> = new Map();
+  /** Tracks which DAO-scoped alert rooms currently have at least one subscriber. */
+  private activeAlertDaoRooms: Set<string> = new Set();
 
   constructor(httpServer: HttpServer) {
+    const socketCorsOrigins = corsAllowedOrigins.length > 0
+      ? corsAllowedOrigins
+      : ['http://localhost:5173'];
+
     this.io = new SocketIOServer(httpServer, {
+      // FIX #1
+      path: WS_PATHS.MORIO,
       cors: {
-        origin: process.env.FRONTEND_URL || 'http://localhost:5173',
+        origin: socketCorsOrigins,
         credentials: true
       }
     });
 
-    this.setupMiddleware();
+    this.io.use(socketAuthMiddleware);
     this.setupEventHandlers();
     this.startPeriodicUpdates();
   }
 
   /**
-   * Setup authentication middleware
+   * FIX #2: verify the authenticated user actually belongs to daoId (or is
+   * a superuser) before allowing them to join a DAO-scoped room. Global
+   * scope ('global') requires no DAO membership.
    */
-  private setupMiddleware() {
-    this.io.use((socket, next) => {
-      const token = socket.handshake.auth.token;
-      if (!token) {
-        return next(new Error('Authentication token required'));
-      }
-      // Token validation would happen here
-      next();
-    });
+  private canAccessDao(user: any, daoId: string): boolean {
+    if (daoId === MorioWS.GLOBAL_SCOPE) return true;
+    if (!user) return false;
+    return !!user.isSuperuser || !!user.daos?.includes(daoId);
   }
 
   /**
@@ -45,62 +73,88 @@ export class MorioWebSocketServer {
    */
   private setupEventHandlers() {
     this.io.on('connection', (socket) => {
+      const user = (socket.data as any)?.user;
       console.log(`Client connected: ${socket.id}`);
 
-      // Subscribe to dashboard updates
-      socket.on('subscribe:dashboard', async (daoId?: string) => {
-        socket.join(`dashboard:${daoId || 'global'}`);
-        console.log(`Client subscribed to dashboard: ${daoId || 'global'}`);
+      socket.on(MorioWS.ClientEvents.SUBSCRIBE_DASHBOARD, async (daoId?: string) => {
+        const scope = daoId || MorioWS.GLOBAL_SCOPE;
+        if (!this.canAccessDao(user, scope)) {
+          socket.emit(MorioWS.ServerEvents.ERROR, { message: `No access to DAO ${scope}` });
+          return;
+        }
 
-        // Send initial data
+        socket.join(MorioWS.Rooms.dashboard(scope));
+        console.log(`Client subscribed to dashboard: ${scope}`);
+
         try {
           const systemStatus = await morioDataHubService.getSystemStatus();
-          socket.emit('data:system-status', systemStatus);
+          socket.emit(MorioWS.ServerEvents.SYSTEM_STATUS, systemStatus);
         } catch (error) {
           console.error('Error sending initial system status:', error);
         }
       });
 
-      // Subscribe to real-time alerts
-      socket.on('subscribe:alerts', async (daoId?: string) => {
-        socket.join(`alerts:${daoId || 'global'}`);
-        console.log(`Client subscribed to alerts: ${daoId || 'global'}`);
+      socket.on(MorioWS.ClientEvents.SUBSCRIBE_ALERTS, async (daoId?: string) => {
+        const scope = daoId || MorioWS.GLOBAL_SCOPE;
+        if (!this.canAccessDao(user, scope)) {
+          socket.emit(MorioWS.ServerEvents.ERROR, { message: `No access to DAO ${scope}` });
+          return;
+        }
+
+        socket.join(MorioWS.Rooms.alerts(scope));
+        if (scope !== MorioWS.GLOBAL_SCOPE) {
+          // FIX #4: track this room so the periodic sweep also refreshes it
+          this.activeAlertDaoRooms.add(scope);
+        }
+        console.log(`Client subscribed to alerts: ${scope}`);
 
         try {
           const alerts = await morioDataHubService.getRealTimeAlerts(daoId);
-          socket.emit('data:alerts', alerts);
+          socket.emit(MorioWS.ServerEvents.ALERTS, alerts);
         } catch (error) {
           console.error('Error sending alerts:', error);
         }
       });
 
-      // Subscribe to performance metrics
-      socket.on('subscribe:performance', async () => {
-        socket.join('performance:global');
+      socket.on(MorioWS.ClientEvents.SUBSCRIBE_PERFORMANCE, async () => {
+        socket.join(MorioWS.Rooms.performanceGlobal());
         console.log('Client subscribed to performance metrics');
 
         try {
           const metrics = await morioDataHubService.getPerformanceMetrics();
-          socket.emit('data:performance', metrics);
+          socket.emit(MorioWS.ServerEvents.PERFORMANCE, metrics);
         } catch (error) {
           console.error('Error sending performance metrics:', error);
         }
       });
 
-      // Subscribe to specific section updates
-      socket.on('subscribe:section', (section: string, daoId?: string) => {
-        const roomName = `section:${section}:${daoId || 'global'}`;
+      socket.on(MorioWS.ClientEvents.SUBSCRIBE_SECTION, (section: string, daoId?: string) => {
+        // FIX #5: validate section against a known set
+        if (!KNOWN_SECTIONS.has(section)) {
+          socket.emit(MorioWS.ServerEvents.ERROR, { message: `Unknown section: ${section}` });
+          return;
+        }
+        const scope = daoId || MorioWS.GLOBAL_SCOPE;
+        if (!this.canAccessDao(user, scope)) {
+          socket.emit(MorioWS.ServerEvents.ERROR, { message: `No access to DAO ${scope}` });
+          return;
+        }
+
+        const roomName = MorioWS.Rooms.section(section, scope);
         socket.join(roomName);
         console.log(`Client subscribed to section: ${roomName}`);
       });
 
-      // Unsubscribe handlers
-      socket.on('unsubscribe:dashboard', (daoId?: string) => {
-        socket.leave(`dashboard:${daoId || 'global'}`);
+      socket.on(MorioWS.ClientEvents.UNSUBSCRIBE_DASHBOARD, (daoId?: string) => {
+        socket.leave(MorioWS.Rooms.dashboard(daoId || MorioWS.GLOBAL_SCOPE));
       });
 
-      socket.on('unsubscribe:alerts', (daoId?: string) => {
-        socket.leave(`alerts:${daoId || 'global'}`);
+      socket.on(MorioWS.ClientEvents.UNSUBSCRIBE_ALERTS, (daoId?: string) => {
+        const scope = daoId || MorioWS.GLOBAL_SCOPE;
+        socket.leave(MorioWS.Rooms.alerts(scope));
+        // Only stop the periodic per-DAO refresh once nobody's left in that room
+        const remaining = this.io.sockets.adapter.rooms.get(MorioWS.Rooms.alerts(scope))?.size || 0;
+        if (remaining === 0) this.activeAlertDaoRooms.delete(scope);
       });
 
       socket.on('disconnect', () => {
@@ -111,33 +165,47 @@ export class MorioWebSocketServer {
 
   /**
    * Start periodic updates
+   *
+   * FIX #3 + #4: broadcasts now go to the specific rooms clients joined,
+   * and DAO-scoped alert rooms get their own periodic refresh alongside
+   * the global feed.
    */
   private startPeriodicUpdates() {
-    // Update system status every 30 seconds
     const statusInterval = setInterval(async () => {
       try {
         const status = await morioDataHubService.getSystemStatus();
-        this.io.emit('data:system-status', status);
+        this.io.to(MorioWS.Rooms.dashboard(MorioWS.GLOBAL_SCOPE)).emit(MorioWS.ServerEvents.SYSTEM_STATUS, status);
       } catch (error) {
         console.error('Error broadcasting system status:', error);
       }
     }, 30000);
 
-    // Update performance metrics every 60 seconds
     const performanceInterval = setInterval(async () => {
       try {
         const metrics = await morioDataHubService.getPerformanceMetrics();
-        this.io.emit('data:performance', metrics);
+        this.io.to(MorioWS.Rooms.performanceGlobal()).emit(MorioWS.ServerEvents.PERFORMANCE, metrics);
       } catch (error) {
         console.error('Error broadcasting performance metrics:', error);
       }
     }, 60000);
 
-    // Update alerts every 15 seconds
     const alertsInterval = setInterval(async () => {
       try {
-        const alerts = await morioDataHubService.getRealTimeAlerts();
-        this.io.emit('data:alerts', alerts);
+        // Global feed
+        const globalAlerts = await morioDataHubService.getRealTimeAlerts();
+        this.io.to(MorioWS.Rooms.alerts(MorioWS.GLOBAL_SCOPE)).emit(MorioWS.ServerEvents.ALERTS, globalAlerts);
+
+        // FIX #4: refresh every DAO-scoped room that currently has subscribers
+        await Promise.all(
+          Array.from(this.activeAlertDaoRooms).map(async (daoId) => {
+            try {
+              const daoAlerts = await morioDataHubService.getRealTimeAlerts(daoId);
+              this.io.to(MorioWS.Rooms.alerts(daoId)).emit(MorioWS.ServerEvents.ALERTS, daoAlerts);
+            } catch (err) {
+              console.error(`Error broadcasting alerts for DAO ${daoId}:`, err);
+            }
+          })
+        );
       } catch (error) {
         console.error('Error broadcasting alerts:', error);
       }
@@ -148,54 +216,34 @@ export class MorioWebSocketServer {
     this.updateIntervals.set('alerts', alertsInterval);
   }
 
-  /**
-   * Broadcast event to specific room
-   */
   broadcastToRoom(room: string, event: string, data: any) {
     this.io.to(room).emit(event, data);
   }
 
-  /**
-   * Broadcast to dashboard subscribers
-   */
   broadcastDashboardUpdate(daoId: string, section: string, data: any) {
-    this.io.to(`dashboard:${daoId}`).emit(`update:${section}`, data);
+    this.io.to(MorioWS.Rooms.dashboard(daoId)).emit(`${MorioWS.ServerEvents.DASHBOARD_UPDATE_PREFIX}${section}`, data);
   }
 
-  /**
-   * Broadcast alert to subscribers
-   */
   broadcastAlert(daoId: string, alert: any) {
-    this.io.to(`alerts:${daoId}`).emit('new:alert', alert);
+    this.io.to(MorioWS.Rooms.alerts(daoId)).emit(MorioWS.ServerEvents.NEW_ALERT, alert);
   }
 
-  /**
-   * Get connected clients count
-   */
   getConnectedClientsCount(): number {
     return this.io.engine.clientsCount;
   }
 
-  /**
-   * Get clients in specific room
-   */
   getClientsInRoom(room: string): number {
     return this.io.sockets.adapter.rooms.get(room)?.size || 0;
   }
 
-  /**
-   * Shutdown WebSocket server
-   */
   shutdown() {
     this.updateIntervals.forEach(interval => clearInterval(interval));
     this.updateIntervals.clear();
+    this.activeAlertDaoRooms.clear();
     this.io.close();
   }
 }
 
-/**
- * Create and export WebSocket server instance
- */
 export function createMorioWebSocketServer(httpServer: HttpServer): MorioWebSocketServer {
   return new MorioWebSocketServer(httpServer);
 }

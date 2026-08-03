@@ -1,5 +1,6 @@
 import React, { useCallback, useMemo, useRef, useState } from 'react';
-import ReactFlow, { Background, Controls, MiniMap, addEdge, Connection, Edge, Node, applyNodeChanges } from 'reactflow';
+import ReactFlow, { Background, Controls, MiniMap, addEdge, applyNodeChanges } from 'reactflow';
+import type { Connection, Edge, Node } from 'reactflow';
 import 'reactflow/dist/style.css';
 import useStrategyGraph from '../../state/strategy-graph.store';
 import * as yukiApi from '../../api/yukiApi';

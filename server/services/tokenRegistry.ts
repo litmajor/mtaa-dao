@@ -108,10 +108,16 @@ class TokenRegistry {
     const __dirname = path.dirname(fileURLToPath(import.meta.url));
     const configPath = path.resolve(__dirname, 'tokens.config.json');
 
-    let config: TokenConfig;
+    let config: Partial<TokenConfig> | null = null;
     try {
       const raw = fs.readFileSync(configPath, 'utf-8');
-      config = JSON.parse(raw) as TokenConfig;
+      const parsed = JSON.parse(raw) as Partial<TokenConfig>;
+      config = {
+        native: Array.isArray(parsed.native) ? parsed.native : [],
+        stablecoins: Array.isArray(parsed.stablecoins) ? parsed.stablecoins : [],
+        wrapped: Array.isArray(parsed.wrapped) ? parsed.wrapped : [],
+        governance: Array.isArray(parsed.governance) ? parsed.governance : [],
+      };
     } catch (err) {
       logger.error(`[TokenRegistry] Failed to load tokens.config.json from ${configPath}:`, err);
       logger.warn('[TokenRegistry] Registry is empty — all lookups will return null / []');
@@ -122,10 +128,10 @@ class TokenRegistry {
     const now = new Date().toISOString();
 
     const allTokens: TokenMetadata[] = [
-      ...config.native,
-      ...config.stablecoins,
-      ...config.wrapped,
-      ...config.governance,
+      ...(config.native ?? []),
+      ...(config.stablecoins ?? []),
+      ...(config.wrapped ?? []),
+      ...(config.governance ?? []),
     ].map(t => ({ ...t, added: now } as TokenMetadata));
 
     for (const token of allTokens) {
@@ -135,8 +141,8 @@ class TokenRegistry {
     this.lastUpdated = Date.now();
     logger.info(
       `[TokenRegistry] Loaded ${allTokens.length} tokens ` +
-        `(${config.native.length} native, ${config.stablecoins.length} stables, ` +
-        `${config.wrapped.length} wrapped, ${config.governance.length} governance) ` +
+        `(${(config.native ?? []).length} native, ${(config.stablecoins ?? []).length} stables, ` +
+        `${(config.wrapped ?? []).length} wrapped, ${(config.governance ?? []).length} governance) ` +
         `from ${configPath}`
     );
   }
@@ -309,6 +315,34 @@ class TokenRegistry {
     this.filterCache.clear();
 
     logger.info(`[TokenRegistry] Token added/updated: ${token.symbol} on ${token.chain}`);
+  }
+
+  registerToken(token: Partial<TokenMetadata> & { symbol: string; name?: string; coingeckoId?: string; discoveredAt?: Date; source?: string }): void {
+    const normalizedSymbol = token.symbol.toUpperCase();
+    const normalizedToken: TokenMetadata = {
+      symbol: normalizedSymbol,
+      name: token.name ?? normalizedSymbol,
+      address: token.address ?? '',
+      decimals: token.decimals ?? 18,
+      chain: (token.chain ?? 'celo') as SupportedChain,
+      category: (token.category ?? 'utility') as TokenMetadata['category'],
+      added: token.added ?? new Date().toISOString(),
+      coingeckoId: token.coingeckoId,
+      description: token.description,
+      ...(token as Partial<TokenMetadata>),
+    } as TokenMetadata;
+
+    normalizedToken.symbol = normalizedSymbol;
+    normalizedToken.name = token.name ?? normalizedSymbol;
+    normalizedToken.address = token.address ?? '';
+    normalizedToken.decimals = token.decimals ?? 18;
+    normalizedToken.chain = (token.chain ?? 'celo') as SupportedChain;
+    normalizedToken.category = (token.category ?? 'utility') as TokenMetadata['category'];
+    normalizedToken.added = token.added ?? new Date().toISOString();
+    normalizedToken.coingeckoId = token.coingeckoId;
+    normalizedToken.description = token.description;
+
+    this.addToken(normalizedToken);
   }
 
   // ---------------------------------------------------------------------------

@@ -1,11 +1,10 @@
 import { EventEmitter } from 'events';
-import nodemailer from 'nodemailer';
 import TelegramBot from 'node-telegram-bot-api';
+import { EmailService } from './services/emailService';
 import { db } from './db';
 import { notifications } from '../shared/schema';
 import type { InferSelectModel } from 'drizzle-orm';
 import { storage } from './storage';
-import { getEventEmitter } from './middleware/websocket-event-emitter';
 
 interface PaymentNotification {
   type: 'payment_pending' | 'payment_success' | 'payment_failed' | 'payment_retry';
@@ -22,6 +21,9 @@ interface SystemNotification {
   message: string;
   priority?: 'low' | 'medium' | 'high' | 'urgent';
   metadata?: Record<string, any>;
+  persist?: boolean;
+  coalesceKey?: string;
+  coalesceWindowMs?: number;
 }
 
 interface NotificationChannel {
@@ -53,22 +55,12 @@ class NotificationService extends EventEmitter {
   }
 
   private subscribers = new Map<string, NotificationChannel>();
-  private emailTransporter: nodemailer.Transporter;
   private telegramBot: TelegramBot | null = null;
   private userTelegramMap = new Map<string, TelegramUser>();
+  private coalescedNotificationKeys = new Map<string, number>();
 
   constructor() {
     super();
-    // Initialize email transporter
-    this.emailTransporter = nodemailer.createTransport({
-      host: process.env.SMTP_HOST || 'smtp.gmail.com',
-      port: Number(process.env.SMTP_PORT) || 587,
-      secure: false,
-      auth: {
-        user: process.env.SMTP_USER,
-        pass: process.env.SMTP_PASS,
-      },
-    });
 
     // Initialize Telegram bot if token is provided
     const ttoken = process.env.TELEGRAM_BOT_TOKEN?.trim();
@@ -179,58 +171,63 @@ class NotificationService extends EventEmitter {
 
   async createNotification(notification: SystemNotification): Promise<NotificationRecord | null> {
     try {
-      // Store notification in database
-      const dbNotification = await storage.createNotification({
+      const shouldPersist = notification.persist !== false;
+      const coalesceKey = notification.coalesceKey;
+      const windowMs = notification.coalesceWindowMs ?? 60000;
+
+      if (coalesceKey) {
+        const lastSeen = this.coalescedNotificationKeys.get(coalesceKey);
+        const now = Date.now();
+        if (lastSeen && now - lastSeen < windowMs) {
+          return null;
+        }
+        this.coalescedNotificationKeys.set(coalesceKey, now);
+      }
+
+      let dbNotification: NotificationRecord | null = null;
+      if (shouldPersist) {
+        dbNotification = await storage.createNotification({
+          userId: notification.userId,
+          type: notification.type,
+          title: notification.title,
+          message: notification.message,
+          priority: notification.priority || 'medium',
+          metadata: notification.metadata || {},
+        });
+      }
+
+      if (shouldPersist) {
+        const preferences = await storage.getUserNotificationPreferences(notification.userId);
+
+        if (preferences?.emailNotifications) {
+          await this.sendEmailNotification(notification.userId, notification);
+        }
+
+        if (preferences?.pushNotifications) {
+          await this.sendPushNotification(notification.userId, notification);
+        }
+
+        if ((preferences as any)?.telegramNotifications) {
+          await this.sendTelegramNotification(notification.userId, notification);
+        }
+      }
+
+      const payload = {
+        ...(dbNotification ?? {}),
+        id: dbNotification?.id ?? `ephemeral-${Date.now()}-${Math.random().toString(16).slice(2)}`,
         userId: notification.userId,
         type: notification.type,
         title: notification.title,
         message: notification.message,
         priority: notification.priority || 'medium',
         metadata: notification.metadata || {},
-      });
+        ephemeral: !shouldPersist,
+      };
 
-      // Get user's notification preferences
-      const preferences = await storage.getUserNotificationPreferences(notification.userId);
-
-      // Send via different channels based on preferences
-      if (preferences?.emailNotifications) {
-        await this.sendEmailNotification(notification.userId, notification);
-      }
-
-      if (preferences?.pushNotifications) {
-        await this.sendPushNotification(notification.userId, notification);
-      }
-
-      if (preferences?.telegramNotifications) {
-        await this.sendTelegramNotification(notification.userId, notification);
-      }
-
-      // Emit real-time event
-      this.emit('notification_created', {
-        ...dbNotification,
-        userId: notification.userId
-      });
-
-      // Emit WebSocket event for real-time dashboard updates
-      try {
-        const wsEmitter = getEventEmitter();
-        wsEmitter.emitAlert(
-          notification.type,
-          notification.priority as any || 'medium',
-          notification.message,
-          notification.userId,
-          {
-            notificationId: dbNotification.id,
-            title: notification.title,
-            metadata: notification.metadata,
-          }
-        );
-      } catch (wsError) {
-        console.warn('Failed to emit WebSocket notification event:', wsError);
-      }
+      this.emit('notification_created', payload);
 
       console.log(`Notification created for user ${notification.userId}: ${notification.type}`);
-      return dbNotification;
+      return shouldPersist ? dbNotification : (payload as NotificationRecord | null);
     } catch (error) {
       console.error('Failed to create notification:', error);
       return null;
@@ -267,7 +264,7 @@ class NotificationService extends EventEmitter {
       // You would need to adjust preferences logic to include Telegram for payments
       // For now, assuming a user's preference to receive payment notifications via Telegram
       const userPreferences = await storage.getUserNotificationPreferences(recipient);
-      if (userPreferences?.telegramNotifications) {
+      if ((userPreferences as any)?.telegramNotifications) {
         await this.sendTelegramNotification(recipient, {
           userId: recipient,
           type: notification.type,
@@ -303,14 +300,12 @@ class NotificationService extends EventEmitter {
       const user = await storage.getUserById(userId);
       if (!user?.email) return;
 
-      const mailOptions = {
-        from: process.env.SMTP_FROM || 'noreply@mtaadao.com',
+      await EmailService.send({
         to: user.email,
         subject: notification.title,
         html: this.formatEmailTemplate(notification),
-      };
+      });
 
-      await this.emailTransporter.sendMail(mailOptions);
       console.log(`Email notification sent to ${user.email}`);
     } catch (error) {
       console.error('Failed to send email notification:', error);
@@ -433,8 +428,7 @@ class NotificationService extends EventEmitter {
 
   private async sendEmail(email: string, message: { subject: string; body: string }): Promise<void> {
     try {
-      await this.emailTransporter.sendMail({
-        from: process.env.SMTP_FROM || 'noreply@mtaadao.com',
+      await EmailService.send({
         to: email,
         subject: message.subject,
         html: message.body,

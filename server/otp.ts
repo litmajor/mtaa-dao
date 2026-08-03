@@ -2,7 +2,7 @@ import { db } from "./db";
 import { users } from "../shared/schema";
 import { eq } from "drizzle-orm";
 import crypto from "crypto";
-import nodemailer from "nodemailer";
+import { EmailService } from './services/emailService';
 // For SMS, you can use Twilio or similar. Here we mock it.
 
 const OTP_EXPIRY_MINUTES = 10;
@@ -36,20 +36,9 @@ export async function verifyOTP({ email, phone, otp }: { email?: string; phone?:
 }
 
 async function sendEmailOTP(email: string, otp: string) {
-  // Use nodemailer for demo; replace with SendGrid/Mailgun in prod
-  const transporter = nodemailer.createTransport({
-    host: process.env.SMTP_HOST,
-    port: Number(process.env.SMTP_PORT),
-    secure: false,
-    auth: {
-      user: process.env.SMTP_USER,
-      pass: process.env.SMTP_PASS,
-    },
-  });
-  await transporter.sendMail({
-    from: process.env.SMTP_FROM,
+  await EmailService.send({
     to: email,
-    subject: "Your OTP Code",
+    subject: 'Your OTP Code',
     text: `Your OTP code is: ${otp}`,
   });
 }

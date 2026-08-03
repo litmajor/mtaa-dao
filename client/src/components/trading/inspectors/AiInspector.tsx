@@ -1,5 +1,5 @@
 import React from 'react';
-import { StrategyNode } from '../../../models/StrategyNode';
+import type { StrategyNode } from '../../../models/StrategyNode';
 
 export default function AiInspector({ node, onChange }: { node: StrategyNode & any; onChange: (patch: any) => void }) {
   return (

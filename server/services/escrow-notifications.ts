@@ -3,20 +3,9 @@
  * Handles email and SMS notifications for all escrow events
  */
 
-import nodemailer from 'nodemailer';
 import twilio from 'twilio';
-import { db } from '../db';
-
-// Email configuration
-const emailTransporter = nodemailer.createTransport({
-  host: process.env.SMTP_HOST || 'smtp.gmail.com',
-  port: parseInt(process.env.SMTP_PORT || '587'),
-  secure: process.env.SMTP_SECURE === 'true',
-  auth: {
-    user: process.env.SMTP_USER,
-    pass: process.env.SMTP_PASSWORD,
-  },
-});
+import { db, pool } from '../db';
+import { EmailService } from './emailService';
 
 // SMS configuration (Twilio)
 const twilioClient = twilio(
@@ -76,7 +65,7 @@ const emailTemplates = {
           <p>This is a secure payment invitation. Only you can accept this escrow.</p>
           <p>Questions? Visit <a href="${process.env.APP_URL}/help/escrow">our escrow guide</a></p>
         </div>
-      </div>
+      </div>/
     `,
   }),
 
@@ -233,11 +222,6 @@ export async function sendEmailNotification(
   data: any
 ) {
   try {
-    if (!emailTransporter.verify) {
-      console.warn('Email transporter not configured properly');
-      return;
-    }
-
     const templateData = emailTemplates[template as keyof typeof emailTemplates];
     if (!templateData) {
       console.error(`Email template not found: ${template}`);
@@ -246,8 +230,7 @@ export async function sendEmailNotification(
 
     const mailContent = templateData(data.payer, data.recipient || data.payee, data.escrow, data.milestone);
 
-    await emailTransporter.sendMail({
-      from: process.env.SMTP_FROM || 'noreply@mtaa.io',
+    await EmailService.send({
       to: email,
       subject: mailContent.subject,
       html: mailContent.html,
@@ -535,31 +518,17 @@ export async function notifyEscrowDisputed(
 }
 
 /**
- * Test email configuration
- */
-export async function testEmailConfiguration(): Promise<boolean> {
-  try {
-    await emailTransporter.verify();
-    console.log('✅ Email configuration verified');
-    return true;
-  } catch (error) {
-    console.error('❌ Email configuration failed:', error);
-    return false;
-  }
-}
-
-/**
  * Store notification in database for audit trail
  */
 export async function logNotification(
   userId: string,
   type: string,
-  channel: 'email' | 'sms',
+  channel: 'email' | 'sms' | 'telegram' | 'whatsapp',
   target: string,
   escrowId?: string
 ) {
   try {
-    await db.query(
+    await pool.query(
       `INSERT INTO notifications_log (user_id, type, channel, target, escrow_id, created_at) 
        VALUES ($1, $2, $3, $4, $5, NOW())`,
       [userId, type, channel, target, escrowId]

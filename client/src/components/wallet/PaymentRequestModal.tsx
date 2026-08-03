@@ -1,6 +1,6 @@
 
 import React, { useState, useEffect } from 'react';
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '../ui/dialog';
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from '../ui/dialog';
 import { Button } from '../ui/button';
 import { Input } from '../ui/input';
 import { Label } from '../ui/label';
@@ -8,7 +8,8 @@ import { Textarea } from '../ui/textarea';
 import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from '../ui/select';
 import { useToast } from '../ui/use-toast';
 import useWalletActions from '@/hooks/useWalletActions';
-import { QrCode, Copy, Download, Mail, Clock, Check } from 'lucide-react';
+import { authClient } from '@/utils/authClient';
+import { QrCode, Copy, Download, Mail, Check } from 'lucide-react';
 import QRCode from 'qrcode';
 
 interface PaymentRequestModalProps {
@@ -69,11 +70,7 @@ export default function PaymentRequestModal({ isOpen, onClose, userAddress }: Pa
 
       // Send email if recipient provided and linkId is available
       if (recipientEmail && linkId) {
-        await fetch('/api/v1/wallets/payments/requests/send-email', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ requestId: linkId })
-        });
+        await authClient.post(`/api/v1/wallets/payment-links/${linkId}/send-email`, { recipientEmail });
       }
     } catch (error) {
       toast({

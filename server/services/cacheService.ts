@@ -1,20 +1,28 @@
 /**
- * Redis Cache Service
+ * Redis Cache Service — Centralized Caching Layer
  * 
- * Distributed caching layer for multi-instance deployments
- * Replaces in-memory NodeCache with Redis for production
+ * Distributed caching for multi-instance deployments.
+ * Replaces in-memory NodeCache with Redis for production.
  * 
  * Features:
  * - Centralized cache for all instances
  * - Cache warming for high-traffic keys
  * - TTL management and expiration
  * - Cache statistics and monitoring
+ * - Pub/Sub for real-time signals
  * - Graceful fallback if Redis unavailable
+ * - deleteByPrefix / delMany for bulk operations
+ * 
+ * Consumers:
+ *   • OHLCVService — candle caching, cache invalidation
+ *   • signalsStreamer — Redis pub/sub for live alerts
+ *   • MarketUniverseBuilder — registry warming
  */
 
-import { getRedisInstance, getRedisInstanceAsync } from '../config/redisConnectionManager';
-import type { Redis } from 'ioredis';
+import { redis as redisService } from './redis';
+import type { RedisClientType } from 'redis';
 import { logger } from '../utils/logger';
+import { getRedisSubscriptionManager } from './redisSubscriptionManager';
 
 export interface CacheEntry<T = any> {
   data: T;
@@ -37,15 +45,11 @@ export interface CacheStats {
  * Redis Cache Service Singleton
  */
 export class RedisCacheService {
-  private client: Redis | null = null;
+  private client: RedisClientType | null = null;
+  private subscriber: RedisClientType | null = null;
   private fallbackMode: boolean = false;
-  private memoryCache = new Map<string, CacheEntry>(); // Fallback in-memory cache
-  private stats = {
-    hits: 0,
-    misses: 0,
-    sets: 0,
-    deletes: 0,
-  };
+  private memoryCache = new Map<string, CacheEntry>();
+  private stats = { hits: 0, misses: 0, sets: 0, deletes: 0 };
 
   private static instance: RedisCacheService;
 
@@ -58,117 +62,151 @@ export class RedisCacheService {
     return RedisCacheService.instance;
   }
 
-  /**
-   * Initialize Redis connection via singleton manager
-   * Gracefully falls back to in-memory cache if Redis unavailable
-   */
+  // ═══════════════════════════════════════════════════════════════════════════════
+  // INITIALIZATION
+  // ═══════════════════════════════════════════════════════════════════════════════
+
   async initialize(): Promise<void> {
     try {
-      // Use singleton Redis instance from connection manager
-      this.client = getRedisInstance() as any;
-      
-      // Test connection
-      const pong = await this.client!.ping();
-      if (pong === 'PONG') {
-        logger.info('✅ Redis cache initialized via singleton');
+      await redisService.connect();
+      const healthy = await redisService.healthCheck();
+      if (healthy) {
+        logger.info('[RedisCache] Initialized via unified redis service');
         this.fallbackMode = false;
-        
-        // Initialize concurrency managers
-        const { initializeConcurrencyManagers } = require('./concurrencyControl');
-        initializeConcurrencyManagers(this.client);
+        this.client = null; // never use direct client
       }
     } catch (error: any) {
-      const errorMessage = error?.message || String(error) || 'Unknown Redis error';
-      logger.warn(`⚠️ Redis initialization failed, using in-memory cache: ${errorMessage}`);
+      const msg = error?.message || String(error) || 'Unknown Redis error';
+      logger.warn(`[RedisCache] Fallback mode: ${msg}`);
       this.fallbackMode = true;
       this.client = null;
     }
   }
 
-  /**
-   * Get value from cache
-   */
+  // ═══════════════════════════════════════════════════════════════════════════════
+  // CORE CACHE OPERATIONS
+  // ═══════════════════════════════════════════════════════════════════════════════
+
   async get<T = any>(key: string): Promise<T | null> {
     try {
-      if (this.fallbackMode || !this.client) {
-        return this.getFromMemory<T>(key);
-      }
+      if (this.fallbackMode) return this.getFromMemory<T>(key);
 
-      const data = await this.client.get(key);
+      const data = await redisService.get(key);
       if (data) {
         this.stats.hits++;
-        try {
-          return JSON.parse(data);
-        } catch {
-          return data as any;
-        }
+        try { return JSON.parse(data); } catch { return data as any; }
       }
 
       this.stats.misses++;
       return null;
     } catch (error: any) {
-      logger.warn(`Cache get error for key ${key}:`, error.message);
+      logger.warn(`[RedisCache] GET error for ${key}:`, error.message);
       return this.getFromMemory<T>(key);
     }
   }
 
-  /**
-   * Set value in cache with TTL
-   */
   async set<T = any>(key: string, value: T, ttl: number = 300, source?: string): Promise<void> {
     try {
-      const entry: CacheEntry<T> = {
-        data: value,
-        timestamp: Date.now(),
-        ttl,
-        hits: 0,
-        source,
-      };
-
-      if (this.fallbackMode || !this.client) {
+      if (this.fallbackMode) {
         this.setInMemory(key, value, ttl);
         return;
       }
 
       const serialized = JSON.stringify(value);
-      await this.client.setex(key, ttl, serialized);
+      await redisService.set(key, serialized, ttl);
       this.stats.sets++;
     } catch (error: any) {
-      logger.warn(`Cache set error for key ${key}:`, error.message);
+      logger.warn(`[RedisCache] SET error for ${key}:`, error.message);
       this.setInMemory(key, value, ttl);
     }
   }
 
-  /**
-   * Delete value from cache
-   */
   async delete(key: string): Promise<void> {
     try {
-      if (this.fallbackMode || !this.client) {
+      if (this.fallbackMode) {
         this.memoryCache.delete(key);
         return;
       }
-
-      await this.client.del(key);
+      await redisService.del(key);
       this.stats.deletes++;
     } catch (error: any) {
-      logger.warn(`Cache delete error for key ${key}:`, error.message);
+      logger.warn(`[RedisCache] DEL error for ${key}:`, error.message);
       this.memoryCache.delete(key);
     }
   }
 
   /**
-   * Clear all cache
+   * Delete multiple keys at once (variadic DEL).
+   * Used by OHLCVService.clearCache() for bulk invalidation.
+   */
+  async delMany(keys: string[]): Promise<void> {
+    if (!keys || keys.length === 0) return;
+
+    try {
+      if (this.fallbackMode) {
+        for (const k of keys) this.memoryCache.delete(k);
+        return;
+      }
+      await redisService.delMany(keys);
+      this.stats.deletes += keys.length;
+    } catch (error: any) {
+      logger.warn(`[RedisCache] DEL many error:`, error.message);
+      for (const k of keys) this.memoryCache.delete(k);
+    }
+  }
+
+  /**
+   * Delete all keys matching a prefix.
+   * Uses Redis SCAN + DEL pipeline for safety on large keyspaces.
+   * Used by OHLCVService.clearCache(symbol).
+   */
+  async deleteByPrefix(prefix: string): Promise<void> {
+    try {
+      if (this.fallbackMode) {
+        for (const key of this.memoryCache.keys()) {
+          if (key.startsWith(prefix)) this.memoryCache.delete(key);
+        }
+        return;
+      }
+
+      await redisService.deleteByPrefix(prefix);
+      logger.info(`[RedisCache] Deleted keys matching ${prefix}*`);
+    } catch (error: any) {
+      logger.warn(`[RedisCache] deleteByPrefix error for ${prefix}:`, error.message);
+      for (const key of this.memoryCache.keys()) {
+        if (key.startsWith(prefix)) this.memoryCache.delete(key);
+      }
+    }
+  }
+
+  /**
+   * List keys matching a Redis glob pattern.
+   * Uses SCAN in production; KEYS only in fallback.
+   */
+  async keys(pattern: string): Promise<string[]> {
+    try {
+      if (this.fallbackMode) {
+        const regex = this.globToRegex(pattern);
+        return Array.from(this.memoryCache.keys()).filter(k => regex.test(k));
+      }
+      return await redisService.keys(pattern);
+    } catch (error: any) {
+      logger.warn(`[RedisCache] KEYS error for ${pattern}:`, error.message);
+      const regex = this.globToRegex(pattern);
+      return Array.from(this.memoryCache.keys()).filter(k => regex.test(k));
+    }
+  }
+
+  /**
+   * Clear all cache, optionally filtered by pattern.
    */
   async clear(pattern?: string): Promise<void> {
     try {
-      if (this.fallbackMode || !this.client) {
+      if (this.fallbackMode) {
         if (pattern) {
           const regex = new RegExp(pattern);
           for (const key of this.memoryCache.keys()) {
-            if (regex.test(key)) {
-              this.memoryCache.delete(key);
-            }
+            if (regex.test(key)) this.memoryCache.delete(key);
           }
         } else {
           this.memoryCache.clear();
@@ -176,43 +214,68 @@ export class RedisCacheService {
         return;
       }
 
-      if (pattern) {
-        const keys = await this.client.keys(pattern);
-        if (keys.length > 0) {
-          await this.client.del(...keys);
-        }
-      } else {
-        await this.client.flushdb();
-      }
+      await redisService.clear(pattern);
     } catch (error: any) {
-      logger.warn('Cache clear error:', error.message);
+      logger.warn('[RedisCache] CLEAR error:', error.message);
       this.memoryCache.clear();
     }
   }
 
+  // ═══════════════════════════════════════════════════════════════════════════════
+  // PUB/SUB — Real-Time Signals
+  // ═══════════════════════════════════════════════════════════════════════════════
+
   /**
-   * Get cache statistics
+   * Publish a message to a Redis channel.
+   * Used by signalsStreamer for live alerts.
    */
+  async publish(channel: string, message: string): Promise<number> {
+    try {
+      if (this.fallbackMode) {
+        logger.debug('[RedisCache] Publish skipped in fallback mode');
+        return 0;
+      }
+      return await redisService.publish(channel, message);
+    } catch (error: any) {
+      logger.warn(`[RedisCache] PUBLISH error to ${channel}:`, error.message);
+      return 0;
+    }
+  }
+
+  /**
+   * Get a dedicated subscriber client for pub/sub.
+   * Reuses a single subscriber connection.
+   */
+  async getSubscriber(): Promise<RedisClientType> {
+    if (this.subscriber) return this.subscriber;
+    const sub = await redisService.getSubscriber();
+    // ensure returned value is non-null RedisClientType
+    if (!sub) throw new Error('[RedisCache] getSubscriber returned null');
+    const subscriberClient = sub as RedisClientType;
+    this.subscriber = subscriberClient;
+    return subscriberClient;
+  }
+
+  // ═══════════════════════════════════════════════════════════════════════════════
+  // STATS & MONITORING
+  // ═══════════════════════════════════════════════════════════════════════════════
+
   async getStats(): Promise<CacheStats> {
     try {
       let totalKeys = 0;
       let keysByCategory: Record<string, number> = {};
 
-      if (this.fallbackMode || !this.client) {
+      if (this.fallbackMode) {
         totalKeys = this.memoryCache.size;
-        // Categorize keys from memory
         for (const key of this.memoryCache.keys()) {
           const category = key.split(':')[0];
           keysByCategory[category] = (keysByCategory[category] || 0) + 1;
         }
       } else {
-        const dbSize = await this.client.dbsize();
-        totalKeys = dbSize;
-
-        // Get keys by pattern
+        totalKeys = await redisService.getStats().then(s => s.totalKeys).catch(() => 0);
         const patterns = ['ticker:*', 'ohlcv:*', 'orderbook:*', 'trades:*', 'markets:*'];
         for (const pattern of patterns) {
-          const keys = await this.client.keys(pattern);
+          const keys = await this.keys(pattern);
           keysByCategory[pattern] = keys.length;
         }
       }
@@ -227,153 +290,100 @@ export class RedisCacheService {
         totalMisses: this.stats.misses,
         hitRate: parseFloat(hitRate.toFixed(2)),
         keysByCategory,
-        topKeys: [], // TODO: Implement top keys tracking
-      };
-    } catch (error: any) {
-      logger.error('Error getting cache stats:', error);
-      return {
-        totalKeys: 0,
-        totalHits: this.stats.hits,
-        totalMisses: this.stats.misses,
-        hitRate: 0,
-        keysByCategory: {},
         topKeys: [],
       };
-    }
-  }
-
-  /**
-   * List keys matching a Redis-style pattern. Falls back to in-memory keys when Redis unavailable.
-   */
-  async keys(pattern: string): Promise<string[]> {
-    try {
-      if (this.fallbackMode || !this.client) {
-        // Convert Redis glob pattern to RegExp
-        const esc = (s: string) => s.replace(/[-/\\^$+?.()|[\]{}]/g, '\\$&');
-        const regex = new RegExp('^' + pattern.split('*').map(esc).join('.*') + '$');
-        return Array.from(this.memoryCache.keys()).filter(k => regex.test(k));
-      }
-
-      const keys = await this.client.keys(pattern);
-      return keys;
     } catch (error: any) {
-      logger.warn(`Cache keys() error for pattern ${pattern}:`, error.message || error);
-      return [];
+      logger.error('[RedisCache] Stats error:', error);
+      return { totalKeys: 0, totalHits: this.stats.hits, totalMisses: this.stats.misses, hitRate: 0, keysByCategory: {}, topKeys: [] };
     }
   }
 
-  /**
-   * Warm cache with pre-loaded data
-   * Called on startup to load high-traffic keys
-   */
-  async warmCache(keys: Array<{ key: string; value: any; ttl: number }>): Promise<void> {
-    logger.info(`🔥 Warming cache with ${keys.length} entries...`);
-
-    try {
-      for (const { key, value, ttl } of keys) {
-        await this.set(key, value, ttl, 'cache-warmer');
-      }
-
-      logger.info(`✅ Cache warm complete`);
-    } catch (error: any) {
-      logger.error('Error warming cache:', error);
-    }
-  }
-
-  /**
-   * Subscribe to cache key changes
-   * Useful for invalidation patterns
-   */
-  async subscribe(pattern: string, callback: (key: string, value: any) => void): Promise<void> {
-    if (this.fallbackMode || !this.client) {
-      logger.warn('Subscriptions not available in fallback mode');
-      return;
-    }
-
-    try {
-      const subscriber = this.client.duplicate();
-      await subscriber.psubscribe(pattern, (err) => {
-        if (err) {
-          logger.error('Subscribe error:', err);
-        }
-      });
-
-      subscriber.on('pmessage', (pattern, key, value) => {
-        callback(key, value);
-      });
-    } catch (error: any) {
-      logger.error('Error setting up subscription:', error);
-    }
-  }
-
-  /**
-   * Health check
-   */
   async healthCheck(): Promise<boolean> {
-    if (this.fallbackMode || !this.client) {
-      return false; // Not available in fallback mode
-    }
-
+    if (this.fallbackMode || !this.client) return false;
     try {
       const pong = await this.client.ping();
       return pong === 'PONG';
-    } catch {
-      return false;
+    } catch { return false; }
+  }
+
+  // ═══════════════════════════════════════════════════════════════════════════════
+  // CACHE WARMING
+  // ═══════════════════════════════════════════════════════════════════════════════
+
+  async warmCache(entries: Array<{ key: string; value: any; ttl: number }>): Promise<void> {
+    logger.info(`[RedisCache] Warming ${entries.length} entries...`);
+    for (const { key, value, ttl } of entries) {
+      await this.set(key, value, ttl, 'cache-warmer');
+    }
+    logger.info('[RedisCache] Warm complete');
+  }
+
+  // ═══════════════════════════════════════════════════════════════════════════════
+  // SUBSCRIPTIONS (Pattern-based)
+  // ═══════════════════════════════════════════════════════════════════════════════
+
+  async subscribe(pattern: string, callback: (key: string, value: any) => void): Promise<void> {
+    if (this.fallbackMode) {
+      logger.warn('[RedisCache] Subscriptions not available in fallback mode');
+      return;
+    }
+    try {
+      const manager = await getRedisSubscriptionManager();
+      await manager.pSubscribe(pattern, (message: string, channel: string) => {
+        try {
+          callback(channel, message as any);
+        } catch (_) {}
+      });
+    } catch (error: any) {
+      logger.error('[RedisCache] Subscription setup error:', error);
     }
   }
 
-  /**
-   * In-memory fallback methods
-   */
+  // ═══════════════════════════════════════════════════════════════════════════════
+  // CLEANUP
+  // ═══════════════════════════════════════════════════════════════════════════════
+
+  async disconnect(): Promise<void> {
+    if (this.subscriber) {
+      try { await this.subscriber.quit(); } catch (e) {}
+      this.subscriber = null;
+    }
+    try { await redisService.disconnect(); } catch (e) {}
+    this.client = null;
+    logger.info('[RedisCache] Disconnected');
+  }
+
+  // ═══════════════════════════════════════════════════════════════════════════════
+  // PRIVATE HELPERS
+  // ═══════════════════════════════════════════════════════════════════════════════
+
   private getFromMemory<T = any>(key: string): T | null {
     const entry = this.memoryCache.get(key);
     if (!entry) return null;
-
-    // Check if expired
     const age = Date.now() - entry.timestamp;
     if (age > entry.ttl * 1000) {
       this.memoryCache.delete(key);
       return null;
     }
-
     entry.hits++;
     return entry.data;
   }
 
   private setInMemory<T = any>(key: string, value: T, ttl: number): void {
-    this.memoryCache.set(key, {
-      data: value,
-      timestamp: Date.now(),
-      ttl,
-      hits: 0,
-    });
-
-    // Auto-cleanup old entries
+    this.memoryCache.set(key, { data: value, timestamp: Date.now(), ttl, hits: 0 });
     if (this.memoryCache.size > 10000) {
       const oldest = Array.from(this.memoryCache.entries())
         .sort(([, a], [, b]) => a.timestamp - b.timestamp)
         .slice(0, 1000);
-
-      for (const [key] of oldest) {
-        this.memoryCache.delete(key);
-      }
+      for (const [k] of oldest) this.memoryCache.delete(k);
     }
   }
 
-  /**
-   * Disconnect from Redis
-   */
-  async disconnect(): Promise<void> {
-    if (this.client) {
-      try {
-        await this.client.quit();
-        logger.info('Redis disconnected');
-      } catch (error: any) {
-        logger.error('Error disconnecting Redis:', error);
-      }
-    }
+  private globToRegex(pattern: string): RegExp {
+    const esc = (s: string) => s.replace(/[-/\\^$+?.()|[\]{}]/g, '\\$&');
+    return new RegExp('^' + pattern.split('*').map(esc).join('.*') + '$');
   }
 }
 
-// Export singleton instance
+// Singleton export
 export const cacheService = RedisCacheService.getInstance();

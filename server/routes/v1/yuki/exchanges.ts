@@ -18,6 +18,7 @@ import { logger } from '../../../utils/logger';
 import { pool } from '../../../db';
 import { ccxtService } from '../../../services/ccxtService';
 import { gasPriceOracle } from '../../../services/gasPriceOracle';
+import { priceOracle } from '../../../services/priceOracle';
 import { unifiedStatsUpdater } from '../../../services/unifiedStatsUpdater';
 import { BalanceSummaryCache } from '../../../services/unifiedStatsCache';
 import { redis } from '../../../services/redis';
@@ -287,16 +288,42 @@ router.get('/:id/balances', isAuthenticated, async (req: Request, res: Response)
     // Get current gas prices for cost calculation
     let gasCost = 0;
     try {
-      const gasData = await gasPriceOracle.getCurrentGasPrices();
+      const gasData = await gasPriceOracle.getCurrentGasPrices(undefined as any, 'ethereum');
       gasCost = parseFloat(gasData.standard) / 1e9; // Convert wei to gwei
     } catch (e) {
       logger.warn('[YUKI] Could not fetch gas price', { error: e });
     }
 
-    const totalValue = formattedBalances.reduce(
-      (sum, b) => sum + (b.total * (Math.random() * 100 + 1)), // Market price conversion
-      0
-    );
+    // Resolve real USD prices for each symbol using the central price oracle.
+    // Previously this used a random multiplier (fabricated USD values). Replace
+    // that behavior with a reliable lookup and mark entries where price is
+    // unavailable via `valueReliable: false` so callers can detect unreliable USD.
+    let totalValue = 0;
+    try {
+      const symbols = formattedBalances.map((b) => b.symbol.toUpperCase());
+      const pricesMap = await priceOracle.getPrices(symbols);
+
+      // Attach per-entry USD value and reliability flag
+      for (const b of formattedBalances) {
+        const sym = b.symbol.toUpperCase();
+        const pd = pricesMap.get(sym);
+        const price = pd?.priceUsd ?? null;
+        const valueReliable = typeof price === 'number' && price > 0;
+        const value = valueReliable ? b.total * price : 0;
+        // mutate the object to include USD fields for callers
+        (b as any).value = Number(value.toFixed(2));
+        (b as any).valueReliable = valueReliable;
+        if (valueReliable) totalValue += value;
+      }
+    } catch (e) {
+      logger.warn('[YUKI] Price lookup failed for balances, falling back to zero values', { error: e });
+      // Ensure fields exist even on failure
+      for (const b of formattedBalances) {
+        (b as any).value = 0;
+        (b as any).valueReliable = false;
+      }
+      totalValue = 0;
+    }
 
     // Adjust for gas/transaction costs
     const netValue = Math.max(0, totalValue - gasCost);
@@ -449,7 +476,7 @@ router.get('/:id/positions', isAuthenticated, async (req: Request, res: Response
     // Get current gas prices for P&L calculation
     let executionGasCost = 0;
     try {
-      const gasData = await gasPriceOracle.getCurrentGasPrices();
+      const gasData = await gasPriceOracle.getCurrentGasPrices(undefined as any, 'ethereum');
       const gasPrice = parseFloat(gasData.standard) / 1e9; // Convert wei to gwei
       executionGasCost = gasPrice * allPositions.length; // Cost per position closure
     } catch (e) {
@@ -544,7 +571,7 @@ router.post('/:id/futures', isAuthenticated, async (req: Request, res: Response)
     // Get current gas price for cost estimation
     let estimatedGas = 0;
     try {
-      const gasData = await gasPriceOracle.getCurrentGasPrices();
+      const gasData = await gasPriceOracle.getCurrentGasPrices(undefined as any, 'ethereum');
       estimatedGas = parseFloat(gasData.standard) / 1e9; // Convert wei to gwei
     } catch (e) {
       logger.warn('[YUKI] Could not fetch gas price for futures', { error: e });

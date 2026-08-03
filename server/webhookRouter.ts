@@ -1,11 +1,8 @@
 import express from 'express';
 import crypto from 'crypto';
-import { db } from './db';
-import { paymentTransactions } from '../shared/schema';
-import { eq } from 'drizzle-orm';
 import { logger } from './utils/logger';
-import { creditUserWalletOnDeposit } from './services/ledgerService';
-import { triggerDAOSpawnFromPayment } from './services/daoSpawnService';
+import { commandBus } from './domain/setup';
+import { PaymentCommandTypes } from './domain/payments/PaymentCommands';
 
 const router = express.Router();
 
@@ -53,11 +50,7 @@ router.post('/paystack', async (req: any, res) => {
 
     logger.info(`[PAYSTACK WEBHOOK] Processing event: ${event}`, { reference });
 
-    if (event === 'charge.success') {
-      await updateTransactionState(reference, 'completed', { gatewayResponse: data });
-    } else if (['charge.failed', 'transfer.failed'].includes(event)) {
-      await updateTransactionState(reference, 'failed', { gatewayResponse: data, reason: data.gateway_response });
-    }
+    await processWebhookEvent(reference, event === 'charge.success' ? 'completed' : 'failed', { gatewayResponse: data });
 
     // Always yield an explicit 200 OK status to acknowledge downstream queue emission
     return res.status(200).json({ status: 'success' });
@@ -86,11 +79,8 @@ router.post('/flutterwave', async (req: any, res) => {
 
     logger.info(`[FLUTTERWAVE WEBHOOK] Event ingested`, { reference, status });
 
-    if (status === 'successful') {
-      await updateTransactionState(reference, 'completed', { gatewayResponse: payload.data || payload });
-    } else if (['failed', 'cancelled'].includes(status)) {
-      await updateTransactionState(reference, 'failed', { gatewayResponse: payload.data || payload });
-    }
+    const isSuccess = status === 'successful';
+    await processWebhookEvent(reference, isSuccess ? 'completed' : 'failed', { gatewayResponse: payload.data || payload });
 
     return res.status(200).send('Webhook Evaluated');
   } catch (error: any) {
@@ -117,30 +107,18 @@ router.post('/mpesa', async (req: any, res) => {
 
     logger.info(`[M-PESA CALLBACK] Ingested state for ID: ${checkoutRequestId}`, { resultCode });
 
-    // Look up transaction mapping by unique CheckoutRequestID tracked during instantiation
-    const [txRecord] = await db
-      .select()
-      .from(paymentTransactions)
-      .where(eq(paymentTransactions.reference, checkoutRequestId))
-      .limit(1);
-
-    if (!txRecord) {
-      logger.warn('[M-PESA CALLBACK] Transaction frame missing inside relational storage frameworks.', { checkoutRequestId });
-      return res.status(404).send('Transaction reference unmapped.');
-    }
-
     if (resultCode === 0) {
       // ResultCode 0 indicates absolute payment verification execution
       const callbackMetadata = callbackData.CallbackMetadata?.Item || [];
       const mpesaReceiptNumber = callbackMetadata.find((item: any) => item.Name === 'MpesaReceiptNumber')?.Value;
       
-      await updateTransactionState(txRecord.reference, 'completed', {
+      await processWebhookEvent(checkoutRequestId, 'completed', {
         mpesaReceipt: mpesaReceiptNumber,
         rawCallback: callbackData
       });
     } else {
       // User cancelled, timed out, or insufficient balances
-      await updateTransactionState(txRecord.reference, 'failed', {
+      await processWebhookEvent(checkoutRequestId, 'failed', {
         reason: resultDesc,
         rawCallback: callbackData
       });
@@ -153,71 +131,61 @@ router.post('/mpesa', async (req: any, res) => {
   }
 });
 
+// ════════════════════════════════════════════════════════════════════════════════
 // HELPER COMPILING LIFECYCLE CONTROLLERS
-async function updateTransactionState(
-  reference: string, 
-  status: 'completed' | 'failed', 
-  additionalMetadata: Record<string, any>
-) {
+// ════════════════════════════════════════════════════════════════════════════════
+async function processWebhookEvent(reference: string, outcome: 'completed' | 'failed', providerData: Record<string, any>) {
   try {
-    const [existingTx] = await db
-      .select()
-      .from(paymentTransactions)
-      .where(eq(paymentTransactions.reference, reference))
-      .limit(1);
+    // 1. Dispatch ReceiveWebhook command
+    const correlationId = crypto.randomUUID();
+    const receiveResult = await commandBus.dispatch({
+      id: crypto.randomUUID(),
+      type: PaymentCommandTypes.ReceiveWebhook,
+      actor: 'webhook-router',
+      correlationId,
+      timestamp: new Date(),
+      payload: { reference, providerData }
+    });
 
-    if (!existingTx) {
-      logger.warn(`[STATE RECONCILIATION SKIP] Tracking frame ${reference} not identified within system states.`);
+    if (!receiveResult.success) {
+      logger.warn(`[WEBHOOK PROCESSING SKIP] Failed to receive webhook for ${reference}: ${receiveResult.error}`);
       return;
     }
 
-    // Prevent handling duplicate webhook triggers if final state is already stored
-    if (['completed', 'failed'].includes(existingTx.status)) {
-      logger.info(`[IDEMPOTENT WEBHOOK SKIP] Transaction ${reference} already resolved with status: ${existingTx.status}`);
+    // 2. Dispatch Complete or Fail command
+    let finalResult;
+    if (outcome === 'completed') {
+      finalResult = await commandBus.dispatch({
+        id: crypto.randomUUID(),
+        type: PaymentCommandTypes.CompletePayment,
+        actor: 'webhook-router',
+        correlationId,
+        timestamp: new Date(),
+        payload: { reference, providerMetadata: providerData }
+      });
+    } else {
+      finalResult = await commandBus.dispatch({
+        id: crypto.randomUUID(),
+        type: PaymentCommandTypes.FailPayment,
+        actor: 'webhook-router',
+        correlationId,
+        timestamp: new Date(),
+        payload: { reference, reason: providerData.reason || 'Webhook reported failure', providerData }
+      });
+    }
+
+    if (!finalResult.success) {
+      logger.error(`[WEBHOOK FINALIZATION FAILED] Reference: ${reference}, Outcome: ${outcome}, Error: ${finalResult.error}`);
       return;
     }
 
-    const mergedMetadata = {
-      ...(typeof existingTx.metadata === 'object' ? existingTx.metadata : {}),
-      webhookProcessedAt: new Date().toISOString(),
-      ...additionalMetadata
-    };
+    logger.info(`[TRANSACTION UPDATED SUCCESSFULLY] Reference: ${reference} converted to [${outcome}] via CommandBus`);
 
-    await db
-      .update(paymentTransactions)
-      .set({
-        status,
-        metadata: mergedMetadata,
-        updatedAt: new Date()
-      })
-      .where(eq(paymentTransactions.reference, reference));
-
-    logger.info(`[TRANSACTION UPDATED SUCCESSFULLY] Reference: ${reference} converted to [${status}]`);
-    
-    // If transaction completed, attempt to compile wallet ledger and update cached balance.
-    if (status === 'completed') {
-      try {
-        await creditUserWalletOnDeposit(reference);
-      } catch (err: any) {
-        // Log but don't throw; webhook lifecycle should remain idempotent and acknowledged.
-        logger.error('[LEDGER COMMIT FAILED]', { reference, error: err?.message || err });
-      }
-
-      // If this was a DAO spawn fee payment, trigger the on-chain spawn + DAO creation.
-      const metadata = (existingTx as any)?.metadata ?? {};
-      if (metadata?.purpose === 'dao_spawn_fee' && metadata?.spawnStatus !== 'completed') {
-        // Fire-and-forget: spawn is async and idempotent; webhook must ACK quickly.
-        setImmediate(() => {
-          triggerDAOSpawnFromPayment(reference).catch((err) =>
-            logger.error('[DAO SPAWN TRIGGER FAILED]', { reference, error: err?.message })
-          );
-        });
-      }
-    }
-
+    // Post-commit side effects are handled by the PaymentCompleted consumer.
+    // This keeps webhook handling fast and removes inline spawn orchestration.
   } catch (error: any) {
-    logger.error(`[CRITICAL DATABASE STATE MISMATCH] Failed updating status registry on index: ${reference}`, { error: error.message });
-    throw error;
+    logger.error(`[CRITICAL WEBHOOK DISPATCH ERROR] Failed processing webhook for index: ${reference}`, { error: error.message });
+    throw error; // Re-throw so upstream catches 500
   }
 }
 

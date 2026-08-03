@@ -26,6 +26,8 @@ export const strategiesTable = pgTable(
     
     // Freqtrade Integration
     freqtradeStrategyId: varchar('freqtrade_strategy_id', { length: 256 }),
+    freqtradeCode: text('freqtrade_code'),
+    freqtradeName: varchar('freqtrade_name', { length: 256 }),
     backtestResults: jsonb('backtest_results'), // {sharpeRatio, maxDrawdown, winRate, totalTrades, ...}
     lastBacktestedAt: timestamp('last_backtested_at'),
     
@@ -153,6 +155,27 @@ export const strategyRebalancesTable = pgTable(
 );
 
 // ════════════════════════════════════════════════════════════════════════════════
+// STRATEGY BACKTEST JOBS TABLE
+// ════════════════════════════════════════════════════════════════════════════════
+export const backtestJobsTable = pgTable(
+  'backtest_jobs',
+  {
+    id: varchar('id', { length: 128 }).primaryKey(),
+    strategyId: varchar('strategy_id', { length: 128 }).notNull(),
+    kind: varchar('kind', { length: 32 }).notNull(),
+    status: varchar('status', { length: 32 }).notNull().default('pending'),
+    metrics: jsonb('metrics'),
+    bestParameters: jsonb('best_parameters'),
+    error: text('error'),
+    requestedAt: timestamp('requested_at', { withTimezone: true }).notNull().defaultNow(),
+    startedAt: timestamp('started_at', { withTimezone: true }),
+    completedAt: timestamp('completed_at', { withTimezone: true }),
+    durationMs: integer('duration_ms'),
+    createdAt: timestamp('created_at').defaultNow().notNull(),
+  }
+);
+
+// ════════════════════════════════════════════════════════════════════════════════
 // STRATEGY PERFORMANCE TABLE
 // ════════════════════════════════════════════════════════════════════════════════
 export const strategyPerformanceTable = pgTable(
@@ -247,6 +270,13 @@ export const strategyAllocationsRelations = relations(strategyAllocationsTable, 
 export const strategyRebalancesRelations = relations(strategyRebalancesTable, ({ one }) => ({
   strategy: one(strategiesTable, {
     fields: [strategyRebalancesTable.strategyId],
+    references: [strategiesTable.id],
+  }),
+}));
+
+export const backtestJobsRelations = relations(backtestJobsTable, ({ one }) => ({
+  strategy: one(strategiesTable, {
+    fields: [backtestJobsTable.strategyId],
     references: [strategiesTable.id],
   }),
 }));

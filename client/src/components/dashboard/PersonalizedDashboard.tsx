@@ -1,9 +1,10 @@
 import React, { useState, useEffect } from "react";
-import { RefreshCw, ChevronDown, Wallet, Gamepad2, Sparkles, TrendingUp } from "lucide-react";
+import { Navigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { apiRequest } from "@/lib/queryClient";
-import { DashboardPersona, PersonaData, useDashboardPersona } from "@/hooks/useDashboardPersona";
-import { usePersona, useActiveSubprofile } from "@/contexts/persona-context";
+import type { DashboardPersona } from "@/hooks/useDashboardPersona";
+import { useDashboardPersona } from "@/hooks/useDashboardPersona";
+import { usePersona, useActiveSubprofile, type SubprofileType } from "@/contexts/persona-context";
 import OkediDashboard from "./OkediDashboard";
 import YukiDashboard from "../trading/YukiDashboard";
 import { AmaraDashboard } from "./AmaraDashboard";
@@ -27,7 +28,7 @@ export function PersonalizedDashboard() {
   const [showPersonaDropdown, setShowPersonaDropdown] = useState(false);
 
   // Use activeSubprofile from context if available, otherwise fall back to persona hook
-  const currentPersona = activeSubprofile || persona;
+  const currentPersona: DashboardPersona = (activeSubprofile ?? persona ?? 'okedi') as DashboardPersona;
 
   // Listen for subprofile changes
   useEffect(() => {
@@ -65,7 +66,7 @@ export function PersonalizedDashboard() {
     setRefreshing(false);
   }
 
-  const handlePersonaSwitch = async (newPersona: 'okedi' | 'yuki' | 'amara') => {
+  const handlePersonaSwitch = async (newPersona: SubprofileType) => {
     setShowPersonaDropdown(false);
     await switchSubprofile(newPersona);
   };
@@ -75,11 +76,6 @@ export function PersonalizedDashboard() {
     if (currentPersona === 'amara') {
       const { AmaraDashboardSkeleton } = require('./AmaraDashboardSkeleton');
       return <AmaraDashboardSkeleton />;
-    }
-
-    if (currentPersona === 'yuki') {
-      const { YukiDashboardSkeleton } = require('../trading/YukiDashboardSkeleton');
-      return <YukiDashboardSkeleton />;
     }
 
     // Default fallback skeleton
@@ -102,12 +98,10 @@ export function PersonalizedDashboard() {
             <div>
               <h1 className="text-3xl font-bold text-white">
                 {currentPersona === "okedi" && "🎤 Community Dashboard"}
-                {currentPersona === "yuki" && "📈 Trading Dashboard"}
                 {currentPersona === "amara" && "💰 Investing Dashboard"}
               </h1>
               <p className="text-slate-400 text-sm mt-1">
                 {currentPersona === "okedi" && "Govern DAOs and lead communities"}
-                {currentPersona === "yuki" && "DeFi trading, liquidity, and analytics"}
                 {currentPersona === "amara" && "Long-term investments and yield opportunities"}
               </p>
             </div>
@@ -122,9 +116,8 @@ export function PersonalizedDashboard() {
                   onClick={() => setShowPersonaDropdown(!showPersonaDropdown)}
                 >
                   {currentPersona === 'okedi' && <>💳 Okedi (Foundation)</>}
-                  {currentPersona === 'yuki' && <>📈 Yuki (Trading)</>}
                   {currentPersona === 'amara' && <>💰 Amara (Long-term / Investing)</>}
-                  <ChevronDown className="h-4 w-4" />
+                  <span className="text-sm">▾</span>
                 </Button>
                 
                 {showPersonaDropdown && (
@@ -139,7 +132,7 @@ export function PersonalizedDashboard() {
                             currentPersona === 'okedi' ? 'bg-slate-700/50 text-blue-400' : ''
                           }`}
                         >
-                          <Wallet className="h-4 w-4 text-blue-400" />
+                          <span className="text-sm">💳</span>
                           <div>
                             <div className="font-medium">Okedi</div>
                             <div className="text-[10px] text-slate-400">Foundation & Governance</div>
@@ -147,11 +140,9 @@ export function PersonalizedDashboard() {
                         </button>
                         <button
                           onClick={() => handlePersonaSwitch('yuki')}
-                          className={`w-full text-left px-3 py-2 text-sm text-white hover:bg-slate-700 rounded-md flex items-center gap-3 transition-colors ${
-                            currentPersona === 'yuki' ? 'bg-slate-700/50 text-green-400' : ''
-                          }`}
+                          className="w-full text-left px-3 py-2 text-sm text-white hover:bg-slate-700 rounded-md flex items-center gap-3 transition-colors"
                         >
-                          <TrendingUp className="h-4 w-4 text-green-400" />
+                          <span className="text-sm">📈</span>
                           <div>
                             <div className="font-medium">Yuki</div>
                             <div className="text-[10px] text-slate-400">DeFi Trading & Liquidity</div>
@@ -163,7 +154,7 @@ export function PersonalizedDashboard() {
                             currentPersona === 'amara' ? 'bg-slate-700/50 text-pink-400' : ''
                           }`}
                         >
-                          <Sparkles className="h-4 w-4 text-pink-400" />
+                          <span className="text-sm">✨</span>
                           <div>
                             <div className="font-medium">Amara</div>
                             <div className="text-[10px] text-slate-400">Long-term & Investing</div>
@@ -182,7 +173,7 @@ export function PersonalizedDashboard() {
                 disabled={refreshing}
                 className="gap-2 border-slate-700 bg-slate-800 text-white hover:bg-slate-700"
               >
-                <RefreshCw className={`h-4 w-4 ${refreshing ? "animate-spin" : ""}`} />
+                <span className={`text-sm ${refreshing ? "animate-spin" : ""}`}>↻</span>
                 Refresh
               </Button>
             </div>
@@ -196,13 +187,13 @@ export function PersonalizedDashboard() {
         className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 animate-in fade-in slide-in-from-bottom-2 duration-300 ease-out"
       >
         {currentPersona === "okedi" && (
-          <OkediDashboard data={dashboardData} />
-        )}
-        {currentPersona === "yuki" && (
-          <YukiDashboard data={dashboardData} />
+          <OkediDashboard />
         )}
         {currentPersona === "amara" && (
           <AmaraDashboard data={dashboardData} />
+        )}
+        {currentPersona === "yuki" && (
+          <YukiDashboard />
         )}
       </div>
     </div>

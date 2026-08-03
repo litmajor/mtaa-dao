@@ -1,6 +1,6 @@
 import { useState, useCallback } from 'react';
 import { authClient } from '@/utils/authClient';
-import {
+import type {
   AnalyticsMetrics,
   SystemHealth,
   SystemSettings,
@@ -27,8 +27,8 @@ export function useAdminAnalytics() {
         headers: { ...(await authClient.getAuthHeaders()) },
       });
       if (!response.ok) throw new Error(`HTTP ${response.status}`);
-      const data = await response.json();
-      setMetrics(data.data);
+      const data = await response.json() as AdminApiResponse<AnalyticsMetrics>;
+      setMetrics(data.data ?? null);
       setError(null);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to fetch analytics');
@@ -52,8 +52,8 @@ export function useAdminHealth() {
         headers: { ...(await authClient.getAuthHeaders()) },
       });
       if (!response.ok) throw new Error(`HTTP ${response.status}`);
-      const data = await response.json();
-      setHealth(data.data?.health);
+      const data = await response.json() as AdminApiResponse<{ health: SystemHealth }>;
+      setHealth(data.data?.health ?? null);
       setError(null);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to fetch health');
@@ -77,8 +77,8 @@ export function useAdminSettings() {
         headers: { ...(await authClient.getAuthHeaders()) },
       });
       if (!response.ok) throw new Error(`HTTP ${response.status}`);
-      const data = await response.json();
-      setSettings(data.data);
+      const data = await response.json() as AdminApiResponse<SystemSettings>;
+      setSettings(data.data ?? null);
       setError(null);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to fetch settings');

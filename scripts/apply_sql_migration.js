@@ -1,6 +1,7 @@
-const fs = require('fs');
-const path = require('path');
-const { Client } = require('pg');
+import 'dotenv/config';
+import fs from 'fs';
+import path from 'path';
+import { Client } from 'pg';
 
 async function main() {
   const file = process.argv[2];

@@ -3,11 +3,12 @@
  * Processes backtest and optimization jobs asynchronously
  */
 
-import { Job } from 'bull';
+import type { Job } from 'bull';
 import type { JobPayload } from '../services/jobQueueService';
 import { jobQueueService } from '../services/jobQueueService';
 import { logger } from '../utils/logger';
 import { strategyFreqtradeIntegration } from '../services/strategyFreqtradeIntegration';
+import { strategyNativeBacktestIntegration } from '../services/strategyNativeBacktestIntegration';
 
 export class StrategyJobWorker {
   /**
@@ -33,7 +34,18 @@ export class StrategyJobWorker {
    * Process backtest job
    */
   static async processBacktest(job: Job<JobPayload>): Promise<any> {
-    const { userId, strategyId, timerange, params = {} } = job.data;
+    const {
+      userId,
+      strategyId,
+      pair = 'BTC/USDT',
+      timeframe = '1h',
+      timerange = '20230101-20231231',
+      stakeAmount = 100,
+      startingCapital = 10000,
+      enableOptimization = false,
+      engine = 'freqtrade',
+      params = {}
+    } = job.data;
 
     try {
       logger.info(`[StrategyBacktest] Starting for strategy ${strategyId} by user ${userId}`);
@@ -48,18 +60,38 @@ export class StrategyJobWorker {
 
       await job.progress(30);
 
-      // Run backtest via Freqtrade
-      const backtestResults = await strategyFreqtradeIntegration.runBacktest(
-        strategyConfig,
-        {
+      const requestedEngine = String(engine).toLowerCase() === 'native'
+        ? 'native'
+        : strategyConfig.freqtradeCode ? 'freqtrade' : 'native';
+
+      let backtestResults;
+
+      if (requestedEngine === 'native') {
+        logger.info(`[StrategyBacktest] Using native TS backtest engine for ${strategyId}`);
+        backtestResults = await strategyNativeBacktestIntegration.runBacktest({
+          strategyId,
+          pair,
+          timeframe,
           timerange,
-          ...params
-        }
-      );
+          stakeAmount,
+          startingCapital,
+          strategyConfig,
+        });
+      } else {
+        logger.info(`[StrategyBacktest] Using Freqtrade backtest engine for ${strategyId}`);
+        backtestResults = await strategyFreqtradeIntegration.runBacktest({
+          strategyId,
+          pair,
+          timeframe,
+          timerange,
+          stakeAmount,
+          startingCapital,
+          enableOptimization,
+        });
+      }
 
       await job.progress(90);
 
-      // Validate results
       if (!backtestResults) {
         throw new Error('Backtest returned no results');
       }
@@ -68,9 +100,10 @@ export class StrategyJobWorker {
         strategyId,
         userId,
         timerange,
+        engine: requestedEngine,
         backtestResults,
         completedAt: new Date(),
-        duration: Date.now() - job.data.timestamp
+        duration: Date.now() - Number(job.data.timestamp || Date.now())
       };
 
       logger.info(`[StrategyBacktest] Completed for strategy ${strategyId}`);
@@ -135,16 +168,31 @@ export class StrategyJobWorker {
   private static async getStrategyConfig(strategyId: string) {
     try {
       const { db } = await import('../db');
-      const { strategies } = await import('../../shared/schema');
       const { eq } = await import('drizzle-orm');
 
-      const strategy = await db.query.strategies.findFirst({
-        where: eq(strategies.id, strategyId)
-      });
+      // `strategies` table may not be present in all deployments of shared/schema.
+      // Use a defensive dynamic access pattern to avoid compile-time errors.
+      const sharedSchema: any = await import('../../shared/schema');
+      const strategiesTable = (sharedSchema as any).strategies as any;
 
-      return strategy;
+      if (strategiesTable && (db.query as any).strategies) {
+        const strategy = await (db.query as any).strategies.findFirst({
+          where: eq(strategiesTable.id, strategyId)
+        });
+        return strategy;
+      }
+
+      // Fallback: attempt to read from a legacy `strategy_configs` table if present
+      try {
+        const legacy = await db.select().from((sharedSchema as any).strategy_configs ?? (sharedSchema as any).strategyConfigs ?? ({} as any)).where(eq((sharedSchema as any).strategy_configs?.id ?? (sharedSchema as any).strategyConfigs?.id ?? 'id', strategyId));
+        return legacy?.[0] ?? null;
+      } catch (e) {
+        // If nothing is available, warn and return null
+        logger.warn('Failed to fetch strategy config:', { error: String(e) });
+        return null;
+      }
     } catch (error) {
-      logger.warn('Failed to fetch strategy config:', error);
+      logger.warn('Failed to fetch strategy config:', { error: String(error) });
       return null;
     }
   }

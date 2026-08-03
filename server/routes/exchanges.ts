@@ -214,7 +214,7 @@ router.get(
 
 /**
  * GET /api/exchanges/ohlcv
- * Get OHLCV (candle) data from exchange
+ * Get OHLCV (candle) data from exchange/DEX for a given symbol and timeframe
  * 
  * Query params:
  * - symbol: Trading pair (CELO/USDC, CELO, etc)
@@ -227,10 +227,27 @@ router.get(
  */
 router.get(
   '/ohlcv',
-  validateExchangeQuery,
   asyncHandler(async (req: Request, res: Response) => {
-    const symbol = (req as any).symbol as string;
+    const symbol = req.query.symbol as string;
     const { exchange = 'binance', timeframe = '1h', limit = '24' } = req.query;
+
+    if (!symbol) {
+      return res.status(400).json({ error: 'Symbol parameter required (e.g., CELO/USDC)' });
+    }
+
+    // Validate exchange for OHLCV: CEXes plus DEX paths.
+    const validCEX = ccxtService.getAvailableExchanges();
+    const validOHLX = ['dex', 'celo_dex'];
+    if (
+      exchange !== 'auto' &&
+      !validCEX.includes(exchange as string) &&
+      !validOHLX.includes(exchange as string)
+    ) {
+      return res.status(400).json({
+        error: `Invalid exchange: ${exchange}`,
+        available: [...validCEX, ...validOHLX]
+      });
+    }
 
     // Validate timeframe
     const validTimeframes = ['1m', '5m', '15m', '30m', '1h', '4h', '1d', '1w', '1M'];
@@ -250,33 +267,37 @@ router.get(
     }
 
     try {
-      const data = await ccxtService.getOHLCVFromExchange(
-        exchange as string,
+      const { ohlcvService } = await import('../services/ohlcvServicev1');
+      const response = await ohlcvService.getCandles(
         symbol,
         timeframe as string,
-        limitNum
+        limitNum,
+        exchange as string
       );
 
-      if (!data || data.length === 0) {
+      if (response.status === 'error' || !response.data || response.data.length === 0) {
         return res.status(404).json({
-          error: `No OHLCV data found for ${symbol} on ${exchange}`
+          error: `No OHLCV data found for ${symbol} on ${exchange}`,
+          details: response.error
         });
       }
 
       res.json({
         symbol,
         exchange,
+        chain: response.chain,
+        pairAddress: response.pairAddress ?? null,
         timeframe,
-        count: data.length,
+        count: response.data.length,
         timestamp: Date.now(),
-        data: data.map((candle) => ({
-          timestamp: candle[0],
-          open: candle[1],
-          high: candle[2],
-          low: candle[3],
-          close: candle[4],
-          volume: candle[5]
-        }))
+        data: response.data.map((candle) => [
+          candle.timestamp * 1000,
+          candle.open,
+          candle.high,
+          candle.low,
+          candle.close,
+          candle.volume
+        ])
       });
     } catch (error: any) {
       logger.error(`OHLCV fetch failed: ${error.message}`);

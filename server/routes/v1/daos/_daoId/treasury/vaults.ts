@@ -7,7 +7,7 @@
  * - GET    /v1/daos/:daoId/treasury/vaults/:vaultId
  * - PUT    /v1/daos/:daoId/treasury/vaults/:vaultId (admin)
  * - POST   /v1/daos/:daoId/treasury/vaults/:vaultId/allocate (admin)
- * - POST   /v1/daos/:daoId/treasury/vaults/:vaultId/withdraw (admin) ✅ NEW
+ * - POST   /v1/daos/:daoId/treasury/vaults/:vaultId/withdraw (admin) NEW
  * - GET    /v1/daos/:daoId/treasury/vaults/:vaultId/positions
  * - GET    /v1/daos/:daoId/treasury/vaults/:vaultId/nav
  * - POST   /v1/daos/:daoId/treasury/vaults/:vaultId/rebalance (admin)
@@ -18,12 +18,13 @@
  * - Role-based access control (admin/elder only for treasury operations)
  */
 
-import express, { Request, Response } from 'express';
+import express from 'express';
+import type { Request, Response } from 'express';
 import { randomUUID } from 'crypto';
 import { authenticate } from '../../../../../auth';
 import { rateLimitPerUser } from '../../../../../middleware/rateLimit';
 import { treasuryAdminGuard } from './security';
-import { logConsolidatedAuditEvent } from '../../../../../services/auditConsolidated';
+import { logConsolidatedAuditEvent, type UnifiedAuditEntry } from '../../../../../services/auditConsolidated';
 import { createApprovalRequest } from '../../../../../services/multisigApprovalHandler';
 import { eq } from 'drizzle-orm';
 import { db } from '../../../../../storage';
@@ -31,6 +32,48 @@ import { vaults, vaultStrategyAllocations, vaultTransactions } from '@shared/sch
 import withdrawalsRouter from './withdrawals';
 
 const router = express.Router({ mergeParams: true });
+
+interface VaultAuthRequest extends Request {
+  user?: {
+    id?: string | null;
+  };
+  userRole?: string;
+  daoMultisigThreshold?: number;
+  daoSigners?: Array<{ userId?: string; userRole?: string }>;
+}
+
+type VaultAuthRequestWithBody<TBody> = Request & VaultAuthRequest & { body: TBody };
+
+interface CreateVaultBody {
+  name?: string;
+  description?: string;
+  riskProfile?: string;
+  initialAllocation?: string;
+}
+
+interface UpdateVaultBody {
+  name?: string;
+  description?: string;
+  riskProfile?: string;
+}
+
+interface AllocateVaultBody {
+  amount?: string;
+  currency?: string;
+  assetId?: string;
+  strategyId?: string;
+}
+
+interface WithdrawVaultBody {
+  amount?: string;
+  destination?: string;
+}
+
+interface RebalanceVaultBody {
+  newAllocation?: Record<string, number | string>;
+}
+
+type VaultConfigMap = Record<string, string | number | boolean | null | undefined>;
 
 // ════════════════════════════════════════════════════════════════════════════════
 // CHILD ROUTERS
@@ -107,10 +150,10 @@ router.post(
   authenticate,
   treasuryAdminGuard,
   rateLimitPerUser('treasury-vaults-create', 10, '10min'),
-  async (req: Request, res: Response) => {
+  async (req: VaultAuthRequestWithBody<CreateVaultBody>, res: Response) => {
     try {
       const { daoId } = req.params;
-      const userId = (req as any).user?.id;
+      const userId = req.user?.id;
       const { name, description, riskProfile, initialAllocation } = req.body;
 
       if (!name) {
@@ -120,13 +163,18 @@ router.post(
       const vaultId = `vault_${Date.now()}`;
 
       // Log vault creation with HIGH severity - treasury structure change
-      await logConsolidatedAuditEvent({
-        dao_id: daoId,
-        user_id: userId,
-        action: 'treasury_vault_created',
+      const auditEntry: UnifiedAuditEntry = {
+        actorId: userId ?? 'system',
+        daoId,
+        actionType: 'VAULT_CREATED',
+        actionCategory: 'vault',
+        targetType: 'vault',
+        targetId: vaultId,
         severity: 'high',
-        details: { vaultId, name, riskProfile, initialAllocation },
-      } as any);
+        metadata: { vaultId, name, riskProfile, initialAllocation },
+        result: 'success',
+      };
+      await logConsolidatedAuditEvent(auditEntry);
 
       res.status(201).json({
         success: true,
@@ -245,20 +293,25 @@ router.put(
   authenticate,
   treasuryAdminGuard,
   rateLimitPerUser('treasury-vaults-update', 10, '10min'),
-  async (req: Request, res: Response) => {
+  async (req: VaultAuthRequestWithBody<UpdateVaultBody>, res: Response) => {
     try {
       const { daoId, vaultId } = req.params;
-      const userId = (req as any).user?.id;
+      const userId = req.user?.id;
       const { name, description, riskProfile } = req.body;
 
       // Log vault update with HIGH severity
-      await logConsolidatedAuditEvent({
-        dao_id: daoId,
-        user_id: userId,
-        action: 'treasury_vault_updated',
+      const auditEntry: UnifiedAuditEntry = {
+        actorId: userId ?? 'system',
+        daoId,
+        actionType: 'VAULT_UPDATED',
+        actionCategory: 'vault',
+        targetType: 'vault',
+        targetId: vaultId,
         severity: 'high',
-        details: { vaultId, name, description, riskProfile },
-      } as any);
+        metadata: { vaultId, name, description, riskProfile },
+        result: 'success',
+      };
+      await logConsolidatedAuditEvent(auditEntry);
 
       res.json({
         success: true,
@@ -294,10 +347,10 @@ router.post(
   authenticate,
   treasuryAdminGuard,
   rateLimitPerUser('treasury-vaults-allocate', 20, '10min'),
-  async (req: Request, res: Response) => {
+  async (req: VaultAuthRequestWithBody<AllocateVaultBody>, res: Response) => {
     try {
       const { daoId, vaultId } = req.params;
-      const userId = (req as any).user?.id;
+      const userId = req.user?.id;
       const { amount, currency, assetId, strategyId } = req.body;
 
       if (!amount || !currency) {
@@ -311,48 +364,53 @@ router.post(
         const allocationId = randomUUID();
         
         await db.insert(vaultStrategyAllocations).values({
-          id: allocationId as any,
-          vaultId: vaultId as any,
-          strategyId: strategyId as any,
-          tokenSymbol: currency as any,
-          allocatedAmount: amount as any,
-          allocationPercentage: '0' as any,
+          id: allocationId,
+          vaultId,
+          strategyId,
+          tokenSymbol: currency,
+          allocatedAmount: amount,
+          allocationPercentage: '0',
           lastRebalance: new Date(),
           createdAt: new Date(),
           updatedAt: new Date(),
-        } as any);
+        });
       }
 
       // 2. Create transaction record for ledger
       const txId = randomUUID();
       await db.insert(vaultTransactions).values({
-        id: txId as any,
-        vaultId: vaultId as any,
-        userId: userId as any,
-        transactionType: 'allocation' as any,
-        tokenSymbol: currency as any,
-        amount: amount as any,
-        valueUSD: '0' as any,
-        status: 'completed' as any,
+        id: txId,
+        vaultId,
+        userId: userId ?? 'system',
+        transactionType: 'allocation',
+        tokenSymbol: currency,
+        amount,
+        valueUSD: '0',
+        status: 'completed',
         createdAt: new Date(),
         updatedAt: new Date(),
-      } as any);
+      });
 
       // 3. Log allocation with CRITICAL severity - fund transfer
-      await logConsolidatedAuditEvent({
-        dao_id: daoId,
-        user_id: userId,
-        action: 'treasury_vault_allocated',
+      const auditEntry: UnifiedAuditEntry = {
+        actorId: userId ?? 'system',
+        daoId,
+        actionType: 'TRANSFER_EXECUTED',
+        actionCategory: 'vault',
+        targetType: 'vault',
+        targetId: vaultId,
         severity: 'critical',
-        details: { 
-          vaultId, 
-          amount, 
-          currency, 
+        metadata: {
+          vaultId,
+          amount,
+          currency,
           strategyId: strategyId || null,
           txId,
           assetId: assetId || null,
         },
-      } as any);
+        result: 'success',
+      };
+      await logConsolidatedAuditEvent(auditEntry);
 
       res.json({
         success: true,
@@ -397,10 +455,10 @@ router.post(
   authenticate,
   treasuryAdminGuard,
   rateLimitPerUser('treasury-vaults-withdraw', 10, '10min'),
-  async (req: Request, res: Response) => {
+  async (req: VaultAuthRequestWithBody<WithdrawVaultBody>, res: Response) => {
     try {
       const { daoId, vaultId } = req.params;
-      const userId = (req as any).user?.id;
+      const userId = req.user?.id;
       const { amount, destination } = req.body;
 
       if (!amount || !destination) {
@@ -431,18 +489,19 @@ router.post(
       const { validateWithdrawalRequest } = await import('../../../../../utils/vaultTypeValidators');
 
       // 3. Validate withdrawal against vault constraints
-      const vaultType = (vault.vaultType as any) || 'custom';
+      const rawVaultType = (vault.vaultType as string | null | undefined) || 'custom';
+      const normalizedVaultType: 'savings' | 'investment' | 'strategy' | 'investment-pool' | 'escrow' | 'deployment' | 'custom' = rawVaultType === 'regular' || rawVaultType === 'custom' ? 'custom' : rawVaultType === 'savings' ? 'savings' : rawVaultType === 'investment' ? 'investment' : rawVaultType === 'strategy' ? 'strategy' : rawVaultType === 'investment-pool' ? 'investment-pool' : rawVaultType === 'escrow' ? 'escrow' : rawVaultType === 'deployment' ? 'deployment' : 'custom';
       const isDAOVault = true; // This is a DAO vault endpoint
-      const userRole = (req as any).userRole || 'member'; // Should come from membership check
+      const userRole: 'member' | 'elder' | 'admin' = (req.userRole === 'elder' || req.userRole === 'admin' ? req.userRole : 'member'); // Should come from membership check
 
       const validationResult = validateWithdrawalRequest(
-        vaultType,
+        normalizedVaultType,
         parseFloat(amount),
         parseFloat(vault.balance || '0'),
         isDAOVault,
         userRole,
         vault.lockedUntil ?? undefined,
-        (vault.vaultConfig as Record<string, any>) || {}
+        (vault.vaultConfig as VaultConfigMap | null) ?? {}
       );
 
       if (!validationResult.allowed) {
@@ -459,14 +518,17 @@ router.post(
       if (validationResult.requiresMultisig) {
         // Create withdrawal approval request (pending multisig)
         // Default to 2-of-N multisig - can be customized per DAO
-        const requiredSignatures = (req as any).daoMultisigThreshold ?? 2;
-        const daoSigners = ((req as any).daoSigners ?? []) as any[]; // Should be populated by middleware with DAO elders/admins
+        const requiredSignatures = req.daoMultisigThreshold ?? 2;
+        const daoSigners: Array<{ userId: string; userRole: 'member' | 'elder' | 'admin' }> = (req.daoSigners ?? []).map((signer): { userId: string; userRole: 'member' | 'elder' | 'admin' } => ({
+          userId: signer.userId ?? 'system',
+          userRole: (signer.userRole === 'elder' || signer.userRole === 'admin' ? signer.userRole : 'member') as 'member' | 'elder' | 'admin',
+        })); // Should be populated by middleware with DAO elders/admins
         
         // Create approval request in withdrawal_approvals table
         const approvalRequest = await createApprovalRequest(
           vaultId,
           daoId,
-          userId,
+          userId ?? 'system',
           amount, // Pass as string as expected by the function
           destination,
           requiredSignatures,
@@ -476,12 +538,15 @@ router.post(
 
         const withdrawalRequestId = approvalRequest.id;
         
-        await logConsolidatedAuditEvent({
-          dao_id: daoId,
-          user_id: userId,
-          action: 'treasury_vault_withdrawal_requested',
+        const auditEntry: UnifiedAuditEntry = {
+          actorId: userId ?? 'system',
+          daoId,
+          actionType: 'WITHDRAWAL_APPROVED',
+          actionCategory: 'vault',
+          targetType: 'vault',
+          targetId: vaultId,
           severity: 'high',
-          details: {
+          metadata: {
             vaultId,
             amount,
             destination,
@@ -491,7 +556,9 @@ router.post(
             signerCount: daoSigners.length,
             status: 'pending_approval',
           },
-        } as any);
+          result: 'success',
+        };
+        await logConsolidatedAuditEvent(auditEntry);
 
         return res.json({
           success: true,
@@ -503,7 +570,7 @@ router.post(
             destination,
             status: 'pending_approval', // Awaiting multisig signatures
             requiresMultisig: true,
-            requiresSignatures: (req as any).daoMultisigThreshold || 2,
+            requiresSignatures: req.daoMultisigThreshold || 2,
             createdAt: new Date().toISOString(),
           },
         });
@@ -523,33 +590,38 @@ router.post(
 
       // Create transaction record
       await db.insert(vaultTransactions).values({
-        id: txId as any,
-        vaultId: vaultId as any,
-        userId: userId as any,
-        transactionType: 'withdrawal' as any,
-        tokenSymbol: vault.currency as any,
-        amount: amount as any,
-        valueUSD: '0' as any,
-        status: 'completed' as any,
+        id: txId,
+        vaultId,
+        userId: userId ?? 'system',
+        transactionType: 'withdrawal',
+        tokenSymbol: vault.currency,
+        amount,
+        valueUSD: '0',
+        status: 'completed',
         createdAt: new Date(),
         updatedAt: new Date(),
-      } as any);
+      });
 
       // 6. Log withdrawal with HIGH severity (fund movement from vault to treasury)
-      await logConsolidatedAuditEvent({
-        dao_id: daoId,
-        user_id: userId,
-        action: 'treasury_vault_withdrawn',
+      const auditEntry: UnifiedAuditEntry = {
+        actorId: userId ?? 'system',
+        daoId,
+        actionType: 'WITHDRAWAL_APPROVED',
+        actionCategory: 'vault',
+        targetType: 'vault',
+        targetId: vaultId,
         severity: 'high',
-        details: {
+        metadata: {
           vaultId,
           amount,
           destination,
           newBalance,
           txId,
-          vaultType,
+          vaultType: normalizedVaultType,
         },
-      } as any);
+        result: 'success',
+      };
+      await logConsolidatedAuditEvent(auditEntry);
 
       res.json({
         success: true,
@@ -738,10 +810,10 @@ router.post(
   authenticate,
   treasuryAdminGuard,
   rateLimitPerUser('treasury-vaults-rebalance', 5, '1hour'),
-  async (req: Request, res: Response) => {
+  async (req: VaultAuthRequestWithBody<RebalanceVaultBody>, res: Response) => {
     try {
       const { daoId, vaultId } = req.params;
-      const userId = (req as any).user?.id;
+      const userId = req.user?.id;
       const { newAllocation } = req.body;
 
       if (!newAllocation || typeof newAllocation !== 'object') {
@@ -749,18 +821,19 @@ router.post(
       }
 
       // 1. Get current allocations to track previous state
-      const currentAllocations: any[] = await db.select()
+      const currentAllocations = await db.select()
         .from(vaultStrategyAllocations)
-        .where(eq(vaultStrategyAllocations.vaultId, vaultId as any));
+        .where(eq(vaultStrategyAllocations.vaultId, vaultId));
 
       const previousAllocation: Record<string, number> = {};
       for (const alloc of currentAllocations) {
-        previousAllocation[alloc.tokenSymbol] = parseFloat(alloc.allocationPercentage || 0);
+        previousAllocation[alloc.tokenSymbol] = parseFloat(String(alloc.allocationPercentage ?? '0'));
       }
 
       // 2. Update allocations to new values
       const rebalanceId = randomUUID();
       for (const [tokenSymbol, targetPercentage] of Object.entries(newAllocation)) {
+        const normalizedPercentage = typeof targetPercentage === 'number' ? String(targetPercentage) : String(targetPercentage ?? 0);
         // Check if existing allocation for this token
         const existing = currentAllocations.find(a => a.tokenSymbol === tokenSymbol);
         
@@ -768,56 +841,61 @@ router.post(
           // Update existing allocation
           await db.update(vaultStrategyAllocations)
             .set({
-              allocationPercentage: String(targetPercentage) as any,
+              allocationPercentage: normalizedPercentage,
               lastRebalance: new Date(),
               updatedAt: new Date(),
             })
-            .where(eq(vaultStrategyAllocations.id, existing.id as any));
+            .where(eq(vaultStrategyAllocations.id, existing.id));
         } else {
           // Create new allocation
           await db.insert(vaultStrategyAllocations).values({
-            id: randomUUID() as any,
-            vaultId: vaultId as any,
-            strategyId: 'rebalance_default' as any,
-            tokenSymbol: tokenSymbol as any,
-            allocatedAmount: '0' as any,
-            allocationPercentage: String(targetPercentage) as any,
+            id: randomUUID(),
+            vaultId,
+            strategyId: 'rebalance_default',
+            tokenSymbol,
+            allocatedAmount: '0',
+            allocationPercentage: String(targetPercentage),
             lastRebalance: new Date(),
             createdAt: new Date(),
             updatedAt: new Date(),
-          } as any);
+          });
         }
       }
 
       // 3. Create transaction record for rebalancing event
       const txId = randomUUID();
       await db.insert(vaultTransactions).values({
-        id: txId as any,
-        vaultId: vaultId as any,
-        userId: userId as any,
-        transactionType: 'rebalance' as any,
-        tokenSymbol: 'MULTI' as any,
-        amount: '0' as any,
-        valueUSD: '0' as any,
-        status: 'completed' as any,
+        id: txId,
+        vaultId,
+        userId: userId ?? 'system',
+        transactionType: 'rebalance',
+        tokenSymbol: 'MULTI',
+        amount: '0',
+        valueUSD: '0',
+        status: 'completed',
         createdAt: new Date(),
         updatedAt: new Date(),
-      } as any);
+      });
 
       // 4. Log rebalance with HIGH severity - portfolio change
-      await logConsolidatedAuditEvent({
-        dao_id: daoId,
-        user_id: userId,
-        action: 'treasury_vault_rebalanced',
+      const auditEntry: UnifiedAuditEntry = {
+        actorId: userId ?? 'system',
+        daoId,
+        actionType: 'STRATEGY_REBALANCED',
+        actionCategory: 'vault',
+        targetType: 'vault',
+        targetId: vaultId,
         severity: 'high',
-        details: { 
-          vaultId, 
+        metadata: {
+          vaultId,
           previousAllocation,
           newAllocation,
           rebalanceId,
           transactionId: txId,
         },
-      } as any);
+        result: 'success',
+      };
+      await logConsolidatedAuditEvent(auditEntry);
 
       res.json({
         success: true,

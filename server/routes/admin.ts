@@ -132,13 +132,19 @@ router.post('/auth/superuser-register', requireSuperAdmin, async (req, res) => {
       return res.status(409).json({ message: 'Email already registered' });
     }
     const hash = await bcrypt.hash(password, 10);
+    // generate slug from provided name/email
+    const uid = crypto.randomUUID();
+    const base = (name || firstName || email || uid).toString();
+    const slug = base.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '');
+
     const [newUser] = await db.insert(users).values({
-      id: crypto.randomUUID(),
+      id: uid,
       email,
       password: hash,
       name: name || firstName || '',
       firstName: firstName || '',
       lastName: lastName || '',
+      slug,
       roles: 'superUser',
       isSuperUser: true,
       isEmailVerified: true,

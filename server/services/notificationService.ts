@@ -1,4 +1,5 @@
 import { logger } from '../utils/logger';
+import { EmailService } from './emailService';
 
 /**
  * Notification Service
@@ -10,8 +11,8 @@ export interface EmailNotification {
   subject: string;
   body: string;
   bodyHtml?: string;
-  cc?: string[];
-  bcc?: string[];
+  cc?: string | string[];
+  bcc?: string | string[];
   priority?: 'high' | 'normal' | 'low';
 }
 
@@ -81,86 +82,24 @@ class MockSMSProvider implements SMSProvider {
   }
 }
 
-/**
- * SendGrid Email Provider (for production)
- */
-class SendGridEmailProvider implements EmailProvider {
-  private apiKey: string;
-
-  constructor(apiKey?: string) {
-    this.apiKey = apiKey || process.env.SENDGRID_API_KEY || '';
-    if (!this.apiKey) {
-      logger.warn('SendGrid API key not configured. Falling back to mock provider.');
-    }
-  }
-
+class EmailServiceProvider implements EmailProvider {
   async send(notification: EmailNotification): Promise<NotificationResult> {
-    try {
-      if (!this.apiKey) {
-        return {
-          success: false,
-          error: 'SendGrid API key not configured',
-          timestamp: new Date(),
-          provider: 'sendgrid',
-        };
-      }
+    const result = await EmailService.send({
+      to: notification.to,
+      subject: notification.subject,
+      text: notification.body,
+      html: notification.bodyHtml,
+      cc: notification.cc,
+      bcc: notification.bcc,
+    });
 
-      // Simulate SendGrid API call
-      // In production, use @sendgrid/mail package
-      const response = await fetch('https://api.sendgrid.com/v3/mail/send', {
-        method: 'POST',
-        headers: {
-          Authorization: `Bearer ${this.apiKey}`,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          personalizations: [
-            {
-              to: [{ email: notification.to }],
-              cc: notification.cc?.map(email => ({ email })),
-              bcc: notification.bcc?.map(email => ({ email })),
-            },
-          ],
-          from: { email: 'alerts@mtaadao.io', name: 'MTAA Payment Alerts' },
-          subject: notification.subject,
-          content: [
-            {
-              type: 'text/plain',
-              value: notification.body,
-            },
-            ...(notification.bodyHtml
-              ? [{ type: 'text/html', value: notification.bodyHtml }]
-              : []),
-          ],
-        }),
-      });
-
-      if (!response.ok) {
-        const error = await response.text();
-        logger.error('SendGrid API error', { status: response.status, error });
-        return {
-          success: false,
-          error: `SendGrid error: ${response.statusText}`,
-          timestamp: new Date(),
-          provider: 'sendgrid',
-        };
-      }
-
-      return {
-        success: true,
-        messageId: response.headers.get('X-Message-ID') || `sg-${Date.now()}`,
-        timestamp: new Date(),
-        provider: 'sendgrid',
-      };
-    } catch (error) {
-      logger.error('SendGrid send error', { error });
-      return {
-        success: false,
-        error: String(error),
-        timestamp: new Date(),
-        provider: 'sendgrid',
-      };
-    }
+    return {
+      success: result.success,
+      error: result.error,
+      messageId: result.messageId,
+      timestamp: new Date(),
+      provider: result.provider || 'emailservice',
+    };
   }
 }
 
@@ -256,10 +195,10 @@ class NotificationManager {
     const smsProviderType = process.env.SMS_PROVIDER || 'mock';
 
     // Initialize email provider
-    if (emailProviderType === 'sendgrid') {
-      this.emailProvider = new SendGridEmailProvider();
-    } else {
+    if (emailProviderType === 'mock') {
       this.emailProvider = new MockEmailProvider();
+    } else {
+      this.emailProvider = new EmailServiceProvider();
     }
 
     // Initialize SMS provider

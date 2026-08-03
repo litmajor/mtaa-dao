@@ -10,7 +10,8 @@
  * All fund movements logged with severity: 'critical'
  */
 
-import express, { Request, Response } from 'express';
+import express from 'express';
+import type { Request, Response } from 'express';
 import { daoMembershipGuard } from './security';
 import coreRouter from './core';
 import contributionsRouter from './contributions';

@@ -9,6 +9,7 @@
  */
 
 import React, { createContext, useCallback, useEffect, useRef, useState } from 'react';
+import { authClient } from '@/utils/authClient';
 import { Logger } from '@/utils/logger';
 
 const logger = new Logger('RealtimeMetricsProvider');
@@ -43,6 +44,8 @@ export interface RealtimeMetricsContextType {
   
   // Configuration
   setRefreshInterval: (channel: string, interval: number) => void;
+  apiBaseUrl?: string;
+  webSocketUrl?: string;
 }
 
 // ============================================================================
@@ -83,8 +86,8 @@ class MetricsWebSocketManager {
   // Cache: { channelName: CacheEntry }
   private cache: Map<string, CacheEntry>;
   
-  // Polling intervals: { channelName: NodeJS.Timer | null }
-  private pollingIntervals: Map<string, NodeJS.Timer>;
+  // Polling intervals: { channelName: number }
+  private pollingIntervals: Map<string, number>;
   
   // Event listeners
   private listeners: Map<string, Set<(event: any) => void>>;
@@ -280,7 +283,7 @@ class MetricsWebSocketManager {
 
     logger.info(`Starting polling for ${channel} (interval: ${interval}ms)`);
 
-    const timer = setInterval(async () => {
+    const timer = window.setInterval(async () => {
       try {
         const data = await this.fetchFn(channel);
         if (data) {
@@ -316,7 +319,7 @@ class MetricsWebSocketManager {
   private stopPolling(channel: string): void {
     const timer = this.pollingIntervals.get(channel);
     if (timer) {
-      clearInterval(timer);
+      window.clearInterval(timer);
       this.pollingIntervals.delete(channel);
       logger.info(`Stopped polling for ${channel}`);
     }
@@ -361,7 +364,7 @@ class MetricsWebSocketManager {
    */
   disconnect(): void {
     this.isIntentionallyClosed = true;
-    this.pollingIntervals.forEach((timer) => clearInterval(timer));
+    this.pollingIntervals.forEach((timer) => window.clearInterval(timer));
     this.pollingIntervals.clear();
     if (this.ws) {
       this.ws.close();
@@ -408,7 +411,9 @@ interface RealtimeMetricsProviderProps {
 
 export const RealtimeMetricsProvider: React.FC<RealtimeMetricsProviderProps> = ({
   children,
-  apiBaseUrl = import.meta.env.VITE_API_URL || 'http://localhost:3001/api',
+  apiBaseUrl =
+    import.meta.env.VITE_API_URL ||
+    (typeof window !== 'undefined' ? `${window.location.origin}/api` : '/api'),
   webSocketUrl,
   cacheTTL = DEFAULT_CACHE_TTL,
   enablePolling = true,
@@ -494,7 +499,7 @@ export const RealtimeMetricsProvider: React.FC<RealtimeMetricsProviderProps> = (
         // Token is now handled by authClient.getAuthHeaders()
         const response = await fetch(`${apiBaseUrl}${endpoint}`, {
           headers: {
-            'Authorization': `Bearer ${token}`,
+            ...authHeaders,
             'Content-Type': 'application/json',
           },
         });
@@ -613,6 +618,8 @@ export const RealtimeMetricsProvider: React.FC<RealtimeMetricsProviderProps> = (
     getCachedData,
     clearCache,
     setRefreshInterval,
+    apiBaseUrl,
+    webSocketUrl: safeWebSocketUrl,
   };
 
   return (

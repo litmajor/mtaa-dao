@@ -124,15 +124,15 @@ export const useExchangeBalance = (exchange: string | null) => {
   /**
    * Fetch top assets aggregated by the backend (server-side fan-out)
    */
-  export const useTopAssets = (limit: number = 100) => {
-    return useQuery({
+  export const useTopAssets = <T = any>(limit: number = 100) => {
+    return useQuery<T[]>({
       queryKey: ['top-assets', limit],
       queryFn: async () => {
         try {
           const resp = await authClient.get<any>(`/api/v1/yuki/market/top?limit=${limit}`);
           const body = resp.data || {};
           const list = body.data || [];
-          return list.map((a: any, idx: number) => ({ ...a, rank: a.rank || idx + 1 }));
+          return list.map((a: any, idx: number) => ({ ...a, rank: a.rank || idx + 1 })) as T[];
         } catch (error) {
           console.error('Failed to fetch top assets:', error);
           throw error;
@@ -140,7 +140,7 @@ export const useExchangeBalance = (exchange: string | null) => {
       },
       staleTime: 60000, // 1 minute
       retry: 2,
-    } as any);
+    });
   };
 
   /**

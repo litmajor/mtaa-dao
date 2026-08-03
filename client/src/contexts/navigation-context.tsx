@@ -33,6 +33,7 @@ export interface User {
   id: string;
   name: string;
   email: string;
+  username: string;
   role: UserRole;
   permissions?: PermissionSet;
 }
@@ -120,6 +121,7 @@ export const NavigationProvider: React.FC<{ children: React.ReactNode; initialUs
       id: '1',
       name: 'John Doe',
       email: 'john@example.com',
+      username: 'johndoe',
       role: 'admin',
       permissions: DEFAULT_PERMISSIONS.admin,
     }

@@ -9,7 +9,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from 
 import { Plus, Trash2, Pause, Play, AlertCircle, CheckCircle } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { apiPost, apiDelete, apiPut } from '@/lib/api';
-import { useWebSocket } from '@/hooks/useWebSocket';
+import { useSharedSocket } from '@/hooks/useSharedSocket';
 
 interface RecurringPayment {
   id: string;
@@ -22,7 +22,7 @@ interface RecurringPayment {
 }
 
 export default function RecurringPaymentsManager() {
-  const { socket, isConnected } = useWebSocket();
+  const { socket, isConnected } = useSharedSocket();
   
   const [payments, setPayments] = useState<RecurringPayment[]>([]);
   const [isOpen, setIsOpen] = useState(false);
@@ -49,69 +49,47 @@ export default function RecurringPaymentsManager() {
     }
   };
 
-  // WebSocket real-time updates for recurring payments
+  // WebSocket real-time updates for recurring payments via notificationService
   useEffect(() => {
-    if (!isConnected) {
+    if (!socket || !isConnected) {
       setWsConnected(false);
       return;
     }
 
     setWsConnected(true);
 
-    // Handle recurring payment creation/modification via WebSocket
-    const handleActivityLog = (data: any) => {
+    // Handle recurring payment notifications from notificationService
+    const handleNotification = (data: any) => {
       try {
-        if (data.action?.includes('recurring') || data.entityType === 'recurring_payment') {
-          // Someone else created/modified a recurring payment
-          if (data.action === 'created' && data.newData) {
-            setPayments(prev => [...prev, data.newData]);
+        // Check if this is a recurring payment-related notification
+        if (data.type?.includes('recurring') || data.type?.includes('payment') ||
+            data.metadata?.entityType === 'recurring_payment') {
+          
+          // Show toast for important notifications
+          if (data.type?.includes('failed') || data.type?.includes('alert')) {
+            toast({ 
+              title: data.title || 'Payment Notification', 
+              description: data.message,
+              variant: data.priority === 'high' ? 'destructive' : 'default'
+            });
+          }
+          
+          // Refresh list for any recurring payment notification
+          if (data.type?.includes('created') || data.type?.includes('modified') || 
+              data.type?.includes('completed') || data.type?.includes('failed')) {
+            // Could fetch updated list here if needed
           }
         }
       } catch (error) {
-        console.error('Error processing recurring payment activity:', error);
+        console.error('Error processing recurring payment notification:', error);
       }
     };
 
-    // Handle status changes for recurring payments
-    const handleStatusChange = (data: any) => {
-      try {
-        if (data.entityType === 'recurring_payment' && data.entityId) {
-          // Update payment status
-          setPayments(prev => prev.map(p => 
-            p.id === data.entityId 
-              ? { ...p, status: data.status }
-              : p
-          ));
-        }
-      } catch (error) {
-        console.error('Error processing recurring payment status change:', error);
-      }
-    };
-
-    // Handle alerts about recurring payment issues
-    const handleAlert = (data: any) => {
-      try {
-        if (data.entityType === 'recurring_payment') {
-          toast({ 
-            title: 'Payment Alert', 
-            description: data.message,
-            variant: data.severity === 'critical' ? 'destructive' : 'default'
-          });
-        }
-      } catch (error) {
-        console.error('Error processing recurring payment alert:', error);
-      }
-    };
-
-    socket.on('activity:logged', handleActivityLog);
-    socket.on('status:changed', handleStatusChange);
-    socket.on('alert:new', handleAlert);
+    socket.on('notification_created', handleNotification);
 
     // Cleanup
     return () => {
-      socket.off('activity:logged', handleActivityLog);
-      socket.off('status:changed', handleStatusChange);
-      socket.off('alert:new', handleAlert);
+      socket.off('notification_created', handleNotification);
     };
   }, [socket, isConnected, toast]);
 

@@ -1,4 +1,4 @@
-import { Request, Response, NextFunction } from 'express';
+import type { Request, Response, NextFunction } from 'express';
 import { performance } from 'perf_hooks';
 import { logger } from '../utils/logger';
 import { getEventEmitter } from '../middleware/websocket-event-emitter';
@@ -271,7 +271,7 @@ class MetricsCollector {
         'system'  // userId for audit
       );
     } catch (wsError) {
-      logger.debug('Failed to emit WebSocket metrics event:', wsError);
+      logger.debug('Failed to emit WebSocket metrics event', { wsError: String(wsError) });
     }
 
     // Log memory warnings
@@ -397,7 +397,7 @@ class MetricsCollector {
         for (let i = 1; i < count; i++) prometheus.counter('worker_payouts_processed_total', labels);
       }
     } catch (err) {
-      logger.debug('Failed to record worker processed metric', err);
+      logger.debug('Failed to record worker processed metric', { error: String(err) });
     }
   }
 
@@ -405,7 +405,7 @@ class MetricsCollector {
     try {
       prometheus.histogram('worker_payout_processing_ms', ms, labels);
     } catch (err) {
-      logger.debug('Failed to record worker duration metric', err);
+      logger.debug('Failed to record worker duration metric', { error: String(err) });
     }
   }
 
@@ -413,7 +413,7 @@ class MetricsCollector {
     try {
       prometheus.counter('worker_payouts_failed_total', labels);
     } catch (err) {
-      logger.debug('Failed to record worker failure metric', err);
+      logger.debug('Failed to record worker failure metric', { error: String(err) });
     }
   }
 }

@@ -36,7 +36,7 @@ export function PortfolioOverview() {
   const { data: preferences } = useQuery({
     queryKey: ['user-preferences'],
     queryFn: async () => {
-      const response = await fetch('/api/user-preferences');
+      const response = await fetch('/api/user/preferences');
       if (!response.ok) throw new Error('Failed to fetch preferences');
       const data = await response.json();
       return data.data;

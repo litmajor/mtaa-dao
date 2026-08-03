@@ -5,7 +5,8 @@
  */
 
 import { EventEmitter } from "events";
-import { GatewayMessage, GatewayMessageType } from "./types";
+import type { GatewayMessage, GatewayMessageType } from "./types";
+import { logger } from '../../../utils/logger';
 
 /**
  * Message handler function signature
@@ -42,6 +43,15 @@ export class MessageBusAdapter extends EventEmitter {
     }
 
     const handlers = this.handlers.get(messageType)!;
+    if (handlers.includes(handler)) {
+      return () => {
+        const index = handlers.indexOf(handler);
+        if (index > -1) {
+          handlers.splice(index, 1);
+        }
+      };
+    }
+
     handlers.push(handler);
     this.stats.subscriptions++;
 
@@ -123,7 +133,7 @@ export class MessageBusAdapter extends EventEmitter {
       const handlers = this.handlers.get(message.type) || [];
 
       if (handlers.length === 0) {
-        console.warn(`[${this.name}] No handlers for message type: ${message.type}`);
+        logger.warn(`[${this.name}] No handlers for message type: ${message.type}`);
         return;
       }
 
@@ -136,20 +146,22 @@ export class MessageBusAdapter extends EventEmitter {
       const failures = results.filter((r) => r.status === "rejected");
       if (failures.length > 0) {
         this.stats.messagesFailed++;
-        console.error(
+        logger.error(
           `[${this.name}] ${failures.length}/${handlers.length} handlers failed for ${message.type}`
         );
 
         failures.forEach((failure, index) => {
           const reason = failure.status === "rejected" ? failure.reason : null;
-          console.error(`  Handler ${index}: ${reason?.message || reason}`);
+          const reasonMsg = reason && (reason as any).message ? (reason as any).message : String(reason);
+          logger.error(`  Handler ${index}: ${reasonMsg}`);
         });
       }
 
       this.stats.messagesProcessed++;
     } catch (error) {
       this.stats.messagesFailed++;
-      console.error(`[${this.name}] Error processing message:`, error);
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      logger.error(`[${this.name}] Error processing message: ${errorMessage}`);
     }
   }
 
@@ -174,7 +186,7 @@ export class MessageBusAdapter extends EventEmitter {
     this.handlers.clear();
     this.messageQueue = [];
     this.stats.subscriptions = 0;
-    console.log(`[${this.name}] All subscriptions cleared`);
+    logger.info(`[${this.name}] All subscriptions cleared`);
   }
 
   /**
@@ -183,19 +195,19 @@ export class MessageBusAdapter extends EventEmitter {
   private setupDefaultHandlers(): void {
     // Message logging handler
     this.subscribe("gateway:price_request", async (message) => {
-      console.debug(`[${this.name}] Price request:`, message.payload);
+      logger.debug(`[${this.name}] Price request: ${JSON.stringify(message.payload)}`);
     });
 
     this.subscribe("gateway:liquidity_request", async (message) => {
-      console.debug(`[${this.name}] Liquidity request:`, message.payload);
+      logger.debug(`[${this.name}] Liquidity request: ${JSON.stringify(message.payload)}`);
     });
 
     this.subscribe("gateway:apy_request", async (message) => {
-      console.debug(`[${this.name}] APY request:`, message.payload);
+      logger.debug(`[${this.name}] APY request: ${JSON.stringify(message.payload)}`);
     });
 
     this.subscribe("gateway:risk_request", async (message) => {
-      console.debug(`[${this.name}] Risk request:`, message.payload);
+      logger.debug(`[${this.name}] Risk request: ${JSON.stringify(message.payload)}`);
     });
   }
 
@@ -276,10 +288,21 @@ export class CoordinatorBridge {
     ];
 
     requestTypes.forEach((type) => {
-      this.coordinatorInstance.subscribe(type, async (message: GatewayMessage) => {
-        console.log(`[${this.name}] Received from Coordinator:`, type);
-        await this.messageBus.publish(message);
-      });
+      if (typeof this.coordinatorInstance.on === 'function') {
+        this.coordinatorInstance.on(type, async (message: GatewayMessage) => {
+          console.log(`[${this.name}] Received from Coordinator:`, type);
+          await this.messageBus.publish(message);
+        });
+      } else if (typeof this.coordinatorInstance.subscribe === 'function') {
+        this.coordinatorInstance.subscribe(type, async (message: GatewayMessage) => {
+          console.log(`[${this.name}] Received from Coordinator:`, type);
+          await this.messageBus.publish(message);
+        });
+      } else {
+        console.warn(
+          `[${this.name}] Coordinator instance does not support on/subscribe for message routing`
+        );
+      }
     });
 
     console.log(`[${this.name}] Gateway Agent registered with Coordinator`);
@@ -293,8 +316,19 @@ export class CoordinatorBridge {
       console.warn(`[${this.name}] Coordinator instance not available`);
       return;
     }
+    if (typeof this.coordinatorInstance.emit === 'function') {
+      this.coordinatorInstance.emit(message.type, message);
+      return;
+    }
 
-    this.coordinatorInstance.publish(message);
+    if (typeof this.coordinatorInstance.publish === 'function') {
+      this.coordinatorInstance.publish(message);
+      return;
+    }
+
+    console.warn(
+      `[${this.name}] Coordinator instance does not support emit/publish for message routing`
+    );
   }
 
   /**
@@ -306,12 +340,10 @@ export class CoordinatorBridge {
   ): Promise<GatewayMessage | null> {
     const request = MessageBusAdapter.createRequest(dataType, payload);
 
-    // Publish to message bus
-    await this.messageBus.publish(request);
-
-    // Also publish to Coordinator if available
     if (this.coordinatorInstance) {
       this.publishToCoordinator(request);
+    } else {
+      await this.messageBus.publish(request);
     }
 
     return request;
@@ -336,6 +368,18 @@ export class CoordinatorBridge {
       coordinatorConnected: !!this.coordinatorInstance,
     };
   }
+
+  /**
+   * Attach or update the coordinator instance after construction
+   */
+  attachCoordinatorInstance(coordinatorInstance?: any): void {
+    if (!coordinatorInstance) {
+      return;
+    }
+
+    this.coordinatorInstance = coordinatorInstance;
+    logger.info(`[${this.name}] Coordinator instance attached to bridge`);
+  }
 }
 
 /**
@@ -359,7 +403,10 @@ export function getCoordinatorBridge(
       getMessageBus(),
       coordinatorInstance
     );
+  } else if (coordinatorInstance) {
+    coordinatorBridgeInstance.attachCoordinatorInstance(coordinatorInstance);
   }
+
   return coordinatorBridgeInstance;
 }
 

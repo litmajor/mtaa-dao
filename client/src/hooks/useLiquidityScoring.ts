@@ -3,7 +3,8 @@
  * Fetches and manages liquidity metrics and rankings
  */
 
-import { useQuery, UseQueryResult } from '@tanstack/react-query';
+import { useQuery } from '@tanstack/react-query';
+import type { UseQueryResult } from '@tanstack/react-query';
 
 export interface LiquidityComponent {
   score: number;

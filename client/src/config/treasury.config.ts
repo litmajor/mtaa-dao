@@ -4,7 +4,7 @@
  * chains, tokens, multisig rules, and voting weight logic
  */
 
-import {
+import type {
   DAOTreasuryConfig,
   TreasuryAsset,
   DAOType,

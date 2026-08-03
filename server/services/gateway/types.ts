@@ -182,6 +182,7 @@ export interface TransferRoute {
   };
   destination: {
     token: string;
+    amount: string;
     chainId: number;
     address: string;
   };
@@ -291,7 +292,7 @@ export interface GatewayState {
 // ============================================================================
 
 export interface GatewayEvent {
-  type: 'price_update' | 'liquidity_alert' | 'gas_spike' | 'volume_surge' | 'route_degradation';
+  type: 'price_update' | 'liquidity_alert' | 'gas_spike' | 'volume_surge' | 'route_degradation' | 'route_generated' | 'health_check';
   severity: 'info' | 'warning' | 'critical';
   data: Record<string, any>;
   timestamp: number;

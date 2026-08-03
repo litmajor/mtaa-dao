@@ -5,8 +5,10 @@ import { db } from '../db';
 import { users } from '../../shared/schema';
 import { achievements, userAchievements } from '../../shared/achievementSchema';
 import { eq, and, sql } from 'drizzle-orm';
+import { resolveProviderUrls } from './providerBootstrap';
 
-const RPC_URL = process.env.RPC_URL || 'http://localhost:8545';
+const providerUrls = resolveProviderUrls();
+const RPC_URL = providerUrls.rpcUrl;
 const ACHIEVEMENT_CONTRACT_ADDRESS = process.env.ACHIEVEMENT_CONTRACT_ADDRESS || '';
 
 function loadAbi() {

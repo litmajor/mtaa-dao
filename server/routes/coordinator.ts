@@ -4,11 +4,12 @@
  * Endpoints for coordinator communication and consensus decisions
  */
 
-import { Router, Request, Response, NextFunction } from 'express';
+import { Router } from 'express';
+import type {Request, Response, NextFunction} from 'express';
 import { elderCoordinator } from '../core/elders/coordinator';
 import { coordinatorMessageBus } from '../core/elders/coordinator/message-bus';
-import { authenticateToken, isDaoMember, isSuperUser, AuthRequest } from '../middleware/auth';
-
+import { authenticateToken, isDaoMember, isSuperUser } from '../middleware/auth';
+import type { AuthRequest } from '../middleware/auth';
 const router = Router();
 
 // Wrapper functions to handle type casting for middlewares

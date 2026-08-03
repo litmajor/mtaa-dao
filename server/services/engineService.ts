@@ -792,13 +792,14 @@ export class EngineService {
     timeframes: string[] = ['1h', '4h', '1d'],
     options?: {
       batchSize?: number;
+      parallelism?: number;
     }
   ): Promise<Map<string, Map<string, any>>> {
     const startTime = Date.now();
     const results = new Map<string, Map<string, any>>();
 
     try {
-      const { batchSize = 20 } = options || {};
+      const { batchSize = 20, parallelism = 3 } = options || {};
 
       logger.info(
         `[Engine] Multi-timeframe batch: ${symbols.length} symbols × ${timeframes.length} timeframes = ${symbols.length * timeframes.length} total computations`
@@ -808,7 +809,7 @@ export class EngineService {
       let totalCount = 0;
 
       // Concurrency limiter to avoid overwhelming DB/cache/remote services
-      const limiter = pLimit(5);
+      const limiter = pLimit(parallelism);
 
       for (let i = 0; i < symbols.length; i += batchSize) {
         const symbolBatch = symbols.slice(i, i + batchSize);

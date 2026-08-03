@@ -397,6 +397,12 @@ export interface ConfirmActionDTO {
   };
   confirmationToken?: string;
   ipAddress?: string;
+  /** Optional actor confirming the action (server-side confirmations) */
+  confirmedBy?: {
+    id: string;
+    type: ActorType;
+    role?: string;
+  };
 }
 
 /**
@@ -411,6 +417,13 @@ export interface ExecuteActionDTO {
   };
   skipGracePeriod?: boolean; // Only for admins with override
   skipGracePeriodReason?: string;
+  executionResult?: {
+    success: boolean;
+    error?: string;
+    transactionHash?: string;
+    blockNumber?: number;
+    metadata?: Record<string, any>;
+  };
 }
 
 /**

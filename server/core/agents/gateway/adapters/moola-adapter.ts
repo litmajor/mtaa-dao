@@ -5,7 +5,7 @@
  */
 
 import { BaseAdapter } from "./base-adapter";
-import { AdapterResponse, NormalizedData, BaseAdapterConfig } from "../types";
+import type { AdapterResponse, NormalizedData, BaseAdapterConfig } from "../types";
 
 export class MoolaAdapter extends BaseAdapter {
   private baseUrl = "https://api.moola.market";

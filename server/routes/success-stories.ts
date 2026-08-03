@@ -4,6 +4,7 @@ import { db } from '../db';
 import { eq, desc } from 'drizzle-orm';
 import { successStories } from '../../shared/schema';
 import { logger } from '../utils/logger';
+import { EmailService } from '../services/emailService';
 
 const router = Router();
 
@@ -35,15 +36,14 @@ router.post('/submit', async (req, res) => {
     logger.info(`Success story submitted: ${title} by ${email} (ID: ${submittedStory.id})`);
 
     // Send confirmation email to user
-    const emailService = new EmailService();
     try {
-      await emailService.sendEmail({
+      await EmailService.send({
         to: email,
         subject: 'Success Story Submission Confirmation',
         html: `
           <h2>Thank You for Sharing Your Story!</h2>
           <p>Hi ${name},</p>
-          <p>We've received your success story: \"${title}\"</p>
+          <p>We've received your success story: "${title}"</p>
           <p>Our team will review it within 2-3 business days. We may contact you with any questions or edits.</p>
           <p>Best regards,<br>The MTAA Team</p>
         `
@@ -54,7 +54,7 @@ router.post('/submit', async (req, res) => {
 
     // Notify admin team for review
     try {
-      await emailService.sendEmail({
+      await EmailService.send({
         to: process.env.ADMIN_EMAIL || 'admin@mtaa-dao.com',
         subject: `New Success Story for Review: ${title}`,
         html: `
@@ -66,7 +66,7 @@ router.post('/submit', async (req, res) => {
           <p>${story.replace(/\n/g, '<br>')}</p>
           ${impact ? `<h3>Impact:</h3><p>${impact}</p>` : ''}
           ${metrics ? `<h3>Metrics:</h3><p>${metrics}</p>` : ''}
-          <p><a href=\"${process.env.ADMIN_DASHBOARD_URL}/stories/${submittedStory.id}\">Review & Approve</a></p>
+          <p><a href="${process.env.ADMIN_DASHBOARD_URL}/stories/${submittedStory.id}">Review & Approve</a></p>
         `
       });
     } catch (err) {

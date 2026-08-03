@@ -256,7 +256,10 @@ export default function AnalyticsDashboardPage() {
 
   return (
     <RealtimeMetricsProvider
-      apiBaseUrl={process.env.VITE_API_URL || 'http://localhost:3001/api'}
+      apiBaseUrl={
+        process.env.VITE_API_URL ||
+        (typeof window !== 'undefined' ? `${window.location.origin}/api` : '/api')
+      }
       webSocketUrl={process.env.VITE_WS_URL}
       enablePolling={true}
     >

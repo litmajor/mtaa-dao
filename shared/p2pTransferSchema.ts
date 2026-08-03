@@ -17,6 +17,7 @@ export const p2pTransfers = pgTable('p2p_transfers', {
   senderDailyUsed: decimal('sender_daily_used', { precision: 20, scale: 2 }).notNull(),
   senderMonthlyUsed: decimal('sender_monthly_used', { precision: 20, scale: 2 }).notNull(),
   reference: text('reference'),
+  idempotencyKey: text('idempotency_key').notNull().unique(), // Prevents duplicate transfers on retry
   metadata: jsonb('metadata'),
   completedAt: timestamp('completed_at'),
   failedReason: text('failed_reason'),

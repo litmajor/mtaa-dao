@@ -3,7 +3,8 @@
  * Fetch and manage arbitrage opportunities across exchanges
  */
 
-import { useQuery, UseQueryResult } from '@tanstack/react-query';
+import { useQuery } from '@tanstack/react-query';
+import type { UseQueryResult } from '@tanstack/react-query';
 import type { ArbitrageOpportunity } from '@/types/exchanges';
 
 interface TradeProfit {
@@ -28,7 +29,7 @@ export function useArbitrageOpportunities(
   exchanges: string[] = ['binance', 'coinbase', 'kraken', 'bybit', 'kucoin', 'okx'],
   minProfitPercent: number = 0.5
 ): UseQueryResult<{ opportunities: ArbitrageOpportunity[] }, Error> {
-  return useQuery({
+  return useQuery<{ opportunities: ArbitrageOpportunity[] }, Error>({
     queryKey: ['arbitrage:opportunities', symbol || '', exchanges.join(','), minProfitPercent] as const,
     queryFn: async () => {
       const exchangeParam = exchanges.join(',');
@@ -40,13 +41,14 @@ export function useArbitrageOpportunities(
         throw new Error('Failed to fetch arbitrage opportunities');
       }
 
-      return response.json();
+      const data = await response.json();
+      return data as { opportunities: ArbitrageOpportunity[] };
     },
     enabled: !!symbol,
     gcTime: 5 * 60 * 1000, // 5 minutes
     staleTime: 30 * 1000, // 30 seconds (volatile data)
     refetchInterval: 10 * 1000 // 10 second refresh
-  } as any);
+  });
 }
 
 /**
@@ -58,7 +60,7 @@ export function useBestArbitrage(
 ): UseQueryResult<{ bestOpportunity: ArbitrageOpportunity | null }, Error> {
   const exchangeParam = exchanges ? exchanges.join(',') : '';
 
-  return useQuery({
+  return useQuery<{ bestOpportunity: ArbitrageOpportunity | null }, Error>({
     queryKey: ['arbitrage:best', symbol || '', exchangeParam] as const,
     queryFn: async () => {
       let url = `/api/v1/yuki/exchanges/arbitrage/best?symbol=${symbol}`;
@@ -72,13 +74,14 @@ export function useBestArbitrage(
         throw new Error('Failed to fetch best arbitrage opportunity');
       }
 
-      return response.json();
+      const data = await response.json();
+      return data as { bestOpportunity: ArbitrageOpportunity | null };
     },
     enabled: !!symbol,
     gcTime: 5 * 60 * 1000,
     staleTime: 30 * 1000,
     refetchInterval: 10 * 1000
-  } as any);
+  });
 }
 
 /**

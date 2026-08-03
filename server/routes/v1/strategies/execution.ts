@@ -16,7 +16,8 @@
  * ═══════════════════════════════════════════════════════════════════════════════
  */
 
-import express, { Request, Response } from 'express';
+import express from 'express';
+import type { Request, Response } from 'express';
 import { strategyDashboardService } from '../../../services/strategyDashboardService';
 import { strategyFreqtradeIntegration } from '../../../services/strategyFreqtradeIntegration';
 import { Logger } from '../../../utils/logger';
@@ -128,7 +129,9 @@ router.post('/backtest', [requireAuth, rateLimitPerUser('strategy-backtest', 20,
       timeframe = '1h',
       timerange = '20230101-20231231',
       stakeAmount = 100,
-      enableOptimization = false
+      startingCapital = 10000,
+      enableOptimization = false,
+      engine = 'freqtrade'
     } = req.body;
 
     // Queue backtest job
@@ -139,7 +142,9 @@ router.post('/backtest', [requireAuth, rateLimitPerUser('strategy-backtest', 20,
       timeframe,
       timerange,
       stakeAmount,
-      enableOptimization
+      startingCapital,
+      enableOptimization,
+      engine
     }, {
       priority: 6,
       timeout: 1800000 // 30 minute timeout for backtest

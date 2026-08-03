@@ -2,16 +2,18 @@
  * Authentication and Authorization Middleware
  */
 
-import { Request, Response, NextFunction } from 'express';
+import type { Request, Response, NextFunction } from 'express';
 import jwt from 'jsonwebtoken';
+import { verifyAccessToken, type TokenPayload } from '../auth';
 
 export interface AuthRequest extends Request {
   user?: {
     id: string;
-    email: string;
-    // role strings are stored in users.roles column; global admin value is 'super_admin'
-    role: 'super_admin' | 'dao-admin' | 'member' | 'guest';
-    daos: string[];
+    email?: string;
+    // roles can be a single string or comma-separated string or array
+    role?: string;
+    roles?: string | string[];
+    daos?: string[];
   };
 }
 
@@ -31,17 +33,24 @@ export const authenticateToken = (req: Request, res: Response, next: NextFunctio
   }
 
   try {
-    const secret = process.env.JWT_SECRET;
-    if (!secret) {
-      console.error('JWT_SECRET not configured');
-      return res.status(500).json({ success: false, error: 'Server misconfiguration: JWT secret missing' });
+    const payload = verifyAccessToken(token);
+    if (!payload) {
+      return res.status(403).json({ success: false, error: 'Invalid or expired token' });
     }
-    const decoded = jwt.verify(token, secret) as any;
     // Reject temporary tokens issued for 2FA challenge flow
-    if (decoded && decoded.pending2FA === true) {
+    if (payload.pending2FA === true) {
       return res.status(403).json({ success: false, error: 'Two-factor authentication pending' });
     }
-    req.user = decoded;
+
+    const userClaims: TokenPayload = payload;
+    req.user = {
+      id: userClaims.sub,
+      email: userClaims.email,
+      role: userClaims.role,
+      roles: userClaims.roles,
+      daos: userClaims.daos ?? [],
+    };
+
     next();
   } catch (error) {
     res.status(403).json({
@@ -56,7 +65,8 @@ export const authenticateToken = (req: Request, res: Response, next: NextFunctio
  */
 // still named isSuperUser for backwards compatibility but checks for super_admin
 export const isSuperUser = (req: AuthRequest, res: Response, next: NextFunction) => {
-  if (req.user?.role !== 'super_admin') {
+  const roles = Array.isArray(req.user?.roles) ? req.user!.roles : (typeof req.user?.roles === 'string' ? (req.user!.roles as string).split(',').map(r => r.trim()) : req.user?.role ? [req.user.role] : []);
+  if (!roles.includes('super_admin')) {
     return res.status(403).json({
       success: false,
       error: 'Super-admin access required'
@@ -69,7 +79,7 @@ export const isSuperUser = (req: AuthRequest, res: Response, next: NextFunction)
  * Check if user is DAO member
  */
 export const isDaoMember = (req: AuthRequest, res: Response, next: NextFunction) => {
-  if (!req.user || req.user.daos.length === 0) {
+  if (!req.user || !(req.user.daos && req.user.daos.length > 0)) {
     return res.status(403).json({
       success: false,
       error: 'DAO membership required'
@@ -82,7 +92,8 @@ export const isDaoMember = (req: AuthRequest, res: Response, next: NextFunction)
  * Check if user is DAO admin
  */
 export const isDaoAdmin = (req: AuthRequest, res: Response, next: NextFunction) => {
-  if (req.user?.role !== 'super_admin' && req.user?.role !== 'dao-admin') {
+  const roles = Array.isArray(req.user?.roles) ? req.user!.roles : (typeof req.user?.roles === 'string' ? (req.user!.roles as string).split(',').map(r => r.trim()) : req.user?.role ? [req.user.role] : []);
+  if (!roles.includes('super_admin') && !roles.includes('dao-admin')) {
     return res.status(403).json({
       success: false,
       error: 'DAO admin access required'

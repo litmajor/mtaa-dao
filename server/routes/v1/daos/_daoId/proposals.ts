@@ -20,7 +20,8 @@
  * ═══════════════════════════════════════════════════════════════════════════════
  */
 
-import express, { Request, Response, Router } from 'express';
+import express from 'express';
+import type { Request, Response, Router } from 'express';
 import { db } from '../../../../storage';
 import { logger } from '../../../../utils/logger';
 import { 
@@ -41,6 +42,10 @@ import { nanoid } from 'nanoid';
 
 const router: Router = express.Router({ mergeParams: true });
 
+interface UserRequest {
+  user?: { id?: string; claims?: { sub?: string } };
+}
+
 // ════════════════════════════════════════════════════════════════════════════════
 // RATE LIMITERS
 // ════════════════════════════════════════════════════════════════════════════════
@@ -57,20 +62,22 @@ const proposalVoteLimiter = createRateLimiter({
 });
 
 // In-memory idempotency store (use Redis in production)
-const executionIdempotencyMap = new Map<string, {
+interface ExecutionRecord {
   idempotencyKey: string;
   executedAt: Date;
-  result: any;
-}>();
+  result: unknown;
+}
+const executionIdempotencyMap = new Map<string, ExecutionRecord>();
 
 // Helper to get userId with proper type narrowing
-function getUserId(req: any): string | null {
-  return (req.user as any)?.id || (req.user as any)?.claims?.sub || null;
+function getUserId(req: Request): string | null {
+  const userReq = req as Request & UserRequest;
+  return userReq.user?.id || userReq.user?.claims?.sub || null;
 }
 
 // Helper to get daoId from params
-function getDaoId(req: any): string {
-  return req.params?.daoId || '';
+function getDaoId(req: Request): string {
+  return (req.params as Record<string, string>)?.daoId || '';
 }
 
 // ════════════════════════════════════════════════════════════════════════════════
@@ -86,7 +93,7 @@ router.get('/', async (req: Request, res: Response) => {
     const daoId = getDaoId(req);
     const { status, proposer, sortBy = 'createdAt', sortOrder = 'desc', limit = 50, offset = 0 } = req.query;
 
-    let conditions: any[] = [eq(proposals.daoId, daoId)];
+    const conditions: unknown[] = [eq(proposals.daoId, daoId)];
     
     // Apply filters
     if (status) {
@@ -97,12 +104,12 @@ router.get('/', async (req: Request, res: Response) => {
     }
 
     // Get total count
-    const totalData = await db.select().from(proposals).where(and(...conditions));
+    const totalData = await db.select().from(proposals).where(and(...(conditions as any[])));
     
     // Get paginated results
     const items = await db.select()
       .from(proposals)
-      .where(and(...conditions))
+      .where(and(...(conditions as any[])))
       .orderBy(desc(proposals.createdAt))
       .limit(Number(limit))
       .offset(Number(offset));
@@ -182,6 +189,7 @@ router.post('/', proposalCreationLimiter, async (req: Request, res: Response) =>
       proposalType,
       userId,
       proposerId: userId,
+      proposer: userId,
       voteEndTime: new Date(voteEndTime),
       voteStartTime: new Date(),
       quorumRequired: quorumRequired || 100,

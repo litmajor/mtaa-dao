@@ -1,5 +1,5 @@
 import React from 'react';
-import { StrategyNode } from '../../models/StrategyNode';
+import type { StrategyNode } from '../../models/StrategyNode';
 import NodeRegistry from '../../state/node-registry';
 import useStrategyGraph from '../../state/strategy-graph.store';
 

@@ -18,22 +18,27 @@
  * ═══════════════════════════════════════════════════════════════════════════════
  */
 
-import express, { Request, Response, Router } from 'express';
+import express from 'express';
+import type { Request, Response, Router } from 'express';
 import { db } from '../../../../storage';
-import { contributions, userReputation, users, daos } from '../../../../../shared/schema';
+import { contributions, users, daos } from '../../../../../shared/schema';
 import { eq, and, desc, sql } from 'drizzle-orm';
 import { logger } from '../../../../utils/logger';
 
 const router: Router = express.Router({ mergeParams: true });
 
+interface UserRequest {
+  user?: { id?: string; claims?: { sub?: string } };
+}
+
 // Helper to get daoId from params
-function getDaoId(req: Request): string {
-  return (req as any).params?.daoId || '';
+function getDaoId(req: Request & UserRequest): string {
+  return (req.params as Record<string, string>)?.daoId || '';
 }
 
 // Helper to get userId from request
-function getUserId(req: Request): string | null {
-  return (req.user as any)?.id || (req.user as any)?.claims?.sub || null;
+function getUserId(req: Request & UserRequest): string | null {
+  return req.user?.id || req.user?.claims?.sub || null;
 }
 
 // ════════════════════════════════════════════════════════════════════════════════

@@ -403,13 +403,13 @@ export const crossChainTransfers = pgTable(
     // Source
     sourceChain: varchar('source_chain').notNull(),
     sourceToken: varchar('source_token').notNull(),
-    sourceAmount: decimal('source_amount', { precision: 36, scale: 18 }).notNull(),
+    sourceAmount: decimal('source_amount', { precision: 38, scale: 18 }).notNull(),
     sourceTxHash: varchar('source_tx_hash'),
     
     // Target
     targetChain: varchar('target_chain').notNull(),
     targetToken: varchar('target_token').notNull(),
-    targetAmount: decimal('target_amount', { precision: 36, scale: 18 }).notNull(),
+    targetAmount: decimal('target_amount', { precision: 38, scale: 18 }).notNull(),
     targetTxHash: varchar('target_tx_hash'),
     recipientAddress: varchar('recipient_address').notNull(),
     

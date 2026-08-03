@@ -60,21 +60,48 @@ export interface Exchange {
 }
 
 export interface OkediDashboardData {
+  user?: string | {
+    id?: string;
+    name?: string;
+    kycStatus?: string;
+    kycLevel?: string;
+  };
   totalBalance: number;
   trustScore: number;
   governanceScore: number;
+  governanceActivity?: Array<{ title?: string; summary?: string; timestamp?: string }>;
+  daoCount: number;
+  memberCount: number;
+  strategies: Strategy[];
+  strategyStatuses: { [key: string]: 'active' | 'inactive' };
+  treasuryAlerts?: Array<{ title?: string; message?: string; summary?: string; timestamp?: string }>;
+  positions: Position[];
+  exchanges: Exchange[];
   balances: BalanceSource[];  // Unified balance breakdown by source
-  // FIXED: Replaced 'any' with proper interfaces to improve type safety
   myDAOs: DAOInfo[];
   activeProposals: ProposalInfo[];
+  recentProposals: ProposalInfo[];
   recentTransactions: TransactionInfo[];
   activeEscrows: EscrowInfo[];
   governanceStats: GovernanceStats;
+  treasuryChanges?: Array<{ summary?: string; note?: string; ts?: string }>;
+  marketAnomalies?: Array<{ title?: string; summary?: string; timestamp?: string }>;
+  strategyTriggers?: Array<{ title?: string; note?: string; timestamp?: string }>;
+  proposalDeadlines?: Array<{ title?: string; deadline?: string }>;
+  liquidityChanges?: Array<{ title?: string; timestamp?: string; summary?: string }>;
+  riskEvents?: Array<{ title?: string; summary?: string; timestamp?: string }>;
   referralStats: ReferralStats;
   daoChat: DaoChatData;
   tipOfTheDay: string;
-  kycStatus?: 'not-started' | 'pending' | 'verified';
+  kycLevel?: 'pending' | 'verified';
+  kycStatus?: string;
   kycProgress?: number;
+  kycLimits?: {
+    daily: number;
+    monthly: number;
+    verifiedDaily: number;
+    verifiedMonthly: number;
+  };
   transferLimits?: {
     daily: number;
     monthly: number;
@@ -83,7 +110,21 @@ export interface OkediDashboardData {
   };
   cryptoCurrency?: string;
   fiatCurrency?: string;
+
+  selectedDaoId?: string;
+  currentUser?: {
+    id: string;
+    name?: string;
+    votingPower?: number;
+  };
+  marketRegime?: string;
+  treasuryExposure?: number;
+  connectedExchanges?: number;
+  riskLevel?: string;
+  pendingActionsCount?: number;
+  walletAddress?: string;
 }
+
 
 // Added missing schema interfaces for type safety
 export interface DAOInfo {
@@ -91,21 +132,49 @@ export interface DAOInfo {
   name: string;
   logo?: string;
   members: number;
-  role: 'founder' | 'admin' | 'member' | 'elder';
+  role: 'founder' | 'admin' | 'member' | 'elder' | string;
+  description?: string;
+  memberCount?: number;
+  treasury?: number;
+  activityPoints?: number;
+  promotionEligible?: boolean;
+  type?: 'meta' | 'collective' | 'free' | 'short_term';
+  activity?: Array<Record<string, unknown>>;
+  memberSince?: string;
+  onboarding?: { complete?: boolean };
+  onboardingState?: { complete?: boolean };
+  createdBy?: string;
+  createdByName?: string;
+  votingPower?: number;
+  proposals?: ProposalInfo[];
+  recentProposals?: ProposalInfo[];
 }
 
 export interface ProposalInfo {
   id: string;
   title: string;
-  status: 'draft' | 'active' | 'passed' | 'failed' | 'executed';
+  status: 'draft' | 'active' | 'passed' | 'failed' | 'executed' | 'voting' | 'pending';
   votesFor: number;
   votesAgainst: number;
   deadline: string;
+  daoName?: string;
+  currentVotes?: number;
+  votesRequired?: number;
+  createdBy?: string;
+  createdByName?: string;
+  description?: string;
+  type?: 'general' | 'budget' | 'poll' | 'emergency';
+  daoId?: string;
+  createdAt?: string | Date;
+  updatedAt?: string | Date;
+  votingEndsAt?: string | Date;
+  currentVotesBreakdown?: { for: number; against: number; abstain: number };
+  userVotingPower?: number;
 }
 
 export interface TransactionInfo {
   id: string;
-  type: 'send' | 'receive' | 'trade' | 'stake' | 'unstake';
+  type: 'send' | 'receive' | 'trade' | 'stake' | 'unstake' | 'deposit' | 'transfer';
   amount: number;
   currency: string;
   timestamp: string;
@@ -119,6 +188,9 @@ export interface EscrowInfo {
   currency: string;
   releaseDate: string;
   status: 'locked' | 'pending-release' | 'released';
+  description?: string;
+  participantName?: string;
+  daysLeft?: number;
 }
 
 export interface GovernanceStats {
@@ -126,6 +198,10 @@ export interface GovernanceStats {
   votesParticipated: number;
   proposalsCreated: number;
   avgVotingRate: number;
+  votesCast?: number;
+  governancePower?: number;
+  daoMemberCount?: number;
+  influenceRank?: number;
 }
 
 export interface ReferralStats {
@@ -133,11 +209,15 @@ export interface ReferralStats {
   referrals: number;
   commission: number;
   tier: 'bronze' | 'silver' | 'gold' | 'platinum';
+  totalEarnings?: number;
+  activeReferrals?: number;
+  referralLink?: string;
 }
 
 export interface DaoChatData {
   messages: ChatMessage[];
   unreadCount: number;
+  daoName?: string;
 }
 
 export interface ChatMessage {
@@ -146,6 +226,8 @@ export interface ChatMessage {
   content: string;
   timestamp: string;
   reactions?: { emoji: string; count: number }[];
+  text?: string;
+  message?: string;
 }
 
 export interface DashboardResponse<T> {
@@ -154,11 +236,13 @@ export interface DashboardResponse<T> {
   status: number;
 }
 
+export type OkediDashboardDataT = OkediDashboardData;
+
 /**
  * Fetch Okedi (beginner) dashboard data
  * GET /api/dashboard/okedi
  */
-export async function getOkediDashboard() {
+export async function getOkediDashboard(): Promise<OkediDashboardDataT> {
   try {
     const res = await fetch('/api/v1/dashboard/okedi', {
       method: 'GET',

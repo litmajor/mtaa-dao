@@ -573,7 +573,7 @@ hardhat.config.ts | TypeScript Hardhat configuration variant used by scripts and
 hardhat.config.cjs | CommonJS Hardhat config (compat mode) | hardhat config (cjs)
 vite.config.ts | Vite config for frontend build, aliases, and environment injection | viteConfig
 drizzle.config.ts | Drizzle-ORM DB config for migrations and model generation | drizzleConfig
-tsup.config.ts | Bundler configuration for building server/client packages with `tsup` | tsupConfig
+tsup.bundle.config.ts | Bundler configuration for building the backend package with `tsup` | tsupBundleConfig
 tsconfig.json | TypeScript project configuration (paths, compiler options) used across repo | tsconfig
 tsconfig.test.json | TypeScript config for test environment with Jest/ts-jest settings | tsconfig.test
 tailwind.config.ts | Tailwind CSS design system config and theme tokens | tailwindConfig

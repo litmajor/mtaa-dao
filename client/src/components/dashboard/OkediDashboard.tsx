@@ -7,7 +7,8 @@
  * ╚═══════════════════════════════════════════════════════════════════════════╝
  */
 
-import React, { useState, useEffect, useMemo, useCallback, Suspense, lazy, ReactNode } from 'react';
+import React, { useState, useEffect, useMemo, useCallback, Suspense, lazy } from 'react';
+import type { ReactNode } from 'react';
 import {
   ArrowUpRight,
   Send,
@@ -19,14 +20,17 @@ import {
   MoreHorizontal,
   Plus,
 } from 'lucide-react';
-import { getOkediDashboard, DAOInfo, ProposalInfo, TransactionInfo, EscrowInfo, DaoChatData, ChatMessage } from '../../api/dashboardApi';
-import type { OkediDashboardDataT } from '../../api/dashboardApi';
+import { getOkediDashboard } from '../../api/dashboardApi';
+import type { DAOInfo, ProposalInfo, TransactionInfo, EscrowInfo, DaoChatData, ChatMessage, OkediDashboardDataT } from '../../api/dashboardApi';
 import UnifiedBalance from './UnifiedBalance';
-const KycChecklistModal = React.lazy(() => import('../kyc/KycChecklistModal').then((mod: any) => ({ default: mod.default || mod.KycChecklistModal || mod } as any)));
+const KycChecklistModal = React.lazy(async () => {
+  const mod = await import('../kyc/KycChecklistModal');
+  return { default: mod.default || mod };
+});
 import { CreateProposalModal } from '../governance/CreateProposalModal';
 import DAOCardComponent from '../governance/DAOCard';
-import { RoleProgressModal } from '../governance/RoleProgressModal';
-import { VoteProposalModal } from '../governance/VoteProposalModal';
+import { RoleProgressModal, type ActivityRecord } from '../governance/RoleProgressModal';
+import { VoteProposalModal, type ProposalDetails } from '../governance/VoteProposalModal';
 import { ProposalResultsCard } from '../governance/ProposalResultsCard';
 import { useDaoContext } from '@/contexts/dao-context';
 
@@ -555,8 +559,14 @@ QuickActions.displayName = 'QuickActions';
 // ============================================================================
 // KYC BANNER COMPONENT
 // ============================================================================
-const KycBanner = ({ data, onStartKyc }: { data?: any; onStartKyc?: () => void }) => {
-  const kycStatus = data?.kycStatus || data?.kycLevel || data?.user?.kycStatus || data?.user?.kycLevel || 'not-started';
+interface KycBannerProps {
+  data?: OkediDashboardDataT;
+  onStartKyc?: () => void;
+}
+
+const KycBanner = ({ data, onStartKyc }: KycBannerProps) => {
+    const userMeta = typeof data?.user === 'object' && data.user !== null ? data.user : undefined;
+  const kycStatus = data?.kycStatus || data?.kycLevel || userMeta?.kycStatus || userMeta?.kycLevel || 'not-started';
   const progress = data?.kycProgress ?? (kycStatus === 'verified' ? 100 : kycStatus === 'pending' ? 50 : 0);
   const progressNumber = Math.round(Math.min(Math.max(progress, 0), 100));
 
@@ -621,9 +631,7 @@ const KycBanner = ({ data, onStartKyc }: { data?: any; onStartKyc?: () => void }
 KycBanner.displayName = 'KycBanner';
 
 interface AnalyticsPanelProps {
-  data?: {
-    recentTransactions?: TransactionInfo[];
-  };
+  data?: OkediDashboardDataT | null;
 }
 
 // ============================================================================
@@ -701,7 +709,11 @@ AnalyticsPanel.displayName = 'AnalyticsPanel';
 // ============================================================================
 // PROPOSAL CARD COMPONENT
 // ============================================================================
-const ProposalCard = React.memo(({ proposal }: { proposal?: any }) => {
+interface ProposalCardProps {
+  proposal?: ProposalInfo;
+}
+
+const ProposalCard = React.memo(({ proposal }: ProposalCardProps) => {
   const progressPercentage = useMemo(() => {
     return Math.min(((proposal?.currentVotes || 0) / (proposal?.votesRequired || 1)) * 100, 100);
   }, [proposal?.currentVotes, proposal?.votesRequired]);
@@ -756,7 +768,11 @@ ProposalCard.displayName = 'ProposalCard';
 // ============================================================================
 // TRANSACTION ITEM COMPONENT
 // ============================================================================
-const TransactionItem = React.memo(({ transaction }: { transaction?: any }) => {
+interface TransactionItemProps {
+  transaction?: TransactionInfo;
+}
+
+const TransactionItem = React.memo(({ transaction }: TransactionItemProps) => {
   const txColors = TRANSACTION_COLORS[transaction?.type as keyof typeof TRANSACTION_COLORS] || TRANSACTION_COLORS.escrow;
   const Icon = transaction?.type === 'send' || transaction?.type === 'transfer' ? ArrowUpRight :
                transaction?.type === 'receive' || transaction?.type === 'deposit' ? Send :
@@ -834,10 +850,20 @@ export default function OkediDashboard() {
   // ============================================================================
   // IMPROVEMENT: Organized state by concern
   
-  const [data, setData] = useState<any>(null);
+    const [data, setData] = useState<OkediDashboardDataT | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   
+  type DashboardToast = { message: string; type: 'info' | 'success' | 'error' | 'warning' };
+  type OnboardingState = {
+    created?: boolean;
+    inviteSent?: boolean;
+    firstContribution?: boolean;
+    firstVote?: boolean;
+    walletConfigured?: boolean;
+    complete?: boolean;
+  };
+
   // UI State
   const [showSendModal, setShowSendModal] = useState(false);
   const [showReceiveModal, setShowReceiveModal] = useState(false);
@@ -846,23 +872,23 @@ export default function OkediDashboard() {
   const [showKycModal, setShowKycModal] = useState(false);
   const [kycRequired, setKycRequired] = useState(false);
   const [copiedLink, setCopiedLink] = useState(false);
-  const [toast, setToast] = useState<any>(null);
+  const [toast, setToast] = useState<DashboardToast | null>(null);
   const [showFirstRun, setShowFirstRun] = useState(false);
   const [chamaName, setChamaName] = useState('');
   const [showOnboardingChecklist, setShowOnboardingChecklist] = useState(false);
-  const [onboardingState, setOnboardingState] = useState<any>(null);
+  const [onboardingState, setOnboardingState] = useState<OnboardingState | null>(null);
   const [showBatchTransferModal, setShowBatchTransferModal] = useState(false);
   const [showBillSplitModal, setShowBillSplitModal] = useState(false);
   const [showRecurringPaymentModal, setShowRecurringPaymentModal] = useState(false);
   const [showRecordPaymentModal, setShowRecordPaymentModal] = useState(false);
-  const [recentPayments, setRecentPayments] = useState<any[]>([]);
+  const [recentPayments, setRecentPayments] = useState<Array<{ id: string; contributorId: string; amount: number; currency: string; status: string; daoId: string }>>([]);
   const [userAddress, setUserAddress] = useState<string>('');
   const [selectedUserForRole, setSelectedUserForRole] = useState<string | null>(null);
   const [showRoleProgressModal, setShowRoleProgressModal] = useState(false);
   const [selectedDAOForRole, setSelectedDAOForRole] = useState<string | null>(null);
   const userId = data?.currentUser?.id || '';
   const [showVoteProposalModal, setShowVoteProposalModal] = useState(false);
-  const [selectedProposal, setSelectedProposal] = useState<any | null>(null);
+  const [selectedProposal, setSelectedProposal] = useState<ProposalDetails | null>(null);
   const { selectedDaoId, isLoading: daoContextLoading } = useDaoContext();
   
   // Governance State
@@ -900,7 +926,7 @@ export default function OkediDashboard() {
             setShowFirstRun(true);
           }
           // if there is a DAO and onboarding not complete, show checklist
-          const dashboardDao = (dashboardData?.myDAOs || []).find((dao: any) => dao.id === (selectedDaoId || dashboardData?.selectedDaoId)) || (dashboardData?.myDAOs || [])[0];
+          const dashboardDao = (dashboardData?.myDAOs || []).find((dao) => dao.id === (selectedDaoId || dashboardData?.selectedDaoId)) || (dashboardData?.myDAOs || [])[0];
           if (dashboardDao) {
             const onboard = dashboardDao.onboarding || dashboardDao.onboardingState || null;
             // treat null as not complete
@@ -1022,9 +1048,16 @@ export default function OkediDashboard() {
       try {
         const refreshed = await getOkediDashboard();
         if (!mounted) return;
-        setData((prev: any) => ({ ...(prev || {}), ...(refreshed || {}) }));
+        setData((prev) => ({ ...(prev || {}), ...(refreshed || {}) }));
         setLastUpdated(new Date());
-        setStrategyStatuses(refreshed?.strategyStatuses || []);
+        const strategyStatusPayload = refreshed?.strategyStatuses;
+        setStrategyStatuses(
+          Array.isArray(strategyStatusPayload)
+            ? strategyStatusPayload
+            : strategyStatusPayload
+            ? Object.entries(strategyStatusPayload).map(([name, state]) => ({ name, state }))
+            : []
+        );
         setTreasuryChanges(refreshed?.treasuryChanges || []);
       } catch (err) {
         console.warn('Dashboard poll failed:', err);
@@ -1077,7 +1110,7 @@ export default function OkediDashboard() {
   // ============================================================================
   // IMPROVEMENT: Memoized callbacks prevent unnecessary re-renders
   
-  const showToast = useCallback((message: string, type: string = 'info') => {
+  const showToast = useCallback((message: string, type: DashboardToast['type'] = 'info') => {
     setToast({ message, type });
   }, []);
   
@@ -1096,15 +1129,31 @@ export default function OkediDashboard() {
   }, [data?.referralStats?.referralLink, showToast]);
   
   const handleVote = useCallback((daoId: string) => {
-    // Open the vote modal with either a real proposal (if present) or a placeholder
-    const dao = data?.myDAOs?.find((d: any) => d.id === daoId);
-    const proposal = (dao && ((dao.proposals && dao.proposals[0]) || (dao.recentProposals && dao.recentProposals[0]))) || {
+    const dao = data?.myDAOs?.find((d) => d.id === daoId);
+    const proposalFromDao = dao?.proposals?.[0] || dao?.recentProposals?.[0];
+    const proposal: ProposalDetails = proposalFromDao ? {
+      id: proposalFromDao.id,
+      title: proposalFromDao.title,
+      description: proposalFromDao.description || 'No proposal details available.',
+      type: proposalFromDao.type || 'general',
+      status: proposalFromDao.status === 'passed' ? 'passed' : proposalFromDao.status === 'failed' ? 'failed' : proposalFromDao.status === 'executed' ? 'executed' : 'voting',
+      daoId: proposalFromDao.daoId || daoId,
+      daoName: proposalFromDao.daoName || dao?.name || 'DAO',
+      createdBy: proposalFromDao.createdBy || dao?.createdBy || data?.currentUser?.id || '',
+      createdByName: proposalFromDao.createdByName || dao?.createdByName || data?.currentUser?.name || '',
+      createdAt: proposalFromDao.createdAt ? new Date(proposalFromDao.createdAt) : new Date(),
+      updatedAt: proposalFromDao.updatedAt ? new Date(proposalFromDao.updatedAt) : undefined,
+      votingEndsAt: proposalFromDao.votingEndsAt ? new Date(proposalFromDao.votingEndsAt) : new Date(Date.now() + 1000 * 60 * 60 * 24 * 3),
+      currentVotes: proposalFromDao.currentVotesBreakdown || { for: 0, against: 0, abstain: 0 },
+      votesRequired: proposalFromDao.votesRequired || 1,
+      userVotingPower: proposalFromDao.userVotingPower || data?.currentUser?.votingPower || 1,
+    } : {
       id: `proposal-${Date.now()}`,
       title: 'Community Proposal (placeholder)',
       description: 'No proposal details available. This is a placeholder to allow voting in the dashboard.',
       type: 'general',
       status: 'voting',
-      daoId: daoId,
+      daoId,
       daoName: dao?.name || 'DAO',
       createdBy: dao?.createdBy || data?.currentUser?.id || '',
       createdByName: dao?.createdByName || data?.currentUser?.name || '',
@@ -1162,11 +1211,28 @@ export default function OkediDashboard() {
   const [activeDomain, setActiveDomain] = useState<string>('Treasury');
   const [lastUpdated, setLastUpdated] = useState<Date>(new Date());
   const [isOnline, setIsOnline] = useState<boolean>(typeof navigator !== 'undefined' ? navigator.onLine : true);
-  const [strategyStatuses, setStrategyStatuses] = useState<Array<any>>([]);
-  const [treasuryChanges, setTreasuryChanges] = useState<Array<any>>([]);
+  const [strategyStatuses, setStrategyStatuses] = useState<Array<{ name: string; state?: string; lastRun?: string }>>([]);
+  const [treasuryChanges, setTreasuryChanges] = useState<Array<{ summary?: string; note?: string; ts?: string }>>([]);
+
+  const normalizeActivityHistory = useCallback((activity?: Array<Record<string, unknown>>): ActivityRecord[] => {
+    if (!activity) return [];
+
+    return activity.map((item, index): ActivityRecord => ({
+      id: String(item.id ?? `${index}`),
+      type: (item.type as ActivityRecord['type']) ?? 'task_completed',
+      label: String(item.label ?? item.title ?? 'Activity'),
+      points: Number(item.points ?? 0),
+      date: new Date(String(item.date ?? item.timestamp ?? Date.now())),
+      metadata: item.metadata && typeof item.metadata === 'object' ? (item.metadata as ActivityRecord['metadata']) : undefined,
+    }));
+  }, []);
 
   // Intelligence rail component (persistent side rail)
-  const IntelligenceRail = React.memo(({ data }: { data?: any }) => {
+  interface IntelligenceRailProps {
+  data?: OkediDashboardDataT | null;
+}
+
+const IntelligenceRail = React.memo(({ data }: IntelligenceRailProps) => {
     const items: Array<{id:string,title:string,ts?:string,source?:string}> = [];
     (data?.treasuryAlerts || []).forEach((a:any,i:number)=> items.push({ id:`ta-${i}`, title: a.title || a.message || 'Treasury alert', ts: a.timestamp, source: 'Treasury' }));
     (data?.governanceActivity || []).forEach((g:any,i:number)=> items.push({ id:`ga-${i}`, title: g.title || g.summary || 'Governance', ts: g.timestamp, source: 'Governance' }));
@@ -1220,32 +1286,70 @@ export default function OkediDashboard() {
 
   // Focus panel shows a small workspace-specific view while preserving context
   // Contextual workspace components
-  const TreasuryWorkspace = React.memo(() => (
-    <div className={TERTIARY_SURFACE}>
-      <div className="flex items-start justify-between mb-2">
-        <div>
-          <h4 className="text-sm font-semibold text-white mb-1">Treasury Workspace</h4>
-          <p className="text-slate-300 text-sm">Allocations, positions, liquidity, risk.</p>
+  const TreasuryWorkspace = React.memo(() => {
+    const dashboardData: OkediDashboardDataT = data ?? {
+      totalBalance: 0,
+      trustScore: 0,
+      governanceScore: 0,
+      daoCount: 0,
+      memberCount: 0,
+      strategies: [],
+      strategyStatuses: {},
+      positions: [],
+      exchanges: [],
+      balances: [],
+      myDAOs: [],
+      activeProposals: [],
+      recentProposals: [],
+      recentTransactions: [],
+      activeEscrows: [],
+      governanceStats: {
+        totalVotingPower: 0,
+        votesParticipated: 0,
+        proposalsCreated: 0,
+        avgVotingRate: 0,
+      },
+      referralStats: {
+        referralCode: '',
+        referrals: 0,
+        commission: 0,
+        tier: 'bronze',
+      },
+      daoChat: {
+        messages: [],
+        unreadCount: 0,
+      },
+      tipOfTheDay: '',
+      cryptoCurrency: 'cUSD',
+    };
+
+    return (
+      <div className={TERTIARY_SURFACE}>
+        <div className="flex items-start justify-between mb-2">
+          <div>
+            <h4 className="text-sm font-semibold text-white mb-1">Treasury Workspace</h4>
+            <p className="text-slate-300 text-sm">Allocations, positions, liquidity, risk.</p>
+          </div>
+          <div className="text-right">
+            <ConnectivityIndicator online={isOnline} />
+            <LiveTimestamp ts={lastUpdated} />
+          </div>
         </div>
-        <div className="text-right">
-          <ConnectivityIndicator online={isOnline} />
-          <LiveTimestamp ts={lastUpdated} />
-        </div>
-      </div>
-      <div className="mt-3 space-y-3">
-        <UnifiedBalance totalBalance={data.totalBalance} currency={data.cryptoCurrency || 'cUSD'} balances={data.balances} />
-        <AnalyticsPanel data={data} />
-        <div>
-          <h5 className="text-xs text-slate-400 mb-2">Recent Treasury Changes</h5>
-          <div className="space-y-2">
-            {(treasuryChanges || []).slice(0,3).map((c,i)=> (
-              <div key={i} className="text-xs text-slate-300">{c.summary || c.note || 'Change recorded'} • {c.ts ? new Date(c.ts).toLocaleString() : ''}</div>
-            ))}
+        <div className="mt-3 space-y-3">
+          <UnifiedBalance totalBalance={dashboardData.totalBalance} currency={dashboardData.cryptoCurrency || 'cUSD'} balances={dashboardData.balances} />
+          <AnalyticsPanel data={dashboardData} />
+          <div>
+            <h5 className="text-xs text-slate-400 mb-2">Recent Treasury Changes</h5>
+            <div className="space-y-2">
+              {(treasuryChanges || []).slice(0,3).map((c,i)=> (
+                <div key={i} className="text-xs text-slate-300">{c.summary || c.note || 'Change recorded'} • {c.ts ? new Date(c.ts).toLocaleString() : ''}</div>
+              ))}
+            </div>
           </div>
         </div>
       </div>
-    </div>
-  ));
+    );
+  });
 
   const GovernanceWorkspace = React.memo(() => (
     <div className={TERTIARY_SURFACE}>
@@ -1390,7 +1494,7 @@ export default function OkediDashboard() {
         } finally { setLoading(false); }
       };
 
-      const stepDone = (k: string) => Boolean(onboardingState && onboardingState[k]);
+      const stepDone = (k: keyof OnboardingState) => Boolean(onboardingState?.[k]);
 
       return (
         <div className="min-h-screen bg-slate-900 text-white p-6 flex items-center justify-center">
@@ -1598,13 +1702,13 @@ export default function OkediDashboard() {
                         dao={{
                           id: dao.id,
                           name: dao.name,
-                          description: (dao as any).description,
-                          memberCount: (dao as any).memberCount,
-                          role: ((dao as any).role === 'founder' ? 'admin' : (dao as any).role) as 'member' | 'elder' | 'admin',
-                          treasury: (dao as any).treasury,
-                          activityPoints: (dao as any).activityPoints || 0,
-                          promotionEligible: (dao as any).promotionEligible || false,
-                          type: (dao as any).type,
+                          description: dao.description,
+                          memberCount: dao.memberCount ?? dao.members,
+                          role: (dao.role === 'founder' ? 'admin' : dao.role) as 'member' | 'elder' | 'admin',
+                          treasury: dao.treasury,
+                          activityPoints: dao.activityPoints || 0,
+                          promotionEligible: dao.promotionEligible || false,
+                          type: dao.type,
                         }}
                         onVote={handleVote}
                         onSend={handleSend}
@@ -1832,7 +1936,7 @@ export default function OkediDashboard() {
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-4">
                 <div className="bg-slate-700 rounded-lg p-4">
                   <p className="text-sm text-slate-300">Total Earnings</p>
-                  <p className="text-3xl font-bold text-white">${data.referralStats.totalEarnings.toFixed(2)}</p>
+                  <p className="text-3xl font-bold text-white">${Number(data.referralStats.totalEarnings ?? 0).toFixed(2)}</p>
                   <p className="text-xs text-slate-400 mt-1">USDC</p>
                 </div>
                 <div className="bg-slate-700 rounded-lg p-4">
@@ -2017,7 +2121,7 @@ export default function OkediDashboard() {
         {/* RECORD PAYMENT MODAL (OKEDI) */}
         {showRecordPaymentModal && activeDaoId && (
           <Suspense fallback={<div>Loading...</div>}>
-            {React.createElement(RecordPaymentModal as any, { isOpen: showRecordPaymentModal, daoId: activeDaoId, onClose: () => setShowRecordPaymentModal(false), onSuccess: (res:any) => { setToast({ message: 'Payment recorded', type: 'success' }); setRecentPayments(prev => [ ...(prev||[]).slice(0,9), { id: res.paymentId || res.contributionId, contributorId: (data?.currentUser?.id || ''), amount: Number((res.amountKES||res.amount||0)), currency: 'KES', status: 'pending', daoId: activeDaoId } ]); } })}
+            {React.createElement(RecordPaymentModal as any, { isOpen: showRecordPaymentModal, daoId: activeDaoId, onClose: () => setShowRecordPaymentModal(false), onSuccess: (res: { paymentId?: string; contributionId?: string; amountKES?: number; amount?: number }) => { setToast({ message: 'Payment recorded', type: 'success' }); setRecentPayments(prev => [ ...(prev || []).slice(0,9), { id: res.paymentId || res.contributionId || '', contributorId: (data?.currentUser?.id || ''), amount: Number(res.amountKES ?? res.amount ?? 0), currency: 'KES', status: 'pending', daoId: activeDaoId } ]); } })}
           </Suspense>
         )}
 
@@ -2030,7 +2134,7 @@ export default function OkediDashboard() {
             daoName={data?.myDAOs?.find((d: any) => d.id === selectedDAOForRole)?.name || ''}
             currentRole={(data?.myDAOs?.find((d: any) => d.id === selectedDAOForRole)?.role as any) || 'member'}
             currentActivityPoints={data?.myDAOs?.find((d: any) => d.id === selectedDAOForRole)?.activityPoints || 0}
-            activityHistory={data?.myDAOs?.find((d: any) => d.id === selectedDAOForRole)?.activity || []}
+            activityHistory={normalizeActivityHistory(data?.myDAOs?.find((d: any) => d.id === selectedDAOForRole)?.activity)}
             promotionHistory={[]}
             memberSince={new Date(data?.myDAOs?.find((d: any) => d.id === selectedDAOForRole)?.memberSince || Date.now())}
             onRequestPromotion={() => {}}
@@ -2052,7 +2156,7 @@ export default function OkediDashboard() {
         {showCreateProposalModal && selectedDAOForProposal && (
           React.createElement(CreateProposalModal as any, {
             daoId: selectedDAOForProposal,
-            daoType: data?.myDAOs?.find((d: any) => d.id === selectedDAOForProposal)?.type || 'collective',
+            daoType: (data?.myDAOs?.find((d: any) => d.id === selectedDAOForProposal)?.type as 'meta' | 'collective' | 'free' | 'short_term' | undefined) || 'collective',
             userRole: data?.myDAOs?.find((d: any) => d.id === selectedDAOForProposal)?.role || 'member',
             isOpen: showCreateProposalModal,
             onClose: () => { setShowCreateProposalModal(false); setSelectedDAOForProposal(null); },

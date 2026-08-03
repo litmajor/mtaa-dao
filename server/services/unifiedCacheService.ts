@@ -9,11 +9,30 @@
  * - Market data (CCXT Service, Symbol Universe)
  * 
  * Features:
- * ✅ Stale-while-revalidate pattern
- * ✅ Pattern-based invalidation
- * ✅ Fallback to memory cache
- * ✅ Cache quality tracking (fresh/stale/degraded)
- * ✅ Statistics and monitoring
+ *  Stale-while-revalidate pattern
+ * Pattern-based invalidation
+  Fallback to memory cache
+ * Cache quality tracking (fresh/stale/degraded)
+ * Statistics and monitoring
+ *
+ * ─────────────────────────────────────────────────────────────────────────────
+ * FIX (2026-07-07): This file talks to the raw client returned by
+ * getRedisInstance() directly (bypassing UnifiedRedisService's wrapper). That
+ * client is a node-redis v4 client, but this file was calling ioredis-style
+ * method names that don't exist on it:
+ *   - `.setex(key, ttl, val)`   → node-redis v4: `.setEx(key, ttl, val)`
+ *   - `.del(...keys)` (variadic spread) → node-redis v4: `.del(keys)` (array)
+ *   - `.flushdb()`              → node-redis v4: `.flushDb()`
+ * Calling the wrong names throws "this.redis.setex is not a function" etc.,
+ * which was being caught by the outer try/catch and logged as a generic
+ * "Error getting price/candles/markets" — masking the real cause.
+ *
+ * Also: `isConnected` was only ever set to `false` in the constructor's catch
+ * block, and never flipped back to `false` when a live client later dies
+ * mid-session (e.g. singleton reset upstream). Read paths now catch
+ * "client is closed"-type errors per-call and flip `isConnected = false` so
+ * the fallback memory cache actually kicks in instead of repeatedly throwing.
+ * ─────────────────────────────────────────────────────────────────────────────
  */
 
 import { getRedisInstance, getRedisInstanceAsync } from '../config/redisConnectionManager';
@@ -73,6 +92,20 @@ export interface CacheStats {
   redisConnected: boolean;
 }
 
+/**
+ * Returns true if the error looks like Redis being unavailable/closed,
+ * as opposed to a real command error worth surfacing loudly.
+ */
+function isRedisUnavailableError(error: any): boolean {
+  const msg = error?.message || '';
+  return (
+    msg.includes('closed') ||
+    msg.includes('ECONNREFUSED') ||
+    msg.includes('is not a function') || // catches lingering API-mismatch bugs defensively
+    msg.includes('The client is closed')
+  );
+}
+
 class UnifiedCacheService {
   private redis: any = null;
   private fallbackMemory: Map<string, { data: any; expiry: number }> = new Map();
@@ -112,6 +145,21 @@ class UnifiedCacheService {
   }
 
   /**
+   * Re-fetch the singleton client. Called when a call fails with a
+   * "client is closed"-style error so subsequent calls have a chance of
+   * picking up a freshly-recreated client (redisConnectionManager now
+   * self-heals its singleton on socket 'end').
+   */
+  private tryRecoverConnection(): void {
+    try {
+      this.redis = getRedisInstance();
+      this.isConnected = true;
+    } catch (error) {
+      this.isConnected = false;
+    }
+  }
+
+  /**
    * Get or fetch price with fresh/stale caching strategy
    * Used by: CCXT Service, CEX Collector
    */
@@ -125,14 +173,24 @@ class UnifiedCacheService {
     try {
       // 1. Check fresh cache
       if (this.isConnected && this.redis) {
-        const cached = await this.redis.get(key);
-        if (cached) {
-          return {
-            data: JSON.parse(cached),
-            source: 'cache',
-            quality: 'fresh',
-            timestamp: Date.now(),
-          };
+        try {
+          const cached = await this.redis.get(key);
+          if (cached) {
+            return {
+              data: JSON.parse(cached),
+              source: 'cache',
+              quality: 'fresh',
+              timestamp: Date.now(),
+            };
+          }
+        } catch (redisError: any) {
+          if (isRedisUnavailableError(redisError)) {
+            logger.debug(`[Cache] Redis unavailable, falling back to memory cache for ${key}`);
+            this.isConnected = false;
+            this.tryRecoverConnection();
+          } else {
+            throw redisError;
+          }
         }
       }
 
@@ -199,21 +257,31 @@ class UnifiedCacheService {
     const staleKey = `${key}:stale`;
 
     if (this.isConnected && this.redis) {
-      const serialized = JSON.stringify(price);
-      const operations = [
-        this.redis.setex(key, this.TTL.PRICE_FRESH, serialized),
-        this.redis.setex(staleKey, this.TTL.PRICE_STALE, serialized),
-      ];
-      await Promise.all(operations);
-    } else {
-      // Fallback to memory cache
-      const expiry = Date.now() + this.TTL.PRICE_FRESH * 1000;
-      this.fallbackMemory.set(key, { data: price, expiry });
-      this.fallbackMemory.set(staleKey, {
-        data: price,
-        expiry: Date.now() + this.TTL.PRICE_STALE * 1000,
-      });
+      try {
+        const serialized = JSON.stringify(price);
+        await Promise.all([
+          this.redis.setEx(key, this.TTL.PRICE_FRESH, serialized),
+          this.redis.setEx(staleKey, this.TTL.PRICE_STALE, serialized),
+        ]);
+        return;
+      } catch (redisError: any) {
+        if (isRedisUnavailableError(redisError)) {
+          logger.debug(`[Cache] Redis unavailable on setPrice, falling back to memory for ${key}`);
+          this.isConnected = false;
+          this.tryRecoverConnection();
+        } else {
+          throw redisError;
+        }
+      }
     }
+
+    // Fallback to memory cache (also used if the redis write above failed)
+    const expiry = Date.now() + this.TTL.PRICE_FRESH * 1000;
+    this.fallbackMemory.set(key, { data: price, expiry });
+    this.fallbackMemory.set(staleKey, {
+      data: price,
+      expiry: Date.now() + this.TTL.PRICE_STALE * 1000,
+    });
   }
 
   /**
@@ -245,9 +313,10 @@ class UnifiedCacheService {
           }
         } catch (redisError: any) {
           // If Redis is closed/unreachable, fall back to memory cache
-          if (redisError?.message?.includes('closed') || redisError?.message?.includes('ECONNREFUSED')) {
+          if (isRedisUnavailableError(redisError)) {
             logger.debug(`[Cache] Redis unavailable, falling back to memory cache for ${key}`);
             this.isConnected = false; // Mark Redis as disconnected
+            this.tryRecoverConnection();
           } else {
             // Log other Redis errors but continue
             logger.debug(`[Cache] Redis get error for ${key}: ${redisError?.message}`);
@@ -345,23 +414,33 @@ class UnifiedCacheService {
     const staleKey = `${key}:stale`;
 
     if (this.isConnected && this.redis) {
-      const serialized = JSON.stringify(candles);
-      const operations = [
-        this.redis.setex(key, freshTTL, serialized),
-        this.redis.setex(staleKey, this.TTL.OHLCV_STALE, serialized),
-      ];
-      await Promise.all(operations);
-    } else {
-      // Fallback to memory cache
-      this.fallbackMemory.set(key, {
-        data: candles,
-        expiry: Date.now() + freshTTL * 1000,
-      });
-      this.fallbackMemory.set(staleKey, {
-        data: candles,
-        expiry: Date.now() + this.TTL.OHLCV_STALE * 1000,
-      });
+      try {
+        const serialized = JSON.stringify(candles);
+        await Promise.all([
+          this.redis.setEx(key, freshTTL, serialized),
+          this.redis.setEx(staleKey, this.TTL.OHLCV_STALE, serialized),
+        ]);
+        return;
+      } catch (redisError: any) {
+        if (isRedisUnavailableError(redisError)) {
+          logger.debug(`[Cache] Redis unavailable on setCandles, falling back to memory for ${key}`);
+          this.isConnected = false;
+          this.tryRecoverConnection();
+        } else {
+          throw redisError;
+        }
+      }
     }
+
+    // Fallback to memory cache (also used if the redis write above failed)
+    this.fallbackMemory.set(key, {
+      data: candles,
+      expiry: Date.now() + freshTTL * 1000,
+    });
+    this.fallbackMemory.set(staleKey, {
+      data: candles,
+      expiry: Date.now() + this.TTL.OHLCV_STALE * 1000,
+    });
   }
 
   /**
@@ -378,14 +457,24 @@ class UnifiedCacheService {
     try {
       // 1. Check fresh cache
       if (this.isConnected && this.redis) {
-        const cached = await this.redis.get(key);
-        if (cached) {
-          return {
-            data: JSON.parse(cached),
-            source: 'cache',
-            quality: 'fresh',
-            timestamp: Date.now(),
-          };
+        try {
+          const cached = await this.redis.get(key);
+          if (cached) {
+            return {
+              data: JSON.parse(cached),
+              source: 'cache',
+              quality: 'fresh',
+              timestamp: Date.now(),
+            };
+          }
+        } catch (redisError: any) {
+          if (isRedisUnavailableError(redisError)) {
+            logger.debug(`[Cache] Redis unavailable, falling back to memory cache for ${key}`);
+            this.isConnected = false;
+            this.tryRecoverConnection();
+          } else {
+            throw redisError;
+          }
         }
       }
 
@@ -420,11 +509,29 @@ class UnifiedCacheService {
 
       // Store both fresh and stale
       if (this.isConnected && this.redis) {
-        const serialized = JSON.stringify(fresh);
-        await Promise.all([
-          this.redis.setex(key, this.TTL.MARKETS, serialized),
-          this.redis.setex(staleKey, this.TTL.MARKETS_STALE, serialized),
-        ]);
+        try {
+          const serialized = JSON.stringify(fresh);
+          await Promise.all([
+            this.redis.setEx(key, this.TTL.MARKETS, serialized),
+            this.redis.setEx(staleKey, this.TTL.MARKETS_STALE, serialized),
+          ]);
+        } catch (redisError: any) {
+          if (isRedisUnavailableError(redisError)) {
+            logger.debug(`[Cache] Redis unavailable on getOrLoadMarkets write, falling back to memory for ${key}`);
+            this.isConnected = false;
+            this.tryRecoverConnection();
+            this.fallbackMemory.set(key, {
+              data: fresh,
+              expiry: Date.now() + this.TTL.MARKETS * 1000,
+            });
+            this.fallbackMemory.set(staleKey, {
+              data: fresh,
+              expiry: Date.now() + this.TTL.MARKETS_STALE * 1000,
+            });
+          } else {
+            throw redisError;
+          }
+        }
       } else {
         this.fallbackMemory.set(key, {
           data: fresh,
@@ -449,6 +556,74 @@ class UnifiedCacheService {
   }
 
   /**
+   * Get cached markets without forcing a fresh load.
+   */
+  async getCachedMarkets(exchange: string): Promise<ExchangeMarket[] | null> {
+    const key = `markets:${exchange}`;
+    try {
+      if (this.isConnected && this.redis) {
+        const cached = await this.redis.get(key);
+        if (cached) {
+          return JSON.parse(cached);
+        }
+      } else {
+        const mem = this.fallbackMemory.get(key);
+        if (mem && mem.expiry > Date.now()) {
+          return mem.data;
+        }
+      }
+    } catch (redisError: any) {
+      if (isRedisUnavailableError(redisError)) {
+        logger.debug(`[Cache] Redis unavailable, falling back to memory cache for ${key}`);
+        this.isConnected = false;
+        this.tryRecoverConnection();
+      } else {
+        logger.debug(`[Cache] Redis getCachedMarkets error for ${key}: ${redisError?.message}`);
+      }
+    }
+    return null;
+  }
+
+  /**
+   * Write market metadata into cache directly.
+   */
+  async setMarkets(exchange: string, markets: ExchangeMarket[]): Promise<void> {
+    const key = `markets:${exchange}`;
+    const staleKey = `${key}:stale`;
+    if (!markets || markets.length === 0) {
+      return;
+    }
+
+    if (this.isConnected && this.redis) {
+      try {
+        const serialized = JSON.stringify(markets);
+        await Promise.all([
+          this.redis.setEx(key, this.TTL.MARKETS, serialized),
+          this.redis.setEx(staleKey, this.TTL.MARKETS_STALE, serialized),
+        ]);
+        return;
+      } catch (redisError: any) {
+        if (isRedisUnavailableError(redisError)) {
+          logger.debug(`[Cache] Redis unavailable on setMarkets, falling back to memory for ${key}`);
+          this.isConnected = false;
+          this.tryRecoverConnection();
+        } else {
+          throw redisError;
+        }
+      }
+    }
+
+    this.fallbackMemory.set(key, {
+      data: markets,
+      expiry: Date.now() + this.TTL.MARKETS * 1000,
+    });
+    this.fallbackMemory.set(staleKey, {
+      data: markets,
+      expiry: Date.now() + this.TTL.MARKETS_STALE * 1000,
+    });
+  }
+
+  /**
    * Invalidate cache by pattern
    * Example: invalidatePattern('prices:binance:*')
    */
@@ -457,29 +632,40 @@ class UnifiedCacheService {
       let deletedCount = 0;
 
       if (this.isConnected && this.redis) {
-        const keys = await this.redis.keys(pattern);
-        if (keys.length > 0) {
-          deletedCount = await this.redis.del(...keys);
+        try {
+          const keys = await this.redis.keys(pattern);
+          if (keys.length > 0) {
+            deletedCount = await this.redis.del(keys);
 
-          // Also delete stale versions
-          const stalePattern = `${pattern}:stale`;
-          const staleKeys = await this.redis.keys(stalePattern);
-          if (staleKeys.length > 0) {
-            deletedCount += await this.redis.del(...staleKeys);
+            // Also delete stale versions
+            const stalePattern = `${pattern}:stale`;
+            const staleKeys = await this.redis.keys(stalePattern);
+            if (staleKeys.length > 0) {
+              deletedCount += await this.redis.del(staleKeys);
+            }
+          }
+          return deletedCount;
+        } catch (redisError: any) {
+          if (isRedisUnavailableError(redisError)) {
+            logger.debug('[Cache] Redis unavailable on invalidatePattern, falling back to memory');
+            this.isConnected = false;
+            this.tryRecoverConnection();
+          } else {
+            throw redisError;
           }
         }
-      } else {
-        // Memory fallback: simple pattern matching
-        const regexPattern = pattern
-          .replace(/\./g, '\\.')
-          .replace(/\*/g, '.*')
-          .replace(/\?/g, '.');
-        const regex = new RegExp(`^${regexPattern}$`);
-        for (const key of Array.from(this.fallbackMemory.keys())) {
-          if (regex.test(key)) {
-            this.fallbackMemory.delete(key);
-            deletedCount++;
-          }
+      }
+
+      // Memory fallback: simple pattern matching
+      const regexPattern = pattern
+        .replace(/\./g, '\\.')
+        .replace(/\*/g, '.*')
+        .replace(/\?/g, '.');
+      const regex = new RegExp(`^${regexPattern}$`);
+      for (const key of Array.from(this.fallbackMemory.keys())) {
+        if (regex.test(key)) {
+          this.fallbackMemory.delete(key);
+          deletedCount++;
         }
       }
 
@@ -497,7 +683,7 @@ class UnifiedCacheService {
   async clear(): Promise<void> {
     try {
       if (this.isConnected && this.redis) {
-        await this.redis.flushdb();
+        await this.redis.flushDb();
         logger.info('✅ Unified cache cleared (Redis)');
       } else {
         this.fallbackMemory.clear();

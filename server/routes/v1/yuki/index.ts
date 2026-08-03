@@ -23,7 +23,8 @@
 
 import { Router } from 'express';
 import executeRouter from './execute';
-import exchangesRouter from './exchanges';
+import exchangesRouter from './exchange';
+import analyticsRouter from './analytics';
 import routingRouter from './routing';
 import ordersRouter from './orders';
 import marketRouter from './market';
@@ -34,6 +35,12 @@ import rebalancingRouter from './rebalancing';
 import stakingRouter from './staking';
 import algoRouter from './algo';
 import bridgeRouter from './bridge';
+import portfolioRouter from './portfolio';
+import riskRouter from './risk';
+import intelligenceRouter from './intelligence';
+import alertsRouter from './alerts';
+import watchlistRouter from './watchlist';
+import indicatorsRouter from './indicators';
 
 const router = Router();
 
@@ -55,6 +62,12 @@ router.use('/execute', executeRouter);
  * GET    /v1/yuki/exchanges                 - List available exchanges
  */
 router.use('/exchanges', exchangesRouter);
+
+/**
+ * Market Analytics (disambiguated): mount detailed analytics under
+ * /v1/yuki/market/analytics for the new analytics router.
+ */
+router.use('/market/analytics', analyticsRouter);
 
 /**
  * Routing (1 endpoint)
@@ -158,5 +171,45 @@ router.use('/algo', algoRouter);
  * GET    /v1/yuki/bridge/vault-status       - Vault health
  */
 router.use('/bridge', bridgeRouter);
+
+/**
+ * Portfolio (1 endpoint)
+ * GET    /v1/yuki/portfolio                 - User portfolio
+ */
+router.use('/portfolio', portfolioRouter);
+
+/**
+ * Risk Settings (2 endpoints)
+ * GET    /v1/yuki/risk/settings             - User risk settings
+ * PUT    /v1/yuki/risk/settings             - Update risk settings
+ */
+router.use('/risk', riskRouter);
+
+/**
+ * Intelligence (Microstructure & Signals)
+ * GET    /v1/yuki/intelligence/signals      - Trade signals
+ * (Various microstructure feeds)
+ */
+router.use('/intelligence', intelligenceRouter);
+
+/**
+ * Alerts (CRUD for user alerts)
+ * GET/POST/DELETE /v1/yuki/alerts
+ */
+router.use('/alerts', alertsRouter);
+
+/**
+ * Technical Indicators (3 endpoints)
+ * GET    /v1/yuki/indicators/:symbol              - Snapshot (EnhancedTechnicalResult)
+ * GET    /v1/yuki/indicators/:symbol/multi-timeframe - Macro + micro alignment
+ * GET    /v1/yuki/indicators/:symbol/chart        - Time-series arrays for chart rendering
+ */
+router.use('/indicators', indicatorsRouter);
+
+/**
+ * Watchlist (CRUD for user watchlist)
+ * GET/POST/DELETE /v1/yuki/watchlist
+ */
+router.use('/watchlist', watchlistRouter);
 
 export default router;

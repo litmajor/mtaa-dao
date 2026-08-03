@@ -1,6 +1,5 @@
-import React, { ReactNode } from 'react';
-import { useRouter } from 'next/router';
-import Link from 'next/link';
+import React, { ReactNode, useEffect, useState } from 'react';
+// @ts-ignore: CSS module without type declarations
 import styles from './AdminLayout.module.css';
 import {
   LayoutDashboard,
@@ -8,14 +7,14 @@ import {
   Building,
   FileText,
   DollarSign,
-  LogSquare,
-  Settings,
-  Shield,
   LogOut,
   Menu,
   X,
   Zap,
-} from '../../src/lib/icons';
+  LogSquare,
+  Settings,
+  Shield,
+} from 'lucide-react';
 
 interface AdminLayoutProps {
   children: ReactNode;
@@ -23,9 +22,15 @@ interface AdminLayoutProps {
 }
 
 export const AdminLayout: React.FC<AdminLayoutProps> = ({ children, title = 'Admin Dashboard' }) => {
-  const router = useRouter();
-  const [sidebarOpen, setSidebarOpen] = React.useState(true);
-  const [mobileOpen, setMobileOpen] = React.useState(false);
+  const [sidebarOpen, setSidebarOpen] = useState(true);
+  const [mobileOpen, setMobileOpen] = useState(false);
+  const [currentPath, setCurrentPath] = useState(() => (typeof window !== 'undefined' ? window.location.pathname : '/'));
+
+  useEffect(() => {
+    const onPop = () => setCurrentPath(window.location.pathname);
+    window.addEventListener('popstate', onPop);
+    return () => window.removeEventListener('popstate', onPop);
+  }, []);
 
   const menuItems = [
     { label: 'Dashboard', href: '/admin', icon: LayoutDashboard },
@@ -40,10 +45,10 @@ export const AdminLayout: React.FC<AdminLayoutProps> = ({ children, title = 'Adm
   ];
 
   const handleLogout = async () => {
-    await router.push('/logout');
+    window.location.href = '/logout';
   };
 
-  const isActive = (href: string) => router.pathname === href;
+  const isActive = (href: string) => currentPath === href;
 
   return (
     <div className={styles.container}>
@@ -73,12 +78,10 @@ export const AdminLayout: React.FC<AdminLayoutProps> = ({ children, title = 'Adm
           {menuItems.map((item) => {
             const Icon = item.icon;
             return (
-              <Link key={item.href} href={item.href}>
-                <a className={`${styles.navItem} ${isActive(item.href) ? styles.active : ''}`}>
-                  <Icon size={20} />
-                  <span>{item.label}</span>
-                </a>
-              </Link>
+              <a key={item.href} href={item.href} className={`${styles.navItem} ${isActive(item.href) ? styles.active : ''}`}>
+                <Icon size={20} />
+                <span>{item.label}</span>
+              </a>
             );
           })}
         </nav>

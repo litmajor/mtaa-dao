@@ -12,7 +12,8 @@
  * Security: authenticate + daoMembershipGuard via parent router (index.ts)
  */
 
-import express, { Request, Response } from 'express';
+import express from 'express';
+import type { Request, Response } from 'express';
 import { randomUUID } from 'crypto';
 import { rateLimitPerUser } from '../../../../middleware/rateLimit';
 import { treasuryAdminGuard } from './treasury/security';
@@ -35,7 +36,7 @@ router.get(
       const { daoId } = req.params;
       const { status, category } = req.query;
 
-      let filters: any[] = [eq(daoTasks.daoId, daoId)];
+      let filters: typeof daoTasks.$inferSelect[] = [eq(daoTasks.daoId, daoId)];
       
       if (status && status !== 'all') {
         filters.push(eq(daoTasks.status, status as string));

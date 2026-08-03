@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { X, Info, AlertTriangle, AlertCircle, CheckCircle, ExternalLink } from '../lib/icons';
+import { X, Info, AlertTriangle, AlertCircle, CheckCircle, ExternalLink } from 'lucide-react';
 
 interface Announcement {
   id: string;

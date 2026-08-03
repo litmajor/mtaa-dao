@@ -41,6 +41,8 @@ import {
 import { logger } from '../utils/logger';
 import { gatewayAggregator, TreasuryProfile } from './gatewayAggregator';
 import { snapshotGovernanceService } from './snapshotGovernanceService';
+import { priceOracle } from './priceOracle';
+import { priceHistoryService } from './priceHistoryService';
 
 /**
  * ==========================================
@@ -52,11 +54,11 @@ import { snapshotGovernanceService } from './snapshotGovernanceService';
  */
 
 export const shardFieldRegistry: Record<string, (keyof CoreShardData)[]> = {
-  price: ['priceUsd', 'priceConfidence', 'priceSources', 'chainSpecificPrices'],
+  price: ['priceUsd', 'priceConfidence', 'priceSources', 'chainSpecificPrices', 'priceLastUpdated'],
   
-  technical: ['technicalRsi14', 'technicalMacd', 'technicalTrend', 'technicalMomentum', 'technicalSignals'],
+  technical: ['technicalRsi14', 'technicalMacd', 'technicalTrend', 'technicalMomentum', 'technicalSignals', 'technicalLastUpdated'],
   
-  liquidity: ['liquidityDepth1pct', 'liquidityDepth5pct', 'liquidityByChain'],
+  liquidity: ['liquidityDepth1pct', 'liquidityDepth2pct', 'liquidityDepth5pct', 'liquidityByChain', 'liquidityLastUpdated', 'liquidityAggregateUsd'],
   
   liquidity_aggregator: ['liquidityAggregatedProfile', 'liquidityTreasuryReady'],
   
@@ -64,7 +66,7 @@ export const shardFieldRegistry: Record<string, (keyof CoreShardData)[]> = {
   
   sc_vulnerability: ['riskSmartContractScore'],  // ⚠️ Also owned by risk_index
   
-  governance_score: ['riskGovernanceScore'],     // ⚠️ Also owned by risk_index
+  governance_score: ['riskGovernanceScore', 'governanceParticipation', 'governanceDelegatedVotingPower', 'governanceHolderConcentration', 'governanceProposalCount', 'governanceLastUpdated'],     // ⚠️ Also owned by risk_index
   
   governance_intelligence: ['governanceMetrics', 'governanceHealth', 'delegationProfile'],
   
@@ -76,9 +78,9 @@ export const shardFieldRegistry: Record<string, (keyof CoreShardData)[]> = {
   
   risk_assessment: ['riskMetrics', 'priceDeviation'],
   
-  dao_eligibility: ['governanceDaoEligibilityTier'],
+  dao_eligibility: ['governanceDaoEligibilityTier', 'governanceTierReasoning'],
   
-  curation_type: ['governanceCurationType', 'governanceScores'],
+  curation_type: ['governanceCurationType', 'governanceScores', 'curationTypeReasoning'],
 };
 
 /**
@@ -135,6 +137,8 @@ export interface ShardUpdateContext {
   volatility?: number;
   /** Latest price for volatility triggers */
   latestPrice?: number;
+  /** Existing snapshot state for sequential shard calculations */
+  snapshot?: AssetStateSnapshot;
 }
 
 abstract class IntelligenceShard {
@@ -193,6 +197,17 @@ abstract class IntelligenceShard {
  * - Chainlink oracle
  * - On-chain DEX aggregators
  */
+const supportedChains: SupportedChain[] = [
+  'celo',
+  'ethereum',
+  'base',
+  'polygon',
+  'arbitrum',
+  'optimism',
+  'bsc',
+  'avalanche',
+];
+
 export class PriceShard extends IntelligenceShard {
   constructor() {
     super('price', 60_000, 'critical'); // 1 minute, critical priority
@@ -200,41 +215,26 @@ export class PriceShard extends IntelligenceShard {
   
   async compute(context: ShardUpdateContext): Promise<Partial<CoreShardData>> {
     try {
-      // Wire to dataSourceManager for real price feeds (CoinGecko + CCXT with fallback)
-      const priceResult = await dataSourceManager.fetchPrice(context.symbol, {
-        priority: 'critical',
-        timeout: 5000
-      });
-
-      // Try to get chain-specific prices from gateway aggregator
-      const chainPrices: Record<SupportedChain, number> = {
-        ethereum: priceResult.price,
-        polygon: priceResult.price,
-        arbitrum: priceResult.price,
-        optimism: priceResult.price,
-        bsc: priceResult.price,
-        avalanche: priceResult.price,
-      };
-
-      try {
-        const liquidityProfile = await gatewayAggregator.getAggregatedLiquidity(context.symbol);
-        // Extract USD price from each adapter's chain-specific data
-        for (const adapter of liquidityProfile.perAdapter) {
-          if (adapter.chain && adapter.usdPrice) {
-            chainPrices[adapter.chain as SupportedChain] = adapter.usdPrice;
-          }
-        }
-      } catch (chainError) {
-        logger.warn(`Failed to get chain-specific prices, using uniform price: ${chainError}`);
-        // Continue with uniform price from dataSourceManager
+      const priceResult = await priceOracle.getPrice(context.symbol);
+      if (!priceResult) {
+        logger.warn(`PriceShard: no price available for ${context.symbol}`);
+        return {};
       }
-      
+
+      const chainPrices: Record<SupportedChain, number> = supportedChains.reduce(
+        (acc, chain) => {
+          acc[chain] = priceResult.priceUsd;
+          return acc;
+        },
+        {} as Record<SupportedChain, number>
+      );
+
       return {
-        priceUsd: priceResult.price,
-        priceConfidence: priceResult.confidence,
-        priceSources: priceResult.sources,
+        priceUsd: priceResult.priceUsd,
+        priceConfidence: 100,
+        priceSources: ['priceOracle'],
         chainSpecificPrices: chainPrices,
-        priceLastUpdated: new Date().toISOString(),
+        priceLastUpdated: priceResult.lastUpdated,
       };
     } catch (error) {
       logger.error(`PriceShard error for ${context.symbol}:`, error);
@@ -286,21 +286,13 @@ export class LiquidityShard extends IntelligenceShard {
       // Extract depth curve from aggregated profile
       const depthCurve = liquidityProfile.depthCurve;
       
-      // Aggregate liquidity by chain from all adapters
-      const liquidityByChain: Record<SupportedChain, number> = {
-        ethereum: 0,
-        polygon: 0,
-        arbitrum: 0,
-        optimism: 0,
-        bsc: 0,
-        avalanche: 0,
-      };
-      
-      for (const adapter of liquidityProfile.perAdapter) {
-        if (adapter.chain && adapter.liquidityUsd) {
-          liquidityByChain[adapter.chain as SupportedChain] += adapter.liquidityUsd;
-        }
-      }
+      const liquidityByChain: Record<SupportedChain, number> = supportedChains.reduce(
+        (acc, chain) => {
+          acc[chain] = chain === 'celo' ? liquidityProfile.totalLiquidity : 0;
+          return acc;
+        },
+        {} as Record<SupportedChain, number>
+      );
       
       // Update tracking price for early trigger detection
       if (context.latestPrice) {
@@ -313,7 +305,7 @@ export class LiquidityShard extends IntelligenceShard {
         liquidityDepth5pct: depthCurve.impact5Pct,
         liquidityByChain: liquidityByChain,
         liquidityLastUpdated: new Date().toISOString(),
-        liquidityAggregateUsd: liquidityProfile.aggregateUsd,
+        liquidityAggregateUsd: liquidityProfile.totalLiquidity,
       };
     } catch (error) {
       logger.error(`LiquidityShard error for ${context.symbol}:`, error);
@@ -353,17 +345,17 @@ export class TechnicalShard extends IntelligenceShard {
       // Wire to priceHistoryService for real historical price data
       const priceHistory = await priceHistoryService.getHistoricalPrices(
         context.symbol,
-        { period: '1h', limit: 100 }
+        { days: 30, currency: 'usd', chain: 'ethereum' }
       );
       
-      if (!priceHistory || priceHistory.length < 14) {
+      if (!priceHistory || !priceHistory.prices || priceHistory.prices.length < 14) {
         // Need at least 14 periods for RSI
-        logger.warn(`Insufficient price history for ${context.symbol}: ${priceHistory?.length || 0} periods`);
+        logger.warn(`Insufficient price history for ${context.symbol}: ${priceHistory?.prices?.length || 0} periods`);
         return {};
       }
       
       // Extract close prices
-      const closePrices = priceHistory.map(candle => candle.close);
+      const closePrices = priceHistory.prices.map(candle => candle.close);
       
       // Calculate technical indicators
       const rsi14 = this.calculateRSI(closePrices, 14);
@@ -707,9 +699,9 @@ export class GovernanceScoreShard extends IntelligenceShard {
       
       return {
         riskGovernanceScore: governanceMetrics.governanceScore || 50,
-        governanceParticipation: governanceMetrics.participationRate || 0,
+        governanceParticipation: governanceMetrics.avgVotingParticipation || 0,
         governanceDelegatedVotingPower: governanceMetrics.delegatedVotingPower || 0,
-        governanceHolderConcentration: governanceMetrics.holderConcentration || 0,
+        governanceHolderConcentration: governanceMetrics.topHolderConcentration || 0,
         governanceProposalCount: governanceMetrics.proposalCount || 0,
         governanceLastUpdated: new Date().toISOString(),
       };
@@ -760,11 +752,11 @@ export class CorrelationGraphShard extends IntelligenceShard {
       // Get 30-day price history for this asset
       const priceHistory = await priceHistoryService.getHistoricalPrices(
         context.symbol,
-        { period: '1d', limit: 30 }
+        { days: 30, currency: 'usd', chain: 'ethereum' }
       );
       
-      if (!priceHistory || priceHistory.length < 30) {
-        logger.warn(`Insufficient history for correlation: ${priceHistory?.length || 0} days`);
+      if (!priceHistory || !priceHistory.prices || priceHistory.prices.length < 30) {
+        logger.warn(`Insufficient history for correlation: ${priceHistory?.prices?.length || 0} days`);
         return {};
       }
       
@@ -777,15 +769,15 @@ export class CorrelationGraphShard extends IntelligenceShard {
         try {
           const refHistory = await priceHistoryService.getHistoricalPrices(
             refAsset,
-            { period: '1d', limit: 30 }
+            { days: 30, currency: 'usd', chain: 'ethereum' }
           );
           
-          if (!refHistory || refHistory.length < 30) continue;
+          if (!refHistory || !refHistory.prices || refHistory.prices.length < 30) continue;
           
           // Calculate Pearson correlation
           const correlation = this.calculatePearsonCorrelation(
-            priceHistory.map(c => c.close),
-            refHistory.map(c => c.close)
+            priceHistory.prices.map(c => c.close),
+            refHistory.prices.map(c => c.close)
           );
           
           correlations.push({
@@ -977,9 +969,9 @@ export class RelationshipDiscoveryShard extends IntelligenceShard {
   private async analyzeRiskConnections(
     symbol: string,
     linkedProtocols: string[]
-  ): Promise<Array<{ assetSymbol: string; riskType: string; severity: string }>> {
+  ): Promise<Array<{ assetSymbol: string; riskType: 'concentration' | 'counterparty' | 'smart_contract' | 'oracle_dependency'; severity: 'low' | 'medium' | 'high' }>> {
     // Analyze risk connections between this asset and others
-    const connections: Array<{ assetSymbol: string; riskType: string; severity: string }> = [];
+    const connections: Array<{ assetSymbol: string; riskType: 'concentration' | 'counterparty' | 'smart_contract' | 'oracle_dependency'; severity: 'low' | 'medium' | 'high' }> = [];
     
     // Concentration risk
     if (linkedProtocols.includes('Curve')) {
@@ -1110,7 +1102,7 @@ export class CurationTypeShard extends IntelligenceShard {
       
       // Get real governance metrics for voting alignment
       const governanceMetrics = await snapshotGovernanceService.getGovernanceMetrics(context.symbol);
-      const participationRate = governanceMetrics.participationRate || 0;
+      const participationRate = governanceMetrics.avgVotingParticipation || 0;
       
       // Determine curation type based on tier + governance metrics
       const curationType = this.determineCurationType(tier, govScore, participationRate);
@@ -1119,7 +1111,7 @@ export class CurationTypeShard extends IntelligenceShard {
       const alignmentScores = this.calculateGovernanceAlignments(
         govScore,
         participationRate,
-        governanceMetrics.holderConcentration || 0
+        governanceMetrics.topHolderConcentration || 0
       );
       
       return {
@@ -1202,6 +1194,7 @@ export class LiquidityAggregatorShard extends IntelligenceShard {
       
       return {
         liquidityAggregatedProfile: {
+          token: aggregated.token,
           totalLiquidity: aggregated.totalLiquidity,
           weightedAverageFee: aggregated.weightedAverageFee,
           depthCurve: aggregated.depthCurve,
@@ -1240,6 +1233,7 @@ export class ExecutionPlannerShard extends IntelligenceShard {
         preferStablePools: false,
         maxGasPrice: BigInt('100000000000'), // 100 gwei
         maxSlippageTolerance: 0.5,
+        deadlineSeconds: 180,
       };
       
       // Mock trade: 1000 USDC to ETH for $1000 trade
@@ -1262,7 +1256,7 @@ export class ExecutionPlannerShard extends IntelligenceShard {
           outputToken: quote.outputToken,
           executionPrice: quote.executionPrice,
           priceImpact: quote.priceImpact,
-          slippageTolerance: quote.slippageTolerance,
+          slippageTolerance: quote.slippageTolerance ?? 0,
           timestamp: quote.timestamp,
         },
         executionScore: {
@@ -1291,12 +1285,50 @@ export class GovernanceIntelligenceShard extends IntelligenceShard {
     super('governance_intelligence', 6 * 60 * 60 * 1000, 'high'); // 6 hours
   }
   
+  private resolveGovernanceSpaceId(symbol: string): string {
+    const normalized = symbol.trim().toLowerCase();
+
+    if (normalized === 'eth' || normalized === 'ethereum') {
+      return 'ethereum';
+    }
+
+    if (normalized === 'celo') {
+      return 'celo';
+    }
+
+    if (normalized === 'base') {
+      return 'base';
+    }
+
+    if (normalized === 'polygon' || normalized === 'matic') {
+      return 'polygon';
+    }
+
+    if (normalized === 'arbitrum') {
+      return 'arbitrum';
+    }
+
+    if (normalized === 'optimism') {
+      return 'optimism';
+    }
+
+    if (normalized === 'bsc' || normalized === 'binance') {
+      return 'binance';
+    }
+
+    if (normalized === 'avalanche' || normalized === 'avax') {
+      return 'avalanche';
+    }
+
+    // Fallback to symbol-based generic DAO space
+    return normalized;
+  }
+
   async compute(context: ShardUpdateContext): Promise<Partial<CoreShardData>> {
     try {
       // Query governance metrics from Snapshot + on-chain
-      // For most assets, this would be the DAO maintaining them
-      // Default: use "litmajor.eth" as example
-      const daoId = context.symbol.toLowerCase() === 'eth' ? 'litmajor.eth' : `${context.symbol.toLowerCase()}.eth`;
+      // DAO space selection is symbol-driven and chain-agnostic.
+      const daoId = this.resolveGovernanceSpaceId(context.symbol);
       
       const metrics = await snapshotGovernanceService.getGovernanceMetrics(daoId, {
         includeProposals: true,
@@ -1464,7 +1496,11 @@ export class ShardOrchestrator {
       symbol: snapshot.symbol,
       timestamp: new Date(),
       graphVersion: snapshot.graphVersion,
+      snapshot,
     };
+    if (!ctx.snapshot) {
+      ctx.snapshot = snapshot;
+    }
     
     // Determine which shards to run
     let shardsToRun = shardNames 
@@ -1492,12 +1528,13 @@ export class ShardOrchestrator {
     // Execute fast shards in parallel
     if (quickShards.length > 0) {
       const quickResults = await Promise.all(
-        quickShards.map(([name, shard]) => 
-          shard.compute(ctx).catch(err => {
+        quickShards.map(async ([name, shard]) => {
+          const result = await shard.compute(ctx).catch(err => {
             logger.error(`Shard ${name} failed:`, err);
-            return {};
-          }).then(result => [name, result] as const)
-        )
+            return {} as Partial<CoreShardData>;
+          });
+          return [name, result] as [string, Partial<CoreShardData>];
+        })
       );
       updates.push(...quickResults);
     }

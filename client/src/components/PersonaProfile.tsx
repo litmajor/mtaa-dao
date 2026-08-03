@@ -21,11 +21,10 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
   AlertDialogTrigger
-} from './ui/dialog';
+} from './ui/alert-dialog';
 import { 
   CheckCircle, 
   Lock, 
-  Clock, 
   TrendingUp, 
   Zap,
   AlertCircle 
@@ -272,7 +271,7 @@ export default function PersonaProfile() {
 
             {progress.nextMilestone.daysUntilAvailable ? (
               <div className="flex items-center gap-3 p-3 bg-blue-50 dark:bg-blue-900/20 rounded-lg">
-                <Clock className="w-5 h-5 text-blue-500" />
+                <AlertCircle className="w-5 h-5 text-blue-500" />
                 <div>
                   <p className="text-sm font-semibold">
                     {progress.nextMilestone.daysUntilAvailable} days remaining

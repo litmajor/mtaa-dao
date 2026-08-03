@@ -5,13 +5,14 @@
  */
 
 import { GatewayAgent, getGatewayAgent, setGatewayAgent } from "./index";
+import { logger } from '../../../utils/logger';
 import {
   MessageBusAdapter,
   CoordinatorBridge,
   getMessageBus,
   getCoordinatorBridge,
 } from "./message-bus";
-import { GatewayConfig, GatewayMessage } from "./types";
+import type { GatewayConfig, GatewayMessage } from "./types";
 import { BaseAdapter } from "./adapters/base-adapter";
 
 /**
@@ -38,7 +39,7 @@ export class GatewayAgentService {
     adapters: Map<string, BaseAdapter>,
     coordinatorInstance?: any
   ): Promise<void> {
-    console.log(`[${this.name}] Initializing...`);
+    logger.info(`[${this.name}] Initializing...`);
 
     try {
       // Store adapters
@@ -62,9 +63,11 @@ export class GatewayAgentService {
       }
 
       this.isInitialized = true;
-      console.log(`[${this.name}] Initialization complete`);
+      logger.info(`[${this.name}] Initialization complete`);
     } catch (error) {
-      console.error(`[${this.name}] Initialization failed:`, error);
+      const msg = error instanceof Error ? error.message : JSON.stringify(error || {});
+      const stack = error instanceof Error ? error.stack : undefined;
+      logger.error(`[${this.name}] Initialization failed: ${msg}`, { stack });
       throw error;
     }
   }
@@ -79,12 +82,12 @@ export class GatewayAgentService {
 
     const agent = this.gatewayAgent;
 
+    // Register each handler once per service lifecycle to avoid duplicate subscriptions.
+    const handlers = new Map<string, (message: GatewayMessage) => Promise<void>>();
+
     // Subscribe to price requests
-    this.messageBus.subscribe("gateway:price_request", async (message) => {
-      console.log(
-        `[${this.name}] Processing price request:`,
-        message.payload?.symbols?.slice(0, 3).join(",")
-      );
+    handlers.set("gateway:price_request", async (message) => {
+      logger.debug(`[${this.name}] Processing price request: ${message.payload?.symbols?.slice(0, 3).join(",")}`);
 
       const response = await agent.handleMessage(message);
       if (response) {
@@ -93,8 +96,8 @@ export class GatewayAgentService {
     });
 
     // Subscribe to liquidity requests
-    this.messageBus.subscribe("gateway:liquidity_request", async (message) => {
-      console.log(`[${this.name}] Processing liquidity request`);
+    handlers.set("gateway:liquidity_request", async (message) => {
+      logger.debug(`[${this.name}] Processing liquidity request`);
 
       const response = await agent.handleMessage(message);
       if (response) {
@@ -103,11 +106,8 @@ export class GatewayAgentService {
     });
 
     // Subscribe to APY requests
-    this.messageBus.subscribe("gateway:apy_request", async (message) => {
-      console.log(
-        `[${this.name}] Processing APY request for protocols:`,
-        message.payload?.protocols?.join(",")
-      );
+    handlers.set("gateway:apy_request", async (message) => {
+      logger.debug(`[${this.name}] Processing APY request for protocols: ${message.payload?.protocols?.join(",")}`);
 
       const response = await agent.handleMessage(message);
       if (response) {
@@ -116,11 +116,8 @@ export class GatewayAgentService {
     });
 
     // Subscribe to risk requests
-    this.messageBus.subscribe("gateway:risk_request", async (message) => {
-      console.log(
-        `[${this.name}] Processing risk request for protocols:`,
-        message.payload?.protocols?.join(",")
-      );
+    handlers.set("gateway:risk_request", async (message) => {
+      logger.debug(`[${this.name}] Processing risk request for protocols: ${message.payload?.protocols?.join(",")}`);
 
       const response = await agent.handleMessage(message);
       if (response) {
@@ -129,8 +126,8 @@ export class GatewayAgentService {
     });
 
     // Subscribe to cache invalidation
-    this.messageBus.subscribe("gateway:cache_invalidate", async (message) => {
-      console.log(`[${this.name}] Processing cache invalidation`);
+    handlers.set("gateway:cache_invalidate", async (message) => {
+      logger.debug(`[${this.name}] Processing cache invalidation`);
 
       const response = await agent.handleMessage(message);
       if (response) {
@@ -139,8 +136,8 @@ export class GatewayAgentService {
     });
 
     // Subscribe to status requests
-    this.messageBus.subscribe("gateway:status", async (message) => {
-      console.log(`[${this.name}] Processing status request`);
+    handlers.set("gateway:status", async (message) => {
+      logger.debug(`[${this.name}] Processing status request`);
 
       const response = await agent.handleMessage(message);
       if (response) {
@@ -148,7 +145,11 @@ export class GatewayAgentService {
       }
     });
 
-    console.log(`[${this.name}] Message handlers registered`);
+    Array.from(handlers.entries()).forEach(([messageType, handler]) => {
+      this.messageBus.subscribe(messageType as any, handler);
+    });
+
+    logger.info(`[${this.name}] Message handlers registered`);
   }
 
   /**
@@ -321,6 +322,10 @@ export function getGatewayAgentService(): GatewayAgentService {
     serviceInstance = new GatewayAgentService();
   }
   return serviceInstance;
+}
+
+export function setGatewayAgentService(service: GatewayAgentService): void {
+  serviceInstance = service;
 }
 
 export function resetGatewayAgentService(): void {

@@ -114,7 +114,7 @@ export async function getUserActiveSessions(userId: string) {
  */
 export async function verifySessionToken(
   sessionToken: string
-): Promise<{ valid: boolean; walletId?: string; userId?: string; expiresAt?: Date }> {
+): Promise<{ valid: boolean; walletId?: string; userId?: string; expiresAt?: Date; connectedAt?: Date; lastAccessedAt?: Date }> {
   try {
     const now = new Date();
     const session = await db.query.walletSessions.findFirst({
@@ -136,6 +136,8 @@ export async function verifySessionToken(
         walletId: session.walletId,
         userId: session.userId,
         expiresAt: session.expiresAt,
+        connectedAt: session.connectedAt,
+        lastAccessedAt: session.lastAccessedAt,
       };
     }
 

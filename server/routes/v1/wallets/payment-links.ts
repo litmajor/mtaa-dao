@@ -10,6 +10,7 @@
  * GET    /api/v1/wallets/payment-links                    List payment links
  * GET    /api/v1/wallets/payment-links/:id               Get payment link details
  * POST   /api/v1/wallets/payment-links/:id/mark-paid     Mark link as paid/cancelled
+ * POST   /api/v1/wallets/payment-links/:id/send-email   Send payment link via email
  * DELETE /api/v1/wallets/payment-links/:id               Delete payment link
  */
 
@@ -19,6 +20,7 @@ import Decimal from 'decimal.js';
 import { isAuthenticated } from '../../../auth';
 import { db } from '../../../storage';
 import { logger } from '../../../utils/logger';
+import { NotificationService } from '../../../services/notificationService';
 import { eq, and } from 'drizzle-orm';
 import { paymentRequests } from '../../../../shared/schema';
 
@@ -67,13 +69,29 @@ const SUPPORTED_TOKENS = {
 
 // Validation schemas
 const createPaymentLinkSchema = z.object({
-  description: z.string().min(1).max(500).describe('What is this payment for?'),
-  amount: z.number().positive().describe('Amount in the specified currency'),
+  description: z.string().max(500).optional().default('').describe('What is this payment for?'),
+  amount: z.preprocess((value) => {
+    if (typeof value === 'string') {
+      return parseFloat(value);
+    }
+    return value;
+  }, z.number().positive().describe('Amount in the specified currency')),
   currency: z.enum(Object.keys(SUPPORTED_TOKENS) as [keyof typeof SUPPORTED_TOKENS, ...Array<keyof typeof SUPPORTED_TOKENS>])
     .default('cUSD')
     .describe('Currency/token code (default: cUSD)'),
   toAddress: z.string().optional().describe('Blockchain address for payment (if blockchain payment)'),
   expiresIn: z.number().optional().default(7 * 24 * 60 * 60).describe('Expiry in seconds (default: 7 days)'),
+  expiresAt: z.string().optional().describe('Expiry ISO timestamp (optional)')
+}).superRefine((data, ctx) => {
+  if (data.expiresAt) {
+    const parsed = Date.parse(data.expiresAt);
+    if (Number.isNaN(parsed)) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: 'expiresAt must be a valid ISO date string',
+      });
+    }
+  }
 });
 
 const markPaidSchema = z.object({
@@ -145,7 +163,12 @@ router.post('/', isAuthenticated, async (req: Request, res: Response) => {
 
     const validatedData = createPaymentLinkSchema.parse(req.body);
     const linkId = `link_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
-    const expiresAt = new Date(Date.now() + validatedData.expiresIn * 1000);
+    let expiresIn = validatedData.expiresIn;
+    if (validatedData.expiresAt) {
+      const target = new Date(validatedData.expiresAt).getTime();
+      expiresIn = Math.max(0, Math.floor((target - Date.now()) / 1000));
+    }
+    const expiresAt = new Date(Date.now() + expiresIn * 1000);
     const qrCode = generateQRCode(linkId);
     const celoUri = generateBlockchainUri(linkId, validatedData.currency, validatedData.amount.toString());
 
@@ -350,6 +373,66 @@ router.post('/:id/mark-paid', isAuthenticated, async (req: Request, res: Respons
     }
     logger.error('Mark payment link error', { error: error.message, linkId: req.params.id });
     res.status(400).json({ success: false, error: error.message });
+  }
+});
+
+/**
+ * POST /api/v1/wallets/payment-links/:id/send-email
+ * Send a shareable payment link to a recipient email address.
+ */
+router.post('/:id/send-email', isAuthenticated, async (req: Request, res: Response) => {
+  try {
+    const userId = (req.user as any)?.claims?.id;
+    const { id } = req.params;
+    const { recipientEmail } = req.body;
+
+    if (!userId) {
+      return res.status(401).json({ success: false, error: 'Unauthorized' });
+    }
+
+    if (!recipientEmail || typeof recipientEmail !== 'string') {
+      return res.status(400).json({ success: false, error: 'recipientEmail is required' });
+    }
+
+    const [link] = await db.select()
+      .from(paymentRequests)
+      .where(eq(paymentRequests.id, id))
+      .limit(1);
+
+    if (!link) {
+      return res.status(404).json({ success: false, error: 'Payment link not found' });
+    }
+
+    if (link.fromUserId !== userId) {
+      return res.status(403).json({ success: false, error: 'Unauthorized: You do not own this payment link' });
+    }
+
+    const shareUrl = `${process.env.APP_URL || 'https://app.mtaadao.com'}/payment/${link.id}`;
+    const subject = `Payment request from MtaaDAO: ${link.description || 'Payment link'}`;
+    const html = `
+      <p>Hello,</p>
+      <p>You have been requested to pay <strong>${link.amount} ${link.currency}</strong>.</p>
+      <p>Description: ${link.description || 'No description provided'}</p>
+      <p><a href="${shareUrl}">Click here to view and pay the request</a></p>
+      <p>If you do not recognize this request, please ignore this email.</p>
+    `;
+
+    const emailResult = await NotificationService.sendEmail({
+      to: recipientEmail,
+      subject,
+      body: html,
+      bodyHtml: html,
+    });
+
+    if (!emailResult.success) {
+      logger.warn('Payment link email send failed', { userId, linkId: id, recipientEmail, error: emailResult.error });
+      return res.status(502).json({ success: false, error: 'Failed to send email', details: emailResult.error });
+    }
+
+    res.json({ success: true, message: 'Payment link email sent', data: { recipientEmail, linkId: id } });
+  } catch (error: any) {
+    logger.error('Send payment link email error', { error: error.message, linkId: req.params.id });
+    res.status(500).json({ success: false, error: 'Internal server error' });
   }
 });
 

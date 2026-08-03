@@ -65,6 +65,15 @@ export default function GlobalNav() {
     }
   }
 
+  const handlePersonaQuickSwitch = (subprofile: 'okedi' | 'yuki' | 'amara') => {
+    switchSubprofile(subprofile);
+    if (subprofile === 'yuki') {
+      navigate('/trading', { replace: true });
+      return;
+    }
+    navigate('/dashboard', { replace: true });
+  };
+
   const isActive = (path: string) => {
     if (path === "finance") {
       return ["/wallet", "/vault", "/trading", "/escrow"].some(p => location.pathname.startsWith(p));
@@ -214,7 +223,7 @@ export default function GlobalNav() {
                     <Button
                       variant={activeSubprofile === profile.id ? "primary" : "ghost"}
                       size="sm"
-                      onClick={() => switchSubprofile(profile.id as 'okedi' | 'yuki' | 'amara')}
+                      onClick={() => handlePersonaQuickSwitch(profile.id as 'okedi' | 'yuki' | 'amara')}
                       disabled={profileSwitching}
                       className="gap-1 text-xs"
                       style={

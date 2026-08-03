@@ -12,6 +12,17 @@
 
 import { db } from '../db';
 import { limitOrders } from '../../shared/schema';
+import { OrderRepository, OptimisticLockError } from '../domain/trading/OrderRepository';
+import { OrderStatus, validateOrderTransition } from '../domain/trading/OrderStateMachine';
+import { commandBus } from '../domain/setup';
+import { 
+  CreateOrderCommand, 
+  UpdateOrderFillCommand, 
+  CancelOrderCommand, 
+  ExpireOrderCommand,
+  TradingCommandTypes
+} from '../domain/trading/TradingCommands';
+import { v4 as uuid } from 'uuid';
 import { ccxtService } from './ccxtService';
 import { logger } from '../utils/logger';
 import { eq, and, lt, ne } from 'drizzle-orm';
@@ -38,6 +49,7 @@ export interface LimitOrderRecord {
 
 class LimitOrderTracker {
   private trackingInterval: NodeJS.Timer | null = null;
+  private repo = new OrderRepository();
 
   constructor() {
     logger.info('✅ Limit Order Tracker Service initialized');
@@ -57,24 +69,45 @@ class LimitOrderTracker {
     expiresAt: Date
   ): Promise<LimitOrderRecord> {
     try {
-      const result = await db
-        .insert(limitOrders)
-        .values({
+    try {
+      const commandId = uuid();
+      const command: CreateOrderCommand = {
+        id: commandId,
+        type: TradingCommandTypes.CreateOrder,
+        actor: userId, // Assuming user initiates
+        correlationId: commandId, // Should ideally come from request context
+        payload: {
           userId,
           exchange,
-          orderId,
+          exchangeOrderId: orderId,
           symbol,
           side,
-          amount: amount.toString(),
-          price: price.toString(),
-          expiresAt,
-          status: 'pending'
-        })
-        .returning();
+          amount,
+          price,
+          expiresAt: expiresAt.toISOString()
+        }
+      };
 
-      const order = result[0];
-      logger.info(`Created limit order: ${userId} ${exchange} ${side} ${amount} ${symbol} @ ${price}`);
+      const result = await commandBus.dispatch(command);
+      
+      if (!result.success) {
+        throw new Error(`Command failed: ${result.error}`);
+      }
 
+      logger.info(`Created limit order via CommandBus: ${userId} ${exchange} ${side} ${amount} ${symbol} @ ${price}`);
+
+      // We need to fetch the newly created order for compatibility with the return type
+      // Since it's eventually consistent or inserted within the tx, we can fetch it.
+      // But we need the DB order ID. Wait, CreateOrderCommand doesn't currently accept the ID, it generates it inside repo or uses exchangeOrderId.
+      // The aggregate uses `id: uuid()` in `create()`. We can query by `orderId` (exchangeOrderId).
+      const orders = await this.repo.findByUser(userId, OrderStatus.CREATED);
+      const order = orders.find(o => o.orderId === orderId);
+
+      if (!order) {
+        throw new Error('Order was created but could not be retrieved immediately.');
+      }
+
+      // Map back to LimitOrderRecord for compatibility
       return {
         id: order.id,
         userId: order.userId,
@@ -82,17 +115,17 @@ class LimitOrderTracker {
         orderId: order.orderId,
         symbol: order.symbol,
         side: order.side as 'buy' | 'sell',
-        amount: Number(order.amount),
-        price: Number(order.price),
+        amount: order.amount,
+        price: order.price,
         status: order.status as 'pending' | 'filled' | 'canceled' | 'expired',
-        filledAmount: Number(order.filledAmount || 0),
-        filledPrice: order.filledPrice ? Number(order.filledPrice) : undefined,
-        fee: Number(order.fee || 0),
-        createdAt: order.createdAt!,
-        expiresAt: order.expiresAt!,
-        filledAt: order.filledAt || undefined,
-        canceledAt: order.canceledAt || undefined,
-        lastCheckedAt: order.lastCheckedAt || undefined
+        filledAmount: order.filledAmount,
+        filledPrice: order.filledPrice,
+        fee: order.fee,
+        createdAt: order.createdAt,
+        expiresAt: order.expiresAt,
+        filledAt: order.filledAt,
+        canceledAt: order.canceledAt,
+        lastCheckedAt: order.lastCheckedAt
       };
     } catch (error: any) {
       logger.error('Error creating limit order:', error);
@@ -105,33 +138,27 @@ class LimitOrderTracker {
    */
   async getUserLimitOrders(userId: string, statusFilter?: string): Promise<LimitOrderRecord[]> {
     try {
-      const query = statusFilter
-        ? db.select().from(limitOrders).where(and(
-            eq(limitOrders.userId, userId),
-            eq(limitOrders.status, statusFilter)
-          ))
-        : db.select().from(limitOrders).where(eq(limitOrders.userId, userId));
+      // For compatibility, map 'pending' to 'CREATED' or similar, but the repo handles this
+      const orders = await this.repo.findByUser(userId, statusFilter as any);
 
-      const results = await query;
-
-      return results.map(order => ({
+      return orders.map(order => ({
         id: order.id,
         userId: order.userId,
         exchange: order.exchange,
         orderId: order.orderId,
         symbol: order.symbol,
         side: order.side as 'buy' | 'sell',
-        amount: Number(order.amount),
-        price: Number(order.price),
+        amount: order.amount,
+        price: order.price,
         status: order.status as 'pending' | 'filled' | 'canceled' | 'expired',
-        filledAmount: Number(order.filledAmount || 0),
-        filledPrice: order.filledPrice ? Number(order.filledPrice) : undefined,
-        fee: Number(order.fee || 0),
-        createdAt: order.createdAt!,
-        expiresAt: order.expiresAt!,
-        filledAt: order.filledAt || undefined,
-        canceledAt: order.canceledAt || undefined,
-        lastCheckedAt: order.lastCheckedAt || undefined
+        filledAmount: order.filledAmount,
+        filledPrice: order.filledPrice,
+        fee: order.fee,
+        createdAt: order.createdAt,
+        expiresAt: order.expiresAt,
+        filledAt: order.filledAt,
+        canceledAt: order.canceledAt,
+        lastCheckedAt: order.lastCheckedAt
       }));
     } catch (error: any) {
       logger.error('Error getting user limit orders:', error);
@@ -144,17 +171,12 @@ class LimitOrderTracker {
    */
   async getLimitOrder(orderId: string): Promise<LimitOrderRecord | null> {
     try {
-      const result = await db
-        .select()
-        .from(limitOrders)
-        .where(eq(limitOrders.id, orderId))
-        .limit(1);
+      const order = await this.repo.findById(orderId);
 
-      if (!result.length) {
+      if (!order) {
         return null;
       }
 
-      const order = result[0];
       return {
         id: order.id,
         userId: order.userId,
@@ -162,17 +184,17 @@ class LimitOrderTracker {
         orderId: order.orderId,
         symbol: order.symbol,
         side: order.side as 'buy' | 'sell',
-        amount: Number(order.amount),
-        price: Number(order.price),
+        amount: order.amount,
+        price: order.price,
         status: order.status as 'pending' | 'filled' | 'canceled' | 'expired',
-        filledAmount: Number(order.filledAmount || 0),
-        filledPrice: order.filledPrice ? Number(order.filledPrice) : undefined,
-        fee: Number(order.fee || 0),
-        createdAt: order.createdAt!,
-        expiresAt: order.expiresAt!,
-        filledAt: order.filledAt || undefined,
-        canceledAt: order.canceledAt || undefined,
-        lastCheckedAt: order.lastCheckedAt || undefined
+        filledAmount: order.filledAmount,
+        filledPrice: order.filledPrice,
+        fee: order.fee,
+        createdAt: order.createdAt,
+        expiresAt: order.expiresAt,
+        filledAt: order.filledAt,
+        canceledAt: order.canceledAt,
+        lastCheckedAt: order.lastCheckedAt
       };
     } catch (error: any) {
       logger.error('Error getting limit order:', error);
@@ -191,27 +213,53 @@ class LimitOrderTracker {
         dbOrder.symbol
       );
 
-      // Update the database with new status
-      await db
-        .update(limitOrders)
-        .set({
-          status: status.status,
-          filledAmount: status.filled ? status.filled.toString() : dbOrder.filledAmount.toString(),
-          filledPrice: status.average ? status.average.toString() : undefined,
-          fee: status.fee ? status.fee.toString() : dbOrder.fee.toString(),
-          filledAt: status.status === 'closed' ? new Date() : dbOrder.filledAt,
-          lastCheckedAt: new Date()
-        })
-        .where(eq(limitOrders.id, dbOrder.id));
+      // Load fresh aggregate for OCC check
+      const aggregate = await this.repo.findById(dbOrder.id);
+      if (!aggregate) return;
 
-      logger.debug(`Updated order status: ${dbOrder.orderId} → ${status.status}`);
+      const targetStatus = status.status === 'closed' ? OrderStatus.FILLED : 
+                          (status.status === 'canceled' ? OrderStatus.CANCELLED : aggregate.status);
+
+      // Update the database with new status using CommandBus
+      const isFinalFill = status.status === 'closed';
+      if (status.filled !== undefined || isFinalFill) {
+        const command: UpdateOrderFillCommand = {
+          id: uuid(),
+          type: TradingCommandTypes.UpdateOrderFill,
+          actor: 'system',
+          correlationId: uuid(),
+          payload: {
+            orderId: aggregate.id,
+            filledAmount: status.filled || aggregate.filledAmount,
+            filledPrice: status.average || aggregate.filledPrice,
+            fee: status.fee || aggregate.fee,
+            isFinalFill
+          }
+        };
+
+        const result = await commandBus.dispatch(command);
+        if (!result.success) {
+           if (result.error?.includes('OCC_CONFLICT')) {
+             logger.warn(`OCC conflict checking order status for ${dbOrder.orderId}`);
+           } else {
+             logger.warn(`Update order fill command failed: ${result.error}`);
+           }
+        } else {
+           logger.debug(`Updated order status: ${dbOrder.orderId} → ${targetStatus}`);
+        }
+      }
+
     } catch (error: any) {
       logger.warn(`Could not check order status for ${dbOrder.orderId}:`, error.message);
-      // Update last checked timestamp even if failed
-      await db
-        .update(limitOrders)
-        .set({ lastCheckedAt: new Date() })
-        .where(eq(limitOrders.id, dbOrder.id));
+      // Try to update last checked timestamp
+      try {
+        const agg = await this.repo.findById(dbOrder.id);
+        if (agg) {
+          await this.repo.update(agg.id, agg.version, { lastCheckedAt: new Date() });
+        }
+      } catch (e) {
+        // ignore occ here
+      }
     }
   }
 
@@ -221,11 +269,7 @@ class LimitOrderTracker {
    */
   async checkAllActiveOrders(): Promise<void> {
     try {
-      // Get all pending orders
-      const pendingOrders = await db
-        .select()
-        .from(limitOrders)
-        .where(eq(limitOrders.status, 'pending'));
+      const pendingOrders = await this.repo.findByStatus(OrderStatus.CREATED);
 
       logger.debug(`Checking status of ${pendingOrders.length} pending limit orders`);
 
@@ -237,18 +281,18 @@ class LimitOrderTracker {
           exchange: order.exchange,
           orderId: order.orderId,
           symbol: order.symbol,
-          side: order.side as 'buy' | 'sell',
-          amount: Number(order.amount),
-          price: Number(order.price),
-          status: order.status as 'pending' | 'filled' | 'canceled' | 'expired',
-          filledAmount: Number(order.filledAmount || 0),
-          filledPrice: order.filledPrice ? Number(order.filledPrice) : undefined,
-          fee: Number(order.fee || 0),
-          createdAt: order.createdAt!,
-          expiresAt: order.expiresAt!,
-          filledAt: order.filledAt || undefined,
-          canceledAt: order.canceledAt || undefined,
-          lastCheckedAt: order.lastCheckedAt || undefined
+          side: order.side,
+          amount: order.amount,
+          price: order.price,
+          status: order.status as any,
+          filledAmount: order.filledAmount,
+          filledPrice: order.filledPrice,
+          fee: order.fee,
+          createdAt: order.createdAt,
+          expiresAt: order.expiresAt,
+          filledAt: order.filledAt,
+          canceledAt: order.canceledAt,
+          lastCheckedAt: order.lastCheckedAt
         };
 
         await this.checkOrderStatus(dbOrder);
@@ -267,15 +311,8 @@ class LimitOrderTracker {
   async expireOldOrders(): Promise<void> {
     try {
       const now = new Date();
-      const expiredOrders = await db
-        .select()
-        .from(limitOrders)
-        .where(
-          and(
-            eq(limitOrders.status, 'pending'),
-            lt(limitOrders.expiresAt, now)
-          )
-        );
+      const pendingOrders = await this.repo.findByStatus(OrderStatus.CREATED);
+      const expiredOrders = pendingOrders.filter(o => o.expiresAt < now);
 
       for (const order of expiredOrders) {
         logger.info(`Order expired: ${order.orderId} (${order.symbol})`);
@@ -287,14 +324,18 @@ class LimitOrderTracker {
           logger.warn(`Could not cancel expired order on exchange:`, error.message);
         }
 
-        // Mark as expired in database
-        await db
-          .update(limitOrders)
-          .set({
-            status: 'expired',
-            canceledAt: now
-          })
-          .where(eq(limitOrders.id, order.id));
+        // Mark as expired in database using CommandBus
+        const command: ExpireOrderCommand = {
+          id: uuid(),
+          type: TradingCommandTypes.ExpireOrder,
+          actor: 'system',
+          correlationId: uuid(),
+          payload: { orderId: order.id }
+        };
+        const result = await commandBus.dispatch(command);
+        if (!result.success) {
+           logger.warn(`Expire order command failed: ${result.error}`);
+        }
       }
     } catch (error: any) {
       logger.error('Error expiring old orders:', error);
@@ -319,16 +360,20 @@ class LimitOrderTracker {
       );
 
       if (success) {
-        // Mark as canceled in database
-        await db
-          .update(limitOrders)
-          .set({
-            status: 'canceled',
-            canceledAt: new Date()
-          })
-          .where(eq(limitOrders.id, dbOrderId));
-
-        logger.info(`Canceled limit order: ${dbOrder.orderId}`);
+        // Mark as canceled in database via CommandBus
+        const command: CancelOrderCommand = {
+          id: uuid(),
+          type: TradingCommandTypes.CancelOrder,
+          actor: 'user', // Or 'system' depending on context
+          correlationId: uuid(),
+          payload: { orderId: dbOrder.id, reason: 'User requested cancellation' }
+        };
+        const result = await commandBus.dispatch(command);
+        if (!result.success) {
+           logger.warn(`Cancel order command failed: ${result.error}`);
+        } else {
+           logger.info(`Canceled limit order: ${dbOrder.orderId}`);
+        }
       }
 
       return success;

@@ -1,40 +1,46 @@
-import { StrategyNode } from '../models/StrategyNode';
+import type { AiNode, VaultNode, CrosschainNode } from '../models/StrategyNode';
 
 // Each compiler returns a small compiled fragment for the node that the overall
 // `compileGraph` function can incorporate. These are simple and intentionally
 // minimal now; later the IR layer will normalize them.
 
-export function compileAiNode(node: StrategyNode) {
-  const cfg = (node as any).config || {};
+export function compileAiNode(node: AiNode) {
+  const { model = 'gpt-4', prompt = '', maxTokens = 256 } = node.config;
+
   return {
     id: node.id,
     type: 'ai',
-    model: cfg.model || 'gpt-4',
-    prompt: cfg.prompt || '',
-    maxTokens: cfg.maxTokens || 256,
+    config: node.config,
+    model,
+    prompt,
+    maxTokens,
   };
 }
 
-export function compileVaultNode(node: StrategyNode) {
-  const cfg = (node as any).config || {};
+export function compileVaultNode(node: VaultNode) {
+  const { vaultAddress, token, amount } = node.config;
+
   return {
     id: node.id,
     type: 'vault',
-    vaultAddress: cfg.vaultAddress,
-    token: cfg.token,
-    amount: cfg.amount,
+    config: node.config,
+    vaultAddress,
+    token,
+    amount,
   };
 }
 
-export function compileCrosschainNode(node: StrategyNode) {
-  const cfg = (node as any).config || {};
+export function compileCrosschainNode(node: CrosschainNode) {
+  const { provider, fromChain, toChain, token, amount } = node.config;
+
   return {
     id: node.id,
     type: 'crosschain',
-    provider: cfg.provider,
-    fromChain: cfg.fromChain,
-    toChain: cfg.toChain,
-    token: cfg.token,
-    amount: cfg.amount,
+    config: node.config,
+    provider,
+    fromChain,
+    toChain,
+    token,
+    amount,
   };
 }

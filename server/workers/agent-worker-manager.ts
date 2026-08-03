@@ -9,17 +9,20 @@
  * - Monitor worker health
  * 
  * Benefits over inline agents:
- * ✅ API process remains responsive
- * ✅ Agent crashes don't kill API
- * ✅ Can restart agents independently
- * ✅ Easy to monitor memory/CPU usage
- * ✅ Can run on separate server if needed
+ *  API process remains responsive
+ *  Agent crashes don't kill API
+ *  Can restart agents independently
+ *  Easy to monitor memory/CPU usage
+ * Can run on separate server if needed
  */
 
 import { fork, ChildProcess } from 'child_process';
+import fs from 'fs';
 import path from 'path';
+import { fileURLToPath } from 'url';
 import { Logger } from '../utils/logger';
 
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const logger = Logger.getLogger();
 
 export class AgentWorkerManager {
@@ -42,8 +45,24 @@ export class AgentWorkerManager {
     try {
       logger.info('[AGENT_MANAGER] Starting agent worker...');
 
-      // Spawn worker process
-      const workerPath = path.resolve(__dirname, 'agent-worker.ts');
+      // Resolve worker path depending on whether the app is running from source or from the bundled dist directory.
+      const sourceWorkerPath = path.resolve(__dirname, 'agent-worker.ts');
+      const bundledWorkerPath = path.resolve(__dirname, 'workers', 'agent-worker.js');
+      const fallbackBundledWorkerPath = path.resolve(__dirname, 'agent-worker.js');
+      const workerPath = fs.existsSync(sourceWorkerPath)
+        ? sourceWorkerPath
+        : fs.existsSync(bundledWorkerPath)
+        ? bundledWorkerPath
+        : fallbackBundledWorkerPath;
+
+      if (!fs.existsSync(workerPath)) {
+        throw new Error(
+          `Agent worker entry file not found. Checked: ${sourceWorkerPath}, ${bundledWorkerPath}, ${fallbackBundledWorkerPath}`
+        );
+      }
+
+      logger.info('[AGENT_MANAGER] Forking agent worker from: ' + workerPath);
+
       const agentPort = parseInt(process.env.AGENT_PORT || process.env.PORT || '5000');
       const agentHost = process.env.AGENT_HOST || 'localhost';
       const agentBaseUrl = process.env.AGENT_BASE_URL || `http://${agentHost}:${agentPort}`;

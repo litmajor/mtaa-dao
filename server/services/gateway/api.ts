@@ -6,9 +6,22 @@
 import { Router, Request, Response } from 'express';
 import { GatewayService } from './gateway';
 import { GatewayQuoteRequest } from './types';
+import { authenticateToken } from '../../middleware/auth';
+import { rateLimitPerUser } from '../../middleware/rateLimit';
+
+const gatewayRateLimiter = rateLimitPerUser(
+  'gateway-data-plane',
+  Number(process.env.GATEWAY_RATE_LIMIT_MAX || 60),
+  process.env.GATEWAY_RATE_LIMIT_WINDOW || '1min',
+);
 
 export function createGatewayRoutes(gateway: GatewayService): Router {
   const router = Router();
+
+  if (process.env.GATEWAY_REQUIRE_AUTH !== 'false') {
+    router.use(authenticateToken as any);
+  }
+  router.use(gatewayRateLimiter as any);
 
   // ============================================================================
   // PRICE ENDPOINTS

@@ -1,5 +1,5 @@
 import React from 'react';
-import { RiskNode } from '../../../models/StrategyNode';
+import type { RiskNode } from '../../../models/StrategyNode';
 
 export default function RiskInspector({ node, onChange }: { node: RiskNode; onChange: (patch: any) => void }) {
   return (

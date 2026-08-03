@@ -1,5 +1,7 @@
 import pLimit from 'p-limit';
-import type { Provider } from 'ethers';
+import type { Provider, TransactionReceipt } from 'ethers';
+
+type ProviderTransactionReceipt = TransactionReceipt | null;
 
 // Mocked structural interfaces based on provided boilerplate patterns
 export type SupportedChain = 'ethereum' | 'polygon' | 'arbitrum' | 'optimism' | 'base' | 'avalanche' | 'bsc';
@@ -72,6 +74,10 @@ class DeferredProvider<T extends Provider> {
     return (await this.ensure()).getBalance(address);
   }
 
+  async getTransactionReceipt(txHash: string): Promise<ProviderTransactionReceipt | null> {
+    return (await this.ensure()).getTransactionReceipt(txHash);
+  }
+
   removeAllListeners(): void {
     if (this.real && typeof (this.real as any).removeAllListeners === 'function') {
       (this.real as any).removeAllListeners();
@@ -114,7 +120,7 @@ export class MultiChainProvider {
           if (!this.ethersModule) {
             this.ethersModule = await import('ethers');
           }
-          // @ts-ignore - use runtime constructor
+          
           return new this.ethersModule.JsonRpcProvider(rpcUrl, undefined, { staticNetwork: true }) as Provider;
         });
 
@@ -275,6 +281,10 @@ export class MultiChainProvider {
 
   async getBalance(chain: SupportedChain, address: string): Promise<bigint> {
     return this.call(chain, (p) => p.getBalance(address), `getBalance [${address}]`);
+  }
+
+  async getTransactionReceipt(chain: SupportedChain, txHash: string): Promise<ProviderTransactionReceipt> {
+    return this.call(chain, (p) => p.getTransactionReceipt(txHash), `getTransactionReceipt [${txHash}]`);
   }
 
   /* ════════════════════════════════════════════════════════════════════════════════ */

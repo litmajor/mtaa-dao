@@ -23,11 +23,12 @@
  * ═══════════════════════════════════════════════════════════════════════════════
  */
 
-import express, { Request, Response, Router } from 'express';
+import express from 'express';
+import type { Request, Response, Router } from 'express';
 import { db } from '../../../../storage';
 import { logger } from '../../../../utils/logger';
 import { daoMemberships, daoInvites, daos, users } from '../../../../../shared/schema';
-import { eq, and, sql, desc } from 'drizzle-orm';
+import { eq, and, desc } from 'drizzle-orm';
 import crypto from 'crypto';
 
 interface MembersParams {
@@ -38,11 +39,15 @@ interface MembersParams {
 
 type MembersRequest = Request<MembersParams>;
 
+interface UserRequest {
+  user?: { id?: string; claims?: { sub?: string } };
+}
+
 const router: Router = express.Router({ mergeParams: true });
 
 // Helper to get userId with proper type narrowing
-function getUserId(req: any): string | null {
-  return (req.user as any)?.id || (req.user as any)?.claims?.sub || null;
+function getUserId(req: MembersRequest & UserRequest): string | null {
+  return req.user?.id || req.user?.claims?.sub || null;
 }
 
 // ════════════════════════════════════════════════════════════════════════════════

@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { ChevronLeft, ChevronRight, Lucide } from '../../src/lib/icons';
+import { ChevronLeft, ChevronRight, MoreVertical } from 'lucide-react';
 // @ts-ignore - CSS module types may not be declared in this scope
 import styles from './AdminTable.module.css';
 
@@ -135,8 +135,8 @@ export const AdminTable: React.FC<AdminTableProps> = ({
                     aria-label="Row actions"
                     title="Row actions"
                   >
-                    {/* use Lucide namespace for icon not exported from helper */}
-                    <Lucide.MoreVertical size={18} />
+                    {/* use MoreVertical icon */}
+                    <MoreVertical size={18} />
                   </button>
                 </td>
               </tr>

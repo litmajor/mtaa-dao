@@ -3,7 +3,8 @@
  * Fetches and manages real-time order book analysis
  */
 
-import { useQuery, UseQueryResult } from '@tanstack/react-query';
+import { useQuery } from '@tanstack/react-query';
+import type { UseQueryResult } from '@tanstack/react-query';
 
 export interface OrderBookLevel {
   price: number;

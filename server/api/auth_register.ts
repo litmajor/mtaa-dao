@@ -1,5 +1,5 @@
-
-import { Request, Response } from 'express';
+import type { Request, Response } from 'express';
+import crypto from 'crypto';
 import { db } from '../storage';
 import { users } from '../../shared/schema';
 import { eq } from 'drizzle-orm';
@@ -7,9 +7,52 @@ import { generateTokens, hashPassword } from '../auth';
 import { otpService } from '../services/otpService';
 import { walletGenerationService } from '../services/wallet-generation-service';
 
+/**
+ * Helper to insert a new user with an automatically generated, unique slug.
+ * Handles Postgres 23505 unique constraint violations on `users_slug_unique_idx`.
+ */
+async function createUserWithUniqueSlug(userValues: Omit<typeof users.$inferInsert, 'slug'>) {
+  const baseIdentifier = userValues.email 
+    ? userValues.email.split('@')[0] 
+    : userValues.phone 
+      ? userValues.phone.replace(/[^0-9]/g, '') 
+      : 'user';
+
+  const baseSlug = baseIdentifier.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') || 'user';
+
+  let currentSlug = baseSlug;
+  const maxAttempts = 5;
+
+  for (let attempt = 0; attempt < maxAttempts; attempt++) {
+    try {
+      const [newUser] = await db
+        .insert(users)
+        .values({
+          ...userValues,
+          slug: currentSlug,
+        })
+        .returning();
+
+      return newUser;
+    } catch (error: any) {
+      // Catch Postgres unique violation (23505) specifically for slug or general unique collisions
+      const isUniqueViolation = error?.code === '23505' || error?.message?.includes('users_slug');
+      
+      if (isUniqueViolation && attempt < maxAttempts - 1) {
+        const randomSuffix = crypto.randomBytes(2).toString('hex'); // 4-character hex suffix
+        currentSlug = `${baseSlug}-${randomSuffix}`;
+        continue;
+      }
+      throw error;
+    }
+  }
+
+  throw new Error('Failed to generate a unique user slug after multiple attempts');
+}
+
 export async function authRegisterHandler(req: Request, res: Response) {
   try {
-    const { email, phone, password } = req.body;
+    const { email, phone, password, preferredOtpChannel } = req.body;
 
     // Validate input - need either email or phone
     if ((!email && !phone) || !password) {
@@ -50,12 +93,14 @@ export async function authRegisterHandler(req: Request, res: Response) {
     const identifier = email || phone!;
     const otp = await otpService.storeOTP(identifier, password);
 
-    // Send OTP via email or SMS
+    // Send OTP via preferred channel when available, falling back to email/SMS
     try {
+      const channel = preferredOtpChannel === 'whatsapp' && phone ? 'whatsapp' : preferredOtpChannel === 'sms' && phone ? 'sms' : email ? 'email' : phone ? 'sms' : 'email';
+
       if (email) {
-        await otpService.sendEmailOTP(email, otp);
+        await otpService.sendOTPByChannel(email, otp, 'email');
       } else if (phone) {
-        await otpService.sendSMSOTP(phone, otp);
+        await otpService.sendOTPByChannel(phone, otp, channel as 'sms' | 'whatsapp');
       }
     } catch (sendError) {
       // Clean up OTP if sending fails
@@ -104,26 +149,23 @@ export async function verifyOtpHandler(req: Request, res: Response) {
       });
     }
 
-    // OTP verified, create user
+    // OTP verified, create user with unique slug collision handling
     const hashedPassword = await hashPassword(verification.password!);
 
-    const [newUser] = await db
-      .insert(users)
-      .values({
-        id: crypto.randomUUID(),
-        email: email || null,
-        phone: phone || null,
-        password: hashedPassword,
-        firstName: '',
-        lastName: '',
-        roles: 'user',
-        isEmailVerified: !!email,
-        isPhoneVerified: !!phone,
-        isBanned: false,
-        createdAt: new Date(),
-        updatedAt: new Date(),
-      })
-      .returning();
+    const newUser = await createUserWithUniqueSlug({
+      id: crypto.randomUUID(),
+      email: email || null,
+      phone: phone || null,
+      password: hashedPassword,
+      firstName: '',
+      lastName: '',
+      roles: 'user',
+      isEmailVerified: !!email,
+      isPhoneVerified: !!phone,
+      isBanned: false,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    });
 
     // AUTO-CREATE WALLET FOR NEW USER
     let walletAddress = null;
@@ -163,6 +205,7 @@ export async function verifyOtpHandler(req: Request, res: Response) {
       data: {
         user: {
           id: newUser.id,
+          slug: newUser.slug,
           email: newUser.email,
           phone: newUser.phone,
           firstName: newUser.firstName,

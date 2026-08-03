@@ -1,4 +1,4 @@
-import { StrategyGraph } from '../models/StrategyGraph';
+import type { StrategyGraph } from "../models/StrategyGraph";
 
 export enum ValidationSeverity {
   INFO = 'INFO',

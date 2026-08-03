@@ -8,7 +8,7 @@
  */
 
 import React, { useMemo } from 'react';
-import { AlertCircle, TrendingDown, TrendingUp } from '../../lib/icons';
+import { AlertCircle, TrendingDown, TrendingUp } from 'lucide-react';
 import { ExchangeData } from '@/pages/trading';
 
 interface HeatmapViewProps {

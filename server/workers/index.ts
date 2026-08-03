@@ -6,6 +6,7 @@
 import { StrategyJobWorker } from './strategyJobWorker';
 import { MorioJobWorker } from './morioJobWorker';
 import { PoolVaultJobWorker } from './poolVaultJobWorker';
+import { PaymentCompletedConsumerWorker } from './paymentCompletedConsumerWorker';
 import { logger } from '../utils/logger';
 
 /**
@@ -28,6 +29,10 @@ export async function initializeWorkers(): Promise<void> {
     PoolVaultJobWorker.initialize();
     logger.info('[Workers] Pool/Vault worker initialized');
 
+    // Initialize PaymentCompleted domain event consumer
+    await PaymentCompletedConsumerWorker.initialize();
+    logger.info('[Workers] PaymentCompleted consumer initialized');
+
     logger.info('[Workers] All job workers initialized successfully');
   } catch (error) {
     logger.error('[Workers] Failed to initialize workers:', error);
@@ -43,6 +48,9 @@ export async function shutdownWorkers(): Promise<void> {
   try {
     logger.info('[Workers] Shutting down job workers...');
     
+    // Close consumer worker first
+    await PaymentCompletedConsumerWorker.shutdown();
+
     // Close all queues
     const queues = require('./jobQueueService').jobQueueService.getQueues();
     

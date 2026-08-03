@@ -5,8 +5,8 @@
  */
 
 import React, { useEffect, useState } from 'react';
-import { Lucide } from '../src/lib/icons';
-const { X, Timer, DollarSign, TriangleAlert, Siren, Users, RotateCcw, Check, CheckCircle, Lock } = (Lucide as any) || {};
+// @ts-ignore - third-party UI icon lib has no types in this workspace
+import { X, Timer, DollarSign, AlertTriangle, AlertCircle, Users, RotateCcw, Check, CheckCircle, Lock } from 'lucide-react';
 
 interface ActionState {
   [key: string]: any;
@@ -276,7 +276,7 @@ export const ActionDetailModal: React.FC<ActionDetailModalProps> = ({
             {/* Risk Factors */}
             {action.riskFactors && action.riskFactors.length > 0 && (
               <div className="p-4 bg-orange-50 border border-orange-200 rounded-lg">
-                <h4 className="font-bold text-gray-800 mb-3">{TriangleAlert ? <TriangleAlert className="inline w-5 h-5 mr-2 text-orange-600" /> : '⚠️'} Risk Factors</h4>
+                <h4 className="font-bold text-gray-800 mb-3">{AlertTriangle ? <AlertTriangle className="inline w-5 h-5 mr-2 text-orange-600" /> : '⚠️'} Risk Factors</h4>
                 <ul className="space-y-2">
                   {action.riskFactors.map((factor, idx) => (
                     <li key={idx} className="text-sm text-orange-900 flex items-start gap-2">
@@ -291,11 +291,11 @@ export const ActionDetailModal: React.FC<ActionDetailModalProps> = ({
             {/* Warnings */}
             {action.warnings && action.warnings.length > 0 && (
               <div className="p-4 bg-red-50 border border-red-200 rounded-lg">
-                <h4 className="font-bold text-gray-800 mb-3">{Siren ? <Siren className="inline w-5 h-5 mr-2 text-red-600" /> : '🚨'} Warnings</h4>
+                <h4 className="font-bold text-gray-800 mb-3">{AlertCircle ? <AlertCircle className="inline w-5 h-5 mr-2 text-red-600" /> : '🚨'} Warnings</h4>
                 <ul className="space-y-2">
                   {action.warnings.map((warning, idx) => (
                     <li key={idx} className="text-sm text-red-900 flex items-start gap-2">
-                      <span className="text-red-600 mt-0.5">{TriangleAlert ? <TriangleAlert className="w-4 h-4 text-red-600" /> : '⚠️'}</span>
+                      <span className="text-red-600 mt-0.5">{AlertTriangle ? <AlertTriangle className="w-4 h-4 text-red-600" /> : '⚠️'}</span>
                       <span>{warning}</span>
                     </li>
                   ))}

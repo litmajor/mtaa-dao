@@ -8,7 +8,6 @@ import { gasPriceOracle } from './gasPriceOracle';
 import { getMultiChainProvider } from './multiChainProvider';
 import { notificationService } from '../notificationService';
 import { WebSocketService } from './WebSocketService';
-import { getEventEmitter } from '../middleware/websocket-event-emitter';
 import { paymentRecoverySAGA } from './PaymentRecoverySAGAOrchestrator';
 
 const logger = Logger.getLogger();
@@ -166,19 +165,28 @@ export class RecurringPaymentService {
           // Notify user (no txHash available here; the saga writes on-chain records to its events table)
           await this.notifySuccess(payment, (saga as any)?.paymentId ?? '');
 
-          // Schedule next payment and emit websocket event
+          // Schedule next payment and emit notification event
           await this.scheduleNextPayment(payment);
           try {
-            const wsEmitter = getEventEmitter();
-            wsEmitter.emitActivity('payment', payment.id, payment.userId, 'recurring_completed', {
-              recurring: true,
-              toAddress: payment.toAddress,
-              amount: payment.amount,
-              currency: payment.currency,
-              frequency: payment.frequency,
-              sagaId: saga.id,
-              nextPayment: payment.nextPayment,
-              status: 'completed'
+            await notificationService.createNotification({
+              userId: payment.userId,
+              type: 'payment_recurring_completed',
+              title: 'Recurring Payment Completed',
+              message: `Recurring payment of ${payment.amount} ${payment.currency} has been processed`,
+              priority: 'high',
+              metadata: {
+                entityType: 'payment',
+                entityId: payment.id,
+                recurring: true,
+                toAddress: payment.toAddress,
+                amount: payment.amount,
+                currency: payment.currency,
+                frequency: payment.frequency,
+                sagaId: saga.id,
+                nextPayment: payment.nextPayment,
+                status: 'completed'
+              },
+              persist: true,
             });
           } catch (wsError) {
             logger.warn('Failed to emit WebSocket event for recurring payment completion', wsError);
@@ -292,24 +300,27 @@ export class RecurringPaymentService {
       })
       .where(eq(walletTransactions.id, payment.id));
 
-    // Emit WebSocket alert for insufficient balance
+    // Emit WebSocket notification for insufficient balance
     try {
-      const wsEmitter = getEventEmitter();
-      wsEmitter.emitAlert(
-        'payment_insufficient_balance',
-        'high',
-        `Recurring payment failed: insufficient balance`,
-        payment.userId,
-        {
+      await notificationService.createNotification({
+        userId: payment.userId,
+        type: 'payment_insufficient_balance',
+        title: 'Insufficient Balance',
+        message: `Recurring payment failed: insufficient balance (Need: ${requiredBalance}, Have: ${currentBalance})`,
+        priority: 'high',
+        metadata: {
+          entityType: 'payment',
+          entityId: payment.id,
           paymentId: payment.id,
           required: requiredBalance,
           current: currentBalance,
           consecutiveFailures,
           willDisable: consecutiveFailures >= this.MAX_CONSECUTIVE_FAILURES
-        }
-      );
+        },
+        persist: true,
+      });
     } catch (wsError) {
-      logger.warn('Failed to emit WebSocket alert for insufficient balance', wsError);
+      logger.warn('Failed to emit WebSocket notification for insufficient balance', wsError);
     }
 
     // Send notification
@@ -375,19 +386,28 @@ export class RecurringPaymentService {
       })
       .where(eq(walletTransactions.id, payment.id));
 
-    // Emit WebSocket alert for payment failure
+    // Emit WebSocket notification for payment failure
     try {
-      const wsEmitter = getEventEmitter();
-      wsEmitter.emitAlert('payment_recurring_failed', 'high', `Recurring payment failed: ${error.message}`, payment.userId, {
-        paymentId: payment.id,
-        toAddress: payment.toAddress,
-        amount: payment.amount,
-        currency: payment.currency,
-        error: error.message,
-        consecutiveFailures
+      await notificationService.createNotification({
+        userId: payment.userId,
+        type: 'payment_recurring_failed',
+        title: 'Recurring Payment Failed',
+        message: `Recurring payment failed: ${error.message}`,
+        priority: 'high',
+        metadata: {
+          entityType: 'payment',
+          entityId: payment.id,
+          paymentId: payment.id,
+          toAddress: payment.toAddress,
+          amount: payment.amount,
+          currency: payment.currency,
+          error: error.message,
+          consecutiveFailures
+        },
+        persist: true,
       });
     } catch (wsError) {
-      logger.warn('Failed to emit WebSocket alert for payment failure', wsError);
+      logger.warn('Failed to emit WebSocket notification for payment failure', wsError);
     }
 
     // Notify user
@@ -405,28 +425,25 @@ export class RecurringPaymentService {
    * Notify user of successful payment
    */
   private async notifySuccess(payment: RecurringPayment, txHash: string): Promise<void> {
-    // Emit WebSocket activity for successful payment
-    try {
-      const wsEmitter = getEventEmitter();
-      wsEmitter.emitStatusChange('payment', payment.id, 'completed', payment.userId, {
-        recurring: true,
-        toAddress: payment.toAddress,
-        amount: payment.amount,
-        currency: payment.currency,
-        transactionHash: txHash,
-        nextPayment: payment.nextPayment
-      });
-    } catch (wsError) {
-      logger.warn('Failed to emit WebSocket event for payment success', wsError);
-    }
-
     await notificationService.createNotification({
       userId: payment.userId,
       type: 'recurring_payment_success',
       title: 'Recurring Payment Completed',
       message: `Your recurring payment of ${payment.amount} ${payment.currency} was successful`,
       priority: 'medium',
-      metadata: { paymentId: payment.id, txHash }
+      metadata: {
+        entityType: 'payment',
+        entityId: payment.id,
+        paymentId: payment.id,
+        status: 'completed',
+        recurring: true,
+        toAddress: payment.toAddress,
+        amount: payment.amount,
+        currency: payment.currency,
+        transactionHash: txHash,
+        nextPayment: payment.nextPayment
+      },
+      persist: true,
     });
   }
 

@@ -14,6 +14,8 @@ import { createRateLimiter } from '../../../middleware/rateLimiting';
 import { ethers } from 'ethers';
 import challengeStore from '../../../utils/challengeStore';
 import { randomUUID } from 'crypto';
+import { createUserWallet, generateMnemonicWallet, walletGenerationService } from '../../../services/wallet-generation-service';
+import { saveVaultBackup } from '../../../services/walletVaultService';
 
 const router = express.Router({ mergeParams: true });
 
@@ -96,15 +98,41 @@ const setupBackupLimiter = createRateLimiter({
  */
 router.post('/create', isAuthenticated, setupCreationLimiter, async (req, res) => {
   try {
-    const { walletType = 'personal', password, network, initialAssetPreference } = req.body;
+    const userId = (req as any).user?.id || (req as any).user?.claims?.sub;
+    const { walletType = 'personal', network, initialAssetPreference, address, keystore } = (req.body || {}) as any;
 
-    const walletId = randomUUID();
-    const address = '0x' + Math.random().toString(16).slice(2).padEnd(40, 'a');
+    if (!userId) {
+      return res.status(401).json({ success: false, error: 'User not authenticated' });
+    }
+
+    let walletResult;
+    if (address) {
+      walletResult = await walletGenerationService.registerClientGeneratedWallet(
+        userId,
+        address,
+        initialAssetPreference || 'USDC',
+        walletType
+      );
+    } else {
+      walletResult = await createUserWallet(userId, initialAssetPreference || 'USDC', walletType);
+    }
+
+    if (keystore) {
+      await saveVaultBackup(userId, walletResult.walletId, keystore, {
+        ipAddress: req.ip,
+        userAgent: req.get('user-agent'),
+      });
+    }
 
     res.status(201).json({
       success: true,
       data: {
-        wallet: { id: walletId, address, walletType, createdAt: new Date().toISOString() },
+        wallet: {
+          id: walletResult.walletId,
+          address: walletResult.address,
+          walletType,
+          createdAt: new Date().toISOString(),
+        },
         networks: network ? [network] : [],
         assets: initialAssetPreference ? [initialAssetPreference] : [],
         securityState: 'UNBACKED'
@@ -123,14 +151,25 @@ router.post('/create', isAuthenticated, setupCreationLimiter, async (req, res) =
 router.post('/create/mnemonic', isAuthenticated, setupCreationLimiter, async (req, res) => {
   try {
     const { wordCount = 12, password, network, initialAssetPreference } = req.body;
-    const walletId = randomUUID();
-    const address = '0x' + Math.random().toString(16).slice(2).padEnd(40, 'a');
+    const userId = (req as any).user?.id || (req as any).user?.claims?.sub;
+
+    if (!userId) {
+      return res.status(401).json({ success: false, error: 'User not authenticated' });
+    }
+
+    const walletResult = await createUserWallet(userId, initialAssetPreference || 'USDC', 'personal');
+    const mnemonicWallet = await generateMnemonicWallet();
 
     res.status(201).json({
       success: true,
       data: {
-        wallet: { id: walletId, address, wordCount, createdAt: new Date().toISOString() },
-        mnemonic: Array(wordCount).fill('word').join(' '),
+        wallet: {
+          id: walletResult.walletId,
+          address: walletResult.address,
+          wordCount,
+          createdAt: new Date().toISOString(),
+        },
+        mnemonic: mnemonicWallet.mnemonic,
         networks: network ? [network] : [],
         assets: initialAssetPreference ? [initialAssetPreference] : [],
         securityState: 'UNBACKED'
@@ -213,9 +252,24 @@ router.post('/import/private-key', isAuthenticated, setupCreationLimiter, async 
  */
 router.post('/recover', isAuthenticated, setupCreationLimiter, async (req, res) => {
   try {
-    const { mnemonic, password } = req.body;
-    const walletId = randomUUID();
-    res.status(201).json({ success: true, data: { wallet: { id: walletId, recovered: true } } });
+    const { address, message, signature } = req.body;
+
+    if (!address || !message || !signature) {
+      return res.status(400).json({ success: false, error: 'Missing address/message/signature' });
+    }
+
+    let recovered: string;
+    try {
+      recovered = ethers.verifyMessage(message, signature);
+    } catch (err) {
+      return res.status(400).json({ success: false, error: 'Invalid signature format' });
+    }
+
+    if (recovered.toLowerCase() !== String(address).toLowerCase()) {
+      return res.status(400).json({ success: false, error: 'Signature does not match address' });
+    }
+
+    res.status(201).json({ success: true, data: { wallet: { address, recovered: true } } });
   } catch (error) {
     console.error('Failed to recover wallet:', error);
     res.status(400).json({ success: false, error: (error as Error).message });
@@ -242,6 +296,18 @@ router.post('/restore', isAuthenticated, setupBackupLimiter, async (req, res) =>
  * Mark backup as confirmed (from backup-confirmed)
  */
 router.post('/backup/confirm', isAuthenticated, async (req, res) => {
+  try {
+    res.json({
+      success: true,
+      data: { backupConfirmed: true, confirmedAt: new Date().toISOString() }
+    });
+  } catch (error) {
+    console.error('Failed to confirm backup:', error);
+    res.status(400).json({ success: false, error: (error as Error).message });
+  }
+});
+
+router.post('/backup-confirm', isAuthenticated, async (req, res) => {
   try {
     res.json({
       success: true,

@@ -15,7 +15,7 @@
  * This is where the asset engine and cognition layer get their semantic vocabulary.
  */
 
-import { DAOType, TreasuryAsset, DAOTreasury, ChainType } from '@/types/treasury';
+import type { DAOType, TreasuryAsset, DAOTreasury, ChainType } from '@/types/treasury';
 import { getTreasuryConfigForDAOType } from '@/config/treasury.config';
 
 // ========== ASSET CLASS HIERARCHY ==========

@@ -2,8 +2,10 @@ import fs from 'fs';
 import path from 'path';
 import { ethers } from 'ethers';
 import { createWalletIfValid } from '../utils/cryptoWallet';
+import { resolveProviderUrls } from './providerBootstrap';
 
-const RPC_URL = process.env.RPC_URL || 'http://localhost:8545';
+const providerUrls = resolveProviderUrls();
+const RPC_URL = providerUrls.rpcUrl;
 const PRIVATE_KEY = process.env.ACHIEVEMENT_SIGNER_PRIVATE_KEY || '';
 const ACHIEVEMENT_CONTRACT_ADDRESS = process.env.ACHIEVEMENT_CONTRACT_ADDRESS || '';
 

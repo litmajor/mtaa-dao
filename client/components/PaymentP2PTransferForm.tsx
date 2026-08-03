@@ -31,7 +31,6 @@ export const PaymentP2PTransferForm: React.FC<PaymentP2PTransferFormProps> = ({ 
     amount: '',
     currency: 'USD',
     recipientId: '',
-    recipientEmail: '',
     description: '',
     isAnonymous: false,
   });
@@ -58,8 +57,8 @@ export const PaymentP2PTransferForm: React.FC<PaymentP2PTransferFormProps> = ({ 
       return;
     }
 
-    if (!formData.recipientEmail && !formData.recipientId) {
-      alert('Please provide recipient email or ID');
+    if (!formData.recipientId) {
+      alert('Please provide a recipient ID');
       return;
     }
 
@@ -107,7 +106,6 @@ export const PaymentP2PTransferForm: React.FC<PaymentP2PTransferFormProps> = ({ 
       amount: '',
       currency: 'USD',
       recipientId: '',
-      recipientEmail: '',
       description: '',
       isAnonymous: false,
     });
@@ -116,7 +114,7 @@ export const PaymentP2PTransferForm: React.FC<PaymentP2PTransferFormProps> = ({ 
     setSimulation(null);
   };
 
-  const estimatedFee = formData.amount ? (parseFloat(formData.amount) * 0.5 / 100).toFixed(2) : '0.00';
+  const estimatedFee = formData.amount ? (parseFloat(formData.amount) * 0.001).toFixed(2) : '0.00';
 
   // Success State
   if (successAction) {
@@ -134,8 +132,8 @@ export const PaymentP2PTransferForm: React.FC<PaymentP2PTransferFormProps> = ({ 
             <p className="font-mono text-sm text-gray-800">{successAction.id}</p>
           </div>
           <div className="text-left">
-            <p className="text-xs font-semibold text-gray-600 uppercase">Recipient</p>
-            <p className="text-sm text-gray-800">{formData.recipientEmail || formData.recipientId}</p>
+            <p className="text-xs font-semibold text-gray-600 uppercase">Recipient ID</p>
+            <p className="text-sm text-gray-800">{formData.recipientId}</p>
           </div>
           <div className="text-left">
             <p className="text-xs font-semibold text-gray-600 uppercase">Amount</p>
@@ -198,7 +196,7 @@ export const PaymentP2PTransferForm: React.FC<PaymentP2PTransferFormProps> = ({ 
             className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none"
           />
           <p className="text-xs text-gray-500 mt-1">
-            Estimated fee: {estimatedFee} {formData.currency} (0.5%)
+            Estimated fee: {estimatedFee} {formData.currency} (0.1% internal fee)
           </p>
         </div>
 
@@ -224,38 +222,17 @@ export const PaymentP2PTransferForm: React.FC<PaymentP2PTransferFormProps> = ({ 
 
         {/* Recipient Selection */}
         <div className="p-4 bg-blue-50 border border-blue-200 rounded-lg">
-          <p className="text-sm font-semibold text-gray-700 mb-4">Recipient (choose one) *</p>
-          
-          <div className="space-y-3">
-            <div>
-              <label className="text-xs font-semibold text-gray-600">Recipient Email</label>
-              <input
-                type="email"
-                name="recipientEmail"
-                value={formData.recipientEmail}
-                onChange={handleInputChange}
-                placeholder="recipient@example.com"
-                className="w-full mt-1 px-3 py-2 border border-gray-300 rounded focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none text-sm"
-              />
-            </div>
-
-            <div className="flex items-center justify-center text-sm text-gray-600">
-              <span className="flex-1 border-t"></span>
-              <span className="px-3">or</span>
-              <span className="flex-1 border-t"></span>
-            </div>
-
-            <div>
-              <label className="text-xs font-semibold text-gray-600">Recipient ID</label>
-              <input
-                type="text"
-                name="recipientId"
-                value={formData.recipientId}
-                onChange={handleInputChange}
-                placeholder="user-id-or-handle"
-                className="w-full mt-1 px-3 py-2 border border-gray-300 rounded focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none text-sm"
-              />
-            </div>
+          <p className="text-sm font-semibold text-gray-700 mb-4">Recipient *</p>
+          <div>
+            <label className="text-xs font-semibold text-gray-600">Recipient ID</label>
+            <input
+              type="text"
+              name="recipientId"
+              value={formData.recipientId}
+              onChange={handleInputChange}
+              placeholder="user-id-or-handle"
+              className="w-full mt-1 px-3 py-2 border border-gray-300 rounded focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none text-sm"
+            />
           </div>
         </div>
 

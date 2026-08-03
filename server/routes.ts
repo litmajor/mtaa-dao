@@ -1,4 +1,5 @@
-import express, { Express } from 'express';
+import express from 'express';
+import type { RequestHandler } from 'express';
 import { Server as HTTPServer } from 'http';
 import { isAuthenticated } from './nextAuthMiddleware';
 import Stripe from "stripe"; // Stripe integration
@@ -8,11 +9,11 @@ import healthRoutes from './routes/health';
 import sseRoutes from './routes/sse';
 import governanceRoutes from './routes/governance';
 import governanceQuorumRouter from './routes/governance-quorum';
+import governanceV2Routes from './routes/governance-v2';
 import tasksRoutes from './routes/tasks';
 import reputationRoutes from './routes/reputation';
 import analyticsRoutes from './routes/analytics';
 import notificationsRoutes from './routes/notifications';
-import userNotificationsRoutes from './routes/user/notifications';
 import userRecoveryRoutes from './routes/user/recovery';
 import daosRoutes from './routes/daos';
 import proposalExecutionRoutes from './routes/proposal-execution';
@@ -43,8 +44,8 @@ import agentRoutes from './routes/agents';
 import onboardingRoutes from './routes/onboarding';
 import subscriptionManagementRoutes from './routes/subscription-management';
 // V1 ROUTERS (Versioned API Architecture)
-let v1DaosRouter: any;
-let v1TreasuryRouter: any;
+let v1DaosRouter: express.Router | undefined;
+let v1TreasuryRouter: express.Router | undefined;
 import treasuryDataRoutes from './routes/treasury-data';
 import graphPropagationRoutes from './routes/graph-propagation';
 import userSubscriptionRoutes from './routes/user-subscription';
@@ -60,7 +61,10 @@ import yukiRoutesV1 from './routes/v1/yuki';
 import marketDataRoutes from './routes/marketData';
 import executionQualityRoutes from './routes/executionQuality';
 import marketInsightsRoutes from './routes/marketInsights';
-import tradingSignalsRoutes from './routes/trading-signals';
+import intelligenceRoutes from './routes/v1/yuki/intelligence';
+// Import Gateway service (data plane)
+import { initializeGatewayService, getGatewayService } from './services/gateway';
+import { createGatewayRoutes } from './services/gateway/api';
 // Telegram and WhatsApp routes
 import telegramBotRoutes from './routes/telegram-bot';
 import telegramIntegrationRoutes from './routes/telegram-integration';
@@ -69,13 +73,18 @@ import whatsappIntegrationRoutes from './routes/whatsapp-integration';
 // Import User Follows routes
 import userFollowsRoutes from './routes/user-follows';
 // V1 wallets router (required by legacy 410 tombstones)
-let v1WalletsRouter: any;
+let v1WalletsRouter: express.Router | undefined;
+
+// Extended Request shape for routes that populate `req.user`
+type RequestWithUser = express.Request & { user?: { id?: string; claims?: Record<string, unknown> } };
 
 // Import Symbol Universe routes for CEX integration
 import symbolUniverseRoutes from './routes/symbolUniverse';
 
 // Import P2P Transfers routes
 import p2pTransfersRoutes from './routes/p2p-transfers';
+import paymentExecutionRoutes from './routes/paymentExecutionRoutes';
+import simulationPaymentRoutes from './routes/simulationPaymentRoutes';
 
 // Import Exchange and Order Router routes
 import exchangeRoutes from './routes/exchanges';
@@ -189,7 +198,7 @@ import {
 import { webSocketPriceStream } from './services/webSocketPriceStream';
 import dashboardRouter from './routes/dashboard';
 
-export async function registerRoutes(app: Express, server: HTTPServer) {
+export async function registerRoutes(app: express.Application, server: HTTPServer) {
   console.log('[ROUTES] *** STARTING ROUTE REGISTRATION ***');
   
   // Initialize timeout middleware for auto-queuing long-running operations
@@ -278,19 +287,20 @@ export async function registerRoutes(app: Express, server: HTTPServer) {
   console.log('[ROUTES] Mounting SSE routes...');
   app.use('/api/sse', sseRoutes);
 
-  // ✅ Wallet and Treasury routes migrated to V1 endpoints (see /api/v1/daos and /api/v1/treasury)
+  // Wallet and Treasury routes migrated to V1 endpoints (see /api/v1/daos and /api/v1/treasury)
 
 
   // Market Discovery routes (Symbol Universe Phase 2)
   console.log('[ROUTES] Mounting market discovery routes...');
   app.use(marketDiscoveryRouter);
 
-  // Governance routes (legacy compatibility and quorum subrouter)
+  // Governance routes (legacy compatibility, quorum subrouter, and v2 service-backed surface)
   app.use('/api/governance', governanceRoutes);
   app.use('/api/governance/quorum', governanceQuorumRouter);
+  app.use('/api/governance/v2', governanceV2Routes);
 
 
-  // ✅ DAO consolidated routes now mounted via V1 router at /api/dao/:daoId
+  // DAO consolidated routes now mounted via V1 router at /api/dao/:daoId
   
   // Economy routes - platform economic tools and balances
   app.use('/api/economy', economyRoutes);
@@ -339,7 +349,7 @@ export async function registerRoutes(app: Express, server: HTTPServer) {
       return daosRoutes(req, res, next);
     }
   });
-  // ⚠️ DAO treasury flows removed - functionality consolidated to V1 endpoints
+  // DAO treasury flows removed - functionality consolidated to V1 endpoints
 
   // Task and bounty routes
   console.log('[ROUTES] Mounting task routes...');
@@ -359,21 +369,8 @@ export async function registerRoutes(app: Express, server: HTTPServer) {
     });
   });
 
-  // Reputation and analytics
-  console.log('[ROUTES] Mounting reputation routes...');
-  app.use('/api/reputation', reputationRoutes);
-  app.use("/api/analytics", analyticsRoutes);
-  app.use("/api/challenges", challengesRoutes);
-
-  // Notifications and disbursements
-  console.log('[ROUTES] Mounting notifications routes...');
-  app.use('/api/notifications', notificationsRoutes);
-  app.use('/api/user/notifications', userNotificationsRoutes); // User notification endpoints (Phase 3c Part 4)
-  app.use('/api/user/recovery', userRecoveryRoutes); // User recovery endpoints (Phase 3c Part 5)
-
-  // Proposal execution
-  console.log('[ROUTES] Mounting proposal execution routes...');
-  app.use('/api/proposal-execution', proposalExecutionRoutes);
+  // These routes have been moved to server/index.ts where they are properly guarded
+  // with isAuthenticated and RBAC middleware. Mounting them here creates an auth bypass.
 
   // ============================================================================
   // PAYMENT ROUTES - CONSOLIDATED
@@ -440,7 +437,11 @@ export async function registerRoutes(app: Express, server: HTTPServer) {
     res.redirect(307, newPath);
   });
   
-  app.use('/api/p2p-transfers', p2pTransfersRoutes);
+  // P2P Transfers routes with authentication wrapper
+  // FIX #1: Enforce isAuthenticated middleware at mount point for all P2P operations
+  app.use('/api/p2p-transfers', isAuthenticated, p2pTransfersRoutes);
+  app.use('/api/v1/p2p-transfers', isAuthenticated, p2pTransfersRoutes);
+  app.use('/walletapi/v1/p2p-transfers', isAuthenticated, p2pTransfersRoutes);
 
   // ============================================================================
   // CONSOLIDATED ROUTE REDIRECTS (DEPRECATION)
@@ -653,6 +654,21 @@ export async function registerRoutes(app: Express, server: HTTPServer) {
   console.log('[ROUTES] Mounting enhanced market data routes...');
   app.use('/api/v1/market', marketDataRoutes);
 
+  // ============================================================================
+  // GATEWAY SERVICE - Data Aggregation Plane
+  // ============================================================================
+  // Initialize and mount gateway service (market data aggregation)
+  console.log('[ROUTES] Initializing gateway service...');
+  try {
+    const gatewayService = initializeGatewayService();
+    const gatewayRoutes = createGatewayRoutes(gatewayService);
+    app.use('/api/v1/market', gatewayRoutes);
+    app.use('/api/gateway', gatewayRoutes);
+    console.log('[ROUTES] Gateway service mounted at /api/v1/market and /api/gateway');
+  } catch (error) {
+    console.error('[ROUTES] Failed to initialize gateway service:', error);
+  }
+
 
   // Execution Quality & Slippage Analysis API
   console.log('[ROUTES] Mounting execution quality routes...');
@@ -664,7 +680,7 @@ export async function registerRoutes(app: Express, server: HTTPServer) {
 
   // Trading Intelligence Engine - Real-Time Feeds, Futures, Microstructure
   console.log('[ROUTES] Mounting trading intelligence routes (Market signals, WebSocket, Futures)...');
-  app.use('/api/trading', authenticateToken as any, tradingSignalsRoutes);
+  app.use('/api/trading', authenticateToken as express.RequestHandler, intelligenceRoutes);
 
   // ⚠️ DEPRECATED: Legacy endpoint redirect
   // Old path /api/v1/priority4 was exposed without authentication - now moved and secured
@@ -784,33 +800,45 @@ export async function registerRoutes(app: Express, server: HTTPServer) {
 
       const checkoutRequestId = stkData?.CheckoutRequestID;
       const reference = `SPAWN-${Date.now()}-${founderWallet.slice(2, 8)}`;
+      const userId = (req as RequestWithUser).user?.id || founderWallet;
 
-      // Persist the pending payment with full DAO creation payload embedded
-      const { paymentTransactions } = await import('../shared/schema');
-      const { db } = await import('./db');
-      await db.insert(paymentTransactions).values({
-        reference,
-        userId: (req as any).user?.id || founderWallet,
-        provider: 'mpesa',
-        amount: String(spawnFeeKES),
-        currency: 'KES',
-        type: 'dao_spawn_fee',
-        status: 'pending',
-        metadata: {
-          purpose: 'dao_spawn_fee',
-          spawnStatus: 'awaiting_payment',
-          checkoutRequestId,
-          founderWallet,
-          daoType,
-          spawnFeeKES,
-          cusdEstimate,
-          rate,
-          pendingDaoData: { daoData, founderWallet, invitedMembers: invitedMembers || [], selectedElders: selectedElders || [], multisig },
-          darajaResponse: stkData,
-        },
-        createdAt: new Date(),
-        updatedAt: new Date(),
-      } as any);
+      // Persist the pending payment with full DAO creation payload embedded via CommandBus
+      const { commandBus } = await import('./domain/setup');
+      const { PaymentCommandTypes } = await import('./domain/payments/PaymentCommands');
+      const { v4: uuidv4 } = await import('uuid');
+
+      const createResult = await commandBus.dispatch({
+        id: uuidv4(),
+        type: PaymentCommandTypes.CreatePayment,
+        actor: userId,
+        correlationId: uuidv4(),
+        timestamp: new Date(),
+        payload: {
+          reference,
+          userId,
+          provider: 'mpesa',
+          amount: String(spawnFeeKES),
+          currency: 'KES',
+          type: 'dao_spawn_fee',
+          metadata: {
+            purpose: 'dao_spawn_fee',
+            spawnStatus: 'awaiting_payment',
+            checkoutRequestId,
+            founderWallet,
+            daoType,
+            spawnFeeKES,
+            cusdEstimate,
+            rate,
+            pendingDaoData: { daoData, founderWallet, invitedMembers: invitedMembers || [], selectedElders: selectedElders || [], multisig },
+            darajaResponse: stkData,
+          }
+        }
+      });
+
+      if (!createResult.success) {
+        logger.error(`[DAO SPAWN] Failed to create payment via CommandBus: ${createResult.error}`);
+        return res.status(500).json({ error: 'Failed to initiate spawn payment' });
+      }
 
       return res.status(202).json({
         success: true,
@@ -820,8 +848,8 @@ export async function registerRoutes(app: Express, server: HTTPServer) {
         cusdEstimate,
         message: `Please enter your M-Pesa PIN to pay KES ${spawnFeeKES} and create your ${daoType} DAO.`,
       });
-    } catch (error: any) {
-      next(error);
+      } catch (error: unknown) {
+      next(error as Error);
     }
   });
 
@@ -838,8 +866,9 @@ export async function registerRoutes(app: Express, server: HTTPServer) {
       const daoType = (req.params.daoType || '').toLowerCase().replace(/-/g, '');
       const quote = await getSpawnFeeQuote(daoType);
       return res.json({ success: true, daoType, ...quote });
-    } catch (err: any) {
-      return res.status(500).json({ success: false, error: err.message });
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err);
+      return res.status(500).json({ success: false, error: msg });
     }
   });
 
@@ -865,7 +894,7 @@ export async function registerRoutes(app: Express, server: HTTPServer) {
         return res.status(404).json({ success: false, error: 'Reference not found' });
       }
 
-      const meta = (tx.metadata as any) ?? {};
+      const meta = (tx.metadata as unknown as Record<string, unknown>) ?? {};
       return res.json({
         success: true,
         reference,
@@ -875,8 +904,9 @@ export async function registerRoutes(app: Express, server: HTTPServer) {
         spawnFeeKES: meta.spawnFeeKES ?? null,
         error: meta.spawnError ?? null,
       });
-    } catch (err: any) {
-      return res.status(500).json({ success: false, error: err.message });
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err);
+      return res.status(500).json({ success: false, error: msg });
     }
   });
 
@@ -925,6 +955,8 @@ export async function registerRoutes(app: Express, server: HTTPServer) {
     }
   });
   app.get('/api/payments', isAuthenticated, paymentsIndexHandler);
+  app.use('/api/simulation', isAuthenticated, simulationPaymentRoutes);
+  app.use('/api/payments', isAuthenticated, paymentExecutionRoutes);
 
   // Wallet transactions
   app.get('/api/wallet/transactions', isAuthenticated, getWalletTransactions);
@@ -1068,8 +1100,9 @@ export async function registerRoutes(app: Express, server: HTTPServer) {
           }
         });
         res.json({ clientSecret: paymentIntent.client_secret });
-      } catch (error: any) {
-        res.status(500).json({ message: 'Error creating payment intent: ' + error.message });
+      } catch (error: unknown) {
+        const msg = error instanceof Error ? error.message : String(error);
+        res.status(500).json({ message: 'Error creating payment intent: ' + msg });
       }
     });
 
@@ -1104,7 +1137,7 @@ export async function registerRoutes(app: Express, server: HTTPServer) {
   }
 
   // === MORIO AI ASSISTANT API ===
-  app.use('/api/morio', morioRoutes);
+  // Note: /api/morio is mounted and guarded in server/index.ts
   app.use('/api/onboarding', onboardingRoutes);
   app.use('/api/user-subscription', userSubscriptionRoutes);
   app.use('/api/revenue', isAuthenticated, requireRole('super_admin', 'admin'), revenueRoutes);

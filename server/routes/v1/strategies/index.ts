@@ -286,7 +286,6 @@
  *     responses:
  *       '200':
  *         description: Paginated follower list
- * ═══════════════════════════════════════════════════════════════════════════════
  */
 
 import express, { Router } from 'express';

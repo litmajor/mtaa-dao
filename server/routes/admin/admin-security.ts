@@ -2,7 +2,7 @@ import { Router } from 'express';
 import { db } from '../../db';
 import { logger } from '../../utils/logger';
 import { users, sessions, auditLogs } from '../../../shared/schema';
-import { eq, gte, sql } from 'drizzle-orm';
+import { eq, gte, sql, and } from 'drizzle-orm';
 import { requireRole } from '../../middleware/rbac';
 
 const router = Router();
@@ -23,6 +23,54 @@ router.get('/security/sessions', requireSuperAdmin, async (req, res) => {
   } catch (error) {
     logger.error('Error fetching sessions:', error);
     res.status(500).json({ error: 'Failed to fetch sessions' });
+  }
+});
+
+// Lookup a specific session safely (metadata only, no raw token material)
+router.get('/security/sessions/:sessionId', requireSuperAdmin, async (req, res) => {
+  try {
+    const { sessionId } = req.params;
+    const adminId = (req.user as any).id;
+
+    const [session] = await db
+      .select({
+        id: sessions.id,
+        userId: sessions.userId,
+        expiresAt: sessions.expiresAt,
+        createdAt: sessions.createdAt,
+        updatedAt: sessions.updatedAt,
+        lastAccessedAt: sessions.lastAccessedAt,
+        ipAddress: sessions.ipAddress,
+        userAgent: sessions.userAgent,
+      })
+      .from(sessions)
+      .where(and(eq(sessions.id, sessionId), gte(sessions.expiresAt, new Date())))
+      .limit(1);
+
+    if (!session) {
+      return res.status(404).json({ success: false, error: 'Session not found' });
+    }
+
+    await db.insert(auditLogs).values({
+      userId: adminId,
+      userEmail: (req.user as any)?.claims?.email || null,
+      action: 'admin.session_lookup',
+      resource: 'session',
+      resourceId: sessionId,
+      method: 'GET',
+      endpoint: '/api/admin/security/sessions/:sessionId',
+      ipAddress: req.ip || 'unknown',
+      userAgent: req.get('user-agent') || 'unknown',
+      status: 200,
+      details: { viewedSessionId: sessionId, userId: session.userId },
+      severity: 'medium',
+      category: 'security',
+    });
+
+    res.json({ success: true, session });
+  } catch (error) {
+    logger.error('Error looking up session:', error);
+    res.status(500).json({ error: 'Failed to look up session' });
   }
 });
 

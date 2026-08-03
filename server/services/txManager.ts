@@ -4,6 +4,7 @@ import { gasPriceOracle } from './gasPriceOracle';
 import { Logger } from '../utils/logger';
 import type { Signer, Provider, TransactionRequest, TransactionResponse, TransactionReceipt } from 'ethers';
 import { redis as sharedRedis } from './redis';
+import { withTransaction } from '../utils/dbClient';
 
 const logger = Logger.getLogger();
 
@@ -43,11 +44,7 @@ export class TransactionLifecycleManager {
    */
   async getNextNonce(address: string, chain: SupportedChain): Promise<number> {
     await this.ensureNonceTable();
-
-    const client = await pool.connect();
-    try {
-      await client.query('BEGIN');
-
+    return await withTransaction(async (client) => {
       // Try to select for update
       const selectRes = await client.query(
         `SELECT next_nonce FROM wallet_nonces WHERE address = $1 AND chain = $2 FOR UPDATE`,
@@ -63,7 +60,6 @@ export class TransactionLifecycleManager {
         // increment stored next_nonce
         await client.query(`UPDATE wallet_nonces SET next_nonce = $1, updated_at = NOW() WHERE address = $2 AND chain = $3`, [useNonce + 1, address, chain]);
 
-        await client.query('COMMIT');
         return useNonce;
       }
 
@@ -73,15 +69,8 @@ export class TransactionLifecycleManager {
 
       await client.query(`INSERT INTO wallet_nonces(address, chain, next_nonce, updated_at) VALUES ($1, $2, $3, NOW())`, [address, chain, onchainNum + 1]);
 
-      await client.query('COMMIT');
       return onchainNum;
-    } catch (err) {
-      try { await client.query('ROLLBACK'); } catch (e) {}
-      logger.error('getNextNonce failed', err);
-      throw err;
-    } finally {
-      client.release();
-    }
+    }, 30000);
   }
 
   /**

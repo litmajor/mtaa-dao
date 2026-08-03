@@ -13,12 +13,15 @@
  */
 
 import React, { Suspense, lazy } from 'react';
+import { Navigate } from 'react-router-dom';
 import { Helmet } from 'react-helmet-async';
 import { PageLoading } from '@/components/ui/page-loading';
 
 const YukiDashboardLazy = lazy(() => import('@/components/trading/YukiDashboard'));
 
 export default function YukiDashboardPage() {
+  return <Navigate to="/trading" replace />;
+
   return (
     <>
       <Helmet>

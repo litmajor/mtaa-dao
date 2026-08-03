@@ -9,6 +9,7 @@ import React, { useCallback, useMemo, useState, useEffect } from 'react';
 import { Plus, Trash2, Play, RotateCcw, ChevronDown, ChevronUp, Download } from 'lucide-react';
 import { useParams, useSearchParams } from 'react-router-dom';
 import useStrategyDeployment from '../../hooks/useStrategyDeployment';
+import useStrategies from '../../hooks/useStrategies';
 import DeployProgressModal from './DeployProgressModal';
 import useStrategyGraph from '../../state/strategy-graph.store';
 import * as yukiApi from '../../api/yukiApi';
@@ -383,6 +384,7 @@ export default function VisualStrategyBuilder({ onDeploy }: { onDeploy?: (graph:
   const [selectedBlock, setSelectedBlock] = React.useState<string | null>(null);
   const [inspectorFocus, setInspectorFocus] = React.useState<string | null>(null);
   const { deploy, status: deployStatus, executionId, signalsUrl, error: deployError } = useStrategyDeployment();
+  const { backtest, backtestState, isBacktestPending, resetBacktest } = useStrategies();
   const [showDeployModal, setShowDeployModal] = React.useState(false);
   const [currentSignalsUrl, setCurrentSignalsUrl] = React.useState<string | null>(null);
 
@@ -537,6 +539,20 @@ export default function VisualStrategyBuilder({ onDeploy }: { onDeploy?: (graph:
     }
   }, [graph, deploy, onDeploy]);
 
+  const handleRunBacktest = useCallback(async () => {
+    if (!params.id) return;
+    resetBacktest();
+
+    const startDate = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
+    const endDate = new Date().toISOString().slice(0, 10);
+
+    try {
+      await backtest(params.id, startDate, endDate);
+    } catch (err) {
+      console.error('Backtest failed:', err);
+    }
+  }, [backtest, params.id, resetBacktest]);
+
   return (
     <div className="flex flex-col lg:flex-row gap-6 p-6 bg-slate-900 min-h-screen text-white">
       {/* LEFT SIDEBAR: BLOCK PALETTE */}
@@ -609,6 +625,23 @@ export default function VisualStrategyBuilder({ onDeploy }: { onDeploy?: (graph:
               <Play className="h-4 w-4" />
               Deploy Strategy
             </button>
+            <button
+              onClick={handleRunBacktest}
+              disabled={isBacktestPending || !params.id}
+              className="w-full bg-amber-600 hover:bg-amber-700 disabled:opacity-60 px-3 py-2 rounded text-sm font-medium flex items-center justify-center gap-2 transition-colors"
+            >
+              <Play className="h-4 w-4" />
+              {isBacktestPending ? 'Running Backtest…' : 'Run Backtest'}
+            </button>
+            {backtestState.jobId && (
+              <div className="rounded border border-slate-600 bg-slate-900/70 p-3 text-xs text-slate-300 space-y-1">
+                <div className="font-semibold text-slate-200">Backtest status</div>
+                <div className="capitalize">{backtestState.status}</div>
+                {backtestState.progress > 0 && <div>Progress: {backtestState.progress}%</div>}
+                {backtestState.error && <div className="text-rose-400">{backtestState.error}</div>}
+                {backtestState.result && <div className="text-emerald-400">Completed</div>}
+              </div>
+            )}
             <button
               onClick={exportJSON}
               className="w-full bg-blue-600 hover:bg-blue-700 px-3 py-2 rounded text-sm font-medium flex items-center justify-center gap-2 transition-colors"

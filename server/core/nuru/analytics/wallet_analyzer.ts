@@ -7,7 +7,7 @@
 import type { AnalysisResponse, Risk } from '../types';
 import { db } from '../../../db';
 import { wallets, walletTransactions, userBalances } from '../../../../shared/schema';
-import { eq, and, sql, desc, gte, count } from 'drizzle-orm';
+import { eq, and, desc, gte, count, inArray } from 'drizzle-orm';
 
 export class WalletAnalyzer {
   /**
@@ -71,7 +71,7 @@ export class WalletAnalyzer {
     const walletIds = daoWallets.map(w => w.id);
     const balances = await db.select()
       .from(userBalances)
-      .where(sql`${userBalances.walletId} = any(${sql.raw(`array[${walletIds.map(id => `'${id}'`).join(',')}]`)})`);
+      .where(inArray(userBalances.walletId, walletIds));
     
     // Get all transactions for this DAO in the timeframe
     const txs = await db.select()

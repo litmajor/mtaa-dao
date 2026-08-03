@@ -3,7 +3,7 @@
  * Abstract interface for all API adapters
  */
 
-import { AdapterResponse, NormalizedData, BaseAdapterConfig } from "../types";
+import type { AdapterResponse, NormalizedData, BaseAdapterConfig } from "../types";
 
 export abstract class BaseAdapter {
   protected name: string;
@@ -20,6 +20,13 @@ export abstract class BaseAdapter {
    */
   getName(): string {
     return this.name;
+  }
+
+  /**
+   * Lightweight logging helper for adapters.
+   */
+  protected log(message: string, ...args: unknown[]): void {
+    console.log(`[${this.name}] ${message}`, ...args);
   }
 
   /**
@@ -101,20 +108,19 @@ export abstract class BaseAdapter {
     let lastError: Error | null = null;
     const maxRetries = this.config.maxRetries || 3;
     const baseDelay = this.config.retryDelayMs || 1000;
+    const timeoutMs = this.config.timeout || 5000;
 
     for (let attempt = 0; attempt < maxRetries; attempt++) {
-      try {
-        const timeout = new Promise((_, reject) =>
-          setTimeout(
-            () => reject(new Error("Request timeout")),
-            this.config.timeout || 5000
-          )
-        );
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), timeoutMs);
 
-        const response = await Promise.race([
-          fetch(url, options),
-          timeout,
-        ]) as Response;
+      try {
+        const response = await fetch(url, {
+          ...options,
+          signal: controller.signal,
+        }) as Response;
+
+        clearTimeout(timeout);
 
         if (!response.ok) {
           throw new Error(
@@ -124,10 +130,16 @@ export abstract class BaseAdapter {
 
         return (await response.json()) as T;
       } catch (error) {
-        lastError = error as Error;
+        clearTimeout(timeout);
+        lastError = error instanceof Error ? error : new Error(String(error));
+
+        const message = lastError.name === 'AbortError'
+          ? `Request timeout after ${timeoutMs}ms`
+          : lastError.message;
+
         console.warn(
           `[${this.name}] Request attempt ${attempt + 1}/${maxRetries} failed:`,
-          (error as Error).message
+          message
         );
 
         if (attempt < maxRetries - 1) {

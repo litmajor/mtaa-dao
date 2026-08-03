@@ -7,7 +7,8 @@
  * Pattern violations (creating new Redis instances) will be logged with stack traces.
  */
 
-import { createClient, RedisClientType } from 'redis';
+import { createClient} from 'redis';
+import type { RedisClientType } from 'redis';
 import { logger } from '../utils/logger';
 
 class RedisConnectionManager {
@@ -35,7 +36,10 @@ class RedisConnectionManager {
    */
   static async getInitializedInstance(): Promise<RedisClientType> {
     if (!this.initPromise) {
-      this.initPromise = this.initializeClient();
+      this.initPromise = this.initializeClient().catch((err) => {
+        this.initPromise = null;
+        throw err;
+      });
     }
     return this.initPromise;
   }
@@ -43,6 +47,11 @@ class RedisConnectionManager {
   /**
    * Create the Redis client (called ONCE)
    */
+  private static clearInstance(): void {
+    this.instance = null;
+    this.initPromise = null;
+  }
+
   private static createClient(): RedisClientType {
     this.instanceCount++;
     
@@ -65,20 +74,28 @@ class RedisConnectionManager {
     const client = createClient({
       url,
       socket: {
-        connectTimeout: 5000,
-        reconnectStrategy: (retries: number) => {
-          if (retries > 2) {
-            logger.warn(`[REDIS] Max retries exceeded (${retries}), stopping reconnection`);
+        connectTimeout: 20000,
+        socketTimeout: 30000,
+        keepAlive: true,
+        noDelay: true,
+        reconnectStrategy: (retries: number, cause: Error) => {
+          if (retries > 10) {
+            logger.warn(`[REDIS] Reconnect attempts exceeded (${retries}), stopping reconnection`, { cause });
             return false;
           }
-          const delay = Math.min(retries * 100, 1000);
-          logger.debug(`[REDIS] Retry attempt ${retries}, delay: ${delay}ms`);
+          const delay = Math.min(15000, 200 + retries * 300 + Math.floor(Math.random() * 500));
+          logger.debug(`[REDIS] Retry attempt ${retries}, delay: ${delay}ms`, { cause });
           return delay;
         },
       },
+      pingInterval: 10000,
     });
 
-    // Monitor connection events
+    // Start connecting eagerly while still allowing callers to wait for ready.
+    void client.connect().catch((err: Error) => {
+      logger.warn(`[REDIS] Initial connect attempt failed: ${err.message}`);
+    });
+
     client.on('connect', () => {
       logger.info(`[REDIS] ✅ Connected (instance #${this.instanceCount})`);
     });
@@ -95,9 +112,13 @@ class RedisConnectionManager {
       logger.info(`[REDIS] 🚀 Ready (instance #${this.instanceCount})`);
     });
 
-    client.on('close', () => {
-      logger.warn(`[REDIS] Connection closed (instance #${this.instanceCount})`);
-    });
+    const cleanup = () => {
+      logger.warn(`[REDIS] Connection ended/closed (instance #${this.instanceCount}), clearing singleton`);
+      this.clearInstance();
+    };
+
+    client.on('end', cleanup);
+    client.on('close', cleanup);
 
     return client as RedisClientType;
   }
@@ -128,7 +149,7 @@ class RedisConnectionManager {
       if (client.isOpen) {
         // Already open — ensure policy is correct asynchronously
         this.ensureNoEvictionPolicy(client).catch((err) => {
-          logger.debug('[REDIS] Policy validation skipped (already open):', String(err));
+          logger.debug('[REDIS] Policy validation skipped (already open):', { err: String(err) });
         });
         resolve(client);
         return;
@@ -139,7 +160,7 @@ class RedisConnectionManager {
 
         // Validate and correct eviction policy asynchronously before resolving
         this.ensureNoEvictionPolicy(client)
-          .catch((err) => logger.warn('[REDIS] Policy validation failed:', String(err)))
+          .catch((err) => logger.warn('[REDIS] Policy validation failed:', { err: String(err) }))
           .finally(() => resolve(client));
       };
 
@@ -151,12 +172,12 @@ class RedisConnectionManager {
       client.once('ready', onReady);
       client.once('error', onError);
 
-      // Timeout after 10s
+      // Timeout after 20s
       setTimeout(() => {
         client.removeListener('ready', onReady);
         client.removeListener('error', onError);
-        reject(new Error('Redis initialization timeout (10s)'));
-      }, 10000);
+        reject(new Error('Redis initialization timeout (20s)'));
+      }, 20000);
     });
   }
 

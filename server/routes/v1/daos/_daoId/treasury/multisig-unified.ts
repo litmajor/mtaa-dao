@@ -34,9 +34,10 @@
  *   - Events emitted & logged to db for audit trail
  */
 
-import express, { Request, Response, NextFunction } from 'express';
+import express from 'express';
+import type { Request, Response, NextFunction } from 'express';
 import { db } from '../../../../../db';
-import { eq, and, sql } from 'drizzle-orm';
+import { eq, and } from 'drizzle-orm';
 import { authenticate } from '../../../../../auth';
 import { rateLimitPerUser } from '../../../../../middleware/rateLimit';
 import {
@@ -472,7 +473,7 @@ router.post(
   daoMembershipGuard,
   treasuryAdminGuard,
   sessionValidation,
-  rateLimitPerUser('treasury-multisig-sign', 20, '5min'),
+  treasuryMultisigSignLimiter,
   async (req: Request, res: Response) => {
     try {
       const { daoId, approvalId } = req.params;
@@ -531,7 +532,8 @@ router.post(
   daoMembershipGuard,
   treasuryAdminGuard,
   sessionValidation,
-  rateLimitPerUser('treasury-multisig-execute', 10, '1hour'),
+  advancedModeGuard,
+  treasuryMultisigExecuteLimiter,
   async (req: Request, res: Response) => {
     try {
       const { daoId, approvalId } = req.params;

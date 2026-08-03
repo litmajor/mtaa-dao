@@ -9,27 +9,76 @@
  * - CEX management (connect, view positions, execute)
  * - Smart order routing (compare venues, execute on best)
  * 
- * ⚠️ SECURITY NOTES:
+ *  SECURITY NOTES:
  * - All trading execution endpoints require rate limiting
  * - Bridge transfers require amount validation (no negative, no overflow)
  * - Flash loans are limited to 5/minute per user
  * - Backtest operations limited to 3/minute (heavy ML compute)
  */
 
-import express, { Router, Request, Response, NextFunction } from 'express';
+import express from 'express';
+import type { Router, Request, Response, NextFunction } from 'express';
 import { authenticateToken } from '../middleware/auth';
-import { ccxtService } from '../services/ccxtService';
+import type { AuthRequest } from '../middleware/auth';
+import { ccxtService, type CachedPrice } from '../services/ccxtService';
 import { priceOracle } from '../services/priceOracle';
-import { SmartRouter } from '../services/smartRouter';
-import { dexService } from '../services/dexIntegrationService';
-import { CrossChainService } from '../services/crossChainService';
+import { SmartRouter, type OptimalRoute, type RouteCost } from '../services/smartRouter';
+import { dexService, type SwapQuote, type SwapResult } from '../services/dexRoutingService';
+import { CrossChainService, type CrossChainTransferRequest, type BridgeStatus } from '../services/crossChainService';
+import type { SupportedChain } from '../../shared/chainRegistry';
 import { ArbitrageDetectionService } from '../services/arbitrageDetector';
 import { createApiResponse, createApiError, ApiErrorCode } from '../types/ApiResponse';
 import { logger } from '../utils/logger';
 import { yukiSwapLimiter, yukiBridgeLimiter, yukiFlashLoanLimiter, yukiBacktestLimiter } from '../middleware/rateLimiter';
+import { jobQueueService } from '../services/jobQueueService';
+import type { Signer } from 'ethers';
+
+export type BridgeChainName = SupportedChain;
+
+interface MarketPriceResponse {
+  usd: number;
+  change: number;
+  volume24h: number;
+  marketCap: number;
+}
+
+interface MarketOpportunity {
+  type: 'arbitrage' | 'liquidation' | 'other';
+  symbol: string;
+  description?: string;
+  details?: Record<string, unknown>;
+  timestamp: string;
+}
+
+interface LiquidityVenue {
+  name: string;
+  liquidity: number;
+  bid: number;
+  ask: number;
+  spread: string;
+}
+
+interface BridgeTransferAuditRecord {
+  userId: string;
+  transferId: string;
+  token: string;
+  amount: number;
+  fromChain: BridgeChainName;
+  toChain: BridgeChainName;
+  recipientAddr: string;
+  status: string;
+  timestamp: Date;
+  isHighValue: boolean;
+}
+
+interface MultisigAttestation {
+  signer: string;
+  signature: string;
+  timestamp: string | number | Date;
+}
 
 const router = express.Router();
-let smartRouter: any = null; // Lazy-loaded to ensure CEXPriceBackgroundJob is initialized
+let smartRouter: SmartRouter | null = null; // Lazy-loaded to ensure CEXPriceBackgroundJob is initialized
 const getSmartRouter = () => {
   if (!smartRouter) {
     smartRouter = SmartRouter.getInstance();
@@ -47,12 +96,12 @@ const arbitrageDetector = new ArbitrageDetectionService();
  * GET /api/yuki/market/prices
  * Real-time price feeds for trading pairs
  */
-router.get('/market/prices', authenticateToken as any, async (req, res) => {
+router.get('/market/prices', authenticateToken, async (req, res) => {
   try {
     const symbols = req.query.symbols ? (req.query.symbols as string).split(',') : ['BTC', 'ETH'];
     
     // Fetch real prices from price oracle
-    const prices: Record<string, any> = {};
+    const prices: Record<string, MarketPriceResponse> = {};
     for (const symbol of symbols) {
       try {
         const priceData = await priceOracle.getPrice(symbol);
@@ -82,10 +131,10 @@ router.get('/market/prices', authenticateToken as any, async (req, res) => {
  * GET /api/yuki/market/opportunities
  * Trading opportunities: arbitrage, liquidations, etc.
  */
-router.get('/market/opportunities', authenticateToken as any, async (req, res) => {
+router.get('/market/opportunities', authenticateToken, async (req, res) => {
   try {
     // Use arbitrage detector for opportunities
-    const opportunities: any[] = [];  // Would need to scan all assets
+    const opportunities: MarketOpportunity[] = [];
 
     res.json({
       success: true,
@@ -101,7 +150,7 @@ router.get('/market/opportunities', authenticateToken as any, async (req, res) =
  * GET /api/yuki/market/liquidity/:symbol
  * Liquidity depth for a trading pair
  */
-router.get('/market/liquidity/:symbol', authenticateToken as any, async (req, res) => {
+router.get('/market/liquidity/:symbol', authenticateToken, async (req, res) => {
   try {
     const { symbol } = req.params;
 
@@ -110,13 +159,19 @@ router.get('/market/liquidity/:symbol', authenticateToken as any, async (req, re
     
     const liquidity = {
       symbol,
-      venues: Object.entries(prices || {}).map(([exchange, price]) => ({
-        name: exchange,
-        liquidity: (price as any)?.volume || 0,
-        bid: (price as any)?.bid || 0,
-        ask: (price as any)?.ask || 0,
-        spread: (price as any)?.bid > 0 ? (((((price as any)?.ask || 0) - ((price as any)?.bid || 0)) / ((price as any)?.bid || 0)) * 100).toFixed(2) + '%' : '0%',
-      })),
+      venues: Object.entries(prices || {}).map(([exchange, price]) => {
+        const volume = price?.volume ?? 0;
+        const bid = price?.bid ?? 0;
+        const ask = price?.ask ?? 0;
+        const spread = bid > 0 ? (((ask - bid) / bid) * 100).toFixed(2) + '%' : '0%';
+        return {
+          name: exchange,
+          liquidity: volume,
+          bid,
+          ask,
+          spread,
+        };
+      }),
     };
 
     res.json(
@@ -141,10 +196,15 @@ router.get('/market/liquidity/:symbol', authenticateToken as any, async (req, re
  */
 router.post(
   '/execute/swap/preview',
-  authenticateToken as any,
+  authenticateToken,
   async (req, res) => {
   try {
-    const { fromToken, toToken, amount, slippage = 0.5 } = req.body;
+    const { fromToken, toToken, amount, slippage = 0.5 } = req.body as {
+      fromToken: string;
+      toToken: string;
+      amount: number;
+      slippage?: number;
+    };
 
     if (!amount || amount <= 0) {
       return res.status(400).json(
@@ -157,10 +217,10 @@ router.post(
     }
 
     // Use smart router to find optimal route (returns all alternatives)
-    const route = await getSmartRouter().calculateOptimalRoute(fromToken + '/' + toToken, amount);
+    const route: OptimalRoute = await getSmartRouter().calculateOptimalRoute(`${fromToken}/${toToken}`, amount);
     
     // Use DEX service for swap preview
-    const preview = await dexService.getSwapQuote(fromToken, toToken, amount);
+    const preview: SwapQuote | null = await dexService.getSwapQuote(fromToken, toToken, amount);
     
     if (!preview) {
       return res.status(400).json(
@@ -190,7 +250,7 @@ router.post(
         fee: route.costBreakdown.fees,
       },
       // NEW: Expose ALL alternatives
-      alternatives: route.alternatives?.slice(0, 5).map((alt: any) => ({
+      alternatives: route.alternatives?.slice(0, 5).map((alt: RouteCost) => ({
         exchange: alt.exchange,
         basePrice: alt.basePrice,
         netPrice: alt.netPrice,
@@ -225,10 +285,15 @@ router.post(
  * ⚠️ RATE LIMITED: 20 swaps/minute per user
  * ⚠️ SECURITY: Validates amount (no negative, no overflow)
  */
-router.post('/execute/swap', [authenticateToken as any, yukiSwapLimiter], async (req: Request, res: Response) => {
+router.post('/execute/swap', [authenticateToken, yukiSwapLimiter], async (req: Request, res: Response) => {
   try {
-    const { fromToken, toToken, amount, minOutput } = req.body;
-    const userId = req.user?.id;
+    const { fromToken, toToken, amount, minOutput } = req.body as {
+      fromToken: string;
+      toToken: string;
+      amount: number;
+      minOutput?: number;
+    };
+    const userId = (req as AuthRequest).user?.id;
 
     // ⚠️ SECURITY: Validate amount parameter
     if (!amount || typeof amount !== 'number') {
@@ -288,13 +353,18 @@ router.post('/execute/swap', [authenticateToken as any, yukiSwapLimiter], async 
  * POST /api/yuki/execute/bridge/preview
  * Preview a cross-chain bridge
  */
-router.post('/execute/bridge/preview', [authenticateToken as any], async (req: Request, res: Response) => {
+router.post('/execute/bridge/preview', [authenticateToken], async (req: Request, res: Response) => {
   try {
-    const { token, amount, fromChain, toChain } = req.body;
+    const { token, amount, fromChain, toChain } = req.body as {
+      token: string;
+      amount: number;
+      fromChain: BridgeChainName;
+      toChain: BridgeChainName;
+    };
 
     // Get transfer status preview from cross-chain service
-    const sourceChain = fromChain as any;
-    const destChain = toChain as any;
+    const sourceChain: BridgeChainName = fromChain;
+    const destChain: BridgeChainName = toChain;
     
     // Estimate based on chain configs
     const preview = {
@@ -332,10 +402,17 @@ router.post('/execute/bridge/preview', [authenticateToken as any], async (req: R
  *   - Validates recipient address format
  *   - Requires proper chain validation
  */
-router.post('/execute/bridge', [authenticateToken as any, yukiBridgeLimiter], async (req: Request, res: Response) => {
+router.post('/execute/bridge', [authenticateToken, yukiBridgeLimiter], async (req: Request, res: Response) => {
   try {
-    const { token, amount, fromChain, toChain, recipient, attestations } = req.body;
-    const userId = req.user?.id || '';
+    const { token, amount, fromChain, toChain, recipient, attestations } = req.body as {
+      token: string;
+      amount: number;
+      fromChain: BridgeChainName;
+      toChain: BridgeChainName;
+      recipient?: string;
+      attestations?: MultisigAttestation[];
+    };
+    const userId = (req as AuthRequest).user?.id || '';
 
     // 🔴 CRITICAL: Validate amount parameter
     if (!amount || typeof amount !== 'number') {
@@ -395,13 +472,13 @@ router.post('/execute/bridge', [authenticateToken as any, yukiBridgeLimiter], as
     // 🔴 CRITICAL: Cross-chain bridge verification oracle
     // Calls destination chain RPC to verify contract readiness
     try {
-      const chainRpcs: any = {
-        'ethereum': 'https://eth-mainnet.g.alchemy.com/v2/demo',
-        'polygon': 'https://polygon-mainnet.g.alchemy.com/v2/demo',
-        'arbitrum': 'https://arb-mainnet.g.alchemy.com/v2/demo',
-        'optimism': 'https://opt-mainnet.g.alchemy.com/v2/demo',
-        'avalanche': 'https://avax-mainnet.g.alchemy.com/v2/demo',
-        'bsc': 'https://bsc-mainnet.g.alchemy.com/v2/demo'
+      const chainRpcs: Partial<Record<BridgeChainName, string>> = {
+        ethereum: 'https://eth-mainnet.g.alchemy.com/v2/demo',
+        polygon: 'https://polygon-mainnet.g.alchemy.com/v2/demo',
+        arbitrum: 'https://arb-mainnet.g.alchemy.com/v2/demo',
+        optimism: 'https://opt-mainnet.g.alchemy.com/v2/demo',
+        avalanche: 'https://avax-mainnet.g.alchemy.com/v2/demo',
+        bsc: 'https://bsc-mainnet.g.alchemy.com/v2/demo',
       };
 
       const destinationRpc = chainRpcs[toChain];
@@ -429,8 +506,14 @@ router.post('/execute/bridge', [authenticateToken as any, yukiBridgeLimiter], as
           code: 'DESTINATION_CHAIN_UNREACHABLE'
         });
       }
-    } catch (verificationError: any) {
-      logger.warn(`[SECURITY] Bridge destination verification failed for ${toChain}:`, verificationError);
+    } catch (verificationError) {
+      const verificationMessage: string = verificationError instanceof Error
+        ? verificationError.message
+        : String(verificationError);
+      logger.warn(
+        `[SECURITY] Bridge destination verification failed for ${toChain}:`,
+        { verificationError: verificationMessage }
+      );
       return res.status(503).json({
         success: false,
         error: `Failed to verify destination chain ${toChain}`,
@@ -501,16 +584,33 @@ router.post('/execute/bridge', [authenticateToken as any, yukiBridgeLimiter], as
     }
 
     // Execute cross-chain transfer via CrossChainService
-    const transferRequest = {
+    // Resolve tokenSymbol when caller passed a token address; otherwise assume token is symbol
+    let tokenSymbol = token;
+    try {
+      const { TOKEN_REGISTRY } = await import('../../shared/tokenRegistry');
+      if (typeof token === 'string' && token.startsWith('0x')) {
+        // try to map address to symbol
+        const found = Object.values(TOKEN_REGISTRY).find(t => Object.values(t.address || {}).some((a: string) => a?.toLowerCase() === token.toLowerCase()));
+        if (found) tokenSymbol = found.symbol;
+      }
+    } catch (e) {
+      // ignore mapping failure
+    }
+
+    const transferRequest: CrossChainTransferRequest = {
       userId,
-      sourceChain: fromChain as any,
-      destinationChain: toChain as any,
+      sourceChain: fromChain as unknown as SupportedChain,
+      destinationChain: toChain as unknown as SupportedChain,
       tokenAddress: token,
       amount: amount.toString(),
       destinationAddress: recipientAddr,
+      tokenSymbol: tokenSymbol,
+      // Placeholders until a proper signer/key-management is wired
+      sourceSigner: {} as Signer,
+      destSigner: {} as Signer,
     };
 
-    const result = await crossChainService.initiateTransfer(transferRequest);
+    const result: BridgeStatus = await crossChainService.initiateTransfer(transferRequest);
 
     // 🔴 CRITICAL: Log all bridge transfers immutably for compliance
     try {
@@ -572,7 +672,7 @@ async function checkWhitelistedBridgeRecipient(userId: string, recipientAddr: st
  * Verify multisig attestations for high-value bridge transfers
  * Requires signatures from 2/3 multisig signers (e.g., security team members)
  */
-async function verifyMultisigAttestations(userId: string, attestations: any[], recipientAddr: string, toChain: string): Promise<boolean> {
+async function verifyMultisigAttestations(userId: string, attestations: MultisigAttestation[], recipientAddr: string, toChain: BridgeChainName): Promise<boolean> {
   try {
     if (!Array.isArray(attestations) || attestations.length < 2) {
       return false;
@@ -607,7 +707,7 @@ async function verifyMultisigAttestations(userId: string, attestations: any[], r
  * Log all bridge transfers immutably for compliance and audit trail
  * Ensures every cross-chain transfer is permanently recorded
  */
-async function logBridgeTransferAudit(transferRecord: any): Promise<void> {
+async function logBridgeTransferAudit(transferRecord: BridgeTransferAuditRecord): Promise<void> {
   try {
     // TODO: Write to immutable audit log table
     // INSERT INTO bridge_transfer_audit_log (user_id, transfer_id, token, amount, from_chain, to_chain, recipient_addr, status, timestamp, is_high_value)
@@ -625,7 +725,7 @@ async function logBridgeTransferAudit(transferRecord: any): Promise<void> {
  * POST /api/yuki/execute/move
  * Move assets between user's accounts (internal transfer)
  */
-router.post('/execute/move', [authenticateToken as any], async (req: Request, res: Response) => {
+router.post('/execute/move', [authenticateToken], async (req: Request, res: Response) => {
   try {
     const { fromAccount, toAccount, amount, currency } = req.body;
     const userId = req.user?.id;
@@ -665,7 +765,7 @@ router.post('/execute/move', [authenticateToken as any], async (req: Request, re
  * ⚠️ RATE LIMITED: 5 flash loans/minute per user
  * ⚠️ SECURITY: Validates amount and operations
  */
-router.post('/execute/flash-loan', [authenticateToken as any, yukiFlashLoanLimiter], async (req: Request, res: Response) => {
+router.post('/execute/flash-loan', [authenticateToken, yukiFlashLoanLimiter], async (req: Request, res: Response) => {
   try {
     const { token, amount, operations } = req.body;
     const userId = req.user?.id;
@@ -734,7 +834,7 @@ router.post('/execute/flash-loan', [authenticateToken as any, yukiFlashLoanLimit
  * POST /api/yuki/strategies
  * Create a new trading strategy
  */
-router.post('/strategies', [authenticateToken as any], async (req: Request, res: Response) => {
+router.post('/strategies', [authenticateToken], async (req: Request, res: Response) => {
   try {
     const { name, description, blocks } = req.body;
     const userId = req.user?.id;
@@ -762,7 +862,7 @@ router.post('/strategies', [authenticateToken as any], async (req: Request, res:
  * GET /api/yuki/strategies
  * Get user's strategies
  */
-router.get('/strategies', [authenticateToken as any], async (req: Request, res: Response) => {
+router.get('/strategies', [authenticateToken], async (req: Request, res: Response) => {
   try {
     const userId = req.user?.id;
 
@@ -791,7 +891,7 @@ router.get('/strategies', [authenticateToken as any], async (req: Request, res: 
  * GET /api/yuki/strategies/:id
  * Get a specific strategy
  */
-router.get('/strategies/:id', [authenticateToken as any], async (req: Request, res: Response) => {
+router.get('/strategies/:id', [authenticateToken], async (req: Request, res: Response) => {
   try {
     const { id } = req.params;
     const userId = req.user?.id;
@@ -819,7 +919,7 @@ router.get('/strategies/:id', [authenticateToken as any], async (req: Request, r
  * PUT /api/yuki/strategies/:id
  * Update a strategy
  */
-router.put('/strategies/:id', [authenticateToken as any], async (req: Request, res: Response) => {
+router.put('/strategies/:id', [authenticateToken], async (req: Request, res: Response) => {
   try {
     const { id } = req.params;
     const { name, description, blocks } = req.body;
@@ -839,7 +939,7 @@ router.put('/strategies/:id', [authenticateToken as any], async (req: Request, r
  * DELETE /api/yuki/strategies/:id
  * Delete a strategy
  */
-router.delete('/strategies/:id', [authenticateToken as any], async (req: Request, res: Response) => {
+router.delete('/strategies/:id', [authenticateToken], async (req: Request, res: Response) => {
   try {
     const { id } = req.params;
     const userId = req.user?.id;
@@ -858,7 +958,7 @@ router.delete('/strategies/:id', [authenticateToken as any], async (req: Request
  * POST /api/yuki/strategies/:id/deploy
  * Deploy a strategy (start monitoring & execution)
  */
-router.post('/strategies/:id/deploy', [authenticateToken as any], async (req: Request, res: Response) => {
+router.post('/strategies/:id/deploy', [authenticateToken], async (req: Request, res: Response) => {
   try {
     const { id } = req.params;
     const userId = req.user?.id;
@@ -879,16 +979,47 @@ router.post('/strategies/:id/deploy', [authenticateToken as any], async (req: Re
 
 /**
  * POST /api/yuki/strategies/:id/backtest
- * Run strategy backtest on historical data
+ * Run strategy backtest on historical data (async job queue)
  * 
  * 🔴 CRITICAL: ML model training - very expensive compute
  * ⚠️ RATE LIMITED: 3 backtests/minute per user
  * Prevents abuse from $10+/hour training cost
+ * 
+ * Request:
+ *   - startDate: ISO 8601 date string (e.g., "2023-01-01")
+ *   - endDate: ISO 8601 date string (e.g., "2024-01-01")
+ *   - pair?: string (default: "BTC/USDT")
+ *   - timeframe?: string (default: "1h")
+ *   - stakeAmount?: number (default: 100)
+ *   - startingCapital?: number (default: 10000)
+ *   - engine?: "freqtrade" | "native" (default: "freqtrade")
+ * 
+ * Returns (202 Accepted):
+ *   - jobId: unique job identifier for polling
+ *   - statusUrl: endpoint to poll for job status
+ *   - streamUrl: SSE endpoint for real-time progress (if available)
  */
-router.post('/strategies/:id/backtest', [authenticateToken as any, yukiBacktestLimiter], async (req: Request, res: Response) => {
+router.post('/strategies/:id/backtest', [authenticateToken, yukiBacktestLimiter], async (req: Request, res: Response) => {
   try {
-    const { id } = req.params;
-    const { startDate, endDate } = req.body;
+    const { id: strategyId } = req.params;
+    const userId = (req as AuthRequest).user?.id;
+    const {
+      startDate,
+      endDate,
+      pair = 'BTC/USDT',
+      timeframe = '1h',
+      stakeAmount = 100,
+      startingCapital = 10000,
+      engine = 'freqtrade'
+    } = req.body as {
+      startDate: string;
+      endDate: string;
+      pair?: string;
+      timeframe?: string;
+      stakeAmount?: number;
+      startingCapital?: number;
+      engine?: 'freqtrade' | 'native';
+    };
 
     // ⚠️ SECURITY: Validate date parameters
     if (!startDate || !endDate) {
@@ -928,24 +1059,55 @@ router.post('/strategies/:id/backtest', [authenticateToken as any, yukiBacktestL
       });
     }
 
-    // Runs backtest engine
-    const backtest = {
-      strategyId: id,
-      startDate,
-      endDate,
-      return: 127.5,
-      sharpe: 1.85,
-      maxDD: 12.3,
-      winRate: 0.68,
-      trades: 45,
+    // Convert ISO dates to YYYYMMDD-YYYYMMDD timerange format
+    const formatDate = (d: Date): string => {
+      const year = d.getFullYear();
+      const month = String(d.getMonth() + 1).padStart(2, '0');
+      const day = String(d.getDate()).padStart(2, '0');
+      return `${year}${month}${day}`;
     };
 
-    res.json({
+    const timerange = `${formatDate(start)}-${formatDate(end)}`;
+
+    // Queue backtest job via shared job queue service
+    const jobId = await jobQueueService.queueJob('strategy-backtest', {
+      userId,
+      strategyId,
+      pair,
+      timeframe,
+      timerange,
+      stakeAmount,
+      startingCapital,
+      engine
+    }, {
+      priority: 6,
+      timeout: 1800000 // 30 minute timeout for backtest
+    });
+
+    logger.info(`[YUKI-BACKTEST] Queued backtest job ${jobId} for strategy ${strategyId} by user ${userId}`, {
+      timerange,
+      engine
+    });
+
+    // Return job ID and polling URL for client to track progress
+    res.status(202).json({
       success: true,
-      data: backtest,
+      data: {
+        jobId,
+        status: 'queued',
+        message: 'Backtest queued. Use statusUrl to poll for results.',
+        statusUrl: `/api/jobs/${jobId}/status`,
+        resultUrl: `/api/jobs/${jobId}/result`,
+        // Optional: SSE stream endpoint for real-time progress
+        streamUrl: `/api/jobs/${jobId}/stream`
+      }
     });
   } catch (error) {
-    res.status(500).json({ success: false, error: String(error) });
+    logger.error('[YUKI-BACKTEST] Backtest queue error:', error);
+    res.status(500).json({
+      success: false,
+      error: error instanceof Error ? error.message : 'Failed to queue backtest'
+    });
   }
 });
 
@@ -953,7 +1115,7 @@ router.post('/strategies/:id/backtest', [authenticateToken as any, yukiBacktestL
  * GET /api/yuki/strategies/:id/signals
  * Get real-time signals from a deployed strategy
  */
-router.get('/strategies/:id/signals', [authenticateToken as any], async (req: Request, res: Response) => {
+router.get('/strategies/:id/signals', [authenticateToken], async (req: Request, res: Response) => {
   try {
     const { id } = req.params;
 
@@ -1054,7 +1216,7 @@ router.get('/marketplace/strategies/:id', async (req, res) => {
  * POST /api/yuki/marketplace/strategies/:id/copy
  * Copy a marketplace strategy to user's account
  */
-router.post('/marketplace/strategies/:id/copy', [authenticateToken as any], async (req: Request, res: Response) => {
+router.post('/marketplace/strategies/:id/copy', [authenticateToken], async (req: Request, res: Response) => {
   try {
     const { id } = req.params;
     const userId = req.user?.id;
@@ -1080,7 +1242,7 @@ router.post('/marketplace/strategies/:id/copy', [authenticateToken as any], asyn
  * POST /api/yuki/marketplace/strategies/publish
  * Publish a user's strategy to marketplace
  */
-router.post('/marketplace/strategies/publish', [authenticateToken as any], async (req: Request, res: Response) => {
+router.post('/marketplace/strategies/publish', [authenticateToken], async (req: Request, res: Response) => {
   try {
     const { strategyId, pricing, description, category } = req.body;
     const userId = req.user?.id;
@@ -1107,7 +1269,7 @@ router.post('/marketplace/strategies/publish', [authenticateToken as any], async
  * GET /api/yuki/exchanges
  * Get connected exchanges
  */
-router.get('/exchanges', [authenticateToken as any], async (req: Request, res: Response) => {
+router.get('/exchanges', [authenticateToken], async (req: Request, res: Response) => {
   try {
     const userId = req.user?.id;
 
@@ -1136,7 +1298,7 @@ router.get('/exchanges', [authenticateToken as any], async (req: Request, res: R
  * POST /api/yuki/exchanges
  * Connect a new exchange
  */
-router.post('/exchanges', [authenticateToken as any], async (req: Request, res: Response) => {
+router.post('/exchanges', [authenticateToken], async (req: Request, res: Response) => {
   try {
     const { exchangeName, apiKey, apiSecret } = req.body;
     const userId = req.user?.id;
@@ -1162,7 +1324,7 @@ router.post('/exchanges', [authenticateToken as any], async (req: Request, res: 
  * DELETE /api/yuki/exchanges/:id
  * Disconnect an exchange
  */
-router.delete('/exchanges/:id', [authenticateToken as any], async (req: Request, res: Response) => {
+router.delete('/exchanges/:id', [authenticateToken], async (req: Request, res: Response) => {
   try {
     const { id } = req.params;
     const userId = req.user?.id;
@@ -1181,7 +1343,7 @@ router.delete('/exchanges/:id', [authenticateToken as any], async (req: Request,
  * GET /api/yuki/exchanges/:id/balances
  * Get exchange balances
  */
-router.get('/exchanges/:id/balances', [authenticateToken as any], async (req: Request, res: Response) => {
+router.get('/exchanges/:id/balances', [authenticateToken], async (req: Request, res: Response) => {
   try {
     const { id } = req.params;
     const userId = req.user?.id;
@@ -1207,7 +1369,7 @@ router.get('/exchanges/:id/balances', [authenticateToken as any], async (req: Re
  * GET /api/yuki/exchanges/:id/positions
  * Get exchange positions (spot + perpetuals)
  */
-router.get('/exchanges/:id/positions', [authenticateToken as any], async (req: Request, res: Response) => {
+router.get('/exchanges/:id/positions', [authenticateToken], async (req: Request, res: Response) => {
   try {
     const { id } = req.params;
     const userId = req.user?.id;
@@ -1242,7 +1404,7 @@ router.get('/exchanges/:id/positions', [authenticateToken as any], async (req: R
  * POST /api/yuki/routing/compare
  * Compare execution prices across DEX and CEX venues
  */
-router.post('/routing/compare', [authenticateToken as any], async (req: Request, res: Response) => {
+router.post('/routing/compare', [authenticateToken], async (req: Request, res: Response) => {
   try {
     const { symbol, amount, side = 'buy' } = req.body;
 
@@ -1283,7 +1445,7 @@ router.post('/routing/compare', [authenticateToken as any], async (req: Request,
  * POST /api/yuki/routing/execute
  * Execute trade on the best routing venue
  */
-router.post('/routing/execute', [authenticateToken as any], async (req: Request, res: Response) => {
+router.post('/routing/execute', [authenticateToken], async (req: Request, res: Response) => {
   try {
     const { symbol, amount, venue } = req.body;
     const userId = req.user?.id;

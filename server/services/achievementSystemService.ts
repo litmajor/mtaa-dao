@@ -15,13 +15,15 @@ import {
 } from '../../shared/achievementSystemSchema';
 import { ethers } from 'ethers';
 import { createWalletIfValid } from '../utils/cryptoWallet';
+import { resolveProviderUrls } from './providerBootstrap';
 
 export class AchievementSystemService {
   private static nftContract: any;
   
   // Initialize NFT contract connection
   static async initializeContract(contractAddress: string, abi: any[]) {
-    const provider = new ethers.JsonRpcProvider(process.env.RPC_URL);
+    const providerUrls = resolveProviderUrls();
+    const provider = new ethers.JsonRpcProvider(providerUrls.rpcUrl);
     const signer = createWalletIfValid(process.env.PRIVATE_KEY, provider);
     if (!signer) {
       throw new Error('Missing or invalid PRIVATE_KEY for AchievementSystemService contract initialization');

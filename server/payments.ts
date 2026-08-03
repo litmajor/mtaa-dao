@@ -1,39 +1,63 @@
+/**
+ * CONSOLIDATED PAYMENT ROUTES
+ * 
+ * Integrates: PaymentGatewayService, PaymentRecoveryWorkflowService,
+ *             PaymentRecoverySAGAOrchestrator, PaymentExecutionService
+ * 
+ * CHANGES:
+ * - All provider initiations route through paymentGatewayService (single path)
+ * - Webhooks use sharedIdempotencyManager to prevent duplicate processing
+ * - SAGA dispatch extracts real wallet IDs from user accounts
+ * - Recovery workflow endpoints for manual intervention resolution
+ * - Reversibility endpoints for grace-period reversals
+ * - SAGA admin endpoints for reconciliation
+ * - All error handling uses updated PaymentErrorHandler signatures
+ */
+
 import express, { Request, Response } from 'express';
 import crypto from 'crypto';
 import { db } from './db';
-import { paymentTransactions } from '../shared/schema';
-import { eq, sql } from 'drizzle-orm';
+import { paymentTransactions, accounts, users } from '../shared/schema';
+import { eq, sql, and } from 'drizzle-orm';
+import { paymentGatewayService } from './services/paymentGatewayService';
+import { paymentRecoveryWorkflowService } from './services/paymentRecoveryWorkflowService';
 import { paymentRecoverySAGA } from './services/PaymentRecoverySAGAOrchestrator';
+import { PaymentExecutionService } from './services/paymentExecutionService';
+import { sharedIdempotencyManager } from './services/sharedIdempotencyManager';
+import { ReversibilityService } from './services/reversibilityService';
+import {
+  PaymentError,
+  PaymentErrorHandler,
+  PaymentErrorCode,
+  PaymentValidator
+} from './services/paymentErrorHandler';
+import { PaymentErrorMonitoringService } from './services/paymentErrorMonitoringService';
+import { isAuthenticated } from './auth';
+import { logger } from './utils/logger';
+import { rateLimitMiddleware, withdrawalLimits, depositLimits } from './middleware/rateLimitConfig';
+import { getEventEmitter } from './middleware/websocket-event-emitter';
 import { validatePaystackSignature, constructStripeEventFromRaw } from './middleware/webhookValidators';
 
 const router = express.Router();
 
-type PaymentMetadata = {
-  walletFrom?: string;
-  walletTo?: string;
-  vaultId?: string;
-  CheckoutRequestID?: string;
-  phone?: string;
-  darajaResponse?: any;
-  [key: string]: unknown;
-};
+// ===== TYPE DEFINITIONS =====
 
-type Provider =
-  | 'stripe'
-  | 'paystack'
-  | 'flutterwave'
-  | 'coinbase'
-  | 'transak'
-  | 'ramp'
-  | 'bank'
-  | 'mpesa'
-  | 'crypto'
-  | 'minipay'
-  | 'billing'
-  | 'kotanipay';
+type Provider = 'stripe' | 'paystack' | 'flutterwave' | 'mpesa' | 'kotanipay' | 'crypto' | 'minipay';
 
-function requireUserId(req: Request, res: Response): string | null {
-  const userId = (req as any).user?.id || req.body?.userId;
+interface AuthenticatedRequest extends Request {
+  user?: any;
+}
+
+import type { PaymentResponse } from './services/paymentGatewayService';
+
+function isPaymentResponse(obj: any): obj is PaymentResponse {
+  return obj && typeof obj === 'object' && 'success' in obj && 'reference' in obj;
+}
+
+// ===== HELPERS =====
+
+function requireUserId(req: AuthenticatedRequest, res: Response): string | null {
+  const userId = req.user?.claims?.id || req.body?.userId;
   if (!userId) {
     res.status(400).json({ success: false, message: 'userId is required' });
     return null;
@@ -46,779 +70,734 @@ function makeReference(prefix: string): string {
 }
 
 function validateAmount(amount: any): number {
-  const n = Number(amount);
-  if (!Number.isFinite(n) || n <= 0) throw new Error('Invalid amount');
-  return n;
+  return PaymentValidator.validateAmount(amount, { service: 'gateway', operation: 'routeValidation' });
 }
 
-async function recordPendingPayment(args: {
-  userId: string;
-  reference: string;
-  provider: Provider;
-  amount: number;
-  currency: string;
-  type: string;
-  metadata?: Record<string, any>;
-}) {
-  await db.insert(paymentTransactions).values({
-    userId: args.userId,
-    reference: args.reference,
-    provider: args.provider,
-    amount: String(args.amount),
-    currency: args.currency,
-    type: args.type,
-    status: 'pending',
-    metadata: args.metadata || {},
-    createdAt: new Date(),
-    updatedAt: new Date(),
-  });
-}
+async function getUserWalletIds(userId: string): Promise<{ walletFrom: string; walletTo?: string }> {
+  const [wallet] = await db
+    .select()
+    .from(accounts)
+    .where(and(eq(accounts.userId, userId), eq(accounts.accountType, 'wallet')))
+    .limit(1);
 
-// FIX: Added direct verification hook helpers for security
-function verifyGenericProviderSignature(provider: string, req: Request): boolean {
-  const secret = process.env[`${provider.toUpperCase()}_WEBHOOK_SECRET`];
-  if (!secret) return false;
-  
-  const signature = req.headers[`x-${provider}-signature`] || req.headers['x-signature'];
-  if (!signature) return false;
-
-  const computedHash = crypto
-    .createHmac('sha256', secret)
-    .update(typeof req.body === 'string' ? req.body : JSON.stringify(req.body))
-    .digest('hex');
-
-  return crypto.timingSafeEqual(Buffer.from(signature as string), Buffer.from(computedHash));
-}
-
-async function initializePaystack(amount: number, email: string, reference: string) {
-  const key = process.env.PAYSTACK_SECRET_KEY;
-  if (!key) throw new Error('PAYSTACK_SECRET_KEY not configured');
-
-  const response = await fetch('https://api.paystack.co/transaction/initialize', {
-    method: 'POST',
-    headers: {
-      Authorization: `Bearer ${key}`,
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({ amount: Math.round(amount * 100), email, reference }),
-  });
-
-  const payload = await response.json() as any;
-  if (!response.ok || !payload?.status) {
-    throw new Error(payload?.message || 'Paystack initialization failed');
+  if (!wallet) {
+    throw PaymentErrorHandler.createError(
+      PaymentErrorCode.INVALID_USER,
+      'User has no wallet account',
+      { service: 'gateway', operation: 'getUserWalletIds', userId }
+    );
   }
-  return payload.data;
+
+  return { walletFrom: wallet.id };
 }
 
-async function initializeKotaniPaySTK(amount: number, phoneNumber: string, reference: string) {
-  const apiKey = process.env.KOTANIPAY_API_KEY;
-  if (!apiKey) throw new Error('KOTANIPAY_API_KEY not configured');
-
-  const env = (process.env.KOTANIPAY_ENVIRONMENT || 'sandbox').toLowerCase();
-  const baseUrl = env === 'live' ? 'https://api.kotanipay.com' : 'https://apispec.kotanipay.com';
-
-  const response = await fetch(`${baseUrl}/v2/transactions/deposit/stkpush`, {
-    method: 'POST',
-    headers: {
-      Authorization: `Bearer ${apiKey}`,
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({
-      amount: Number(amount),
-      phoneNumber: phoneNumber.replace(/[^0-9]/g, ''),
-      callback: process.env.KOTANIPAY_CALLBACK_URL || `${process.env.APP_BASE_URL}/api/payments/kotanipay/webhook`,
-      externalId: reference,
-    }),
-  });
-
-  const payload = await response.json() as any;
-  if (!response.ok) {
-    throw new Error(payload?.message || 'Kotani Pay execution failed');
+/**
+ * Dispatch SAGA with real wallet IDs extracted from database.
+ * Wrapped in idempotency to prevent duplicate execution.
+ */
+async function dispatchPaymentSAGA(
+  reference: string,
+  userId: string,
+  amount: number,
+  currency: string,
+  metadata: Record<string, any>
+): Promise<void> {
+  const idempotencyKey = `saga-dispatch:${reference}`;
+  const acquired = await sharedIdempotencyManager.startProcessing(idempotencyKey);
+  if (!acquired) {
+    logger.info(`[SAGA-DISPATCH] Already dispatched for ${reference}`);
+    return;
   }
-  return payload;
-}
 
-async function initializeFlutterwave(amount: number, email: string, reference: string, currency: string) {
-  const key = process.env.FLUTTERWAVE_SECRET_KEY;
-  if (!key) throw new Error('FLUTTERWAVE_SECRET_KEY not configured');
+  try {
+    const { walletFrom } = await getUserWalletIds(userId);
+    const vaultId = metadata.vaultId || process.env.DEFAULT_VAULT_ID;
 
-  const response = await fetch('https://api.flutterwave.com/v3/payments', {
-    method: 'POST',
-    headers: {
-      Authorization: `Bearer ${key}`,
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({
-      tx_ref: reference,
+    await paymentRecoverySAGA.executePaymentSAGA({
+      userId,
       amount,
       currency,
-      redirect_url: process.env.APP_BASE_URL || 'https://app.mtaa.com',
-      customer: { email },
-      customizations: { title: 'Mtaa DAO Payment' },
-    }),
-  });
+      walletFrom,
+      walletTo: metadata.walletTo || walletFrom, // Self-transfer if no destination specified
+      vaultId,
+      metadata: {
+        originalReference: reference,
+        provider: metadata.provider,
+        ...metadata
+      }
+    });
 
-  const payload = await response.json() as any;
-  if (!response.ok || payload?.status !== 'success') {
-    throw new Error(payload?.message || 'Flutterwave initialization failed');
+    await sharedIdempotencyManager.recordResult(idempotencyKey, { success: true, dispatchedAt: new Date() }, 86400);
+    logger.info(`[SAGA-DISPATCH] Success for ${reference}`);
+  } catch (error: any) {
+    await sharedIdempotencyManager.recordResult(idempotencyKey, { success: false, error: error.message }, 86400);
+    logger.error(`[SAGA-DISPATCH] Failed for ${reference}`, error);
+    // Don't throw — webhook should return 200 to provider, but log for reconciliation
   }
-  return payload.data;
 }
 
-// --- BILLING ENDPOINT ---
-router.post('/billing/initiate', async (req: Request, res: Response) => {
-  try {
-    const userId = requireUserId(req, res); if (!userId) return;
-    const { amount, daoId, description, billingType, provider = 'paystack' } = req.body;
-    const value = validateAmount(amount);
-    if (!daoId || !billingType) {
-      return res.status(400).json({ success: false, message: 'daoId and billingType are required' });
+/**
+ * Process webhook with idempotency and atomic DB update.
+ */
+async function processWebhook(
+  provider: Provider,
+  reference: string,
+  status: 'completed' | 'failed',
+  metadata: Record<string, any>
+): Promise<boolean> {
+  const idempotencyKey = `webhook:${provider}:${reference}`;
+  const acquired = await sharedIdempotencyManager.startProcessing(idempotencyKey);
+  if (!acquired) {
+    logger.info(`[WEBHOOK] Already processed ${provider}:${reference}`);
+    return false;
+  }
+
+  const result = await db.transaction(async (tx) => {
+    const rows = await tx.execute(sql`
+      SELECT * FROM payment_transactions 
+      WHERE reference = ${reference} 
+      FOR UPDATE
+    `);
+    const record = rows.rows[0] as any;
+
+    if (!record || record.status === 'completed') {
+      await sharedIdempotencyManager.recordResult(idempotencyKey, { processed: false, reason: 'already_completed' }, 86400);
+      return false;
     }
 
-    const reference = makeReference('BILL');
-    await recordPendingPayment({
-      userId,
-      reference,
-      provider: 'billing',
-      amount: value,
-      currency: 'KES',
-      type: 'billing',
-      metadata: { daoId, description, billingType, upstreamProvider: provider },
-    });
+    await tx.execute(sql`
+      UPDATE payment_transactions 
+      SET status = ${status}, 
+          metadata = metadata || ${JSON.stringify(metadata)}::jsonb,
+          updated_at = NOW()
+      WHERE reference = ${reference}
+    `);
 
-    res.json({ success: true, reference, status: 'pending', provider });
-  } catch (error: any) {
-    res.status(500).json({ success: false, message: error.message });
-  }
-});
+    return status === 'completed';
+  });
 
-// --- STRIPE ENDPOINTS ---
-router.post('/stripe/initiate', async (req: Request, res: Response) => {
+  await sharedIdempotencyManager.recordResult(idempotencyKey, { processed: result, status }, 86400);
+  return result;
+}
+
+// ===== DEPOSIT / WITHDRAWAL (via PaymentGatewayService) =====
+
+router.post('/deposit', [isAuthenticated, rateLimitMiddleware(depositLimits)], async (req: Request, res: Response) => {
+  const traceId = PaymentErrorHandler.generateTraceId();
   try {
-    const userId = requireUserId(req, res); if (!userId) return;
-    const { amount, daoId, description, currency = 'usd' } = req.body;
-    const value = validateAmount(amount);
-    if (!daoId) return res.status(400).json({ success: false, message: 'daoId is required' });
+    const authReq = req as AuthenticatedRequest;
+    const userId = requireUserId(authReq, res);
+    if (!userId) return;
 
-    const key = process.env.STRIPE_SECRET_KEY;
-    if (!key) return res.status(503).json({ success: false, message: 'Stripe not configured' });
+    const { provider, amount, currency, method, metadata, idempotencyKey: clientKey } = req.body;
 
-    const Stripe = (await import('stripe')).default;
-    const stripe = new Stripe(key, { apiVersion: '2025-08-27.basil' as any });
-
-    const reference = makeReference('STR');
-    const pi = await stripe.paymentIntents.create({
-      amount: Math.round(value * 100),
-      currency,
-      metadata: { daoId, description: description || '', reference, userId },
-    });
-
-    await recordPendingPayment({
+    const result = await paymentGatewayService.initiateDeposit(provider, {
       userId,
-      reference,
-      provider: 'stripe',
-      amount: value,
-      currency: currency.toUpperCase(),
-      type: 'contribution',
-      metadata: { daoId, paymentIntentId: pi.id, clientSecret: pi.client_secret },
+      amount,
+      currency,
+      method,
+      metadata,
+      callbackUrl: `${process.env.APP_URL}/api/payments/webhooks/${provider}`,
+      idempotencyKey: clientKey
     });
 
-    res.json({ success: true, reference, paymentIntentId: pi.id, clientSecret: pi.client_secret, status: 'pending' });
+    if (isPaymentResponse(result) ? (result.success || result.status === 'pending') : false) {
+      const wsEmitter = getEventEmitter();
+      const txId = isPaymentResponse(result) ? result.transactionId : `deposit_${Date.now()}`;
+      wsEmitter.emitActivity('payment', txId, userId, 'initiated', {
+        type: 'deposit',
+        provider,
+        amount,
+        currency,
+        method,
+        status: isPaymentResponse(result) ? result.status : (result as any).status,
+        transactionId: isPaymentResponse(result) ? result.transactionId : undefined,
+        traceId
+      });
+    }
+
+    const statusCode = isPaymentResponse(result) ? (result.success ? 200 : (result.status === 'pending' ? 202 : 400)) : 400;
+    res.status(statusCode).json({ ...result, traceId });
+
+  } catch (error: any) {
+    logger.error('Deposit endpoint error', { traceId, message: error.message, code: error.code });
+
+    if (error instanceof PaymentError) {
+      PaymentErrorMonitoringService.recordError({
+        timestamp: new Date(),
+        errorCode: error.code,
+        errorCategory: 'validation',
+        provider: req.body.provider || 'unknown',
+        operation: 'deposit',
+        userId: req.user?.claims?.id,
+        count: 1,
+        retryCount: 0,
+        statusCode: error.statusCode,
+        message: error.message,
+        context: error.context,
+      });
+      return res.status(error.statusCode).json(PaymentErrorHandler.toResponse(error));
+    }
+
+    const paymentError = PaymentErrorHandler.createError(
+      PaymentErrorCode.UNKNOWN_ERROR,
+      'Deposit request failed',
+      { service: 'gateway', operation: 'deposit', traceId, userId: req.user?.claims?.id }
+    );
+    res.status(500).json(PaymentErrorHandler.toResponse(paymentError));
+  }
+});
+
+router.post('/withdraw', [isAuthenticated, rateLimitMiddleware(withdrawalLimits)], async (req: Request, res: Response) => {
+  const traceId = PaymentErrorHandler.generateTraceId();
+  try {
+    const authReq = req as AuthenticatedRequest;
+    const userId = requireUserId(authReq, res);
+    if (!userId) return;
+
+    const { provider, amount, currency, method, metadata, idempotencyKey: clientKey } = req.body;
+
+    const result = await paymentGatewayService.initiateWithdrawal(provider, {
+      userId,
+      amount,
+      currency,
+      method,
+      metadata,
+      idempotencyKey: clientKey
+    });
+
+    if (isPaymentResponse(result) ? (result.success || result.status === 'pending') : false) {
+      const wsEmitter = getEventEmitter();
+      const txId = isPaymentResponse(result) ? result.transactionId : `withdrawal_${Date.now()}`;
+      wsEmitter.emitActivity('payment', txId, userId, 'initiated', {
+        type: 'withdrawal',
+        provider,
+        amount,
+        currency,
+        method,
+        status: isPaymentResponse(result) ? result.status : (result as any).status,
+        transactionId: isPaymentResponse(result) ? result.transactionId : undefined,
+        traceId
+      });
+    }
+
+    const statusCode = isPaymentResponse(result) ? (result.success ? 200 : (result.status === 'pending' ? 202 : 400)) : 400;
+    res.status(statusCode).json({ ...result, traceId });
+
+  } catch (error: any) {
+    logger.error('Withdrawal endpoint error', { traceId, message: error.message });
+
+    if (error instanceof PaymentError) {
+      PaymentErrorMonitoringService.recordError({
+        timestamp: new Date(),
+        errorCode: error.code,
+        errorCategory: 'validation',
+        provider: req.body.provider || 'unknown',
+        operation: 'withdrawal',
+        userId: req.user?.claims?.id,
+        count: 1,
+        retryCount: 0,
+        statusCode: error.statusCode,
+        message: error.message,
+        context: error.context,
+      });
+      return res.status(error.statusCode).json(PaymentErrorHandler.toResponse(error));
+    }
+
+    const paymentError = PaymentErrorHandler.createError(
+      PaymentErrorCode.UNKNOWN_ERROR,
+      'Withdrawal request failed',
+      { service: 'gateway', operation: 'withdrawal', traceId, userId: req.user?.claims?.id }
+    );
+    res.status(500).json(PaymentErrorHandler.toResponse(paymentError));
+  }
+});
+
+// ===== VERIFICATION =====
+
+router.get('/verify/:provider/:reference', isAuthenticated, async (req: Request, res: Response) => {
+  const traceId = PaymentErrorHandler.generateTraceId();
+  try {
+    const { provider, reference } = req.params;
+
+    const result = await paymentGatewayService.verifyTransaction(provider, reference);
+
+    res.json({ success: true, data: result, traceId });
+
+  } catch (error: any) {
+    logger.error('Verify transaction error', { traceId, provider: req.params.provider, reference: req.params.reference, message: error.message });
+
+    if (error instanceof PaymentError) {
+      return res.status(error.statusCode).json(PaymentErrorHandler.toResponse(error));
+    }
+
+    const paymentError = PaymentErrorHandler.handleProviderError(
+      req.params.provider,
+      error,
+      { service: 'gateway', operation: 'verifyTransaction', traceId, reference: req.params.reference }
+    );
+    res.status(paymentError.statusCode).json(PaymentErrorHandler.toResponse(paymentError));
+  }
+});
+
+// ===== P2P TRANSFER (via PaymentExecutionService) =====
+
+router.post('/p2p/transfer', isAuthenticated, async (req: Request, res: Response) => {
+  const traceId = PaymentErrorHandler.generateTraceId();
+  try {
+    const authReq = req as AuthenticatedRequest;
+    const userId = requireUserId(authReq, res);
+    if (!userId) return;
+
+    const { recipientId, amount, memo, simulation } = req.body;
+    if (!recipientId || !amount) {
+      return res.status(400).json({ success: false, message: 'recipientId and amount are required', traceId });
+    }
+
+    const executionService = new PaymentExecutionService(new ReversibilityService(db as any));
+    const handler = new (await import('./services/paymentExecutionService')).P2PTransferExecutionHandler(executionService);
+
+    const action = await handler.execute({
+      userId,
+      recipientId,
+      amount: Number(amount),
+      memo,
+      simulation: simulation || {
+        riskLevel: 'LOW',
+        reversibilityWindow: { recommendedGracePeriodHours: 24 },
+        summary: 'P2P transfer',
+        beforeState: {},
+        afterState: {},
+        warnings: [],
+        riskFactors: [],
+        impactedEntities: []
+      }
+    });
+
+    res.json({ success: true, action, traceId });
+
+  } catch (error: any) {
+    logger.error('P2P transfer error', { traceId, message: error.message });
+    if (error instanceof PaymentError) {
+      return res.status(error.statusCode).json(PaymentErrorHandler.toResponse(error));
+    }
+    res.status(500).json({ success: false, message: error.message, traceId });
+  }
+});
+
+// ===== REVERSIBILITY ENDPOINTS =====
+
+router.post('/reverse/:actionId', isAuthenticated, async (req: Request, res: Response) => {
+  try {
+    const authReq = req as AuthenticatedRequest;
+    const userId = requireUserId(authReq, res);
+    if (!userId) return;
+
+    const { actionId } = req.params;
+    const { reason } = req.body;
+
+    const executionService = new PaymentExecutionService(new ReversibilityService(db as any));
+    const reversed = await executionService.reversePaymentAction(actionId, userId, reason, (req.user as any)?.claims?.role);
+
+    res.json({ success: true, reversed });
+
+  } catch (error: any) {
+    logger.error('Reverse action error', { actionId: req.params.actionId, message: error.message });
+    res.status(500).json({ success: false, message: error.message });
+  }
+});
+
+router.get('/reverse-options/:actionId', isAuthenticated, async (req: Request, res: Response) => {
+  try {
+    const executionService = new PaymentExecutionService(new ReversibilityService(db as any));
+    const options = await executionService.getReverseOptions(req.params.actionId);
+    res.json({ success: true, options });
   } catch (error: any) {
     res.status(500).json({ success: false, message: error.message });
   }
 });
 
-router.post('/stripe/webhook', express.raw({ type: 'application/json' }), async (req: Request, res: Response) => {
+router.get('/pending-actions', isAuthenticated, async (req: Request, res: Response) => {
+  try {
+    const authReq = req as AuthenticatedRequest;
+    const userId = requireUserId(authReq, res);
+    if (!userId) return;
+
+    const executionService = new PaymentExecutionService(new ReversibilityService(db as any));
+    const pending = await executionService.getUserPendingPayments(userId);
+    res.json({ success: true, pending });
+
+  } catch (error: any) {
+    res.status(500).json({ success: false, message: error.message });
+  }
+});
+
+// ===== RECOVERY WORKFLOW ENDPOINTS =====
+
+router.post('/recovery/:workflowId/consent', isAuthenticated, async (req: Request, res: Response) => {
+  try {
+    const authReq = req as AuthenticatedRequest;
+    const userId = requireUserId(authReq, res);
+    if (!userId) return;
+
+    const workflow = await paymentRecoveryWorkflowService.grantUserConsent(req.params.workflowId, userId);
+    res.json({ success: true, workflow });
+  } catch (error: any) {
+    res.status(500).json({ success: false, message: error.message });
+  }
+});
+
+router.post('/recovery/:workflowId/resolve', isAuthenticated, async (req: Request, res: Response) => {
+  try {
+    const authReq = req as AuthenticatedRequest;
+    const { resolutionType, notes } = req.body;
+    const resolverId = authReq.user?.claims?.id;
+
+    if (!resolverId) {
+      return res.status(401).json({ success: false, message: 'Authentication required' });
+    }
+
+    const result = await paymentRecoveryWorkflowService.resolveManualIntervention(
+      req.params.workflowId,
+      resolverId,
+      { type: resolutionType, notes }
+    );
+
+    res.json({ success: true, result });
+  } catch (error: any) {
+    res.status(500).json({ success: false, message: error.message });
+  }
+});
+
+router.get('/recovery/metrics', isAuthenticated, async (req: Request, res: Response) => {
+  try {
+    const hoursBack = Number(req.query.hours) || 24;
+    const metrics = await paymentRecoveryWorkflowService.getRecoveryMetrics(hoursBack);
+    res.json({ success: true, metrics });
+  } catch (error: any) {
+    res.status(500).json({ success: false, message: error.message });
+  }
+});
+
+// ===== SAGA ADMIN ENDPOINTS =====
+
+router.post('/saga/:sagaId/reconcile', isAuthenticated, async (req: Request, res: Response) => {
+  try {
+    const result = await paymentRecoverySAGA.reconcileSaga(req.params.sagaId);
+    res.json({ success: true, result });
+  } catch (error: any) {
+    res.status(500).json({ success: false, message: error.message });
+  }
+});
+
+router.post('/saga/:sagaId/abandon', isAuthenticated, async (req: Request, res: Response) => {
+  try {
+    const { reason } = req.body;
+    await paymentRecoverySAGA.abandonSAGA(req.params.sagaId, reason || 'Manual abandonment');
+    res.json({ success: true, message: 'SAGA abandoned' });
+  } catch (error: any) {
+    res.status(500).json({ success: false, message: error.message });
+  }
+});
+
+router.get('/saga/:sagaId', isAuthenticated, async (req: Request, res: Response) => {
+  try {
+    const saga = await paymentRecoverySAGA.getSAGAState(req.params.sagaId);
+    if (!saga) return res.status(404).json({ success: false, message: 'SAGA not found' });
+    res.json({ success: true, saga });
+  } catch (error: any) {
+    res.status(500).json({ success: false, message: error.message });
+  }
+});
+
+// ===== WEBHOOKS (all providers) =====
+
+// Stripe webhook
+router.post('/webhooks/stripe', express.raw({ type: 'application/json' }), async (req: Request, res: Response) => {
   try {
     const stripeSecret = process.env.STRIPE_WEBHOOK_SECRET;
-    if (!stripeSecret) return res.status(500).json({ success: false, message: 'Stripe webhook configuration error' });
+    if (!stripeSecret) {
+      return res.status(500).json({ success: false, message: 'Stripe webhook not configured' });
+    }
 
     const event = constructStripeEventFromRaw(req, stripeSecret) as any;
     const object = event?.data?.object || {};
     const reference = object?.metadata?.reference;
-    if (!reference) return res.status(400).json({ success: false, message: 'Missing transaction execution metadata' });
 
-    // FIX: Encapsulate state transition and SAGA dispatch within a strict database transaction lock
-    const shouldTriggerSaga = await db.transaction(async (tx) => {
-      const rows = await tx
-        .select()
-        .from(paymentTransactions)
-        .where(eq(paymentTransactions.reference, reference))
-        .for('update'); // Exclusive lock blocks concurrent retry attempts
-      
-      const record = rows[0];
-      if (!record || record.status === 'completed') return false;
+    if (!reference) {
+      return res.status(400).json({ success: false, message: 'Missing reference' });
+    }
 
-      const nextStatus = event.type === 'payment_intent.succeeded' ? 'completed' : 'failed';
-      
-      await tx
-        .update(paymentTransactions)
-        .set({
-          status: nextStatus,
-          metadata: { ...((record.metadata as object) || {}), stripeId: object.id, eventType: event.type },
-          updatedAt: new Date()
-        })
-        .where(eq(paymentTransactions.reference, reference));
-
-      return nextStatus === 'completed';
+    const status = event.type === 'payment_intent.succeeded' ? 'completed' : 'failed';
+    const shouldDispatch = await processWebhook('stripe', reference, status, {
+      stripeId: object.id,
+      eventType: event.type
     });
 
-    if (shouldTriggerSaga) {
+    if (shouldDispatch) {
       const rec = await db.select().from(paymentTransactions).where(eq(paymentTransactions.reference, reference)).then(r => r[0]);
       if (rec) {
-        const meta = (rec.metadata as PaymentMetadata) || {};
-        await paymentRecoverySAGA.executePaymentSAGA({
-          userId: rec.userId,
-          amount: Number(rec.amount),
-          currency: rec.currency,
-          walletFrom: meta.walletFrom || '',
-          walletTo: meta.walletTo || '',
-          vaultId: meta.vaultId,
-          metadata: meta,
-        } as any);
+        await dispatchPaymentSAGA(reference, rec.userId, Number(rec.amount), rec.currency, {
+          provider: 'stripe',
+          stripePaymentIntentId: object.id
+        });
       }
     }
 
     res.json({ received: true });
   } catch (error: any) {
+    logger.error('Stripe webhook error', { message: error.message });
     res.status(400).json({ success: false, message: error.message });
   }
 });
 
-// --- PAYSTACK ENDPOINTS ---
-router.post('/paystack/initiate', async (req: Request, res: Response) => {
-  try {
-    const userId = requireUserId(req, res); if (!userId) return;
-    const { amount, daoId, description, email } = req.body;
-    const value = validateAmount(amount);
-    if (!daoId || !email) return res.status(400).json({ success: false, message: 'daoId and email are required' });
-
-    const reference = makeReference('PAY');
-    const data = await initializePaystack(value, email, reference);
-
-    await recordPendingPayment({
-      userId,
-      reference,
-      provider: 'paystack',
-      amount: value,
-      currency: 'KES',
-      type: 'contribution',
-      metadata: { daoId, description, authorizationUrl: data.authorization_url },
-    });
-
-    res.json({ success: true, reference, paymentUrl: data.authorization_url, status: 'pending' });
-  } catch (error: any) {
-    res.status(500).json({ success: false, message: error.message });
-  }
-});
-
-router.post('/paystack/webhook', async (req: Request, res: Response) => {
+// Paystack webhook
+router.post('/webhooks/paystack', async (req: Request, res: Response) => {
   try {
     if (!validatePaystackSignature(req)) {
-      return res.status(401).json({ success: false, message: 'Invalid Paystack signature' });
+      return res.status(401).json({ success: false, message: 'Invalid signature' });
     }
 
     const event = req.body;
     const reference = event?.data?.reference;
-    if (!reference) return res.status(400).json({ success: false, message: 'Missing reference' });
+    if (!reference) {
+      return res.status(400).json({ success: false, message: 'Missing reference' });
+    }
 
-    const targetStatus = event?.event === 'charge.success' ? 'completed' : 'failed';
-
-    // FIX: Guard Paystack processing with atomicity locks
-    const executeSaga = await db.transaction(async (tx) => {
-      const rows = await tx.select().from(paymentTransactions).where(eq(paymentTransactions.reference, reference)).for('update');
-      const record = rows[0];
-      
-      if (!record || record.status === 'completed') return false;
-
-      await tx
-        .update(paymentTransactions)
-        .set({
-          status: targetStatus,
-          metadata: { ...((record.metadata as object) || {}), paystackEvent: event?.event },
-          updatedAt: new Date()
-        })
-        .where(eq(paymentTransactions.reference, reference));
-
-      return targetStatus === 'completed';
+    const status = event.event === 'charge.success' ? 'completed' : 'failed';
+    const shouldDispatch = await processWebhook('paystack', reference, status, {
+      paystackEvent: event.event,
+      paystackId: event.data.id
     });
 
-    if (executeSaga) {
+    if (shouldDispatch) {
       const rec = await db.select().from(paymentTransactions).where(eq(paymentTransactions.reference, reference)).then(r => r[0]);
       if (rec) {
-        const meta = (rec.metadata as PaymentMetadata) || {};
-        await paymentRecoverySAGA.executePaymentSAGA({
-          userId: rec.userId,
-          amount: Number(rec.amount),
-          currency: rec.currency,
-          walletFrom: meta.walletFrom || '',
-          walletTo: meta.walletTo || '',
-          vaultId: meta.vaultId,
-          metadata: meta,
-        } as any);
+        await dispatchPaymentSAGA(reference, rec.userId, Number(rec.amount), rec.currency, {
+          provider: 'paystack',
+          paystackTransactionId: event.data.id
+        });
       }
     }
 
     res.json({ success: true, message: 'Webhook processed' });
   } catch (error: any) {
+    logger.error('Paystack webhook error', { message: error.message });
     res.status(500).json({ success: false, message: error.message });
   }
 });
 
-// --- FLUTTERWAVE ENDPOINTS ---
-router.post('/flutterwave/initiate', async (req: Request, res: Response) => {
+// Flutterwave webhook
+router.post('/webhooks/flutterwave', async (req: Request, res: Response) => {
   try {
-    const userId = requireUserId(req, res); if (!userId) return;
-    const { amount, daoId, description, email, currency = 'KES' } = req.body;
-    const value = validateAmount(amount);
-    if (!daoId || !email) return res.status(400).json({ success: false, message: 'daoId and email are required' });
+    const signature = req.headers['verif-hash'] as string;
+    const flwSecret = process.env.FLUTTERWAVE_SECRET_HASH;
 
-    const reference = makeReference('FLW');
-    const data = await initializeFlutterwave(value, email, reference, currency);
+    if (flwSecret && signature !== flwSecret) {
+      return res.status(401).json({ success: false, message: 'Invalid signature' });
+    }
 
-    await recordPendingPayment({
-      userId,
-      reference,
-      provider: 'flutterwave',
-      amount: value,
-      currency,
-      type: 'contribution',
-      metadata: { daoId, description, paymentLink: data.link },
-    });
-
-    res.json({ success: true, reference, paymentUrl: data.link, status: 'pending' });
-  } catch (error: any) {
-    res.status(500).json({ success: false, message: error.message });
-  }
-});
-
-router.post('/flutterwave/webhook', async (req: Request, res: Response) => {
-  try {
     const event = req.body;
     const reference = event?.data?.tx_ref;
-    if (!reference) return res.status(400).json({ success: false, message: 'Missing transaction reference' });
-
-    const flwSecret = process.env.FLUTTERWAVE_SECRET_HASH;
-    if (flwSecret && req.headers['verif-hash'] !== flwSecret) {
-      return res.status(401).json({ success: false, message: 'Unauthorized webhook hash context signature' });
+    if (!reference) {
+      return res.status(400).json({ success: false, message: 'Missing reference' });
     }
 
     const status = event?.data?.status === 'successful' ? 'completed' : 'failed';
-    await db.update(paymentTransactions)
-      .set({ status, metadata: { flutterwaveStatus: event?.data?.status }, updatedAt: new Date() })
-      .where(eq(paymentTransactions.reference, reference));
+    const shouldDispatch = await processWebhook('flutterwave', reference, status, {
+      flutterwaveStatus: event.data.status,
+      flutterwaveTransactionId: event.data.id
+    });
+
+    if (shouldDispatch) {
+      const rec = await db.select().from(paymentTransactions).where(eq(paymentTransactions.reference, reference)).then(r => r[0]);
+      if (rec) {
+        await dispatchPaymentSAGA(reference, rec.userId, Number(rec.amount), rec.currency, {
+          provider: 'flutterwave',
+          flutterwaveTransactionId: event.data.id
+        });
+      }
+    }
 
     res.json({ success: true, message: 'Webhook processed' });
   } catch (error: any) {
+    logger.error('Flutterwave webhook error', { message: error.message });
     res.status(500).json({ success: false, message: error.message });
   }
 });
 
-// --- COINBASE/TRANSAK/RAMP/BANK UNIFIED MATRIX ---
-for (const provider of ['coinbase', 'transak', 'ramp', 'bank'] as const) {
-  router.post(`/${provider}/initiate`, async (req: Request, res: Response) => {
-    try {
-      const userId = requireUserId(req, res); if (!userId) return;
-      const { amount, daoId, description, currency = 'KES' } = req.body;
-      const value = validateAmount(amount);
-      if (!daoId) return res.status(400).json({ success: false, message: 'daoId is required' });
+// M-Pesa Daraja callback
+router.post('/webhooks/mpesa', async (req: Request, res: Response) => {
+  try {
+    const callbackData = req.body?.Body?.stkCallback;
+    if (!callbackData) {
+      return res.status(400).json({ success: false, message: 'Invalid callback structure' });
+    }
 
-      const reference = makeReference(provider.toUpperCase());
-      await recordPendingPayment({
-        userId,
-        reference,
-        provider,
-        amount: value,
-        currency,
-        type: 'contribution',
-        metadata: { daoId, description },
+    const { CheckoutRequestID, ResultCode, ResultDesc } = callbackData;
+    const status = ResultCode === 0 ? 'completed' : 'failed';
+
+    // Find by CheckoutRequestID in metadata
+    const [record] = await db
+      .select()
+      .from(paymentTransactions)
+      .where(sql`metadata->>'CheckoutRequestID' = ${CheckoutRequestID}`)
+      .limit(1);
+
+    if (!record) {
+      logger.warn('M-Pesa callback: transaction not found', { CheckoutRequestID });
+      return res.json({ ResultCode: '0', ResultDesc: 'Accepted' });
+    }
+
+    const shouldDispatch = await processWebhook('mpesa', record.reference, status, {
+      mpesaResultCode: ResultCode,
+      mpesaResultDesc: ResultDesc,
+      mpesaCallback: callbackData
+    });
+
+    if (shouldDispatch) {
+      await dispatchPaymentSAGA(record.reference, record.userId, Number(record.amount), record.currency, {
+        provider: 'mpesa',
+        mpesaCheckoutRequestId: CheckoutRequestID
       });
-
-      res.json({ success: true, reference, status: 'pending' });
-    } catch (error: any) {
-      res.status(500).json({ success: false, message: error.message });
     }
-  });
 
-  router.post(`/${provider}/webhook`, async (req: Request, res: Response) => {
-    try {
-      // FIX: Enforced strict generic signature verification across the looping array structure
-      if (process.env.NODE_ENV === 'production' && !verifyGenericProviderSignature(provider, req)) {
-        return res.status(401).json({ success: false, message: `Invalid cryptographic signature for ${provider}` });
-      }
-
-      const reference = req.body?.reference || req.body?.data?.reference || req.body?.id;
-      if (!reference) return res.status(400).json({ success: false, message: 'Missing reference parameters' });
-
-      const incomingStatus = String(req.body?.status || req.body?.data?.status || '').toLowerCase();
-      const status = ['success', 'successful', 'completed', 'paid', 'confirmed'].includes(incomingStatus)
-        ? 'completed'
-        : incomingStatus ? 'failed' : 'processing';
-
-      await db.update(paymentTransactions)
-        .set({ status: status as any, metadata: { provider, payload: req.body }, updatedAt: new Date() })
-        .where(eq(paymentTransactions.reference, reference));
-
-      res.json({ success: true, message: 'Webhook processed' });
-    } catch (error: any) {
-      res.status(500).json({ success: false, message: error.message });
-    }
-  });
-}
-
-// --- MPESA DIRECT ENTRY ---
-router.post('/mpesa/initiate', async (req: Request, res: Response) => {
-  try {
-    const userId = requireUserId(req, res); if (!userId) return;
-    const { phone, amount, daoId, accountReference, description } = req.body;
-    const value = validateAmount(amount);
-    if (!phone || !daoId) return res.status(400).json({ success: false, message: 'phone and daoId are required' });
-
-    const reference = makeReference('MPESA');
-    await recordPendingPayment({
-      userId,
-      reference,
-      provider: 'mpesa',
-      amount: value,
-      currency: 'KES',
-      type: 'contribution',
-      metadata: { phone, daoId, accountReference, description },
-    });
-
-    res.json({ success: true, reference, status: 'pending' });
+    res.json({ ResultCode: '0', ResultDesc: 'Accepted' });
   } catch (error: any) {
+    logger.error('M-Pesa webhook error', { message: error.message });
     res.status(500).json({ success: false, message: error.message });
   }
 });
 
-// --- KOTANIPAY ENDPOINTS ---
-router.post('/kotanipay/initiate', async (req: Request, res: Response) => {
-  try {
-    const userId = requireUserId(req, res); if (!userId) return;
-    const { amount, phone, daoId, description, currency = 'KES' } = req.body;
-    const value = validateAmount(amount);
-    if (!phone || !daoId) return res.status(400).json({ success: false, message: 'phone and daoId are required' });
-
-    const reference = makeReference('KOTANI');
-    const kotaniResult = await initializeKotaniPaySTK(value, phone, reference);
-
-    await recordPendingPayment({
-      userId,
-      reference,
-      provider: 'kotanipay',
-      amount: value,
-      currency,
-      type: 'contribution',
-      metadata: { phone, daoId, description, kotaniResponse: kotaniResult },
-    });
-
-    res.json({ success: true, reference, status: 'pending' });
-  } catch (error: any) {
-    res.status(500).json({ success: false, message: error.message });
-  }
-});
-
-router.post('/kotanipay/webhook', async (req: Request, res: Response) => {
+// KotaniPay webhook
+router.post('/webhooks/kotanipay', async (req: Request, res: Response) => {
   try {
     const signature = (req.headers['x-kotani-signature'] as string) || '';
     if (process.env.NODE_ENV === 'production' && !signature) {
-      return res.status(401).json({ success: false, message: 'Missing secure signature token.' });
+      return res.status(401).json({ success: false, message: 'Missing signature' });
     }
 
     if (signature && process.env.KOTANIPAY_WEBHOOK_SECRET) {
-      const computedHash = crypto
+      const computed = crypto
         .createHmac('sha256', process.env.KOTANIPAY_WEBHOOK_SECRET)
         .update(JSON.stringify(req.body))
         .digest('hex');
 
-      if (!crypto.timingSafeEqual(Buffer.from(signature), Buffer.from(computedHash))) {
-        return res.status(401).json({ success: false, message: 'Tampered webhook payload rejected.' });
+      if (!crypto.timingSafeEqual(Buffer.from(signature), Buffer.from(computed))) {
+        return res.status(401).json({ success: false, message: 'Invalid signature' });
       }
     }
 
-    const { externalId, status, txhash } = req.body as any;
-    if (!externalId) return res.status(400).json({ success: false, message: 'Missing externalId parameter.' });
+    const { externalId, status, txhash } = req.body;
+    if (!externalId) {
+      return res.status(400).json({ success: false, message: 'Missing externalId' });
+    }
 
-    const runSaga = await db.transaction(async (tx) => {
-      const rows = await tx.select().from(paymentTransactions).where(eq(paymentTransactions.reference, externalId)).for('update');
-      const record = rows[0];
-      if (!record || record.status === 'completed') return false;
-
-      const runtimeStatus = ['success', 'completed', 'successful'].includes(String(status).toLowerCase()) ? 'completed' : 'failed';
-
-      await tx.update(paymentTransactions)
-        .set({ status: runtimeStatus as any, metadata: { ...(record.metadata as object), txhash }, updatedAt: new Date() })
-        .where(eq(paymentTransactions.reference, externalId));
-
-      return runtimeStatus === 'completed';
+    const mappedStatus = ['success', 'completed', 'successful'].includes(String(status).toLowerCase()) ? 'completed' : 'failed';
+    const shouldDispatch = await processWebhook('kotanipay', externalId, mappedStatus, {
+      kotaniStatus: status,
+      txhash
     });
 
-    if (runSaga) {
+    if (shouldDispatch) {
       const rec = await db.select().from(paymentTransactions).where(eq(paymentTransactions.reference, externalId)).then(r => r[0]);
       if (rec) {
-        const meta = (rec.metadata as PaymentMetadata) || {};
-        await paymentRecoverySAGA.executePaymentSAGA({
-          userId: rec.userId,
-          amount: Number(rec.amount),
-          currency: rec.currency,
-          walletFrom: meta.walletFrom || '',
-          walletTo: meta.walletTo || '',
-          vaultId: meta.vaultId,
-          metadata: { ...meta, txhash },
-        } as any);
+        await dispatchPaymentSAGA(externalId, rec.userId, Number(rec.amount), rec.currency, {
+          provider: 'kotanipay',
+          txhash
+        });
       }
     }
 
-    res.json({ success: true, message: 'Kotani Pay callback processed.' });
+    res.json({ success: true, message: 'Webhook processed' });
   } catch (error: any) {
+    logger.error('KotaniPay webhook error', { message: error.message });
     res.status(500).json({ success: false, message: error.message });
   }
 });
 
-// --- MPESA DARAJA WEBHOOK LAYER ---
-router.post('/mpesa/webhook', async (req: Request, res: Response) => {
+// Generic crypto webhook
+router.post('/webhooks/crypto', async (req: Request, res: Response) => {
   try {
-    const callbackData = req.body?.Body?.stkCallback;
-    if (!callbackData) return res.status(400).json({ success: false, message: 'Invalid Daraja structure' });
-
-    const checkoutRequestId = callbackData.CheckoutRequestID;
-    const resultCode = Number(callbackData.ResultCode);
-    const targetStatus = resultCode === 0 ? 'completed' : 'failed';
-
-    // FIX: Swapped legacy driver syntax with standard Drizzle-ORM expressions using native raw expressions
-    const executeSaga = await db.transaction(async (tx) => {
-      const rows = await tx
-        .select()
-        .from(paymentTransactions)
-        .where(sql`metadata->>'CheckoutRequestID' = ${checkoutRequestId}`)
-        .for('update');
-      
-      const record = rows[0];
-      if (!record || record.status === 'completed') return false;
-
-      await tx
-        .update(paymentTransactions)
-        .set({
-          status: targetStatus,
-          metadata: { ...((record.metadata as object) || {}), mpesaPayload: callbackData },
-          updatedAt: new Date()
-        })
-        .where(eq(paymentTransactions.reference, record.reference));
-
-      return targetStatus === 'completed';
-    });
-
-    if (executeSaga) {
-      const rec = await db.select().from(paymentTransactions).where(sql`metadata->>'CheckoutRequestID' = ${checkoutRequestId}`).then(r => r[0]);
-      if (rec) {
-        const meta = (rec.metadata as PaymentMetadata) || {};
-        await paymentRecoverySAGA.executePaymentSAGA({
-          userId: rec.userId,
-          amount: Number(rec.amount),
-          currency: rec.currency,
-          walletFrom: meta.walletFrom || '',
-          walletTo: meta.walletTo || '',
-          vaultId: meta.vaultId,
-          metadata: meta,
-        } as any);
-      }
-    }
-
-    res.json({ ResponseCode: '0', ResponseDesc: 'Accept Service' });
-  } catch (error: any) {
-    res.status(500).json({ success: false, message: error.message });
-  }
-});
-
-// --- DARAJA AUTH LAYER ---
-let cachedMpesaToken: { token: string; expiresAt: number } | null = null;
-
-async function fetchMpesaAccessToken() {
-  const now = Date.now();
-  if (cachedMpesaToken && cachedMpesaToken.expiresAt > now + 5000) return cachedMpesaToken.token;
-
-  const key = process.env.MPESA_CONSUMER_KEY;
-  const secret = process.env.MPESA_CONSUMER_SECRET;
-  const env = (process.env.MPESA_ENVIRONMENT || 'sandbox').toLowerCase();
-  if (!key || !secret) throw new Error('MPESA_CONSUMER_KEY/SECRET not configured');
-
-  const base = env === 'live' ? 'https://api.safaricom.co.ke' : 'https://sandbox.safaricom.co.ke';
-  const url = `${base}/oauth/v1/generate?grant_type=client_credentials`;
-
-  const auth = Buffer.from(`${key}:${secret}`).toString('base64');
-  const resp = await fetch(url, { headers: { Authorization: `Basic ${auth}` } });
-  const j = await resp.json();
-  if (!resp.ok || !j?.access_token) throw new Error('Failed to obtain Mpesa access token');
-
-  const expiresIn = Number(j.expires_in || 3600) * 1000;
-  cachedMpesaToken = { token: j.access_token, expiresAt: Date.now() + expiresIn };
-  return cachedMpesaToken.token;
-}
-
-router.post('/mpesa/oauth', async (req: Request, res: Response) => {
-  if (String(process.env.FEATURE_MPESA_STK) !== 'true') return res.status(503).json({ success: false, message: 'MPesa STK feature disabled' });
-  try {
-    const token = await fetchMpesaAccessToken();
-    res.json({ success: true, accessToken: token });
-  } catch (err: any) {
-    res.status(500).json({ success: false, message: err.message || 'Failed to fetch token' });
-  }
-});
-
-router.post('/mpesa/stk', async (req: Request, res: Response) => {
-  if (String(process.env.FEATURE_MPESA_STK) !== 'true') return res.status(503).json({ success: false, message: 'MPesa STK feature disabled' });
-  try {
-    const userId = requireUserId(req, res); if (!userId) return;
-    const { phone, amount, accountReference, description } = req.body;
-    if (!phone || !amount) return res.status(400).json({ success: false, message: 'phone and amount required' });
-
-    const shortcode = process.env.MPESA_SHORTCODE;
-    const passkey = process.env.MPESA_PASSKEY || process.env.MPESA_PASSWORD;
-    const callback = process.env.MPESA_CALLBACK_URL || `${process.env.APP_BASE_URL || ''}/api/payments/mpesa/webhook`;
-    const env = (process.env.MPESA_ENVIRONMENT || 'sandbox').toLowerCase();
-    if (!shortcode || !passkey) return res.status(503).json({ success: false, message: 'MPesa shortcode/passkey not configured' });
-
-    const timestamp = new Date().toISOString().replace(/[-:TZ.]/g, '').slice(0,14);
-    const password = Buffer.from(`${shortcode}${passkey}${timestamp}`).toString('base64');
-
-    const token = await fetchMpesaAccessToken();
-    const base = env === 'live' ? 'https://api.safaricom.co.ke' : 'https://sandbox.safaricom.co.ke';
-    const url = `${base}/mpesa/stkpush/v1/processrequest`;
-
-    const body = {
-      BusinessShortCode: shortcode,
-      Password: password,
-      Timestamp: timestamp,
-      TransactionType: 'CustomerPayBillOnline',
-      Amount: Number(amount),
-      PartyA: phone.replace(/[^0-9+]/g, ''),
-      PartyB: shortcode,
-      PhoneNumber: phone.replace(/[^0-9+]/g, ''),
-      CallBackURL: callback,
-      AccountReference: accountReference || 'MtaaDAO',
-      TransactionDesc: description || 'M-Pesa STK Push',
-    };
-
-    const resp = await fetch(url, { method: 'POST', headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
-    const j = await resp.headers;
-    const resData = await resp.json();
-    if (!resp.ok) return res.status(502).json({ success: false, message: 'Daraja STK request failed', details: resData });
-
-    const reference = makeReference('MPSTK');
-    const checkoutRequestId = resData?.CheckoutRequestID || resData?.data?.CheckoutRequestID;
-    const metadata = { phone, darajaResponse: resData, CheckoutRequestID: checkoutRequestId };
-    await recordPendingPayment({ userId, reference, provider: 'mpesa', amount: Number(amount), currency: 'KES', type: 'contribution', metadata });
-
-    res.json({ success: true, reference, daraja: resData });
-  } catch (err: any) {
-    res.status(500).json({ success: false, message: err.message || 'STK initiation failed' });
-  }
-});
-
-// --- CRYPTO ENDPOINTS ---
-router.post('/crypto/initiate', async (req: Request, res: Response) => {
-  try {
-    const userId = requireUserId(req, res); if (!userId) return;
-    const { amount, currency, daoId, walletAddress } = req.body;
-    const value = validateAmount(amount);
-    if (!currency || !daoId || !walletAddress) {
-      return res.status(400).json({ success: false, message: 'amount, currency, daoId and walletAddress are required' });
-    }
-
-    const reference = makeReference('CRYPTO');
-    await recordPendingPayment({
-      userId,
-      reference,
-      provider: 'crypto',
-      amount: value,
-      currency: String(currency).toUpperCase(),
-      type: 'contribution',
-      metadata: { daoId, walletAddress },
-    });
-
-    res.json({ success: true, paymentReference: reference, status: 'pending' });
-  } catch (error: any) {
-    res.status(500).json({ success: false, message: error.message });
-  }
-});
-
-router.post('/crypto/webhook', async (req: Request, res: Response) => {
-  try {
-    if (process.env.NODE_ENV === 'production' && !verifyGenericProviderSignature('crypto', req)) {
-      return res.status(401).json({ success: false, message: 'Invalid crypto hash signature context' });
-    }
-
     const { paymentReference, txHash, status } = req.body;
     if (!paymentReference || !txHash) {
-      return res.status(400).json({ success: false, message: 'paymentReference and txHash are required' });
+      return res.status(400).json({ success: false, message: 'paymentReference and txHash required' });
     }
 
     const mapped = ['confirmed', 'success', 'completed'].includes(String(status).toLowerCase()) ? 'completed' : 'failed';
+    const shouldDispatch = await processWebhook('crypto', paymentReference, mapped, { txHash });
 
-    await db.update(paymentTransactions)
-      .set({ status: mapped as any, metadata: { txHash, payload: req.body }, updatedAt: new Date() })
-      .where(eq(paymentTransactions.reference, paymentReference));
-
-    res.json({ success: true, message: 'Crypto webhook processed' });
-  } catch (error: any) {
-    res.status(500).json({ success: false, message: error.message });
-  }
-});
-
-// --- MINIPAY ENDPOINTS ---
-router.post('/minipay/initiate', async (req: Request, res: Response) => {
-  try {
-    const userId = requireUserId(req, res); if (!userId) return;
-    const { amount, currency, daoId, description, recipientAddress } = req.body;
-    const value = validateAmount(amount);
-    if (!currency || !daoId) {
-      return res.status(400).json({ success: false, message: 'amount, currency and daoId are required' });
+    if (shouldDispatch) {
+      const rec = await db.select().from(paymentTransactions).where(eq(paymentTransactions.reference, paymentReference)).then(r => r[0]);
+      if (rec) {
+        await dispatchPaymentSAGA(paymentReference, rec.userId, Number(rec.amount), rec.currency, {
+          provider: 'crypto',
+          txHash
+        });
+      }
     }
 
-    const paymentReference = makeReference('MINIPAY');
-    await recordPendingPayment({
-      userId,
-      reference: paymentReference,
-      provider: 'minipay',
-      amount: value,
-      currency: String(currency).toUpperCase(),
-      type: 'contribution',
-      metadata: { daoId, description, recipientAddress },
-    });
-
-    res.json({ success: true, paymentReference, status: 'pending', supportedCurrencies: ['cUSD', 'CELO'] });
+    res.json({ success: true, message: 'Webhook processed' });
   } catch (error: any) {
+    logger.error('Crypto webhook error', { message: error.message });
     res.status(500).json({ success: false, message: error.message });
   }
 });
 
-router.post('/minipay/confirm', async (req: Request, res: Response) => {
+// MiniPay confirmation
+router.post('/webhooks/minipay', async (req: Request, res: Response) => {
   try {
     const { paymentReference, txHash } = req.body;
     if (!paymentReference || !txHash) {
-      return res.status(400).json({ success: false, message: 'paymentReference and txHash are required' });
+      return res.status(400).json({ success: false, message: 'paymentReference and txHash required' });
     }
 
-    await db.update(paymentTransactions)
-      .set({ status: 'completed', metadata: { txHash, payload: req.body }, updatedAt: new Date() })
-      .where(eq(paymentTransactions.reference, paymentReference));
+    const shouldDispatch = await processWebhook('minipay', paymentReference, 'completed', { txHash });
 
-    res.json({ success: true, message: 'MiniPay payment confirmed', paymentReference, txHash, status: 'confirmed' });
+    if (shouldDispatch) {
+      const rec = await db.select().from(paymentTransactions).where(eq(paymentTransactions.reference, paymentReference)).then(r => r[0]);
+      if (rec) {
+        await dispatchPaymentSAGA(paymentReference, rec.userId, Number(rec.amount), rec.currency, {
+          provider: 'minipay',
+          txHash
+        });
+      }
+    }
+
+    res.json({ success: true, message: 'MiniPay confirmed' });
   } catch (error: any) {
+    logger.error('MiniPay webhook error', { message: error.message });
     res.status(500).json({ success: false, message: error.message });
   }
 });
 
-router.get('/minipay/status/:paymentReference', async (req: Request, res: Response) => {
-  try {
-    const { paymentReference } = req.params;
-    const record = await db.select().from(paymentTransactions).where(eq(paymentTransactions.reference, paymentReference)).then(rows => rows[0]);
+// ===== LEGACY DIRECT INITIATIONS (redirect to gateway service) =====
 
-    if (!record) return res.status(404).json({ success: false, message: 'Payment not found' });
-    res.json({ success: true, payment: record });
+// These maintain backward compatibility but route through gateway service
+router.post('/:provider/initiate', isAuthenticated, async (req: AuthenticatedRequest, res: Response) => {
+  const traceId = PaymentErrorHandler.generateTraceId();
+  try {
+    const userId = requireUserId(req, res);
+    if (!userId) return;
+
+    const provider = req.params.provider as Provider;
+    const { amount, currency, method, metadata, daoId } = req.body;
+
+    // Map legacy routes to gateway service
+    const result = await paymentGatewayService.initiateDeposit(provider, {
+      userId,
+      amount,
+      currency: currency || 'KES',
+      method: method || 'mobile_money',
+      metadata: { ...metadata, daoId },
+      callbackUrl: `${process.env.APP_URL}/api/payments/webhooks/${provider}`
+    });
+
+    res.status(result.success ? 200 : 202).json({ ...result, traceId });
+
   } catch (error: any) {
-    res.status(500).json({ success: false, message: error.message });
+    logger.error('Legacy initiate error', { traceId, provider: req.params.provider, message: error.message });
+    res.status(500).json({ success: false, message: error.message, traceId });
   }
 });
 

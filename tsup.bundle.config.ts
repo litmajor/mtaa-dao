@@ -1,8 +1,8 @@
 import { defineConfig } from 'tsup';
 
 export default defineConfig({
-  entry: ['server/index.ts'],
-  outDir: 'server/dist-bundle',
+  entry: ['server/index.ts', 'server/workers/agent-worker.ts'],
+  outDir: 'server/dist',
   format: ['esm'],
   platform: 'node',
   target: 'node20',
@@ -13,14 +13,12 @@ export default defineConfig({
   sourcemap: false,
   minify: true,
   treeshake: true,
-  esbuildOptions(options) {
+  esbuildOptions(options: any) {
     // Treat declaration files as empty
     options.loader = {
       ...(options.loader || {}),
       '.d.ts': 'empty',
     };
-    // Drop console in production
-    options.drop = ['console', 'debugger'];
   },
   // Externalize only native drivers and very large build-only tools
   external: [

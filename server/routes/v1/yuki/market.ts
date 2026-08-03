@@ -22,6 +22,7 @@ import { orderRouter } from '../../../services/orderRouter';
 import { unifiedStatsUpdater } from '../../../services/unifiedStatsUpdater';
 import { VenueStatsCache } from '../../../services/unifiedStatsCache';
 import { redis } from '../../../services/redis';
+import { strategyDashboardService } from '../../../services/strategyDashboardService';
 
 const router = express.Router();
 
@@ -475,31 +476,31 @@ router.get('/opportunities', isAuthenticated, async (req: Request, res: Response
       });
     }
 
-    // Record routing decisions for arbitrage opportunities via orderRouter
-    // This tracks which opportunities are routed and their execution paths
+    // Record arbitrage route events and update unified stats after scanning.
     setImmediate(async () => {
       try {
-        for (const opp of opportunities.filter(o => o.type === 'arbitrage')) {
-          // TODO: orderRouter.recordRoute() method needs to be implemented
-          // await orderRouter.recordRoute({
-          //   opportunityId: opp.id,
-          //   userId,
-          //   symbol: opp.symbol,
-          //   buyVenue: opp.buyVenue,
-          //   sellVenue: opp.sellVenue,
-          //   buyPrice: opp.buyPrice,
-          //   sellPrice: opp.sellPrice,
-          //   profitPct: opp.profitPct,
-          //   confidence: opp.confidence,
-          //   timestamp: new Date().toISOString(),
-          // });
+        for (const opp of opportunities.filter((o) => o.type === 'arbitrage')) {
+          orderRouter.recordArbitrageRoute({
+            id: opp.id,
+            userId,
+            symbol: opp.symbol,
+            buyVenue: opp.buyVenue || 'unknown',
+            sellVenue: opp.sellVenue || 'unknown',
+            buyPrice: opp.buyPrice,
+            sellPrice: opp.sellPrice,
+            profitPct: opp.profitPct,
+            confidence: opp.confidence,
+            scannedAt: opp.scannedAt,
+          });
         }
-        
-        // Update unified stats after scanning
-        // TODO: unifiedStatsUpdater.updateVenueStats() method needs to be implemented
-        // await unifiedStatsUpdater.updateVenueStats(userId, metricsResult.rows);
+
+        if (typeof unifiedStatsUpdater.updateVenueExecutionStats === 'function') {
+          for (const row of metricsResult.rows) {
+            await unifiedStatsUpdater.updateVenueExecutionStats(userId, row.symbol, row.venue, '1 day');
+          }
+        }
       } catch (e) {
-        logger.warn('[MARKET] Failed to record routing decisions:', e);
+        logger.warn('[MARKET] Failed to record arbitrage routes or update unified venue stats:', e);
       }
     });
 
@@ -511,6 +512,24 @@ router.get('/opportunities', isAuthenticated, async (req: Request, res: Response
         minProfit,
         venues: venues,
         scanTime: new Date().toISOString(),
+        // Strategy triggers: include strategies with upcoming rebalances
+        strategyTriggers: await (async () => {
+          try {
+            const top = await strategyDashboardService.getStrategyRankings('aum', 10);
+            const now = Date.now();
+            return top.map((s) => ({
+              id: s.id,
+              name: s.name,
+              nextRebalance: s.nextRebalance,
+              lastRebalance: s.lastRebalance,
+              triggerDue: Number(s.nextRebalance) !== Infinity && (Number(s.nextRebalance) - now) <= 60 * 60 * 1000, // due within 1h
+              riskLevel: s.riskLevel,
+            }));
+          } catch (e) {
+            logger.warn('[MARKET] Failed to fetch strategy triggers', { error: e });
+            return [];
+          }
+        })(),
       },
     });
   } catch (error) {

@@ -21,7 +21,7 @@ import {
   BarChart2,
   FileText,
   Calendar
-} from '../../lib/icons';
+} from 'lucide-react';
 
 interface AnalyticsMetrics {
   totalDaos: number;

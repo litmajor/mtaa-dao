@@ -1,20 +1,7 @@
 import React, { useState, useEffect } from 'react';
-import { Lucide } from '../lib/icons';
+import { CreditCard, Smartphone, Building, Zap, DollarSign, Lock, CheckCircle, AlertCircle, Loader2 } from 'lucide-react';
 
-const IconFallback = (emoji: string) => (props: any) => (
-  <span {...props} aria-hidden>{emoji}</span>
-);
-
-const CreditCard = (Lucide as any).CreditCard || IconFallback('💳');
-const Smartphone = (Lucide as any).Smartphone || IconFallback('📱');
-const Building = (Lucide as any).Building || IconFallback('🏢');
-const Zap = (Lucide as any).Zap || IconFallback('⚡');
-const DollarSign = (Lucide as any).DollarSign || IconFallback('$');
-const Lock = (Lucide as any).Lock || IconFallback('🔒');
-const CheckCircle = (Lucide as any).CheckCircle || IconFallback('✔️');
-const AlertCircle = (Lucide as any).AlertCircle || IconFallback('⚠️');
-const _Loader = (Lucide as any).Loader || (Lucide as any).Loader2 || null;
-const Loader = _Loader || IconFallback('⏳');
+const Loader = Loader2;
 
 // Estimate gas fee using backend API
 const estimateGasFee = async (currency: string, amount: string) => {

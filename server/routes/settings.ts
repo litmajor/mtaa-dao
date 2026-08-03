@@ -23,7 +23,7 @@ import {
 } from '../../shared/schema';
 import { eq, and } from 'drizzle-orm';
 import { isAuthenticated } from '../nextAuthMiddleware';
-import { Logger } from '../utils/logger';
+import { logger } from '../utils/logger';
 import { AppError, ValidationError } from '../middleware/errorHandler';
 import { z } from 'zod';
 
@@ -61,7 +61,7 @@ function encryptData(data: string): string {
     // Return: iv.authTag.encrypted
     return `${iv.toString('hex')}.${authTag.toString('hex')}.${encrypted}`;
   } catch (error) {
-    Logger.error('Encryption failed', { error: (error as Error).message });
+    logger.error('Encryption failed', error as Error);
     throw new AppError('Failed to encrypt data', 500);
   }
 }
@@ -89,7 +89,7 @@ function decryptData(encryptedData: string): string {
     
     return decrypted;
   } catch (error) {
-    Logger.error('Decryption failed', { error: (error as Error).message });
+    logger.error('Decryption failed', error as Error);
     throw new AppError('Failed to decrypt data', 500);
   }
 }
@@ -133,7 +133,7 @@ const updateConnectedDeviceSchema = z.object({
 // GET /api/settings - Get all user settings
 router.get('/all', isAuthenticated, async (req, res, next) => {
   try {
-    const userId = req.user.id;
+    const userId = req.user!.id;
 
     // Get or create user settings
     let settings = await db
@@ -177,7 +177,7 @@ router.get('/all', isAuthenticated, async (req, res, next) => {
 // PUT /api/settings - Update user settings
 router.put('/update', isAuthenticated, async (req, res, next) => {
   try {
-    const userId = req.user.id;
+    const userId = req.user!.id;
     const data = updateUserSettingsSchema.parse(req.body);
 
     // Ensure settings exist
@@ -200,11 +200,11 @@ router.put('/update', isAuthenticated, async (req, res, next) => {
       .where(eq(userSettings.userId, userId))
       .returning();
 
-    Logger.info(`User ${userId} updated settings`, { userId });
+    logger.info(`User ${userId} updated settings`, { userId });
     res.json({ success: true, settings: updated[0] });
   } catch (error) {
     if (error instanceof z.ZodError) {
-      return next(new ValidationError('Invalid settings data', { errors: error.errors }));
+      return next(new ValidationError('Invalid settings data'));
     }
     next(error);
   }
@@ -217,7 +217,7 @@ router.put('/update', isAuthenticated, async (req, res, next) => {
 // GET /api/settings/api-keys - List all API keys
 router.get('/api-keys', isAuthenticated, async (req, res, next) => {
   try {
-    const userId = req.user.id;
+    const userId = req.user!.id;
 
     const keys = await db
       .select({
@@ -241,7 +241,7 @@ router.get('/api-keys', isAuthenticated, async (req, res, next) => {
 // POST /api/settings/api-keys - Add new API key
 router.post('/api-keys', isAuthenticated, async (req, res, next) => {
   try {
-    const userId = req.user.id;
+    const userId = req.user!.id;
     const data = addApiKeySchema.parse(req.body);
 
     // Encrypt the sensitive keys before storing
@@ -264,7 +264,7 @@ router.post('/api-keys', isAuthenticated, async (req, res, next) => {
       })
       .returning();
 
-    Logger.info(`User ${userId} added ${data.exchange} API key`, { userId, exchange: data.exchange });
+    logger.info(`User ${userId} added ${data.exchange} API key`, { userId, exchange: data.exchange });
 
     res.status(201).json({
       success: true,
@@ -278,7 +278,7 @@ router.post('/api-keys', isAuthenticated, async (req, res, next) => {
     });
   } catch (error) {
     if (error instanceof z.ZodError) {
-      return next(new ValidationError('Invalid API key data', { errors: error.errors }));
+      return next(new ValidationError('Invalid API key data'));
     }
     next(error);
   }
@@ -287,7 +287,7 @@ router.post('/api-keys', isAuthenticated, async (req, res, next) => {
 // GET /api/settings/api-keys/:id/decrypt - Get decrypted API key (use with caution)
 router.get('/api-keys/:id/decrypt', isAuthenticated, async (req, res, next) => {
   try {
-    const userId = req.user.id;
+    const userId = req.user!.id;
     const { id } = req.params;
 
     // Verify ownership
@@ -317,7 +317,7 @@ router.get('/api-keys/:id/decrypt', isAuthenticated, async (req, res, next) => {
       isActive: key[0].isActive,
     };
 
-    Logger.warn(`User ${userId} retrieved decrypted API key for ${key[0].exchange}`, { userId });
+    logger.warn(`User ${userId} retrieved decrypted API key for ${key[0].exchange}`, { userId });
 
     res.json({
       success: true,
@@ -331,7 +331,7 @@ router.get('/api-keys/:id/decrypt', isAuthenticated, async (req, res, next) => {
 // DELETE /api/settings/api-keys/:id - Delete API key
 router.delete('/api-keys/:id', isAuthenticated, async (req, res, next) => {
   try {
-    const userId = req.user.id;
+    const userId = req.user!.id;
     const { id } = req.params;
 
     // Verify ownership
@@ -353,7 +353,7 @@ router.delete('/api-keys/:id', isAuthenticated, async (req, res, next) => {
       .delete(exchangeApiKeys)
       .where(eq(exchangeApiKeys.id, id));
 
-    Logger.info(`User ${userId} deleted API key`, { userId, keyId: id });
+    logger.info(`User ${userId} deleted API key`, { userId, keyId: id });
     res.json({ success: true, message: 'API key deleted' });
   } catch (error) {
     next(error);
@@ -363,7 +363,7 @@ router.delete('/api-keys/:id', isAuthenticated, async (req, res, next) => {
 // PUT /api/settings/api-keys/:id - Update API key
 router.put('/api-keys/:id', isAuthenticated, async (req, res, next) => {
   try {
-    const userId = req.user.id;
+    const userId = req.user!.id;
     const { id } = req.params;
     const { label, isActive } = req.body;
 
@@ -414,7 +414,7 @@ router.put('/api-keys/:id', isAuthenticated, async (req, res, next) => {
 // GET /api/settings/devices - List connected devices
 router.get('/devices', isAuthenticated, async (req, res, next) => {
   try {
-    const userId = req.user.id;
+    const userId = req.user!.id;
 
     const devices = await db
       .select()
@@ -430,7 +430,7 @@ router.get('/devices', isAuthenticated, async (req, res, next) => {
 // PUT /api/settings/devices/:id - Update device settings
 router.put('/devices/:id', isAuthenticated, async (req, res, next) => {
   try {
-    const userId = req.user.id;
+    const userId = req.user!.id;
     const { id } = req.params;
     const data = updateConnectedDeviceSchema.parse(req.body);
 
@@ -462,7 +462,7 @@ router.put('/devices/:id', isAuthenticated, async (req, res, next) => {
     res.json({ success: true, device: updated });
   } catch (error) {
     if (error instanceof z.ZodError) {
-      return next(new ValidationError('Invalid device data', { errors: error.errors }));
+      return next(new ValidationError('Invalid device data'));
     }
     next(error);
   }
@@ -471,7 +471,7 @@ router.put('/devices/:id', isAuthenticated, async (req, res, next) => {
 // DELETE /api/settings/devices/:id - Logout from device
 router.delete('/devices/:id', isAuthenticated, async (req, res, next) => {
   try {
-    const userId = req.user.id;
+    const userId = req.user!.id;
     const { id } = req.params;
 
     // Verify ownership
@@ -493,7 +493,7 @@ router.delete('/devices/:id', isAuthenticated, async (req, res, next) => {
       .delete(connectedDevices)
       .where(eq(connectedDevices.id, id));
 
-    Logger.info(`User ${userId} removed device`, { userId, deviceId: id });
+    logger.info(`User ${userId} removed device`, { userId, deviceId: id });
     res.json({ success: true, message: 'Device removed' });
   } catch (error) {
     next(error);
@@ -507,7 +507,7 @@ router.delete('/devices/:id', isAuthenticated, async (req, res, next) => {
 // GET /api/settings/preferences - Get feature preferences
 router.get('/preferences', isAuthenticated, async (req, res, next) => {
   try {
-    const userId = req.user.id;
+    const userId = req.user!.id;
 
     let prefs = await db
       .select()
@@ -532,7 +532,7 @@ router.get('/preferences', isAuthenticated, async (req, res, next) => {
 // PUT /api/settings/preferences - Update feature preferences
 router.put('/preferences', isAuthenticated, async (req, res, next) => {
   try {
-    const userId = req.user.id;
+    const userId = req.user!.id;
     const data = req.body;
 
     // Ensure preferences exist

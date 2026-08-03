@@ -13,7 +13,8 @@
  * Rate Limiting: 100 orders/minute per user
  */
 
-import express, { Request, Response } from 'express';
+import express from 'express';
+import type { Request, Response } from 'express';
 import { z } from 'zod';
 import Decimal from 'decimal.js';
 import { isAuthenticated } from '../../../auth';
@@ -22,8 +23,8 @@ import { pool, db } from '../../../db';
 import { executionMetrics } from '../../../../shared/schema.js';
 import { ccxtService } from '../../../services/ccxtService';
 import { orderRouter } from '../../../services/orderRouter';
-import { unifiedStatsUpdater } from '../../../services/unifiedStatsUpdater';
 import { redis } from '../../../services/redis';
+import { unifiedStatsUpdater } from '../../../services/unifiedStatsUpdater';
 
 const router = express.Router();
 
@@ -76,6 +77,141 @@ const limitOrderSchema = z.object({
   price: z.number().positive('Price must be positive'),
   expiresInDays: z.number().positive().default(7),
 });
+
+const stopOrderSchema = z.object({
+  exchange: z.string().optional(),
+  symbol: z.string().min(1, 'Symbol required'),
+  side: z.enum(['buy', 'sell']),
+  amount: z.number().positive('Amount must be positive'),
+  stopPrice: z.number().positive('Stop price must be positive'),
+  type: z.enum(['stop-loss', 'stop-limit']).optional().default('stop-loss'),
+});
+
+const takeProfitSchema = z.object({
+  exchange: z.string().optional(),
+  symbol: z.string().min(1, 'Symbol required'),
+  side: z.enum(['buy', 'sell']),
+  amount: z.number().positive('Amount must be positive'),
+  takeProfitPrice: z.number().positive('Price must be positive'),
+});
+
+const trailingStopSchema = z.object({
+  exchange: z.string().optional(),
+  symbol: z.string().min(1, 'Symbol required'),
+  side: z.enum(['buy', 'sell']),
+  amount: z.number().positive('Amount must be positive'),
+  trailPercent: z.number().positive().optional(),
+  trailAmount: z.number().positive().optional(),
+});
+
+let advancedOrdersTableReady = false;
+
+async function ensureAdvancedOrdersTable(): Promise<void> {
+  if (advancedOrdersTableReady) return;
+
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS yuki_advanced_orders (
+      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+      user_id VARCHAR NOT NULL,
+      order_type VARCHAR(30) NOT NULL,
+      exchange VARCHAR(50),
+      symbol VARCHAR(30) NOT NULL,
+      side VARCHAR(10) NOT NULL CHECK (side IN ('buy', 'sell')),
+      amount NUMERIC(20, 8) NOT NULL,
+      price NUMERIC(20, 8),
+      stop_price NUMERIC(20, 8),
+      take_profit_price NUMERIC(20, 8),
+      trail_percent NUMERIC(10, 4),
+      trail_amount NUMERIC(20, 8),
+      status VARCHAR(20) NOT NULL DEFAULT 'active',
+      metadata JSONB DEFAULT '{}'::jsonb,
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    );
+  `);
+
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_yuki_advanced_orders_user_id ON yuki_advanced_orders(user_id);`);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_yuki_advanced_orders_status ON yuki_advanced_orders(status);`);
+
+  advancedOrdersTableReady = true;
+}
+
+function serializeAdvancedOrder(row: any) {
+  return {
+    id: row.id,
+    userId: row.user_id,
+    orderType: row.order_type,
+    exchange: row.exchange,
+    symbol: row.symbol,
+    side: row.side,
+    amount: Number(row.amount),
+    price: row.price !== null ? Number(row.price) : null,
+    stopPrice: row.stop_price !== null ? Number(row.stop_price) : null,
+    takeProfitPrice: row.take_profit_price !== null ? Number(row.take_profit_price) : null,
+    trailPercent: row.trail_percent !== null ? Number(row.trail_percent) : null,
+    trailAmount: row.trail_amount !== null ? Number(row.trail_amount) : null,
+    status: row.status,
+    metadata: row.metadata || {},
+    createdAt: row.created_at?.toISOString ? row.created_at.toISOString() : row.created_at,
+    updatedAt: row.updated_at?.toISOString ? row.updated_at.toISOString() : row.updated_at,
+  };
+}
+
+async function persistAdvancedOrder(input: { userId: string; orderType: string; exchange?: string | null; symbol: string; side: 'buy' | 'sell'; amount: number; price?: number | null; stopPrice?: number | null; takeProfitPrice?: number | null; trailPercent?: number | null; trailAmount?: number | null; status?: string; metadata?: Record<string, unknown> }) {
+  await ensureAdvancedOrdersTable();
+
+  const result = await pool.query(
+    `INSERT INTO yuki_advanced_orders (
+      user_id, order_type, exchange, symbol, side, amount, price, stop_price, take_profit_price, trail_percent, trail_amount, status, metadata
+    ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
+    RETURNING *`,
+    [
+      input.userId,
+      input.orderType,
+      input.exchange || null,
+      input.symbol,
+      input.side,
+      input.amount,
+      input.price ?? null,
+      input.stopPrice ?? null,
+      input.takeProfitPrice ?? null,
+      input.trailPercent ?? null,
+      input.trailAmount ?? null,
+      input.status || 'active',
+      JSON.stringify(input.metadata || {})
+    ]
+  );
+
+  return serializeAdvancedOrder(result.rows[0]);
+}
+
+async function listAdvancedOrders(userId: string, orderType?: string) {
+  await ensureAdvancedOrdersTable();
+
+  let query = `SELECT * FROM yuki_advanced_orders WHERE user_id = $1 AND status != 'canceled'`;
+  const params: any[] = [userId];
+
+  if (orderType) {
+    query += ` AND order_type = $${params.length + 1}`;
+    params.push(orderType);
+  }
+
+  query += ` ORDER BY created_at DESC`;
+
+  const result = await pool.query(query, params);
+  return result.rows.map(serializeAdvancedOrder);
+}
+
+async function cancelAdvancedOrder(orderId: string, userId: string) {
+  await ensureAdvancedOrdersTable();
+
+  const result = await pool.query(
+    `UPDATE yuki_advanced_orders SET status = 'canceled', updated_at = CURRENT_TIMESTAMP WHERE id = $1 AND user_id = $2 RETURNING *`,
+    [orderId, userId]
+  );
+
+  return result.rows[0] ? serializeAdvancedOrder(result.rows[0]) : null;
+}
 
 const bestVenueSchema = z.object({
   symbol: z.string().min(1, 'Symbol required'),
@@ -818,6 +954,71 @@ router.post('/limit', isAuthenticated, async (req: Request, res: Response) => {
   }
 });
 
+/**
+ * POST /v1/yuki/orders/stop-loss - Place a stop-loss (or stop-limit) order
+ */
+router.post('/stop-loss', isAuthenticated, async (req: Request, res: Response) => {
+  try {
+    const data = stopOrderSchema.parse(req.body);
+    const userId = (req as any).user?.id;
+
+    let status = 'active';
+    if (data.exchange && ccxtService) {
+      try {
+        await ccxtService.placeStopOrder(data.exchange, data.symbol, data.side, data.amount, data.stopPrice, data.type);
+        status = 'placed';
+      } catch (err) {
+        logger.warn('[YUKI][STOP] Failed to place stop order on exchange, storing locally', { error: err });
+      }
+    }
+
+    const order = await persistAdvancedOrder({
+      userId,
+      orderType: 'stop-loss',
+      exchange: data.exchange || null,
+      symbol: data.symbol,
+      side: data.side,
+      amount: data.amount,
+      stopPrice: data.stopPrice,
+      price: data.stopPrice,
+      status,
+      metadata: { type: data.type }
+    });
+
+    return res.json({ success: true, data: order });
+  } catch (error) {
+    if (error instanceof z.ZodError) {
+      return res.status(400).json({ success: false, error: 'Invalid request format', details: error.errors });
+    }
+    logger.error('[YUKI] Failed to create stop-loss order', { error });
+    return res.status(500).json({ success: false, error: 'Failed to create stop-loss order' });
+  }
+});
+
+router.get('/stop-loss', isAuthenticated, async (req: Request, res: Response) => {
+  try {
+    const userId = (req as any).user?.id;
+    const list = await listAdvancedOrders(userId, 'stop-loss');
+    return res.json({ success: true, data: list });
+  } catch (error) {
+    logger.error('[YUKI] Failed to list stop-loss orders', { error });
+    return res.status(500).json({ success: false, error: 'Failed to list stop-loss orders' });
+  }
+});
+
+router.delete('/stop-loss/:id', isAuthenticated, async (req: Request, res: Response) => {
+  try {
+    const { id } = req.params;
+    const userId = (req as any).user?.id;
+    const canceled = await cancelAdvancedOrder(id, userId);
+    if (!canceled) return res.status(404).json({ success: false, error: 'Order not found' });
+    return res.json({ success: true, data: { id, deleted: true } });
+  } catch (error) {
+    logger.error('[YUKI] Failed to delete stop-loss order', { error });
+    return res.status(500).json({ success: false, error: 'Failed to delete stop-loss order' });
+  }
+});
+
 // ════════════════════════════════════════════════════════════════════════════════
 // GET /v1/yuki/orders/limit/:orderId - Get specific limit order
 // ════════════════════════════════════════════════════════════════════════════════
@@ -873,6 +1074,136 @@ router.get('/limit/:orderId', isAuthenticated, async (req: Request, res: Respons
       success: false,
       error: 'Failed to fetch limit order',
     });
+  }
+});
+
+/**
+ * POST /v1/yuki/orders/trailing-stop - Place a trailing stop order
+ */
+router.post('/trailing-stop', isAuthenticated, async (req: Request, res: Response) => {
+  try {
+    const data = trailingStopSchema.parse(req.body);
+    const userId = (req as any).user?.id;
+
+    let status = 'active';
+    if (data.exchange && ccxtService) {
+      try {
+        await ccxtService.placeTrailingStopOrder(data.exchange, data.symbol, data.side, data.amount, data.trailPercent, data.trailAmount);
+        status = 'placed';
+      } catch (err) {
+        logger.warn('[YUKI][TRAIL] Failed to place trailing-stop on exchange, storing locally', { error: err });
+      }
+    }
+
+    const order = await persistAdvancedOrder({
+      userId,
+      orderType: 'trailing-stop',
+      exchange: data.exchange || null,
+      symbol: data.symbol,
+      side: data.side,
+      amount: data.amount,
+      trailPercent: data.trailPercent ?? null,
+      trailAmount: data.trailAmount ?? null,
+      status,
+      metadata: {}
+    });
+
+    return res.json({ success: true, data: order });
+  } catch (error) {
+    if (error instanceof z.ZodError) {
+      return res.status(400).json({ success: false, error: 'Invalid request format', details: error.errors });
+    }
+    logger.error('[YUKI] Failed to create trailing-stop order', { error });
+    return res.status(500).json({ success: false, error: 'Failed to create trailing-stop order' });
+  }
+});
+
+router.get('/trailing-stop', isAuthenticated, async (req: Request, res: Response) => {
+  try {
+    const userId = (req as any).user?.id;
+    const list = await listAdvancedOrders(userId, 'trailing-stop');
+    return res.json({ success: true, data: list });
+  } catch (error) {
+    logger.error('[YUKI] Failed to list trailing-stop orders', { error });
+    return res.status(500).json({ success: false, error: 'Failed to list trailing-stop orders' });
+  }
+});
+
+router.delete('/trailing-stop/:id', isAuthenticated, async (req: Request, res: Response) => {
+  try {
+    const { id } = req.params;
+    const userId = (req as any).user?.id;
+    const canceled = await cancelAdvancedOrder(id, userId);
+    if (!canceled) return res.status(404).json({ success: false, error: 'Order not found' });
+    return res.json({ success: true, data: { id, deleted: true } });
+  } catch (error) {
+    logger.error('[YUKI] Failed to delete trailing-stop order', { error });
+    return res.status(500).json({ success: false, error: 'Failed to delete trailing-stop order' });
+  }
+});
+
+/**
+ * POST /v1/yuki/orders/take-profit - Place a take-profit order
+ */
+router.post('/take-profit', isAuthenticated, async (req: Request, res: Response) => {
+  try {
+    const data = takeProfitSchema.parse(req.body);
+    const userId = (req as any).user?.id;
+
+    let status = 'active';
+    if (data.exchange && ccxtService) {
+      try {
+        await ccxtService.placeTakeProfitOrder(data.exchange, data.symbol, data.side, data.amount, data.takeProfitPrice);
+        status = 'placed';
+      } catch (err) {
+        logger.warn('[YUKI][TP] Failed to place take-profit on exchange, storing locally', { error: err });
+      }
+    }
+
+    const order = await persistAdvancedOrder({
+      userId,
+      orderType: 'take-profit',
+      exchange: data.exchange || null,
+      symbol: data.symbol,
+      side: data.side,
+      amount: data.amount,
+      takeProfitPrice: data.takeProfitPrice,
+      price: data.takeProfitPrice,
+      status,
+      metadata: {}
+    });
+
+    return res.json({ success: true, data: order });
+  } catch (error) {
+    if (error instanceof z.ZodError) {
+      return res.status(400).json({ success: false, error: 'Invalid request format', details: error.errors });
+    }
+    logger.error('[YUKI] Failed to create take-profit order', { error });
+    return res.status(500).json({ success: false, error: 'Failed to create take-profit order' });
+  }
+});
+
+router.get('/take-profit', isAuthenticated, async (req: Request, res: Response) => {
+  try {
+    const userId = (req as any).user?.id;
+    const list = await listAdvancedOrders(userId, 'take-profit');
+    return res.json({ success: true, data: list });
+  } catch (error) {
+    logger.error('[YUKI] Failed to list take-profit orders', { error });
+    return res.status(500).json({ success: false, error: 'Failed to list take-profit orders' });
+  }
+});
+
+router.delete('/take-profit/:id', isAuthenticated, async (req: Request, res: Response) => {
+  try {
+    const { id } = req.params;
+    const userId = (req as any).user?.id;
+    const canceled = await cancelAdvancedOrder(id, userId);
+    if (!canceled) return res.status(404).json({ success: false, error: 'Order not found' });
+    return res.json({ success: true, data: { id, deleted: true } });
+  } catch (error) {
+    logger.error('[YUKI] Failed to delete take-profit order', { error });
+    return res.status(500).json({ success: false, error: 'Failed to delete take-profit order' });
   }
 });
 
@@ -1138,7 +1469,7 @@ router.post('/feedback', isAuthenticated, async (req: Request, res: Response) =>
     // Database triggers will also fire to notify async listener
     setImmediate(() => {
       unifiedStatsUpdater.updateOrderExecutionSummary(data.exchange, data.symbol, '30 days')
-        .catch(err => logger.error('[YUKI] Failed to update order stats:', err));
+        .catch((err: any) => logger.error('[YUKI] Failed to update order stats:', err));
     });
 
     // Update orderRouter with learning data
@@ -1180,7 +1511,7 @@ router.post('/feedback', isAuthenticated, async (req: Request, res: Response) =>
           logger.debug('[YUKI] Updated cache for order stats', { exchange: data.exchange, symbol: data.symbol });
         }
       } catch (cacheErr) {
-        logger.warn('[YUKI] Failed to update cache (non-blocking):', cacheErr);
+        logger.warn('[YUKI] Failed to update cache (non-blocking):', cacheErr as Record<string, unknown>);
       }
     }
 

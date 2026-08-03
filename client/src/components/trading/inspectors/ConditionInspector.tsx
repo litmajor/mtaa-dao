@@ -1,5 +1,5 @@
 import React from 'react';
-import { ConditionNode } from '../../../models/StrategyNode';
+import type { ConditionNode } from '../../../models/StrategyNode';
 
 export default function ConditionInspector({ node, onChange }: { node: ConditionNode; onChange: (patch: any) => void }) {
   return (

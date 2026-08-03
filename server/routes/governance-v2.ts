@@ -5,7 +5,7 @@
 
 import { Router, Request, Response } from "express";
 import { z } from "zod";
-import { authenticateToken } from "@/server/middleware/auth";
+import { authenticateToken } from "../middleware/auth";
 import {
   createDAO,
   getDAO,
@@ -54,7 +54,7 @@ import {
   getGovernanceParameters,
   updateGovernanceParameter,
   getDAOGovernanceStatus,
-} from "@/server/services/governance-service";
+} from "../services/governance-service";
 
 const router = Router();
 
@@ -402,7 +402,7 @@ router.get("/proposals/:id/votes", async (req: Request, res: Response) => {
 router.get("/members/:id/votes", async (req: Request, res: Response) => {
   try {
     const member = await getMember(req.params.id);
-    const memberVotes = await getMemberVotes(member.wallet_id);
+    const memberVotes = await getMemberVotes(member.walletId);
     res.json({ success: true, data: memberVotes });
   } catch (error: any) {
     res.status(400).json({ error: error.message });

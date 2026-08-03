@@ -10,7 +10,8 @@
  * - POST   /v1/daos/:daoId/treasury/contributions/:contributionId/approve (admin)
  */
 
-import express, { Request, Response } from 'express';
+import express from 'express';
+import type { Request, Response } from 'express';
 import { authenticate } from '../../../../../auth';
 import { rateLimitPerUser } from '../../../../../middleware/rateLimit';
 import { treasuryAdminGuard } from './security';

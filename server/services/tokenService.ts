@@ -2,10 +2,12 @@
 import { ethers } from 'ethers';
 import { logger } from '../utils/logger';
 import { createWalletIfValid } from '../utils/cryptoWallet';
-import { TOKEN_REGISTRY, TokenInfo, TokenRegistry, YIELD_STRATEGIES } from '../../shared/tokenRegistry';
+import { TOKEN_REGISTRY, TokenRegistry, YIELD_STRATEGIES } from '../../shared/tokenRegistry';
 import { db } from '../db';
+import type {TokenInfo} from '../../shared/tokenRegistry';
 import { users, proposals } from '../../shared/schema';
 import { eq } from 'drizzle-orm';
+import { resolveProviderUrls } from './providerBootstrap';
 
 // Enhanced ERC20 ABI with additional functions for Phase 3
 const ENHANCED_ERC20_ABI = [
@@ -78,9 +80,11 @@ export class TokenService {
     privateKey?: string,
     network: 'mainnet' | 'testnet' = 'testnet'
   ) {
+    const providerUrls = resolveProviderUrls();
+    const resolvedProviderUrl = providerUrl || providerUrls.rpcUrl;
     // Configure provider with timeout settings
     this.provider = new ethers.JsonRpcProvider(
-      providerUrl,
+      resolvedProviderUrl,
       undefined,
       {
         staticNetwork: true,
@@ -705,7 +709,7 @@ export class TokenService {
 
 }
 export const tokenService = new TokenService(
-  process.env.RPC_URL || 'https://alfajores-forno.celo-testnet.org',
+  process.env.RPC_URL || process.env.CELO_RPC_URL || 'https://alfajores-forno.celo-testnet.org',
   process.env.MANAGER_PRIVATE_KEY,
   process.env.NODE_ENV === 'production' ? 'mainnet' : 'testnet'
 );

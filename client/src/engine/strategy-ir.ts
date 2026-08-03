@@ -1,36 +1,41 @@
-import { StrategyGraph } from '../models/StrategyGraph';
-import { StrategyNode } from '../models/StrategyNode';
+import type { StrategyGraph } from '../models/StrategyGraph';
+import type { StrategyNode } from '../models/StrategyNode';
 
 export interface IRNode {
   id: string;
-  type: string;
+  type: StrategyNode['type'];
   label: string;
-  config: any;
-  ports: { id: string; name?: string; direction: 'in' | 'out' }[];
+  config: StrategyNode['config'];
+  ports: StrategyNode['ports'];
 }
 
 export interface IRGraph {
   id: string;
   name: string;
   nodes: IRNode[];
-  edges: { sourceId: string; sourcePortId?: string; targetId: string; targetPortId?: string }[];
-  metadata: any;
+  edges: Array<{
+    sourceId: string;
+    sourcePortId?: string;
+    targetId: string;
+    targetPortId?: string;
+  }>;
+  metadata: StrategyGraph['metadata'];
 }
 
 export function graphToIR(graph: StrategyGraph): IRGraph {
-  const nodes: IRNode[] = graph.nodes.map((n: StrategyNode) => ({
+  const nodes: IRNode[] = graph.nodes.map((n) => ({
     id: n.id,
     type: n.type,
     label: n.label,
-    config: (n as any).config,
-    ports: (n as any).ports || [],
+    config: n.config,
+    ports: n.ports || [],
   }));
 
   const edges = graph.edges.map((e) => ({
-    sourceId: (e as any).sourceNodeId || (e as any).source,
-    sourcePortId: (e as any).sourcePortId,
-    targetId: (e as any).targetNodeId || (e as any).target,
-    targetPortId: (e as any).targetPortId,
+    sourceId: e.sourceNodeId || e.source || '',
+    sourcePortId: e.sourcePortId,
+    targetId: e.targetNodeId || e.target || '',
+    targetPortId: e.targetPortId,
   }));
 
   return { id: graph.id, name: graph.name, nodes, edges, metadata: graph.metadata };

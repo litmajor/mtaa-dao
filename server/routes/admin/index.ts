@@ -20,7 +20,6 @@ import adminCommunityRouter from './admin-community';
 import adminErrorMonitoringRouter from './admin-error-monitoring';
 import adminErrorAlertsRouter from './admin-error-alerts';
 import adminErrorAnalyticsRouter from './admin-error-analytics';
-import adminNotificationsRouter from './admin-notifications';
 import adminRecoveryRouter from './admin-recovery';
 import adminBillingRouter from './admin-billing';
 
@@ -46,7 +45,6 @@ router.use(adminCommunityRouter);    // Community: /api/admin/referrals/*, /api/
 router.use(adminErrorMonitoringRouter); // Error Monitoring Dashboard: /api/admin/errors/* (Phase 3c Part 1)
 router.use(adminErrorAlertsRouter);  // Error Alerts: /api/admin/alerts/* (Phase 3c Part 2)
 router.use(adminErrorAnalyticsRouter); // Error Analytics: /api/admin/analytics/* (Phase 3c Part 3)
-router.use(adminNotificationsRouter); // Notifications: /api/admin/notifications/* (Phase 3c Part 4)
 router.use(adminRecoveryRouter); // Recovery Workflows: /api/admin/recovery/* (Phase 3c Part 5)
 router.use(adminBillingRouter);      // Billing: /api/admin/billing/* (Platform analytics)
 

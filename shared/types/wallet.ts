@@ -54,14 +54,6 @@ export type TokenInfo = {
   totalSupply?: string
 }
 
-export type TokenBalance = {
-  address: string
-  symbol: string
-  balance: string
-  balanceFormatted?: number
-  valueUsd?: number
-}
-
 export type Portfolio = {
   address: string
   nativeBalance: number
@@ -77,6 +69,100 @@ export type PortfolioSnapshot = {
   nativeBalance: number
   tokenBalances: Record<string, TokenInfo>
   totalValueUsd: number
+}
+
+export type BalanceCategory = 'native' | 'tokens' | 'investment-pools' | 'vaults' | 'staking'
+
+export interface WalletProvider {
+  id: 'metamask' | 'valora' | 'minipay' | 'internal'
+  name: string
+  icon: string
+  isConnected: boolean
+  address?: string
+  chainId?: number
+}
+
+export interface NativeBalance {
+  amount: string
+  symbol: string
+  valueUSD: string
+}
+
+export interface TokenBalance {
+  symbol: string
+  address: string
+  amount: string
+  valueUSD: string
+  decimals: number
+}
+
+export interface InvestmentPoolBalance {
+  poolId: string
+  poolName: string
+  shares: string
+  sharePrice: string
+  valueUSD: string
+  apy: string
+  poolAddress: string
+}
+
+export interface VaultBalance {
+  vaultId: string
+  vaultName: string
+  type: 'personal' | 'shared'
+  shares: string
+  sharePrice: string
+  valueUSD: string
+  apy: string
+  vaultAddress: string
+}
+
+export interface StakingRewards {
+  totalStaked: string
+  totalRewards: string
+  valueUSD: string
+}
+
+export interface BalanceBreakdown {
+  nativeBalance: NativeBalance
+  tokens: TokenBalance[]
+  investmentPools: InvestmentPoolBalance[]
+  vaults: VaultBalance[]
+  stakingRewards: StakingRewards
+}
+
+export interface ProviderBalance {
+  providerId: WalletProvider['id']
+  chainId?: number
+  address?: string
+  native: NativeBalance
+  tokens: TokenBalance[]
+  totalValueUSD: string
+}
+
+export interface AggregatedBalance {
+  totalValueUSD: string
+  totalValueByCurrency: Record<string, string>
+  breakdown: BalanceBreakdown
+  providerBalances: ProviderBalance[]
+  providers: WalletProvider[]
+  lastUpdated: Date
+  isLoading: boolean
+  error?: string
+}
+
+export interface AggregatedBalanceRequest {
+  userAddress: string
+  chainId?: number
+  includeCategories: BalanceCategory[]
+}
+
+export interface AggregatedBalanceResponse {
+  totalValueUSD: string
+  totalValueByCurrency: Record<string, string>
+  breakdown: BalanceBreakdown
+  providerBalances: ProviderBalance[]
+  providers?: WalletProvider[]
 }
 
 export default {} as const

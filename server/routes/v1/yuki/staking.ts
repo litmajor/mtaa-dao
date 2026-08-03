@@ -6,7 +6,8 @@
  * 11 endpoints for staking, rewards, governance voting, and proposals
  */
 
-import express, { Request, Response } from 'express';
+import express from 'express';
+import type { Request, Response } from 'express';
 import { authenticateToken } from '../../../middleware/auth';
 import { priceOracle } from '../../../services/priceOracle';
 import { db } from '../../../db';

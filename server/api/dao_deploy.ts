@@ -1,10 +1,10 @@
-import { Request, Response } from 'express';
+import type { Request, Response } from 'express';
 import { v4 as uuidv4 } from 'uuid';
 import { db } from '../db';
 import {
   daos,
   daoMemberships,
-  vaults,
+  vaults, 
   loanFacilities,
   users,
   wallets,
@@ -232,6 +232,19 @@ function resolveUserTier(
   return 'free';
 }
 
+function formatErrorMeta(err: unknown): Record<string, unknown> {
+  if (err instanceof Error) {
+    return {
+      error: {
+        name: err.name,
+        message: err.message,
+        stack: err.stack,
+      },
+    };
+  }
+  return { error: String(err) };
+}
+
 const TIER_HIERARCHY = ['free', 'growth', 'professional', 'enterprise'];
 
 // ── Main handler ──────────────────────────────────────────────────────────────
@@ -287,13 +300,13 @@ export async function daoDeployHandler(req: Request, res: Response) {
       }
     }
 
-    // Build final signer list: founder always first, deduped, max 10
+    // Build final signer list: founder always first, deduped, max 5
     const signers = Array.from(
       new Set([founderWallet, ...selectedElders])
-    ).slice(0, 10);
+    ).slice(0, 5);
 
-    if (signers.length > 10) {
-      return res.status(400).json({ error: 'Maximum 10 signers allowed' });
+    if (signers.length > 5) {
+      return res.status(400).json({ error: 'Maximum 5 signers allowed' });
     }
 
     // ── 2. Resolve treasury config ──────────────────────────────────────────
@@ -308,6 +321,28 @@ export async function daoDeployHandler(req: Request, res: Response) {
       2,
       Math.min(treasuryConfig.requiredSignatures, signers.length)
     );
+
+    // ── Resolve signers to existing users BEFORE creating DAO
+    const unresolvedSigners: string[] = [];
+    const resolvedSigners: Array<{ original: string; user: any | null }> = [];
+    for (const s of signers) {
+      let resolvedUser: any = null;
+      if (/^[0-9a-fA-F-]{36}$/.test(s) || /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-/.test(s)) {
+        resolvedUser = await db.query.users.findFirst({ where: eq(users.id, s) });
+      }
+      if (!resolvedUser && isAddress(s)) {
+        resolvedUser = await db.query.users.findFirst({ where: eq(users.walletAddress, s) });
+      }
+      if (!resolvedUser) {
+        resolvedUser = await db.query.users.findFirst({ where: eq(users.username, s) });
+      }
+      if (!resolvedUser) unresolvedSigners.push(s);
+      resolvedSigners.push({ original: s, user: resolvedUser });
+    }
+
+    if (unresolvedSigners.length > 0) {
+      return res.status(400).json({ error: 'Unresolved signers. Create or reference existing users for these signers before creating the DAO.', unresolved: unresolvedSigners });
+    }
 
     // ── 3. Duration / rotation ──────────────────────────────────────────────
 
@@ -327,59 +362,84 @@ export async function daoDeployHandler(req: Request, res: Response) {
     }
 
     // ── 4. Create DAO record ────────────────────────────────────────────────
+    // If a DAO with the same name already exists (not counting archived), fail fast
+    try {
+      const existing = await db.select().from(daos).where(eq(daos.name, daoData.name));
+      if (existing.length > 0) {
+        return res.status(409).json({ error: 'DAO name already exists' });
+      }
+    } catch (err) {
+      logger.warn('Failed to check existing DAO name', formatErrorMeta(err));
+      // continue — we'll let the insert fail if there's a DB constraint later
+    }
 
     const daoId = uuidv4();
+    let dao: any;
+    try {
+      const resDao = await db
+        .insert(daos)
+        .values({
+          id: daoId,
+          name: daoData.name,
+          description: daoData.description || '',
+          creatorId: founderWallet,
+          founderId: founderWallet,
+          daoType,
+          access: 'public',
+          memberCount: signers.length,
 
-    const [dao] = await db
-      .insert(daos)
-      .values({
-        id: daoId,
-        name: daoData.name,
-        description: daoData.description || '',
-        creatorId: founderWallet,
-        founderId: founderWallet,
-        daoType,
-        access: 'public',
-        memberCount: signers.length,
+          primaryCause: daoData.primaryCause || '',
+          causeTags: daoData.causeTags || [],
 
-        primaryCause: daoData.primaryCause || '',
-        causeTags: daoData.causeTags || [],
+          treasuryBalance: '0',
+          treasuryMultisigEnabled: true,
+          treasuryRequiredSignatures: requiredSignatures,
+          treasurySigners: signers,
+          treasuryWithdrawalThreshold: String(treasuryConfig.dailyLimit),
+          treasuryDailyLimit: treasuryConfig.dailyLimit,
+          treasuryMonthlyBudget: treasuryConfig.monthlyBudget,
 
-        treasuryBalance: '0',
-        treasuryMultisigEnabled: true,
-        treasuryRequiredSignatures: requiredSignatures,
-        treasurySigners: signers,
-        treasuryWithdrawalThreshold: String(treasuryConfig.dailyLimit),
-        treasuryDailyLimit: treasuryConfig.dailyLimit,
-        treasuryMonthlyBudget: treasuryConfig.monthlyBudget,
+          withdrawalMode: treasuryConfig.withdrawalMode,
+          durationModel,
+          rotationFrequency: daoData.rotationFrequency,
+          nextRotationDate,
+          minElders: 2,
+          maxElders: 5,
 
-        withdrawalMode: treasuryConfig.withdrawalMode,
-        durationModel,
-        rotationFrequency: daoData.rotationFrequency,
-        nextRotationDate,
-        minElders: 2,
-        maxElders: 10,
+          // Governance defaults — deferred to Settings post-creation
+          quorumPercentage: 50,
+          votingPeriod: 48,
+          executionDelay: 24,
 
-        // Governance defaults — deferred to Settings post-creation
-        quorumPercentage: 50,
-        votingPeriod: 48,
-        executionDelay: 24,
+          plan: daoType,
+          metadata: {
+            features: DAO_TYPE_CONFIG[daoType]?.features || {},
+            durationDays: daoData.durationDays || null,
+            createdFromTemplate: daoType,
+            treasuryType,
+            customTokenAddress: daoData.customTokenAddress || null,
+          },
+          status: 'active',
+          createdAt: new Date(),
+          updatedAt: new Date(),
+        } as any)
+        .returning();
 
-        plan: daoType,
-        metadata: {
-          features: DAO_TYPE_CONFIG[daoType]?.features || {},
-          durationDays: daoData.durationDays || null,
-          createdFromTemplate: daoType,
-          treasuryType,
-          customTokenAddress: daoData.customTokenAddress || null,
-        },
-        status: 'active',
-        createdAt: new Date(),
-        updatedAt: new Date(),
-      } as any)
-      .returning();
+      dao = resDao[0];
+      logger.info(`DAO DB record created: ${dao.id}`);
+    } catch (err: any) {
+      // Postgres unique violation
+      const msg = String(err?.message || err || '');
+      if (err?.code === '23505' || msg.includes('daos_name_unique_idx') || /unique/i.test(msg)) {
+        logger.warn('DAO insertion failed due to unique constraint', formatErrorMeta(err));
+        return res.status(409).json({ error: 'DAO name already exists' });
+      }
 
-    logger.info(`DAO DB record created: ${dao.id}`);
+      logger.error('Failed creating DAO record', formatErrorMeta(err));
+      return res.status(500).json({ error: 'Failed to create DAO' });
+    }
+
+    let treasuryAddress: string | null = null;
 
     // Wire referral service: if a referrer was supplied, register it
     const referrerId = (req.body as any).referrerId || (daoData as any).referrerId;
@@ -389,13 +449,9 @@ export async function daoDeployHandler(req: Request, res: Response) {
         await registerEscrowReferral(referrerId, founderWallet, dao.id);
         logger.info(`Referral registered: ${referrerId} -> ${founderWallet}`);
       } catch (err) {
-        logger.warn('Referral registration failed', err);
+        logger.warn('Referral registration failed', formatErrorMeta(err));
       }
     }
-
-    // ── 5. Deploy ChamaTreasury on-chain ────────────────────────────────────
-
-    let treasuryAddress: string | null = null;
 
     // If client provided a pre-deployed contract address, use it directly
     const clientContractAddress = req.body?.multisig?.contractAddress;
@@ -509,7 +565,7 @@ export async function daoDeployHandler(req: Request, res: Response) {
             logger.info(`Granted role ${role} to ${subject} on vault ${multiAssetVaultAddress} tx=${receipt.transactionHash}`);
             return receipt.transactionHash as string;
           } catch (err) {
-            logger.warn(`Could not grant role ${role} to ${subject} on ${multiAssetVaultAddress}`, err);
+            logger.warn(`Could not grant role ${role} to ${subject} on ${multiAssetVaultAddress}`, formatErrorMeta(err));
             return null;
           }
         }
@@ -520,7 +576,7 @@ export async function daoDeployHandler(req: Request, res: Response) {
           try {
             await db.update(vaults).set({ managerRoleGrantTx: managerTx, updatedAt: new Date() } as any).where(eq(vaults.id, vault.id));
           } catch (err) {
-            logger.warn('Failed to persist manager role grant tx in DB', err);
+            logger.warn('Failed to persist manager role grant tx in DB', formatErrorMeta(err));
           }
         }
 
@@ -529,11 +585,11 @@ export async function daoDeployHandler(req: Request, res: Response) {
           try {
             await db.update(vaults).set({ rebalancerRoleGrantTx: rebalancerTx, updatedAt: new Date() } as any).where(eq(vaults.id, vault.id));
           } catch (err) {
-            logger.warn('Failed to persist rebalancer role grant tx in DB', err);
+            logger.warn('Failed to persist rebalancer role grant tx in DB', formatErrorMeta(err));
           }
         }
       } catch (err) {
-        logger.warn('Role grant flow skipped or failed', err);
+        logger.warn('Role grant flow skipped or failed', formatErrorMeta(err));
       }
     }
 
@@ -585,12 +641,13 @@ export async function daoDeployHandler(req: Request, res: Response) {
       } as any)
       .returning();
 
-    // Signer records
-    for (let i = 0; i < signers.length; i++) {
+    // Signer records — use previously resolved signers (we required all to resolve before creating DAO)
+    for (let i = 0; i < resolvedSigners.length; i++) {
+      const entry = resolvedSigners[i];
       await db.insert(multisigSigners).values({
         multisigWalletId: multisig.id,
-        signerAddress: signers[i],
-        userId: signers[i],
+        signerAddress: entry.original,
+        userId: entry.user ? entry.user.id : null,
         signerIndex: i,
         role: i === 0 ? 'lead_signer' : 'signer',
         isActive: true,
@@ -677,7 +734,10 @@ export async function daoDeployHandler(req: Request, res: Response) {
         const receipt = await tx.wait();
         logger.info(`pullRewardsFrom executed tx: ${receipt.transactionHash}`);
       } catch (err) {
-        logger.warn('Could not pull rewards automatically; ensure multisig approved or call pullRewardsFrom manually', err);
+        logger.warn(
+          'Could not pull rewards automatically; ensure multisig approved or call pullRewardsFrom manually',
+          formatErrorMeta(err)
+        );
       }
     }
 

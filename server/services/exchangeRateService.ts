@@ -7,6 +7,7 @@
 
 import { ethers } from 'ethers';
 import { logger as rootLogger } from '../utils/logger';
+import { resolveProviderUrls } from './providerBootstrap';
 
 const logger = rootLogger;
 
@@ -80,7 +81,8 @@ export class ExchangeRateService {
    */
   private static async fetchMentoOracleRate(): Promise<number | null> {
     try {
-      const rpcUrl = process.env.CELO_RPC_URL || process.env.RPC_URL;
+      const providerUrls = resolveProviderUrls();
+      const rpcUrl = providerUrls.rpcUrl;
       if (!rpcUrl) {
         logger.warn('[ExchangeRate] CELO_RPC_URL not configured — skipping Mento oracle');
         return null;

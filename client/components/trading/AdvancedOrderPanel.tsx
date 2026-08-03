@@ -8,7 +8,7 @@
 
 import React, { useState, useEffect } from 'react';
 import { usePlaceOrder, useMarketOrder, useLimitOrder, useValidateOrder } from '@/client/hooks/usePlaceOrder';
-import { useSmartRouting, useFeeComparison, useSavingsBySmartRouting } from '@/client/hooks/useSmartRouter';
+import { useSmartRouting, useFeeComparison, useSavingsBySmartRouting } from '@/client/src/hooks/useSmartRouter';
 import { useExchanges } from '@/client/hooks/useExchangeManagement';
 
 type OrderType = 'market' | 'limit' | 'stop-loss' | 'take-profit';

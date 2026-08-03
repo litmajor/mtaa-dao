@@ -10,8 +10,9 @@ import { authClient } from '@/utils/authClient';
  * - WebSocket: ws://localhost:5000 (for real-time updates)
  */
 
-const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000';
-const WS_URL = import.meta.env.VITE_WS_URL || 'ws://localhost:5000';
+const FALLBACK_BASE_URL = typeof window !== 'undefined' ? window.location.origin : '';
+const API_BASE_URL = import.meta.env.VITE_API_URL ?? FALLBACK_BASE_URL;
+const WS_URL = import.meta.env.VITE_WS_URL ?? (FALLBACK_BASE_URL ? FALLBACK_BASE_URL.replace(/^http/, 'ws') : '');
 
 export const API_CONFIG = {
   BASE_URL: API_BASE_URL,

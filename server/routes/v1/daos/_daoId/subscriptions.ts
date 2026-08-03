@@ -20,7 +20,8 @@
  * ═══════════════════════════════════════════════════════════════════════════════
  */
 
-import express, { Request, Response, Router } from 'express';
+import express from 'express';
+import type { Request, Response, Router } from 'express';
 import { db } from '../../../../storage';
 import { logger } from '../../../../utils/logger';
 import { daos, billingHistory, daoMemberships, proposals, vaults } from '../../../../../shared/schema';
@@ -32,11 +33,15 @@ interface SubscriptionsParams {
 
 type SubscriptionsRequest = Request<SubscriptionsParams>;
 
+interface RequestWithUser extends SubscriptionsRequest {
+  user?: { id?: string; claims?: { sub?: string } };
+}
+
 const router: Router = express.Router({ mergeParams: true });
 
 // Helper to get userId with proper type narrowing
-function getUserId(req: any): string | null {
-  return (req.user as any)?.id || (req.user as any)?.claims?.sub || null;
+function getUserId(req: RequestWithUser): string | null {
+  return req.user?.id || req.user?.claims?.sub || null;
 }
 
 // ════════════════════════════════════════════════════════════════════════════════
@@ -264,10 +269,17 @@ router.get('/usage', async (req: SubscriptionsRequest, res: Response) => {
       .where(eq(proposals.daoId, daoId))
       .then(rows => rows.length);
 
+    // Get vault count
+    const vaultCount = await db.select()
+      .from(vaults)
+      .where(eq(vaults.daoId, daoId))
+      .then(rows => rows.length);
+
     const usage = {
       daoId,
       currentMembers: memberCount,
       currentProposals: proposalCount,
+      currentVaults: vaultCount,
       storageUsed: '45MB',
       apiCalls: 150,
       bandwidthUsed: '2.3GB',

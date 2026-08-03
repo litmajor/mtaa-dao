@@ -15,14 +15,13 @@ import {
   createSessionNotification,
   markNotificationAsRead,
   getUserNotifications,
-  createPinResetRequest,
-  verifyPinResetCode,
-  completePinReset,
   enableBiometricUnlock,
   getBiometricSettings,
   disableBiometricUnlock,
   getSessionActivityLog,
 } from '../services/enhanced-session-service';
+import { requestPINReset, resetPIN } from '../services/pin-service';
+import { otpService } from '../services/otpService';
 import { logger } from '../utils/logger';
 
 const router = Router();
@@ -226,13 +225,15 @@ router.post(
   validateRequest(
     z.object({
       walletId: z.string().uuid(),
-      resetMethod: z.enum(['email', 'sms']),
+      resetMethod: z.enum(['email', 'sms']).optional(),
+      email: z.string().email().optional(),
+      phone: z.string().optional(),
     })
   ),
   async (req: Request, res: Response, next: NextFunction) => {
     try {
       const userId = (req as any).user?.id;
-      const { walletId, resetMethod } = req.body;
+      const { walletId, resetMethod, email, phone } = req.body;
 
       if (!userId) {
         return res.status(401).json({
@@ -241,26 +242,30 @@ router.post(
         });
       }
 
-      const { resetToken, verificationCode } = await createPinResetRequest(
-        userId,
-        walletId,
-        resetMethod
-      );
+      const targetEmail = resetMethod === 'email' ? email : undefined;
+      const targetPhone = resetMethod === 'sms' ? phone : undefined;
 
-      // TODO: Send verification code via email or SMS
-      // This should be handled by a separate email/SMS service
+      if (!targetEmail && !targetPhone) {
+        return res.status(400).json({
+          success: false,
+          error: 'An email or phone number is required for PIN reset',
+        });
+      }
+
+      const result = await requestPINReset(walletId, userId, targetPhone, targetEmail);
+
       logger.info(`PIN reset requested for user ${userId}`, {
-        resetMethod,
-        resetToken: resetToken.slice(0, 8),
+        walletId,
+        resetMethod: resetMethod || (targetEmail ? 'email' : 'sms'),
       });
 
       res.json({
-        success: true,
+        success: result.success,
         data: {
-          resetToken,
-          message: `Verification code sent to your ${resetMethod}`,
-          expiresIn: '15 minutes',
+          message: result.message || 'Verification code sent',
+          expiresIn: '5 minutes',
         },
+        error: result.error,
       });
     } catch (error) {
       next(error);
@@ -276,20 +281,31 @@ router.post(
   '/pin-reset/verify',
   validateRequest(
     z.object({
-      resetToken: z.string(),
-      verificationCode: z.string().length(6),
+      walletId: z.string().uuid(),
+      verificationCode: z.string().min(4),
+      email: z.string().email().optional(),
+      phone: z.string().optional(),
     })
   ),
   async (req: Request, res: Response, next: NextFunction) => {
     try {
-      const { resetToken, verificationCode } = req.body;
+      const { walletId, verificationCode, email, phone } = req.body;
+      const contact = email || phone;
 
-      const isValid = await verifyPinResetCode(resetToken, verificationCode);
-
-      if (!isValid) {
+      if (!contact) {
         return res.status(400).json({
           success: false,
-          error: 'Invalid or expired verification code',
+          error: 'An email or phone number is required',
+        });
+      }
+
+      const identifier = email ? `email:${walletId}:${email}` : `phone:${walletId}:${phone}`;
+      const verification = await otpService.verifyOTP(identifier, verificationCode);
+
+      if (!verification.valid) {
+        return res.status(400).json({
+          success: false,
+          error: verification.error || 'Invalid or expired verification code',
         });
       }
 
@@ -311,28 +327,39 @@ router.post(
   '/pin-reset/complete',
   validateRequest(
     z.object({
-      resetToken: z.string(),
+      walletId: z.string().uuid(),
+      verificationCode: z.string().min(4),
       newPin: z.string().length(4).regex(/^\d+$/),
+      email: z.string().email().optional(),
+      phone: z.string().optional(),
     })
   ),
   async (req: Request, res: Response, next: NextFunction) => {
     try {
-      const { resetToken, newPin } = req.body;
-      const crypto = await import('crypto');
-      const pbkdf2 = crypto.default.pbkdf2Sync;
+      const userId = (req as any).user?.id;
+      const { walletId, verificationCode, newPin, email, phone } = req.body;
+      const contact = email || phone;
 
-      // Hash new PIN
-      const salt = crypto.default.randomBytes(32).toString('hex');
-      const newPinHash = pbkdf2(newPin, salt, 100000, 64, 'sha512').toString(
-        'hex'
-      );
+      if (!userId) {
+        return res.status(401).json({
+          success: false,
+          error: 'User not authenticated',
+        });
+      }
 
-      await completePinReset(resetToken, newPinHash);
+      if (!contact) {
+        return res.status(400).json({
+          success: false,
+          error: 'An email or phone number is required',
+        });
+      }
+
+      const result = await resetPIN(walletId, userId, contact, verificationCode, newPin);
 
       res.json({
-        success: true,
-        message:
-          'PIN reset completed successfully. Please log in with your new PIN.',
+        success: result.success,
+        message: result.message || 'PIN reset completed successfully',
+        error: result.error,
       });
     } catch (error) {
       next(error);

@@ -36,7 +36,7 @@
  *     the runtime symbolUniverseService can consume this knowledge graph.
  */
 
-import { dexscreenerClient } from '../services/dexscreener_client';
+import { dexscreenerClient } from '../services/dexscreenerClient';
 import { ccxtService } from '../services/ccxtService';
 import { SYMBOL_UNIVERSE_CONFIG } from '../config/symbolUniverseConfig';
 import { logger } from '../utils/logger';

@@ -358,11 +358,13 @@ export function registerExpressRoutes(app: Express) {
 
   function hasProtectionMiddleware(stack: any[]): boolean {
     if (!stack) return false;
-    const middlewareNames = stack.map((s: any) => s.name || '');
-    return (
-      middlewareNames.some(name => name.includes('authentic') || name.includes('token')) ||
-      middlewareNames.some(name => name.includes('privilege') || name.includes('auth'))
-    );
+
+    const middlewareNames = stack
+      .map((s: any) => String(s?.name || ''))
+      .join(' ')
+      .toLowerCase();
+
+    return /(authenticate|authorization|authorize|requirerole|requiredaorole|requiredaorole|auth|token|session|jwt|privilege)/.test(middlewareNames);
   }
 
   function extractOwner(path: string): string {

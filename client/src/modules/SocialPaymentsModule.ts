@@ -18,11 +18,11 @@ export async function splitBill({ title, participants, currency, totalAmount, me
 }
 
 export async function generatePaymentLink({ amount, currency, description, expiresAt, metadata }: { amount: number | string; currency?: string; description?: string; expiresAt?: string; metadata?: any }) {
-  return apiPost('/api/v1/wallets/payments/link/create', { amount, currency, description, expiresAt, metadata });
+  return apiPost('/api/v1/wallets/payment-links', { amount, currency, description, expiresAt, metadata });
 }
 
 export async function redeemPaymentLink({ linkId, recipientAddress }: { linkId: string; recipientAddress?: string }) {
-  return apiPost('/api/v1/wallets/payments/link/redeem', { linkId, recipientAddress });
+  return apiPost(`/api/v1/wallets/payment-links/${linkId}/mark-paid`, { status: 'paid', transactionHash: recipientAddress || undefined });
 }
 
 export default { requestPayment, payByPhone, sendPeer, splitBill, generatePaymentLink, redeemPaymentLink };

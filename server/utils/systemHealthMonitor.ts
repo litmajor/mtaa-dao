@@ -9,8 +9,10 @@
  * - System saturation signals
  */
 
+import os from 'node:os';
 import { logger } from './logger';
 import { JobExecutionRegistry } from './jobExecutionGuard';
+import { getHeapUsageSummary } from './memoryUsage';
 
 interface SystemHealthMetrics {
   timestamp: number;
@@ -41,11 +43,14 @@ interface SystemHealthMetrics {
 export class SystemHealthMonitor {
   private static lastCpuCheck = process.cpuUsage();
   private static lastCheckTime = Date.now();
-  private static eventLoopLagDetected = false;
   private static metricsHistory: SystemHealthMetrics[] = [];
   private static readonly MAX_HISTORY = 60; // Keep 60 data points
   private static monitoringInterval: NodeJS.Timeout | null = null;
-  private static lastEventLoopCheck = Date.now();
+  private static eventLoopLagMs = 0;
+  private static eventLoopStalled = false;
+  private static consecutiveSaturatedSamples = 0;
+  private static readonly EVENT_LOOP_LAG_THRESHOLD_MS = 50;
+  private static readonly SATURATION_HYSTERESIS_SAMPLES = 2;
 
   /**
    * Start continuous monitoring
@@ -69,7 +74,9 @@ export class SystemHealthMonitor {
 
         this.analyzeAndLogMetrics(metrics);
       } catch (error) {
-        logger.warn('[MONITOR] Error capturing metrics:', error instanceof Error ? error.message : String(error));
+        logger.warn('[MONITOR] Error capturing metrics', {
+          error: error instanceof Error ? error.message : String(error),
+        });
       }
     }, intervalMs);
   }
@@ -88,45 +95,60 @@ export class SystemHealthMonitor {
   /**
    * Capture current system metrics
    */
-  static captureMetrics(): SystemHealthMetrics {
+  static captureMetrics(useIntervalBaseline: boolean = true): SystemHealthMetrics {
     const now = Date.now();
 
     // Heap metrics
     const heapStats = process.memoryUsage();
-    const heapUsedMB = Math.round(heapStats.heapUsed / 1024 / 1024);
-    const heapTotalMB = Math.round(heapStats.heapTotal / 1024 / 1024);
-    const heapMaxMB = Math.round(heapStats.external / 1024 / 1024 + heapStats.arrayBuffers / 1024 / 1024);
-    const heapUsagePercent = Math.round((heapStats.heapUsed / heapStats.heapTotal) * 100);
+    const heapSummary = getHeapUsageSummary(heapStats);
+    const heapUsedMB = heapSummary.usedMB;
+    const heapTotalMB = heapSummary.allocatedMB;
+    const heapMaxMB = heapSummary.limitMB;
+    const heapUsagePercent = heapSummary.usagePercent;
 
     // CPU metrics
     const cpuNow = process.cpuUsage(this.lastCpuCheck);
-    this.lastCpuCheck = process.cpuUsage();
-    const timeDiff = now - this.lastCheckTime;
-    this.lastCheckTime = now;
+    const timeDiff = Math.max(1, now - this.lastCheckTime);
+    const cpuTimeMs = (cpuNow.user + cpuNow.system) / 1000;
+    const cores = Math.max(1, os.cpus().length);
+    const normalizedCpuPercent = Math.min(100, Math.round((cpuTimeMs / Math.max(1, timeDiff)) * 100 / cores));
+    const userCpuPercent = Math.min(100, Math.round((cpuNow.user / 1000 / Math.max(1, timeDiff)) * 100 / cores));
+    const systemCpuPercent = Math.min(100, Math.round((cpuNow.system / 1000 / Math.max(1, timeDiff)) * 100 / cores));
 
-    const userCpuPercent = Math.round((cpuNow.user / (timeDiff * 1000)) * 100);
-    const systemCpuPercent = Math.round((cpuNow.system / (timeDiff * 1000)) * 100);
+    this.lastCpuCheck = process.cpuUsage();
+    this.lastCheckTime = now;
 
     // Event loop lag detection
     const eventLoopCheckStart = Date.now();
     setImmediate(() => {
       const lag = Date.now() - eventLoopCheckStart;
-      if (lag > 50) {
-        this.eventLoopLagDetected = true;
-      }
+      this.eventLoopLagMs = Math.max(0, lag);
+      this.eventLoopStalled = lag > this.EVENT_LOOP_LAG_THRESHOLD_MS;
     });
+    const eventLoopLagMs = this.eventLoopLagMs;
+    const eventLoopStalled = this.eventLoopStalled;
 
     // Job queue depth
-    const jobStats = JobExecutionRegistry.getAllStats();
-    const runningJobs = Object.values(jobStats).filter((j) => j.isRunning).length;
-    const totalJobs = Object.keys(jobStats).length;
+    let jobStats: Record<string, { isRunning?: boolean; name?: string }> = {};
+    let skippedRecently = 0;
+    let runningJobs = 0;
+    let totalJobs = 0;
 
-    // Count recently skipped jobs (last 5 minutes)
-    const fiveMinutesAgo = now - 5 * 60 * 1000;
-    const skippedRecently = Object.values(jobStats).reduce((sum, job) => {
-      const recentMetrics = JobExecutionRegistry.getMetrics(job.name).filter((m) => m.timestamp > fiveMinutesAgo);
-      return sum + recentMetrics.filter((m) => m.skipped).length;
-    }, 0);
+    try {
+      jobStats = JobExecutionRegistry.getAllStats();
+      runningJobs = Object.values(jobStats).filter((j) => j.isRunning).length;
+      totalJobs = Object.keys(jobStats).length;
+
+      const fiveMinutesAgo = now - 5 * 60 * 1000;
+      skippedRecently = Object.values(jobStats).reduce((sum, job) => {
+        const recentMetrics = JobExecutionRegistry.getMetrics(job.name ?? '').filter((m) => m.timestamp > fiveMinutesAgo);
+        return sum + recentMetrics.filter((m) => m.skipped).length;
+      }, 0);
+    } catch (error) {
+      logger.warn('[MONITOR] Failed to collect job registry metrics', {
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
 
     return {
       timestamp: now,
@@ -141,8 +163,8 @@ export class SystemHealthMonitor {
         system: systemCpuPercent,
       },
       eventLoop: {
-        lagMs: eventLoopCheckStart ? Date.now() - eventLoopCheckStart : 0,
-        isStalled: this.eventLoopLagDetected,
+        lagMs: eventLoopLagMs,
+        isStalled: eventLoopStalled,
       },
       jobs: {
         totalJobs,
@@ -160,7 +182,7 @@ export class SystemHealthMonitor {
 
     // Heap pressure
     if (metrics.heap.usagePercent > 85) {
-      alerts.push(`🔴 CRITICAL HEAP: ${metrics.heap.usedMB}MB/${metrics.heap.totalMB}MB (${metrics.heap.usagePercent}%)`);
+      alerts.push(`🔴 CRITICAL HEAP: ${metrics.heap.usedMB}MB/${metrics.heap.maxMB}MB (${metrics.heap.usagePercent}%)`);
     } else if (metrics.heap.usagePercent > 70) {
       alerts.push(`🟡 HIGH HEAP: ${metrics.heap.usedMB}MB/${metrics.heap.totalMB}MB (${metrics.heap.usagePercent}%)`);
     }
@@ -199,10 +221,10 @@ export class SystemHealthMonitor {
       // Provide diagnosis
       const diagnosis = JobExecutionRegistry.getDiagnostics();
       if (diagnosis.slowJobs.length > 0) {
-        logger.warn('[MONITOR] SLOW JOBS:', diagnosis.slowJobs);
+        logger.warn('[MONITOR] SLOW JOBS', { slowJobs: diagnosis.slowJobs });
       }
       if (diagnosis.frequentSkips.length > 0) {
-        logger.warn('[MONITOR] FREQUENT SKIPS (overload signal):', diagnosis.frequentSkips);
+        logger.warn('[MONITOR] FREQUENT SKIPS (overload signal)', { frequentSkips: diagnosis.frequentSkips });
       }
     }
   }
@@ -211,7 +233,7 @@ export class SystemHealthMonitor {
    * Get current metrics
    */
   static getMetrics(): SystemHealthMetrics {
-    return this.captureMetrics();
+    return this.captureMetrics(true);
   }
 
   /**
@@ -230,39 +252,48 @@ export class SystemHealthMonitor {
     }
 
     const recent = this.metricsHistory.slice(-5); // Last 5 samples
-    let score = 100;
+    const weights = [0.1, 0.15, 0.2, 0.25, 0.3];
+    let weightedPenalty = 0;
 
-    recent.forEach((m) => {
-      // Heap pressure reduces score
-      if (m.heap.usagePercent > 85) score -= 30;
-      else if (m.heap.usagePercent > 70) score -= 15;
+    recent.forEach((m, index) => {
+      const weight = weights[index] ?? 0.3;
+      let penalty = 0;
 
-      // CPU pressure
+      if (m.heap.usagePercent > 85) penalty += 30;
+      else if (m.heap.usagePercent > 70) penalty += 15;
+
       const cpu = m.cpu.user + m.cpu.system;
-      if (cpu > 80) score -= 25;
-      else if (cpu > 60) score -= 10;
+      if (cpu > 80) penalty += 25;
+      else if (cpu > 60) penalty += 10;
 
-      // Event loop lag
-      if (m.eventLoop.lagMs > 100) score -= 15;
+      if (m.eventLoop.lagMs > 100) penalty += 15;
+      if (m.jobs.runningJobs > 5) penalty += 10;
 
-      // Job saturation
-      if (m.jobs.runningJobs > 5) score -= 10;
+      weightedPenalty += penalty * weight;
     });
 
-    return Math.max(0, score);
+    return Math.max(0, Math.round(100 - weightedPenalty));
   }
 
   /**
    * Check if system is saturated (needs throttling)
    */
   static isSaturated(): boolean {
-    const metrics = this.captureMetrics();
-    return (
-      metrics.heap.usagePercent > 75 || // High heap
-      metrics.cpu.user + metrics.cpu.system > 70 || // High CPU
-      metrics.jobs.runningJobs > 3 || // Multiple jobs running
-      metrics.jobs.skippedRecently > 5 // Jobs being skipped
-    );
+    const metrics = this.captureMetrics(true);
+    const isNowSaturated =
+      metrics.heap.usagePercent > 75 ||
+      metrics.cpu.user + metrics.cpu.system > 70 ||
+      metrics.eventLoop.isStalled ||
+      metrics.jobs.runningJobs > 3 ||
+      metrics.jobs.skippedRecently > 5;
+
+    if (isNowSaturated) {
+      this.consecutiveSaturatedSamples += 1;
+    } else {
+      this.consecutiveSaturatedSamples = 0;
+    }
+
+    return this.consecutiveSaturatedSamples >= this.SATURATION_HYSTERESIS_SAMPLES;
   }
 }
 

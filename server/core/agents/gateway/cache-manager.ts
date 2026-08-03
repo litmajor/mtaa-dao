@@ -3,7 +3,8 @@
  * Redis-backed cache with TTL strategies, invalidation, and statistics
  */
 
-import { createClient, RedisClientType } from "redis";
+import type { RedisClientType } from 'redis';
+import { getRedisInstanceAsync } from '../../../config/redisConnectionManager';
 import { NormalizedData, CacheEntry, CacheConfig } from "./types";
 
 export interface CacheStats {
@@ -77,23 +78,20 @@ export class CacheManager {
     }
 
     try {
-      this.client = createClient({
-        url: this.config.redisUrl,
-      });
+      // Use the centralized Redis singleton to avoid multiple clients per process
+      this.client = await getRedisInstanceAsync();
 
-      this.client.on("error", () => {
-        // Silently handle Redis errors
-      });
-
-      await this.client.connect();
-      console.log("Cache Manager connected to Redis");
-
-      // Set memory limit
-      await this.client.configSet(
-        "maxmemory",
-        (this.config.maxMemoryMb! * 1024 * 1024).toString()
-      );
-      await this.client.configSet("maxmemory-policy", "allkeys-lru");
+      // Apply cache-specific maxmemory and policy settings where appropriate
+      try {
+        await this.client.configSet(
+          'maxmemory',
+          (this.config.maxMemoryMb! * 1024 * 1024).toString()
+        );
+        await this.client.configSet('maxmemory-policy', 'allkeys-lru');
+      } catch (cfgErr) {
+        // Non-fatal if configSet fails (permissions, mock servers, etc.)
+        console.warn('Cache Manager: could not apply redis config settings', String(cfgErr));
+      }
     } catch (error) {
       this.client = null;
     }

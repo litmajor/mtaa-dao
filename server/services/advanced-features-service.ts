@@ -23,8 +23,14 @@ import {
   liquidationRisks,
   assetCorrelations,
 } from "@shared/advancedFeaturesTables";
+import type { InferInsertModel } from "drizzle-orm";
 import { eq, and, desc, gte, lte, avg, sum, sql } from "drizzle-orm";
 import { v4 as uuidv4 } from "uuid";
+
+function toDecimalInput(value: number | string | null | undefined): string {
+  if (value == null) return "0";
+  return typeof value === "string" ? value : value.toFixed(2);
+}
 
 // ==================== MEV PROTECTION ====================
 
@@ -133,19 +139,29 @@ export async function createLPPosition(
   priceRangeLow?: string,
   priceRangeHigh?: string
 ): Promise<typeof liquidityProviderPositions.$inferSelect> {
+  const pool = await db
+    .select({ id: liquidityPools.id })
+    .from(liquidityPools)
+    .where(eq(liquidityPools.id, poolId))
+    .limit(1);
+
+  if (pool.length === 0) {
+    throw new Error("Liquidity pool not found");
+  }
+
   const position = await db
     .insert(liquidityProviderPositions)
     .values([
       {
         walletConnectionId,
         poolId,
-        token0Amount: token0Amount as any,
-        token1Amount: token1Amount as any,
-        token0AmountUsd: token0AmountUsd as any,
-        token1AmountUsd: token1AmountUsd as any,
+        token0Amount,
+        token1Amount,
+        token0AmountUsd: toDecimalInput(token0AmountUsd),
+        token1AmountUsd: toDecimalInput(token1AmountUsd),
         priceRangeLow,
         priceRangeHigh,
-        status: "active" as any,
+        status: "active",
       },
     ])
     .returning();
@@ -168,10 +184,10 @@ export async function claimLPFees(
     .values([
       {
         positionId,
-        feesAmount: feesAmount as any,
-        feesAmountUsd: feesAmountUsd as any,
-        token0Fees: token0Fees as any,
-        token1Fees: token1Fees as any,
+        feesAmount,
+        feesAmountUsd: toDecimalInput(feesAmountUsd),
+        token0Fees: token0Fees ?? null,
+        token1Fees: token1Fees ?? null,
       },
     ])
     .returning();
@@ -181,7 +197,7 @@ export async function claimLPFees(
     .update(liquidityProviderPositions)
     .set({
       feesAccumulated: feesAmount,
-      feesAccumulatedUsd: feesAmountUsd as any,
+      feesAccumulatedUsd: toDecimalInput(feesAmountUsd),
       updatedAt: new Date(),
     })
     .where(eq(liquidityProviderPositions.id, positionId));
@@ -264,7 +280,7 @@ export async function createStakingPosition(
       walletConnectionId,
       protocolId,
       stakedAmount,
-      stakedAmountUsd: stakedAmountUsd as any,
+      stakedAmountUsd: toDecimalInput(stakedAmountUsd),
       stakingStartAt: new Date(),
       status: "staking",
     })
@@ -282,17 +298,17 @@ export async function claimStakingRewards(
   rewardAmountUsd: string,
   rewardRate: number
 ): Promise<string> {
+  const rewardInsert: InferInsertModel<typeof stakingRewards> = {
+    positionId,
+    rewardAmount,
+    rewardAmountUsd: toDecimalInput(rewardAmountUsd),
+    rewardRate: toDecimalInput(rewardRate),
+    claimedAt: new Date(),
+  };
+
   const reward = await db
     .insert(stakingRewards)
-    .values([
-      {
-        positionId,
-        rewardAmount: rewardAmount as any,
-        rewardAmountUsd: rewardAmountUsd as any,
-        rewardRate: rewardRate.toString() as any,
-        claimedAt: new Date(),
-      },
-    ])
+    .values([rewardInsert])
     .returning();
 
   return reward[0].id;
@@ -390,21 +406,21 @@ export async function addOptionLeg(
   premium: string,
   premiumUsd: string
 ): Promise<string> {
+  const legInsert: InferInsertModel<typeof optionLegPositions> = {
+    strategyId,
+    optionType,
+    positionType,
+    strikePrice: toDecimalInput(Number(strikePrice)),
+    expirationDate,
+    quantity,
+    premium,
+    premiumUsd: toDecimalInput(premiumUsd),
+    status: "open",
+  };
+
   const leg = await db
     .insert(optionLegPositions)
-    .values([
-      {
-        strategyId,
-        optionType,
-        positionType,
-        strikePrice: strikePrice as any,
-        expirationDate,
-        quantity: quantity as any,
-        premium: premium as any,
-        premiumUsd: premiumUsd as any,
-        status: "open" as any,
-      },
-    ])
+    .values([legInsert])
     .returning();
 
   return leg[0].id;
@@ -419,16 +435,16 @@ export async function closeOptionPosition(
   realizedPnl: string,
   pnlPercent: number
 ): Promise<string> {
+  const closureInsert: InferInsertModel<typeof optionClosures> = {
+    positionId,
+    closurePrice: toDecimalInput(Number(closurePrice)),
+    realizedPnl: toDecimalInput(Number(realizedPnl)),
+    pnlPercent: toDecimalInput(pnlPercent),
+  };
+
   const closure = await db
     .insert(optionClosures)
-    .values([
-      {
-        positionId,
-        closurePrice: closurePrice as any,
-        realizedPnl: realizedPnl as any,
-        pnlPercent: pnlPercent as any,
-      },
-    ])
+    .values([closureInsert])
     .returning();
 
   // Update position status
@@ -493,22 +509,22 @@ export async function createPortfolioSnapshot(
 ): Promise<typeof portfolioSnapshots.$inferSelect> {
   const netWorth = parseFloat(totalAssetsUsd) - parseFloat(totalDebtUsd);
 
+  const snapshotInsert: InferInsertModel<typeof portfolioSnapshots> = {
+    walletConnectionId,
+    totalAssetsUsd: toDecimalInput(totalAssetsUsd),
+    totalDebtUsd: toDecimalInput(totalDebtUsd),
+    netWorthUsd: toDecimalInput(netWorth),
+    cashUsd: toDecimalInput(breakdown.cash),
+    stakingUsd: toDecimalInput(breakdown.staking),
+    lpUsd: toDecimalInput(breakdown.lp),
+    yieldFarmingUsd: toDecimalInput(breakdown.yieldFarming),
+    optionsUsd: toDecimalInput(breakdown.options),
+    diversificationScore: toDecimalInput(calculateDiversificationScore(breakdown)),
+  };
+
   const snapshot = await db
     .insert(portfolioSnapshots)
-    .values([
-      {
-        walletConnectionId,
-        totalAssetsUsd: totalAssetsUsd as any,
-        totalDebtUsd: totalDebtUsd as any,
-        netWorthUsd: netWorth as any,
-        cashUsd: breakdown.cash as any,
-        stakingUsd: breakdown.staking as any,
-        lpUsd: breakdown.lp as any,
-        yieldFarmingUsd: breakdown.yieldFarming as any,
-        optionsUsd: breakdown.options as any,
-        diversificationScore: calculateDiversificationScore(breakdown) as any,
-      },
-    ])
+    .values([snapshotInsert])
     .returning();
 
   return snapshot[0];
@@ -544,18 +560,18 @@ export async function calculatePortfolioMetrics(
   // Calculate Sharpe ratio (assuming 2% risk-free rate)
   const sharpeRatio = (avgReturn - 2) / volatility;
 
+  const metricsInsert: InferInsertModel<typeof portfolioMetrics> = {
+    walletConnectionId,
+    totalReturn30d: toDecimalInput(avgReturn),
+    volatility30d: toDecimalInput(volatility),
+    sharpeRatio: toDecimalInput(sharpeRatio),
+    maxDrawdown: toDecimalInput(maxDrawdown),
+    winRate: toDecimalInput((returns.filter((r) => r > 0).length / returns.length) * 100),
+  };
+
   const metrics = await db
     .insert(portfolioMetrics)
-    .values([
-      {
-        walletConnectionId,
-        totalReturn30d: avgReturn as any,
-        volatility30d: volatility as any,
-        sharpeRatio: sharpeRatio as any,
-        maxDrawdown: maxDrawdown as any,
-        winRate: ((returns.filter((r) => r > 0).length / returns.length) * 100) as any,
-      },
-    ])
+    .values([metricsInsert])
     .returning();
 
   return metrics[0];
@@ -628,12 +644,12 @@ export async function calculateValueAtRisk(
         walletConnectionId,
         modelName: `VaR_${confidence}_${new Date().toISOString()}`,
         modelType: "value_at_risk",
-        confidenceLevel: confidence as any,
-        timeHorizon: 1 as any,
-        var1Day: var1Day as any,
-        var7Day: var7Day as any,
-        var30Day: var30Day as any,
-        expectedShortfall: expectedShortfall as any,
+        confidenceLevel: confidence,
+        timeHorizon: 1,
+        var1Day: toDecimalInput(var1Day),
+        var7Day: toDecimalInput(var7Day),
+        var30Day: toDecimalInput(var30Day),
+        expectedShortfall: toDecimalInput(expectedShortfall),
       },
     ])
     .returning();
@@ -661,8 +677,8 @@ export async function createRiskAlert(
         alertType,
         severity,
         riskMetric,
-        currentValue: currentValue as any,
-        threshold: threshold as any,
+        currentValue,
+        threshold,
         recommendation,
       },
     ])
@@ -704,12 +720,12 @@ export async function calculateLiquidationRisk(
     .values({
       walletConnectionId,
       protocolName,
-      totalBorrowedUsd: totalBorrowedUsd as any,
-      totalCollateralUsd: totalCollateralUsd as any,
-      collateralizationRatio: collateralizationRatio as any,
-      liquidationThreshold: liquidationThreshold as any,
-      healthFactor: healthFactor as any,
-      estimatedTimeToLiquidation: Math.max(0, Math.floor(daysToLiquidation * 24 * 60)) as any,
+      totalBorrowedUsd: toDecimalInput(totalBorrowedUsd),
+      totalCollateralUsd: toDecimalInput(totalCollateralUsd),
+      collateralizationRatio: toDecimalInput(collateralizationRatio),
+      liquidationThreshold: toDecimalInput(liquidationThreshold),
+      healthFactor: toDecimalInput(healthFactor),
+      estimatedTimeToLiquidation: Math.max(0, Math.floor(daysToLiquidation * 24 * 60)),
     })
     .returning();
 
@@ -752,17 +768,26 @@ function calculateDiversificationScore(breakdown: Record<string, string>): numbe
   return parseFloat(score.toFixed(2));
 }
 
+async function getAssetCorrelationSummary() {
+  return await db
+    .select()
+    .from(assetCorrelations)
+    .orderBy(desc(assetCorrelations.createdAt))
+    .limit(5);
+}
+
 /**
  * Get comprehensive wallet advanced features status
  */
 export async function getWalletAdvancedStatus(walletConnectionId: string) {
-  const [mevSummary, lpSummary, stakingSummary, optionsSummary, performance, riskSummary] = await Promise.all([
+  const [mevSummary, lpSummary, stakingSummary, optionsSummary, performance, riskSummary, correlations] = await Promise.all([
     getMEVSavingsSummary(walletConnectionId),
     getLPPortfolioSummary(walletConnectionId),
     getStakingSummary(walletConnectionId),
     getOptionsPortfolioSummary(walletConnectionId),
     getPortfolioPerformance(walletConnectionId, 30),
     getRiskSummary(walletConnectionId),
+    getAssetCorrelationSummary(),
   ]);
 
   return {
@@ -772,5 +797,6 @@ export async function getWalletAdvancedStatus(walletConnectionId: string) {
     options: optionsSummary,
     portfolio: performance,
     risk: riskSummary,
+    correlations,
   };
 }

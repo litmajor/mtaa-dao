@@ -19,16 +19,19 @@ export interface EmailPayload {
   template?: TemplateName
   variables?: Record<string, any>
   text?: string
+  html?: string
   from?: string
+  cc?: string | string[]
+  bcc?: string | string[]
 }
 
 class EmailServiceClass {
   private sendGridApiKey = process.env.SENDGRID_API_KEY || ''
-  private smtpHost = process.env.EMAIL_HOST || ''
-  private smtpPort = Number(process.env.EMAIL_PORT || '587')
-  private smtpUser = process.env.EMAIL_USER || ''
-  private smtpPass = process.env.EMAIL_PASS || ''
-  private defaultFrom = process.env.EMAIL_FROM || 'no-reply@mtaadao.org'
+  private smtpHost = process.env.EMAIL_HOST || process.env.SMTP_HOST || ''
+  private smtpPort = Number(process.env.EMAIL_PORT || process.env.SMTP_PORT || '587')
+  private smtpUser = process.env.EMAIL_USER || process.env.SMTP_USER || ''
+  private smtpPass = process.env.EMAIL_PASS || process.env.SMTP_PASS || ''
+  private defaultFrom = process.env.EMAIL_FROM || process.env.SMTP_FROM || process.env.SMTP_FROM_EMAIL || 'no-reply@mtaadao.org'
   private templatesDir = path.join(process.cwd(), 'server', 'services', 'email', 'templates')
 
   constructor() {
@@ -67,11 +70,11 @@ class EmailServiceClass {
     }
   }
 
-  async send(payload: EmailPayload) {
+  async send(payload: EmailPayload): Promise<{ success: boolean; provider?: string; error?: string; messageId?: string }> {
     const from = payload.from || this.defaultFrom
     const subject = payload.subject || this.inferSubject(payload.template)
 
-    let html = payload.text || ''
+    let html = payload.html || payload.text || ''
     let text = payload.text || ''
 
     if (payload.template) {
@@ -89,11 +92,20 @@ class EmailServiceClass {
           subject,
           text,
         }
+        if (payload.cc) msg.cc = payload.cc
+        if (payload.bcc) msg.bcc = payload.bcc
         if (html) msg.html = html
+        const res = await sendgrid.send(msg)
+        // SendGrid may return an array of responses; try to extract a message id if present
+        let messageId: string | undefined
+        try {
+          const first = Array.isArray(res) ? res[0] : res
+          // some SG responses expose a headers object
+          if (first && first.headers && first.headers['x-message-id']) messageId = String(first.headers['x-message-id'])
+        } catch {}
 
-        await sendgrid.send(msg)
         logger.info('EmailService: sent via SendGrid', { to: payload.to, subject })
-        return { success: true, provider: 'sendgrid' }
+        return { success: true, provider: 'sendgrid', messageId }
       } catch (err) {
         logger.error('EmailService: SendGrid send failed', { err })
         // fallthrough to SMTP fallback
@@ -113,16 +125,18 @@ class EmailServiceClass {
           },
         })
 
-        await transporter.sendMail({
+        const info = await transporter.sendMail({
           from,
           to: payload.to,
           subject,
           text,
           html,
+          cc: payload.cc,
+          bcc: payload.bcc,
         })
 
-        logger.info('EmailService: sent via SMTP', { to: payload.to, subject })
-        return { success: true, provider: 'smtp' }
+        logger.info('EmailService: sent via SMTP', { to: payload.to, subject, messageId: info.messageId })
+        return { success: true, provider: 'smtp', messageId: info.messageId }
       } catch (err) {
         logger.error('EmailService: SMTP send failed', { err })
         return { success: false, error: String(err) }

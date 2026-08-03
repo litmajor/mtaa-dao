@@ -16,7 +16,7 @@
  * - Reports trends (5min, 1hr, 24hr)
  */
 
-import axios, { AxiosError } from 'axios';
+import axios from 'axios';
 import { Logger } from '../utils/logger';
 
 const logger = Logger.getLogger();
@@ -25,24 +25,42 @@ const logger = Logger.getLogger();
 // Type Definitions
 // ════════════════════════════════════════════════════════════════════════════════
 
-interface DomainSnapshot {
+interface DomainMetrics {
   timestamp: Date;
   domain: string;
   endpointCount: number;
   callCount: number;
-  avgLatency: number;
-  p99Latency: number;
+  errorCount: number;
   errorRate: number;
-  isHealthy: boolean;
-  trend: 'stable' | 'improving' | 'degrading';
+  avgLatency: number;
+  medianLatency: number;
+  p95Latency: number;
+  p99Latency: number;
+  maxLatency: number;
+}
+
+type DomainHealthState = 'healthy' | 'warning' | 'critical' | 'recovering';
+
+type DomainTrend = 'stable' | 'degrading' | 'critical' | 'recovering' | 'healthy';
+
+interface DomainAssessment {
+  healthState: DomainHealthState;
+  healthScore: number;
+  trend: DomainTrend;
+  confidence: number;
+}
+
+interface DomainSnapshot {
+  metrics: DomainMetrics;
+  assessment: DomainAssessment;
 }
 
 interface DomainAlert {
   severity: 'warning' | 'critical';
   domain: string;
-  type: 'error_spike' | 'latency_spike' | 'recovery';
+  type: 'error_spike' | 'latency_spike' | 'degradation' | 'recovery';
   message: string;
-  metrics: Record<string, any>;
+  metrics: Record<string, unknown>;
   timestamp: Date;
 }
 
@@ -55,6 +73,14 @@ interface DomainThresholds {
   p99LatencyCritical: number;
 }
 
+interface DomainHistory {
+  buffer: DomainSnapshot[];
+  nextIndex: number;
+  size: number;
+}
+
+type DomainAlertState = 'healthy' | 'warning' | 'critical';
+
 // ════════════════════════════════════════════════════════════════════════════════
 // Domain Aggregator Agent
 // ════════════════════════════════════════════════════════════════════════════════
@@ -62,14 +88,20 @@ interface DomainThresholds {
 export class DomainAggregatorAgent {
   private baseUrl: string;
   private pollInterval: number = 300_000; // 5 minutes default
-  private isRunning = false;
+  private _isRunning = false;
   private pollTimer?: NodeJS.Timeout;
+  private isPolling = false;
+
+  public get isRunning(): boolean {
+    return this._isRunning;
+  }
 
   // Historical tracking per domain
-  private domainSnapshots: Map<string, DomainSnapshot[]> = new Map();
+  private domainSnapshots: Map<string, DomainHistory> = new Map();
   private readonly MAX_SNAPSHOTS_PER_DOMAIN = 288; // 24 hours at 5-minute intervals
   private alertHistory: DomainAlert[] = [];
   private readonly MAX_ALERTS = 500;
+  private domainAlertState: Map<string, DomainAlertState> = new Map();
 
   // Thresholds & Configuration
   private thresholds: DomainThresholds = {
@@ -112,7 +144,7 @@ export class DomainAggregatorAgent {
   // ════════════════════════════════════════════════════════════════════════════════
 
   public start(): void {
-    if (this.isRunning) {
+    if (this._isRunning) {
       logger.warn('[DOMAIN_AGGREGATOR] Agent already running');
       return;
     }
@@ -123,7 +155,7 @@ export class DomainAggregatorAgent {
       thresholds: this.thresholds,
     });
 
-    this.isRunning = true;
+    this._isRunning = true;
     this.pollOnce();
     this.pollTimer = setInterval(() => this.pollOnce(), this.pollInterval);
   }
@@ -131,7 +163,7 @@ export class DomainAggregatorAgent {
   public stop(): void {
     if (!this.isRunning) return;
     if (this.pollTimer) clearInterval(this.pollTimer as any);
-    this.isRunning = false;
+    this._isRunning = false;
     logger.info('[DOMAIN_AGGREGATOR] Domain aggregator agent stopped');
   }
 
@@ -149,8 +181,16 @@ export class DomainAggregatorAgent {
    * Get domain health history
    */
   public getDomainHistory(domain: string, limit?: number): DomainSnapshot[] {
-    const snapshots = this.domainSnapshots.get(domain) || [];
-    if (!limit) return [...snapshots];
+    const history = this.domainSnapshots.get(domain);
+    if (!history || history.size === 0) return [];
+
+    const snapshots: DomainSnapshot[] = [];
+    const start = history.size === this.MAX_SNAPSHOTS_PER_DOMAIN ? history.nextIndex : 0;
+    for (let i = 0; i < history.size; i += 1) {
+      snapshots.push(history.buffer[(start + i) % this.MAX_SNAPSHOTS_PER_DOMAIN]);
+    }
+
+    if (!limit) return snapshots;
     return snapshots.slice(-limit);
   }
 
@@ -162,12 +202,12 @@ export class DomainAggregatorAgent {
     peakErrorRate: number;
     avgLatency: number;
     peakLatency: number;
-    trend: 'stable' | 'improving' | 'degrading';
+    trend: DomainTrend;
     timeRange: { from: Date; to: Date };
   } {
     const snapshots = this.getDomainHistory(domain);
     const cutoff = Date.now() - minutes * 60 * 1000;
-    const recent = snapshots.filter((s) => s.timestamp.getTime() > cutoff);
+    const recent = snapshots.filter((s) => s.metrics.timestamp.getTime() > cutoff);
 
     if (recent.length === 0) {
       return {
@@ -180,17 +220,16 @@ export class DomainAggregatorAgent {
       };
     }
 
-    const avgErrorRate = recent.reduce((sum, s) => sum + s.errorRate, 0) / recent.length;
-    const peakErrorRate = Math.max(...recent.map((s) => s.errorRate));
-    const avgLatency = Math.round(recent.reduce((sum, s) => sum + s.avgLatency, 0) / recent.length);
-    const peakLatency = Math.max(...recent.map((s) => s.avgLatency));
+    const avgErrorRate = recent.reduce((sum, s) => sum + s.metrics.errorRate, 0) / recent.length;
+    const peakErrorRate = Math.max(...recent.map((s) => s.metrics.errorRate));
+    const avgLatency = Math.round(recent.reduce((sum, s) => sum + s.metrics.avgLatency, 0) / recent.length);
+    const peakLatency = Math.max(...recent.map((s) => s.metrics.avgLatency));
 
-    // Detect trend
-    const firstHalf = recent.slice(0, Math.floor(recent.length / 2)).reduce((sum, s) => sum + s.errorRate, 0) / Math.max(1, Math.floor(recent.length / 2));
-    const secondHalf = recent.slice(Math.floor(recent.length / 2)).reduce((sum, s) => sum + s.errorRate, 0) / Math.max(1, recent.length - Math.floor(recent.length / 2));
-    let trend: 'stable' | 'improving' | 'degrading' = 'stable';
+    const firstHalf = recent.slice(0, Math.floor(recent.length / 2)).reduce((sum, s) => sum + s.metrics.errorRate, 0) / Math.max(1, Math.floor(recent.length / 2));
+    const secondHalf = recent.slice(Math.floor(recent.length / 2)).reduce((sum, s) => sum + s.metrics.errorRate, 0) / Math.max(1, recent.length - Math.floor(recent.length / 2));
+    let trend: DomainTrend = 'stable';
     if (secondHalf > firstHalf * 1.1) trend = 'degrading';
-    if (secondHalf < firstHalf * 0.9) trend = 'improving';
+    if (secondHalf < firstHalf * 0.9) trend = 'healthy';
 
     return {
       avgErrorRate: Math.round(avgErrorRate * 100) / 100,
@@ -199,8 +238,8 @@ export class DomainAggregatorAgent {
       peakLatency,
       trend,
       timeRange: {
-        from: recent[0].timestamp,
-        to: recent[recent.length - 1].timestamp,
+        from: recent[0].metrics.timestamp,
+        to: recent[recent.length - 1].metrics.timestamp,
       },
     };
   }
@@ -209,7 +248,7 @@ export class DomainAggregatorAgent {
    * Get all unhealthy domains
    */
   public getUnhealthyDomains(): DomainSnapshot[] {
-    return Array.from(this.lastDomainStates.values()).filter((s) => !s.isHealthy);
+    return Array.from(this.lastDomainStates.values()).filter((s) => s.assessment.healthState !== 'healthy');
   }
 
   /**
@@ -217,7 +256,7 @@ export class DomainAggregatorAgent {
    */
   public getSlowestDomains(limit: number = 10): DomainSnapshot[] {
     return Array.from(this.lastDomainStates.values())
-      .sort((a, b) => b.p99Latency - a.p99Latency)
+      .sort((a, b) => b.metrics.p99Latency - a.metrics.p99Latency)
       .slice(0, limit);
   }
 
@@ -226,7 +265,7 @@ export class DomainAggregatorAgent {
    */
   public getHighestErrorDomains(limit: number = 10): DomainSnapshot[] {
     return Array.from(this.lastDomainStates.values())
-      .sort((a, b) => b.errorRate - a.errorRate)
+      .sort((a, b) => b.metrics.errorRate - a.metrics.errorRate)
       .slice(0, limit);
   }
 
@@ -235,58 +274,78 @@ export class DomainAggregatorAgent {
   // ════════════════════════════════════════════════════════════════════════════════
 
   private async pollOnce(): Promise<void> {
-    // respect pause after failures
-    if (this.pauseUntil && Date.now() < this.pauseUntil) {
-      logger.warn('[DOMAIN_AGGREGATOR] Poll paused until', new Date(this.pauseUntil).toISOString());
+    if (this.isPolling) {
+      logger.warn('[DOMAIN_AGGREGATOR] Poll already in progress, skipping overlapping execution');
       return;
     }
 
-    let attempt = 0;
-    let lastError: any = null;
-    while (attempt <= this.maxRetriesPerPoll) {
-      try {
-        const response = await axios.get(`${this.baseUrl}/api/docs/stats/by-domain`, { timeout: 10_000 });
-        const { domains } = response.data as { domains?: Record<string, any> };
-        if (!domains || typeof domains !== 'object') {
-          logger.warn('[DOMAIN_AGGREGATOR] No domain data in response');
-          return;
-        }
-
-        for (const [domain, stats] of Object.entries(domains)) {
-          const statObj = stats as Record<string, any>;
-          const snapshot: DomainSnapshot = {
-            timestamp: new Date(),
-            domain: domain as string,
-            endpointCount: Number(statObj.endpointCount || 0),
-            callCount: Number(statObj.callCount || 0),
-            avgLatency: Number(statObj.avgLatency || 0),
-            p99Latency: Number(statObj.p99Latency || 0),
-            errorRate: Number(statObj.errorRate || 0),
-            isHealthy: Boolean(statObj.isHealthy),
-            trend: 'stable',
-          };
-
-          this.storeSnapshot(domain as string, snapshot);
-          await this.analyzeDomain(domain as string, snapshot);
-          this.lastDomainStates.set(domain as string, snapshot);
-        }
-
-        this.consecutiveFailures = 0;
-        return;
-      } catch (err) {
-        lastError = err;
-        attempt += 1;
-        const waitMs = 300 * Math.pow(2, attempt);
-        logger.warn(`[DOMAIN_AGGREGATOR] Poll attempt ${attempt} failed — retrying in ${waitMs}ms`, err instanceof Error ? err.message : err);
-        await new Promise((res) => setTimeout(res, waitMs));
-      }
+    if (this.pauseUntil && Date.now() < this.pauseUntil) {
+      logger.warn('[DOMAIN_AGGREGATOR] Poll paused until', { pausedUntil: new Date(this.pauseUntil).toISOString() });
+      return;
     }
 
-    logger.error('[DOMAIN_AGGREGATOR] Poll failed after retries:', lastError instanceof Error ? lastError.message : lastError);
-    this.consecutiveFailures += 1;
-    if (this.consecutiveFailures >= this.maxConsecutiveFailuresBeforePause) {
-      this.pauseUntil = Date.now() + this.pauseDurationMs;
-      logger.error('[DOMAIN_AGGREGATOR] Pausing polling until', new Date(this.pauseUntil).toISOString());
+    this.isPolling = true;
+    let attempt = 0;
+    let lastError: unknown = null;
+
+    try {
+      while (attempt <= this.maxRetriesPerPoll) {
+        try {
+          const response = await axios.get(`${this.baseUrl}/api/docs/stats/by-domain`, { timeout: 10_000 });
+          const { domains } = response.data as { domains?: Record<string, unknown> };
+          if (!domains || typeof domains !== 'object') {
+            logger.warn('[DOMAIN_AGGREGATOR] No domain data in response');
+            return;
+          }
+
+          for (const [domain, stats] of Object.entries(domains)) {
+            const statObj = stats as Record<string, unknown>;
+            const metrics: DomainMetrics = {
+              timestamp: new Date(),
+              domain,
+              endpointCount: Number(statObj.endpointCount || 0),
+              callCount: Number(statObj.callCount || 0),
+              errorCount: Number(statObj.errorCount || 0),
+              errorRate: Number(statObj.errorRate || 0),
+              avgLatency: Number(statObj.avgLatency || 0),
+              medianLatency: Number(statObj.medianLatency || statObj.avgLatency || 0),
+              p95Latency: Number(statObj.p95Latency || statObj.p99Latency || 0),
+              p99Latency: Number(statObj.p99Latency || 0),
+              maxLatency: Number(statObj.maxLatency || statObj.p99Latency || statObj.avgLatency || 0),
+            };
+
+            const previous = this.lastDomainStates.get(domain);
+            const snapshot: DomainSnapshot = {
+              metrics,
+              assessment: this.buildDomainAssessment(metrics, previous),
+            };
+
+            this.storeSnapshot(domain, snapshot);
+            await this.analyzeDomain(domain, snapshot);
+            this.lastDomainStates.set(domain, snapshot);
+          }
+
+          this.consecutiveFailures = 0;
+          return;
+        } catch (err) {
+          lastError = err;
+          attempt += 1;
+          const waitMs = 300 * Math.pow(2, attempt);
+          logger.warn(`[DOMAIN_AGGREGATOR] Poll attempt ${attempt} failed — retrying in ${waitMs}ms`, {
+            error: err instanceof Error ? err.message : String(err),
+          });
+          await new Promise((res) => setTimeout(res, waitMs));
+        }
+      }
+
+      logger.error('[DOMAIN_AGGREGATOR] Poll failed after retries:', lastError instanceof Error ? lastError.message : String(lastError));
+      this.consecutiveFailures += 1;
+      if (this.consecutiveFailures >= this.maxConsecutiveFailuresBeforePause) {
+        this.pauseUntil = Date.now() + this.pauseDurationMs;
+        logger.error('[DOMAIN_AGGREGATOR] Pausing polling until', new Date(this.pauseUntil).toISOString());
+      }
+    } finally {
+      this.isPolling = false;
     }
   }
 
@@ -295,81 +354,134 @@ export class DomainAggregatorAgent {
   // ════════════════════════════════════════════════════════════════════════════════
 
   private storeSnapshot(domain: string, snapshot: DomainSnapshot): void {
-    if (!this.domainSnapshots.has(domain)) {
-      this.domainSnapshots.set(domain, []);
+    let history = this.domainSnapshots.get(domain);
+    if (!history) {
+      history = { buffer: new Array<DomainSnapshot>(this.MAX_SNAPSHOTS_PER_DOMAIN), nextIndex: 0, size: 0 };
+      this.domainSnapshots.set(domain, history);
     }
-    const arr = this.domainSnapshots.get(domain)!;
-    arr.push(snapshot);
-    if (arr.length > this.MAX_SNAPSHOTS_PER_DOMAIN) {
-      arr.shift();
+
+    if (history.size < this.MAX_SNAPSHOTS_PER_DOMAIN) {
+      history.buffer[history.size] = snapshot;
+      history.size += 1;
+    } else {
+      history.buffer[history.nextIndex] = snapshot;
     }
+
+    history.nextIndex = (history.nextIndex + 1) % this.MAX_SNAPSHOTS_PER_DOMAIN;
+  }
+
+  private buildDomainAssessment(metrics: DomainMetrics, previous?: DomainSnapshot): DomainAssessment {
+    const errorCritical = metrics.errorRate >= this.thresholds.errorRateCritical;
+    const latencyCritical = metrics.p99Latency >= this.thresholds.p99LatencyCritical || metrics.avgLatency >= this.thresholds.latencyCritical;
+    const errorWarning = metrics.errorRate >= this.thresholds.errorRateWarning;
+    const latencyWarning = metrics.p99Latency >= this.thresholds.p99LatencyWarning || metrics.avgLatency >= this.thresholds.latencyWarning;
+
+    const confidence = Math.min(1, Math.max(0.2, metrics.callCount / 1000));
+    let healthState: DomainHealthState = 'healthy';
+
+    if (errorCritical || latencyCritical) {
+      healthState = 'critical';
+    } else if (errorWarning || latencyWarning) {
+      healthState = 'warning';
+    } else if (previous && previous.assessment.healthState !== 'healthy') {
+      healthState = 'recovering';
+    }
+
+    let trend: DomainTrend = 'stable';
+    if (healthState === 'critical') {
+      trend = 'critical';
+    } else if (previous) {
+      const errorIncrease = metrics.errorRate > previous.metrics.errorRate * 1.05;
+      const p99Increase = metrics.p99Latency > previous.metrics.p99Latency * 1.05;
+      const avgIncrease = metrics.avgLatency > previous.metrics.avgLatency * 1.05;
+
+      if (healthState === 'recovering') {
+        trend = 'recovering';
+      } else if (errorIncrease || p99Increase || avgIncrease) {
+        trend = 'degrading';
+      } else if (healthState === 'healthy' && previous.assessment.healthState !== 'healthy') {
+        trend = 'healthy';
+      }
+    }
+
+    let score = 100;
+    score -= Math.min(40, (metrics.errorRate / Math.max(1, this.thresholds.errorRateCritical)) * 40);
+    score -= Math.min(30, (metrics.p99Latency / Math.max(1, this.thresholds.p99LatencyCritical)) * 30);
+    score -= Math.min(20, (metrics.avgLatency / Math.max(1, this.thresholds.latencyCritical)) * 20);
+    if (metrics.callCount < 100) score -= 10;
+    if (healthState === 'critical') score -= 10;
+    score = Math.max(0, Math.round(score * confidence));
+
+    return {
+      healthState,
+      healthScore: score,
+      trend,
+      confidence,
+    };
   }
 
   private async analyzeDomain(domain: string, snapshot: DomainSnapshot): Promise<void> {
     const previous = this.lastDomainStates.get(domain);
+    const previousAlertState = this.domainAlertState.get(domain) ?? 'healthy';
+    const currentState = snapshot.assessment.healthState;
 
-    // Check error rate
-    if (snapshot.errorRate >= this.thresholds.errorRateCritical) {
-      await this.handleAlert(
-        {
-          severity: 'critical',
-          domain,
-          type: 'error_spike',
-          message: `Domain ${domain} error rate critical: ${snapshot.errorRate.toFixed(2)}% (threshold: ${this.thresholds.errorRateCritical}%)`,
-          metrics: {
-            errorRate: snapshot.errorRate,
-            callCount: snapshot.callCount,
-            endpointCount: snapshot.endpointCount,
-          },
-          timestamp: new Date(),
-        }
-      );
-    } else if (snapshot.errorRate >= this.thresholds.errorRateWarning) {
-      if (!previous || previous.errorRate < this.thresholds.errorRateWarning) {
-        await this.handleAlert({
-          severity: 'warning',
-          domain,
-          type: 'error_spike',
-          message: `Domain ${domain} error rate warning: ${snapshot.errorRate.toFixed(2)}% (threshold: ${this.thresholds.errorRateWarning}%)`,
-          metrics: {
-            errorRate: snapshot.errorRate,
-            callCount: snapshot.callCount,
-          },
-          timestamp: new Date(),
-        });
+    if (currentState === previousAlertState) {
+      return;
+    }
+
+    const metrics = snapshot.metrics;
+    const alerts: string[] = [];
+    const aggregatedMetrics: Record<string, unknown> = {
+      errorRate: metrics.errorRate,
+      p99Latency: metrics.p99Latency,
+      avgLatency: metrics.avgLatency,
+      callCount: metrics.callCount,
+      endpointCount: metrics.endpointCount,
+    };
+
+    if (currentState === 'critical') {
+      if (metrics.errorRate >= this.thresholds.errorRateCritical) {
+        alerts.push(`critical error rate ${metrics.errorRate.toFixed(2)}%`);
       }
+      if (metrics.p99Latency >= this.thresholds.p99LatencyCritical) {
+        alerts.push(`critical p99 latency ${metrics.p99Latency.toFixed(0)}ms`);
+      }
+      if (metrics.avgLatency >= this.thresholds.latencyCritical) {
+        alerts.push(`critical avg latency ${metrics.avgLatency.toFixed(0)}ms`);
+      }
+    } else if (currentState === 'warning') {
+      if (metrics.errorRate >= this.thresholds.errorRateWarning) {
+        alerts.push(`warning error rate ${metrics.errorRate.toFixed(2)}%`);
+      }
+      if (metrics.p99Latency >= this.thresholds.p99LatencyWarning) {
+        alerts.push(`warning p99 latency ${metrics.p99Latency.toFixed(0)}ms`);
+      }
+      if (metrics.avgLatency >= this.thresholds.latencyWarning) {
+        alerts.push(`warning avg latency ${metrics.avgLatency.toFixed(0)}ms`);
+      }
+    } else if (currentState === 'recovering' || currentState === 'healthy') {
+      alerts.push('domain is recovering or healthy');
     }
 
-    // Check latency
-    if (snapshot.p99Latency >= this.thresholds.p99LatencyCritical) {
-      await this.handleAlert({
-        severity: 'critical',
-        domain,
-        type: 'latency_spike',
-        message: `Domain ${domain} P99 latency critical: ${snapshot.p99Latency.toFixed(0)}ms (threshold: ${this.thresholds.p99LatencyCritical}ms)`,
-        metrics: {
-          p99Latency: snapshot.p99Latency,
-          avgLatency: snapshot.avgLatency,
-          endpointCount: snapshot.endpointCount,
-        },
-        timestamp: new Date(),
-      });
+    if (alerts.length === 0) {
+      this.domainAlertState.set(domain, currentState === 'recovering' ? 'warning' : currentState);
+      return;
     }
 
-    // Check recovery
-    if (previous && previous.isHealthy === false && snapshot.isHealthy === true && snapshot.errorRate < this.thresholds.errorRateWarning) {
-      await this.handleAlert({
-        severity: 'warning',
-        domain,
-        type: 'recovery',
-        message: `Domain ${domain} recovered: Error rate now ${snapshot.errorRate.toFixed(2)}%`,
-        metrics: {
-          errorRate: snapshot.errorRate,
-          avgLatency: snapshot.avgLatency,
-        },
-        timestamp: new Date(),
-      });
-    }
+    const alertType = currentState === 'critical' ? 'error_spike' : currentState === 'warning' ? 'degradation' : 'recovery';
+    const severity = currentState === 'critical' ? 'critical' : 'warning';
+    const message = `Domain ${domain} transitioned to ${currentState}: ${alerts.join('; ')}`;
+
+    await this.handleAlert({
+      severity,
+      domain,
+      type: alertType,
+      message,
+      metrics: aggregatedMetrics,
+      timestamp: new Date(),
+    });
+
+    this.domainAlertState.set(domain, currentState === 'recovering' ? 'warning' : currentState);
   }
 
   private async handleAlert(alert: DomainAlert): Promise<void> {

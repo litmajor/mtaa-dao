@@ -93,6 +93,7 @@ export enum AuditEventType {
 export interface UnifiedAuditEntry {
   // Actor information
   actorId: string;
+  daoId?: string;
   actorType?: 'admin' | 'user' | 'system' | 'super_admin';
   actorRole?: string;
 
@@ -207,7 +208,7 @@ function categorizeAuditEvent(actionType: string): string {
 // Convenience middleware helper and alias
 // -----------------------------------------------------------------------------
 
-import { Request, Response, NextFunction } from 'express';
+import type { Request, Response, NextFunction } from 'express';
 
 /**
  * Express middleware generator that logs a simple audit event and continues.

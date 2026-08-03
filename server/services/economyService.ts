@@ -11,6 +11,9 @@ import { eq, and, gte, lte, sql, desc } from 'drizzle-orm';
 import { Logger } from '../utils/logger';
 import { tokenService } from './tokenService';
 import { paymentGatewayService } from './paymentGatewayService';
+import { commandBus } from '../domain/setup';
+import { PaymentCommandTypes } from '../domain/payments/PaymentCommands';
+import crypto from 'crypto';
 
 interface EarnOpportunity {
   id: string;
@@ -305,22 +308,47 @@ export class EconomyService {
       };
     }
 
-    // Record redemption transaction
-    await db.insert(paymentTransactions).values({
-      userId: merchantId,
-      reference: paymentResult.reference,
-      type: 'redemption',
-      amount: amount,
-      currency: 'MTAA',
-      provider: method,
-      status: paymentResult.status,
-      metadata: {
-        convertedAmount: netAmount.toString(),
-        toCurrency,
-        rate: rate.rate,
-        fee: feeAmount
+    // Record redemption transaction via CommandBus
+    const createResult = await commandBus.dispatch({
+      id: crypto.randomUUID(),
+      type: PaymentCommandTypes.CreatePayment,
+      actor: merchantId,
+      correlationId: crypto.randomUUID(),
+      timestamp: new Date(),
+      payload: {
+        reference: paymentResult.reference,
+        userId: merchantId,
+        provider: method as 'paystack' | 'flutterwave' | 'mpesa', // method comes from param
+        amount: amount,
+        currency: 'MTAA',
+        type: 'redemption',
+        metadata: {
+          convertedAmount: netAmount.toString(),
+          toCurrency,
+          rate: rate.rate,
+          fee: feeAmount
+        }
       }
     });
+
+    if (!createResult.success) {
+      Logger.error(`[EconomyService] Failed to record redemption payment: ${createResult.error}`);
+    } else {
+      // If payment was completed synchronously, update it
+      if (paymentResult.status === 'completed') {
+        await commandBus.dispatch({
+          id: crypto.randomUUID(),
+          type: PaymentCommandTypes.CompletePayment,
+          actor: merchantId,
+          correlationId: createResult.correlationId,
+          timestamp: new Date(),
+          payload: {
+            reference: paymentResult.reference,
+            providerMetadata: {}
+          }
+        });
+      }
+    }
 
     return {
       success: paymentResult.success,

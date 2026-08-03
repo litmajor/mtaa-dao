@@ -10,7 +10,8 @@ import UserBalanceSection from './UserBalanceSection';
 import AssetListTable from './AssetListTable';
 import RealtimeActivityFeed from './RealtimeActivityFeed';
 import { useUnifiedDashboardData } from './hooks/useUnifiedDashboardData';
-import { useWebSocket, WebSocketMessage } from './hooks/useWebSocket';
+import { useWebSocket } from './hooks/useWebSocket';
+import type { WebSocketMessage } from './hooks/useWebSocket';
 
 export function UnifiedDashboardPage() {
   const [searchQuery, setSearchQuery] = useState('');

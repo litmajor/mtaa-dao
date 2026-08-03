@@ -275,7 +275,26 @@ export const usePaymentSimulation = () => {
       setExecutionError(null);
 
       try {
-        const endpoint = `/payments/${actionType.toLowerCase().replace(/^payment_/, '').replace(/_.*/, '').toLowerCase()}`;
+        const endpointFromSimulation = simulation?.nextStep?.endpoint;
+        const normalizedEndpoint =
+          typeof endpointFromSimulation === 'string'
+            ? endpointFromSimulation.replace(/^\s*POST\s+/i, '').trim()
+            : null;
+
+        const actionEndpointMap: Record<string, string> = {
+          payment_deposit: '/payments/deposit',
+          payment_withdrawal: '/payments/withdraw',
+          payment_p2p: '/payments/transfer-p2p',
+          payment_p2p_transfer: '/payments/transfer-p2p',
+          payment_settlement: '/payments/settle',
+          payment_recurring: '/payments/setup-recurring',
+        };
+
+        const endpoint =
+          normalizedEndpoint ||
+          actionEndpointMap[actionType.toLowerCase()] ||
+          `/payments/${actionType.toLowerCase().replace(/^payment_/, '').replace(/_/g, '-')}`;
+
         const executeParams = {
           simulation,
           ...params,

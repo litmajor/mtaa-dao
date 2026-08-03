@@ -15,19 +15,15 @@
     "**/__tests__/**"
   ],
   "compilerOptions": {
-    "ignoreDeprecations": "5.0",
+    "ignoreDeprecations": "6.0",
     "target": "ES2020",
     "downlevelIteration": true,
     "incremental": true,
-    "tsBuildInfoFile": "./node_modules/typescript/tsbuildinfo",
+    "tsBuildInfoFile": "./node_modules/.cache/tsbuildinfo",
     "noEmit": true,
     "module": "ESNext",
     "strict": true,
-    "lib": [
-      "ES2020",
-      "DOM",
-      "DOM.Iterable"
-    ],
+    "lib": ["ES2021", "DOM", "DOM.Iterable"],
     "jsx": "preserve",
     "esModuleInterop": true,
     "allowSyntheticDefaultImports": true,
@@ -36,27 +32,18 @@
     "moduleResolution": "bundler",
     "resolveJsonModule": true,
     "forceConsistentCasingInFileNames": true,
+    "isolatedModules": true,
+    "verbatimModuleSyntax": true,
     "baseUrl": ".",
     "types": [
       "node",
-      "vite/client",
-      "jest",
-      "@testing-library/jest-dom",
-      "./server/types"
+      "jest"
     ],
+    "typeRoots": ["./server/types", "./node_modules/@types"],
     "paths": {
-      "@/*": [
-        "./client/src/*"
-      ],
-      "@shared/*": [
-        "./shared/*"
-      ],
-      "lucide-react": [
-        "./client/src/lib/icons.tsx"
-      ],
-      "lucide-react/*": [
-        "./client/src/lib/*"
-      ]
+      "@/*": ["./client/src/*"],
+      "@shared/*": ["./shared/*"]
+      
     }
   }
 }

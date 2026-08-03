@@ -6,14 +6,14 @@
  */
 
 import React, { useState, useEffect } from 'react';
-import { Lock, Gift, TrendingUp, Unlock } from '@/lib/icons';
+import { Lock, Gift, TrendingUp, Unlock } from 'lucide-react';
 import ConfirmDialog from '@/components/ConfirmDialog';
 import { authClient } from '@/utils/authClient';
 
 interface StakeOption {
   duration: number; // days
   durationLabel: string;
-  apyBase: number; // 12% base
+  apyBase: number; // 12% base 
   multiplier: number;
   totalAPY: number;
 }

@@ -18,8 +18,10 @@ const CLEANUP_INTERVAL = 60 * 1000; // 1 minute
 const CHALLENGE_TTL = 5 * 60 * 1000; // 5 minutes
 
 function makeKey(userId?: string, address?: string) {
+  const normalizedAddress = address?.toLowerCase();
+  if (userId && normalizedAddress) return `u:${userId}:a:${normalizedAddress}`;
   if (userId) return `u:${userId}`;
-  if (address) return `a:${address.toLowerCase()}`;
+  if (normalizedAddress) return `a:${normalizedAddress}`;
   return `g:global`;
 }
 

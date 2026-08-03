@@ -9,6 +9,22 @@ import { migrateRulesEngine } from './002-rules-engine';
 import { migrateLimitOrdersTables } from './003-limit-orders';
 import { migrateCrossChainTables, rollbackCrossChainTables } from './007-cross-chain-support';
 import { migrateAgentSubscriptions, rollbackAgentSubscriptions } from './018-agent-subscriptions-indexer';
+import { migrateRecoveryWorkflows, rollbackRecoveryWorkflows } from './019-recovery-workflows';
+import { migrateStrategyTables, rollbackStrategyTables } from './022-strategy-schema';
+import { migrateIdempotencyKeysTable, rollbackIdempotencyKeysTable } from './020-idempotency-keys';
+import { migratePaymentSystemTables, rollbackPaymentSystemTables } from './021-payment-system-tables';
+import { migrateBlockchainTransactions, rollbackBlockchainTransactions } from './021-blockchain-transactions';
+import { migrateYukiWatchlists, rollbackYukiWatchlists } from './023-yuki-watchlists';
+import { migrateRewardRequestsTable, rollbackRewardRequestsTable } from './024-reward-requests';
+import { migrateDomainEventsTable, rollbackDomainEventsTable } from './025-domain-events';
+import { migrateProcessedEventsTable, rollbackProcessedEventsTable } from './026-processed-events';
+import { migrateEventDeadLettersTable, rollbackEventDeadLettersTable } from './027-event-dead-letters';
+import { migrateCommandLogTable, rollbackCommandLogTable } from './028-command-log';
+import { migratePaymentDomainTables, rollbackPaymentDomainTables } from './029-payment-domain';
+import { migrateVaultDomainTables, rollbackVaultDomainTables } from './030-vault-domain';
+import { migrateTreasuryDomainTables, rollbackTreasuryDomainTables } from './031-treasury-domain';
+import { migrateInvestmentPoolsTables, rollbackInvestmentPoolsTables } from './032-investment-pools';
+import { migrateMonitoringMetricsTables, rollbackMonitoringMetricsTables } from './033-monitoring-metrics';
 
 export interface MigrationResult {
   success: boolean;
@@ -66,6 +82,112 @@ export async function runAllMigrations(): Promise<MigrationResult> {
       errors.push(`Agent subscriptions migration failed: ${err.message}`);
     }
 
+    try {
+      await migrateStrategyTables();
+    } catch (err: any) {
+      errors.push(`Strategy schema migration failed: ${err.message}`);
+    }
+
+
+    try {
+      await migrateRecoveryWorkflows();
+    } catch (err: any) {
+      errors.push(`Recovery workflows migration failed: ${err.message}`);
+    }
+
+    try {
+      await migrateDomainEventsTable();
+    } catch (err: any) {
+      errors.push(`Domain events migration failed: ${err.message}`);
+    }
+
+    try {
+      await migrateProcessedEventsTable();
+    } catch (err: any) {
+      errors.push(`Processed events migration failed: ${err.message}`);
+    }
+
+    try {
+      await migrateEventDeadLettersTable();
+    } catch (err: any) {
+      errors.push(`Event dead letters migration failed: ${err.message}`);
+    }
+
+    try {
+      await migrateCommandLogTable();
+    } catch (err: any) {
+      errors.push(`Command log migration failed: ${err.message}`);
+    }
+
+    try {
+      await migrateIdempotencyKeysTable();
+    } catch (err: any) {
+      errors.push(`Idempotency keys table migration failed: ${err.message}`);
+    }
+
+    try {
+      await migratePaymentDomainTables();
+    } catch (err: any) {
+      errors.push(`Payment domain migration failed: ${err.message}`);
+      throw err; // Critical migration: do not continue with incomplete payment schema
+    }
+
+    try {
+      await migratePaymentSystemTables();
+    } catch (err: any) {
+      errors.push(`Payment system tables migration failed: ${err.message}`);
+      throw err; // Critical migration: do not continue with incomplete payment recovery/circuit breaker schema
+    }
+
+    try {
+      await migrateBlockchainTransactions();
+    } catch (err: any) {
+      errors.push(`Blockchain transactions migration failed: ${err.message}`);
+      throw err; // Critical migration: do not continue with incomplete blockchain transaction tracking schema
+    }
+
+    try {
+      await migrateVaultDomainTables();
+    } catch (err: any) {
+      errors.push(`Vault domain migration failed: ${err.message}`);
+      throw err;
+    }
+
+    try {
+      await migrateTreasuryDomainTables();
+    } catch (err: any) {
+      errors.push(`Treasury domain migration failed: ${err.message}`);
+      throw err;
+    }
+
+    try {
+      await migrateInvestmentPoolsTables();
+    } catch (err: any) {
+      errors.push(`Investment pools migration failed: ${err.message}`);
+      throw err;
+    }
+
+    try {
+      await migrateYukiWatchlists();
+    } catch (err: any) {
+      errors.push(`Yuki watchlists migration failed: ${err.message}`);
+      throw err;
+    }
+
+    try {
+      await migrateRewardRequestsTable();
+    } catch (err: any) {
+      errors.push(`Reward requests migration failed: ${err.message}`);
+      throw err;
+    }
+
+    try {
+      await migrateMonitoringMetricsTables();
+    } catch (err: any) {
+      errors.push(`Monitoring metrics migration failed: ${err.message}`);
+      throw err;
+    }
+
     const duration = Date.now() - startTime;
     console.log(`\n✅ All migrations completed in ${duration}ms`);
 
@@ -93,6 +215,95 @@ export async function rollbackMigrations(): Promise<MigrationResult> {
     console.log('🔄 Rolling back migrations...\n');
     
     try {
+      await rollbackBlockchainTransactions();
+    } catch (err: any) {
+      errors.push(`Blockchain transactions rollback failed: ${err.message}`);
+    }
+
+    try {
+      await rollbackCommandLogTable();
+    } catch (err: any) {
+      errors.push(`Command log rollback failed: ${err.message}`);
+    }
+
+    try {
+      await rollbackEventDeadLettersTable();
+    } catch (err: any) {
+      errors.push(`Event dead letters rollback failed: ${err.message}`);
+    }
+
+    try {
+      await rollbackProcessedEventsTable();
+    } catch (err: any) {
+      errors.push(`Processed events rollback failed: ${err.message}`);
+    }
+
+    try {
+      await rollbackDomainEventsTable();
+    } catch (err: any) {
+      errors.push(`Domain events rollback failed: ${err.message}`);
+    }
+
+    try {
+      await rollbackRewardRequestsTable();
+    } catch (err: any) {
+      errors.push(`Reward requests rollback failed: ${err.message}`);
+    }
+
+    try {
+      await rollbackYukiWatchlists();
+    } catch (err: any) {
+      errors.push(`Yuki watchlists rollback failed: ${err.message}`);
+    }
+
+    try {
+      await rollbackMonitoringMetricsTables();
+    } catch (err: any) {
+      errors.push(`Monitoring metrics rollback failed: ${err.message}`);
+    }
+
+    try {
+      await rollbackInvestmentPoolsTables();
+    } catch (err: any) {
+      errors.push(`Investment pools rollback failed: ${err.message}`);
+    }
+
+    try {
+      await rollbackTreasuryDomainTables();
+    } catch (err: any) {
+      errors.push(`Treasury domain rollback failed: ${err.message}`);
+    }
+
+    try {
+      await rollbackVaultDomainTables();
+    } catch (err: any) {
+      errors.push(`Vault domain rollback failed: ${err.message}`);
+    }
+
+    try {
+      await rollbackPaymentDomainTables();
+    } catch (err: any) {
+      errors.push(`Payment domain rollback failed: ${err.message}`);
+    }
+
+    try {      await rollbackPaymentSystemTables();
+    } catch (err: any) {
+      errors.push(`Payment system tables rollback failed: ${err.message}`);
+    }
+
+    try {
+      await rollbackIdempotencyKeysTable();
+    } catch (err: any) {
+      errors.push(`Idempotency keys table rollback failed: ${err.message}`);
+    }
+
+    try {
+      await rollbackRecoveryWorkflows();
+    } catch (err: any) {
+      errors.push(`Recovery workflows rollback failed: ${err.message}`);
+    }
+
+    try {
       await rollbackAgentSubscriptions();
     } catch (err: any) {
       errors.push(`Agent subscriptions rollback failed: ${err.message}`);
@@ -104,7 +315,17 @@ export async function rollbackMigrations(): Promise<MigrationResult> {
       errors.push(`Cross-chain rollback failed: ${err.message}`);
     }
 
-    await rollbackCEXTables();
+    try {
+      await rollbackCEXTables();
+    } catch (err: any) {
+      errors.push(`CEX tables rollback failed: ${err.message}`);
+    } 
+
+    try {
+      await rollbackStrategyTables();
+    } catch (err: any) {
+      errors.push(`Strategy schema rollback failed: ${err.message}`);
+    }
 
     const duration = Date.now() - startTime;
     console.log(`\n✅ Rollback completed in ${duration}ms`);
@@ -175,14 +396,33 @@ export async function dryRunMigrations(): Promise<{
       // Agent network & indexer tables
       'dao_agent_subscriptions',
       'indexer_checkpoints',
+      // Payment recovery tables
+      'recovery_workflows',
+      'manual_intervention_requests',
+      // Idempotency tracking table
+      'idempotency_keys',
+      // Payment system supporting tables
+      'circuit_breaker_states',
+      'reversible_actions',
+      'action_reversals',
+      'action_approvals',
+      // Blockchain transaction tracking
+      'blockchain_transactions',
     ],
-    willModify: [],
+    willModify: [
+      'payment_sagas (add: wallet_from, wallet_to, vault_id, metadata)',
+      'recovery_workflows (add: requires_user_consent, user_consent_granted)',
+      'manual_intervention_requests (add: resolution_type, resolution_notes, resolved_at, resolved_by)',
+    ],
     risks: [
       'Note: api_key_encrypted and api_secret_encrypted will store sensitive data - ensure encryption utility is configured',
       'Note: Ensure database user has sufficient permissions to create tables',
       'Note: Consider running migrations during maintenance window for production',
       'Note: Cross-chain transfers require bridge contracts to be deployed and configured',
       'Note: Agent subscriptions require smart contract event listener daemon processes',
+      'Note: Circuit breaker states require multi-node consensus if deployed across multiple instances',
+      'Note: Reversible actions require careful grace period and approval workflow management',
+      'Note: Blockchain transaction tracking requires proper chain_id and status management',
     ],
   };
 }

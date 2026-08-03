@@ -1,6 +1,6 @@
 import { Router } from 'express';
-import { db } from '../../../../../db';
-import { proposals, contributions, multisigTransactions, users } from '../../../../../../shared/schema';
+import { db } from '../../../../db';
+import { proposals, contributions, multisigTransactions, multisigWallets, users } from '../../../../../shared/schema';
 import { eq, and, gt, lt, sql } from 'drizzle-orm';
 import { isAuthenticated } from '../../../../nextAuthMiddleware';
 
@@ -44,29 +44,32 @@ router.get('/events', isAuthenticated, async (req, res) => {
     const pendingMultisig = await db
       .select()
       .from(multisigTransactions)
+      .innerJoin(multisigWallets, eq(multisigTransactions.multisigWalletId, multisigWallets.id))
       .where(
         and(
-          eq(multisigTransactions.daoId, daoId),
+          eq(multisigWallets.daoId, daoId),
           eq(multisigTransactions.status, 'pending'),
           lt(multisigTransactions.currentSignatures, multisigTransactions.requiredSignatures)
         )
       );
 
-    pendingMultisig.forEach(m => {
+    pendingMultisig.forEach(row => {
+      const tx = (row as any).multisig_transactions;
+      if (!tx) return; // defensive
       insights.push({
-        id: `multisig-${m.id}`,
+        id: `multisig-${tx.id}`,
         type: 'treasury',
         severity: 'medium',
-        message: `Pending treasury withdrawal of ${m.amount} ${m.currency} needs ${m.requiredSignatures - (m.currentSignatures || 0)} more signature(s).`,
+        message: `Pending treasury withdrawal of ${tx.amount} ${tx.currency} needs ${tx.requiredSignatures - (tx.currentSignatures || 0)} more signature(s).`,
         actionLabel: 'Review',
-        actionUrl: `?open=treasury&txId=${m.id}`,
-        timestamp: m.createdAt?.toISOString() || new Date().toISOString()
+        actionUrl: `?open=treasury&txId=${tx.id}`,
+        timestamp: tx.createdAt?.toISOString() || new Date().toISOString()
       });
     });
 
     // 3. Missed Contributions
     // Determine cycle duration based on DAO configuration
-    const { daos, daoMemberships } = await import('../../../../../../shared/schema');
+    const { daos, daoMemberships } = await import('../../../../../shared/schema');
     const [dao] = await db
       .select({ rotationFrequency: daos.rotationFrequency })
       .from(daos)
@@ -248,7 +251,7 @@ router.get('/agent-network', isAuthenticated, async (req, res) => {
     const { daoId } = req.params;
     
     const { agentRegistry } = await import('../../../../services/AgentRegistry');
-    const { daoAgentSubscriptions } = await import('../../../../../../shared/schema');
+    const { daoAgentSubscriptions } = await import('../../../../../shared/schema');
     const { ethers } = await import('ethers');
     
     const allAgents = agentRegistry.getAllAgents();
@@ -295,10 +298,10 @@ router.get('/agent-network', isAuthenticated, async (req, res) => {
     // If local registry is empty, provide the canonical defaults
     if (mappedAgents.length === 0) {
       mappedAgents.push(
-        { agentId: '1', agentName: 'Nuru', tier: 'Tier 1', isSubscribed: false, status: 'active', lastActive: new Date().toISOString(), description: 'Core data layer', category: 'orchestration' },
-        { agentId: '2', agentName: 'Elder Kaizen', tier: 'Tier 2', isSubscribed: false, status: 'idle', lastActive: new Date(Date.now() - 3600000).toISOString(), description: 'Optimization', category: 'elder' },
-        { agentId: '3', agentName: 'Defender', tier: 'Tier 4', isSubscribed: false, status: 'active', lastActive: new Date().toISOString(), description: 'Security', category: 'security' },
-        { agentId: '4', agentName: 'Gov Analytics', tier: 'Domain Analyzers', isSubscribed: false, status: 'active', lastActive: new Date().toISOString(), description: 'Governance analytics', category: 'analyzer' }
+        { agentId: '1', agentName: 'Nuru', tier: 'Tier 1', isSubscribed: false, status: 'active', lastActive: new Date().toISOString(), description: 'Core data layer', category: 'synchronizer' },
+        { agentId: '2', agentName: 'Elder Kaizen', tier: 'Tier 2', isSubscribed: false, status: 'initializing', lastActive: new Date(Date.now() - 3600000).toISOString(), description: 'Optimization', category: 'governance_analytics' },
+        { agentId: '3', agentName: 'Defender', tier: 'Tier 4', isSubscribed: false, status: 'active', lastActive: new Date().toISOString(), description: 'Security', category: 'anomaly_detection' },
+        { agentId: '4', agentName: 'Gov Analytics', tier: 'Domain Analyzers', isSubscribed: false, status: 'active', lastActive: new Date().toISOString(), description: 'Governance analytics', category: 'governance_analytics' }
       );
     }
 

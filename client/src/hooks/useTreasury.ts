@@ -4,7 +4,7 @@
  */
 
 import { useState, useCallback, useEffect } from 'react';
-import {
+import type {
   DAOTreasury,
   DAOType,
   TreasuryAsset,

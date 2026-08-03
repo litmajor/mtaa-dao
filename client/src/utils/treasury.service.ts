@@ -4,7 +4,7 @@
  * voting weight calculation, and multisig enforcement
  */
 
-import {
+import type {
   DAOTreasury,
   TreasuryAsset,
   DAOType,

@@ -27,8 +27,9 @@ for (const [src, dest] of aliasEnvMap) {
 // __dirname is not defined in ESM; derive it from import.meta.url
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
+const projectRoot = path.resolve(__dirname, "../../");
 
-const exchangesConfigPath = path.resolve(__dirname, "../server/exchanges.config.json");
+const exchangesConfigPath = path.resolve(projectRoot, "server/exchanges.config.json");
 let exchangesConfig: Record<string, any> = {};
 try {
   const raw = fs.readFileSync(exchangesConfigPath, "utf-8");
@@ -42,7 +43,7 @@ export { exchangesConfig };
 // Asset override loader (for hybrid dynamic/static asset metadata)
 let assetOverrides: Record<string, any> = {};
 try {
-  const assetOverridePath = path.resolve(__dirname, "../server/assets.override.json");
+  const assetOverridePath = path.resolve(projectRoot, "server/assets.override.json");
   if (fs.existsSync(assetOverridePath)) {
     const raw = fs.readFileSync(assetOverridePath, "utf-8");
     assetOverrides = JSON.parse(raw);
@@ -110,6 +111,7 @@ const envSchema = z.object({
   BASE_RPC_URL: z.string().url().optional(),
   WALLET_PRIVATE_KEY: z.string().optional(),
   CUSD_CONTRACT_ADDRESS: z.string().optional(),
+  BSC_RPC_URL: z.string().url().optional(),
   
   // Treasury Reconciliation
   TREASURY_RECONCILIATION_ENABLED: z.string().optional(),
@@ -220,8 +222,43 @@ export const rateLimitConfig = {
 };
 
 // CORS configuration
+const parseOriginList = (value: string | undefined): string[] =>
+  value?.split(',').map((origin) => origin.trim()).filter(Boolean) ?? [];
+
+const developmentDefaultOrigins = [
+  env.FRONTEND_URL,
+  'http://localhost:5173',
+  'http://localhost:8080',
+];
+
+const localhostFallbackOrigins = [
+  'http://localhost:5173',
+];
+
+export const corsAllowedOrigins = (() => {
+  const allowedOrigins = [
+    ...(env.ALLOWED_ORIGINS ? parseOriginList(env.ALLOWED_ORIGINS) : []),
+    ...(env.SOCKET_IO_CORS_ORIGIN ? parseOriginList(env.SOCKET_IO_CORS_ORIGIN) : []),
+  ];
+
+  if (isDevelopment) {
+    return Array.from(new Set([...developmentDefaultOrigins, ...allowedOrigins]));
+  }
+
+  if (allowedOrigins.length > 0) {
+    return Array.from(new Set(allowedOrigins));
+  }
+
+  const fallbackOrigins = [env.FRONTEND_URL];
+  if (env.FRONTEND_URL.includes('localhost') || env.FRONTEND_URL.includes('127.0.0.1')) {
+    fallbackOrigins.push(...localhostFallbackOrigins);
+  }
+
+  return Array.from(new Set(fallbackOrigins));
+})();
+
 export const corsConfig = {
-  origin: env.ALLOWED_ORIGINS?.split(",") || [env.FRONTEND_URL],
+  origin: corsAllowedOrigins,
   credentials: true,
 };
 
@@ -234,6 +271,7 @@ export const blockchainRPCUrls = {
   base: env.BASE_RPC_URL || 'https://base-mainnet.g.alchemy.com/v2/demo',
   celo: env.CELO_RPC_URL || 'https://forno.celo.org',
   celoAlfajores: env.CELO_ALFAJORES_RPC_URL || 'https://alfajores-forno.celo-testnet.org',
+  bsc: env.BSC_RPC_URL || 'https://bsc-dataseed.binance.org/',
 };
 
 // Treasury reconciliation configuration

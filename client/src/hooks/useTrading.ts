@@ -2,7 +2,9 @@ import { useState, useCallback, useEffect } from 'react';
 import { authClient } from '@/utils/authClient';
 import { useTradingAccount } from '../contexts/trading-account-context';
 
-const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:3001/api';
+const API_BASE_URL =
+  import.meta.env.VITE_API_URL ||
+  (typeof window !== 'undefined' ? `${window.location.origin}/api` : '/api');
 
 /**
  * Hook to fetch open orders

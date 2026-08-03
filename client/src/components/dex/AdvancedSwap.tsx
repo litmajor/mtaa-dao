@@ -6,17 +6,29 @@ import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { useToast } from '@/hooks/use-toast';
-import { AlertCircle, Info, ArrowUpRight, LoaderCircle, CheckCircle, XCircle, Zap } from 'lucide-react';
+import { AlertCircle, Info, ArrowUpRight, LoaderCircle as Loader, CheckCircle, XCircle, Zap } from 'lucide-react';
+import { useYukiStore } from '@/stores/useYukiStore';
+import { usePortfolio } from '@/hooks/usePortfolio';
 
 export default function AdvancedSwap() {
+  const { preFilledTrade, clearPreFilledTrade } = useYukiStore();
+  const { refetch: refetchPortfolio } = usePortfolio();
   const { toast } = useToast();
-  const [fromAsset, setFromAsset] = useState('USDC');
-  const [toAsset, setToAsset] = useState('ETH');
-  const [amountIn, setAmountIn] = useState('100');
+  const [fromAsset, setFromAsset] = useState(preFilledTrade?.tokenIn || 'USDC');
+  const [toAsset, setToAsset] = useState(preFilledTrade?.tokenOut || 'ETH');
+  const [amountIn, setAmountIn] = useState(preFilledTrade?.recommendedAmount || '100');
   const [selectedChain, setSelectedChain] = useState('ethereum');
   const [preferredDex, setPreferredDex] = useState('all');
   const [slippage, setSlippage] = useState('0.5');
   const [walletAddress, setWalletAddress] = useState('0x123...abc');
+
+  React.useEffect(() => {
+    if (preFilledTrade) {
+      if (preFilledTrade.tokenIn) setFromAsset(preFilledTrade.tokenIn);
+      if (preFilledTrade.tokenOut) setToAsset(preFilledTrade.tokenOut);
+      if (preFilledTrade.recommendedAmount) setAmountIn(preFilledTrade.recommendedAmount);
+    }
+  }, [preFilledTrade]);
 
   const { data: dexList = [] } = useQuery({
     queryKey: ['dex-list-advanced'],
@@ -98,6 +110,11 @@ export default function AdvancedSwap() {
           title: '✅ Swap Success!', 
           description: `Received ~${res.amountOut?.toFixed(6) ?? '?'} ${toAsset}. Tx: ${res.transactionHash?.slice(0, 10)}...` 
         });
+        
+        // Post-swap lifecycle hooks
+        clearPreFilledTrade();
+        refetchPortfolio();
+        
       } else {
         toast({ title: '❌ Swap failed', description: res.error || 'Unknown error', variant: 'destructive' });
       }

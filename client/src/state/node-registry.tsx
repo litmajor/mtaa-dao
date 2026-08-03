@@ -1,3 +1,4 @@
+import type { ComponentType } from 'react';
 import ConditionInspector from '../components/trading/inspectors/ConditionInspector';
 import ActionInspector from '../components/trading/inspectors/ActionInspector';
 import RiskInspector from '../components/trading/inspectors/RiskInspector';
@@ -7,16 +8,46 @@ import VaultInspector from '../components/trading/inspectors/VaultInspector';
 import CrosschainInspector from '../components/trading/inspectors/CrosschainInspector';
 import { validateAiNode, validateVaultNode, validateCrosschainNode } from '../engine/node-validators';
 import { compileAiNode, compileVaultNode, compileCrosschainNode } from '../engine/node-compilers';
+import type {
+  StrategyNode,
+  ConditionNode,
+  ActionNode,
+  RiskNode,
+  ExecutionNode,
+  AiNode,
+  VaultNode,
+  CrosschainNode,
+} from '../models/StrategyNode';
+import type { ValidationIssue } from '../engine/strategy-validator';
+import type { CompiledNode } from '../engine/strategy-compiler';
 
-export interface NodeRegistryEntry {
-  inspector: any;
+type InspectorProps<T extends StrategyNode> = {
+  node: T;
+  onChange: (patch: any) => void;
+};
+
+export type NodeValidator<T extends StrategyNode = StrategyNode> = (node: T) => ValidationIssue[];
+export type NodeCompiler<T extends StrategyNode = StrategyNode> = (node: T) => CompiledNode;
+
+export interface NodeRegistryEntry<T extends StrategyNode = StrategyNode> {
+  inspector: ComponentType<InspectorProps<T>>;
   icon?: string;
   color?: string;
-  validator?: any;
-  compiler?: any;
+  validator?: NodeValidator<T>;
+  compiler?: NodeCompiler<T>;
 }
 
-const NodeRegistry: Record<string, NodeRegistryEntry> = {
+type NodeRegistryMap = {
+  condition: NodeRegistryEntry<ConditionNode>;
+  action: NodeRegistryEntry<ActionNode>;
+  risk: NodeRegistryEntry<RiskNode>;
+  execution: NodeRegistryEntry<ExecutionNode>;
+  ai: NodeRegistryEntry<AiNode>;
+  vault: NodeRegistryEntry<VaultNode>;
+  crosschain: NodeRegistryEntry<CrosschainNode>;
+};
+
+const NodeRegistry: NodeRegistryMap = {
   condition: {
     inspector: ConditionInspector,
     icon: '🔎',

@@ -6,9 +6,9 @@
  */
 
 import { useState, useCallback, useEffect } from 'react';
-import { DAOTreasury } from '@/types/treasury';
-import {
-  generateTreasuryIntelligence,
+import type { DAOTreasury } from '@/types/treasury';
+import { generateTreasuryIntelligence } from '@/utils/treasury-intelligence';
+import type {
   TreasuryIntelligenceSummary,
   GovernanceWeightFormula,
   GovernanceWeightFactors,

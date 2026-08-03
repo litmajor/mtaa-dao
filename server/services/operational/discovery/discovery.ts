@@ -5,19 +5,16 @@
  */
 
 import { EventEmitter } from 'events';
-import axios, { AxiosError } from 'axios';
+import axios from 'axios';
 import { createHash } from 'crypto';
 import {
-  ServiceInstance,
-  ServiceRegistry,
   ServiceHealthStatus,
   ServiceType,
   PrivilegeLevel,
   TrustLevel,
-  OperationalFrameworkConfig,
   ServiceDiscoveryError,
 } from '../types';
-
+import type { ServiceInstance,ServiceRegistry,OperationalFrameworkConfig} from '../types';
 export class SystemDiscovery extends EventEmitter {
   private registry: ServiceRegistry;
   private discoveryInterval: NodeJS.Timeout | null = null;

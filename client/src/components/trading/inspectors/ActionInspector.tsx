@@ -1,5 +1,5 @@
 import React from 'react';
-import { ActionNode } from '../../../models/StrategyNode';
+import type { ActionNode } from '../../../models/StrategyNode';
 
 export default function ActionInspector({ node, onChange }: { node: ActionNode; onChange: (patch: any) => void }) {
   return (

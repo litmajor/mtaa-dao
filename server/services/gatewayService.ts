@@ -1,9 +1,12 @@
 import { ethers } from 'ethers';
 import { logger } from '../utils/logger';
 import { createWalletIfValid } from '../utils/cryptoWallet';
+import { resolveProviderUrls } from './providerBootstrap';
+import { ResilientRpcProvider } from './resilientRpcProvider';
 
+const providerUrls = resolveProviderUrls();
 const AGENT_GATEWAY_ADDRESS = process.env.AGENT_PAYMENT_GATEWAY_ADDR || process.env.AGENT_GATEWAY_ADDR || '';
-const RPC_URL = process.env.RPC_URL || '';
+const RPC_URL = providerUrls.rpcUrl;
 const PRIVATE_KEY = process.env.MPESA_PRIVATE_KEY || process.env.PRIVATE_KEY || '';
 
 const GATEWAY_ABI = [
@@ -15,6 +18,7 @@ const GATEWAY_ABI = [
 ];
 
 let provider: ethers.JsonRpcProvider | null = null;
+let resilientProvider: ResilientRpcProvider | null = null;
 let wallet: ethers.Wallet | null = null;
 let contract: ethers.Contract | null = null;
 
@@ -23,7 +27,13 @@ function init() {
   if (!RPC_URL) throw new Error('RPC_URL not configured');
   if (!PRIVATE_KEY) throw new Error('PRIVATE_KEY (MPESA signer) not configured');
   if (!AGENT_GATEWAY_ADDRESS) throw new Error('AGENT_PAYMENT_GATEWAY_ADDR not configured');
-  provider = new ethers.JsonRpcProvider(RPC_URL);
+  resilientProvider = new ResilientRpcProvider({
+    primary: { name: 'primary-rpc', httpUrl: RPC_URL },
+    fallback: providerUrls.fallbackRpcUrl ? { name: 'fallback-rpc', httpUrl: providerUrls.fallbackRpcUrl } : undefined,
+    cooldownMs: 60_000,
+    onFailover: (from, to, reason) => logger.warn(`Gateway RPC failover ${from} -> ${to}: ${reason}`),
+  });
+  provider = resilientProvider.getRawProvider();
   wallet = createWalletIfValid(PRIVATE_KEY, provider) as ethers.Wallet | null;
   if (!wallet) throw new Error('PRIVATE_KEY invalid or not configured for AgentPaymentGateway service');
   contract = new ethers.Contract(AGENT_GATEWAY_ADDRESS, GATEWAY_ABI, wallet);
@@ -43,11 +53,18 @@ export async function payAgentInKES(agentId: string, kesAmount: number | bigint 
   const kesInt = BigInt(Math.round(Number(kesAmount)));
 
   try {
-    const tx = await contract.payAgentInKES(agentIdBytes, kesInt, payer, mpesaTxHash);
+    const tx = await resilientProvider!.call(async (providerForCall) => {
+    const walletForCall = createWalletIfValid(PRIVATE_KEY, providerForCall) as ethers.Wallet | null;
+    if (!walletForCall) throw new Error('PRIVATE_KEY invalid or not configured for AgentPaymentGateway service');
+    const contractForCall = new ethers.Contract(AGENT_GATEWAY_ADDRESS, GATEWAY_ABI, walletForCall);
+    return contractForCall.payAgentInKES(agentIdBytes, kesInt, payer, mpesaTxHash);
+  });
     logger.info('Sent payAgentInKES tx', { hash: tx.hash });
     if (confirmations > 0) {
       try {
-        await provider!.waitForTransaction(tx.hash, confirmations, 120_000);
+        await resilientProvider!.call((providerForCall) =>
+          providerForCall.waitForTransaction(tx.hash, confirmations, 120_000)
+        );
       } catch (waitErr) {
         logger.warn('Waiting for confirmations timed out', { txHash: tx.hash, err: String(waitErr) });
       }
@@ -86,7 +103,11 @@ export async function configureAgent(
   const treasuryPercentageBig = BigInt(String(treasuryPercentage || 0));
   const communityPercentageBig = BigInt(String(communityPercentage || 0));
 
-  const tx = await contract.configureAgent(
+  const tx = await resilientProvider!.call(async (providerForCall) => {
+    const walletForCall = createWalletIfValid(PRIVATE_KEY, providerForCall) as ethers.Wallet | null;
+    if (!walletForCall) throw new Error('PRIVATE_KEY invalid or not configured for AgentPaymentGateway service');
+    const contractForCall = new ethers.Contract(AGENT_GATEWAY_ADDRESS, GATEWAY_ABI, walletForCall);
+    return contractForCall.configureAgent(
     agentIdBytes,
     agentAddress,
     feeInKESBig,
@@ -96,9 +117,10 @@ export async function configureAgent(
     payoutPercentageNum,
     treasuryPercentageBig,
     communityPercentageBig,
-    acceptsMTAA,
-    acceptsKES
-  );
+      acceptsMTAA,
+      acceptsKES
+    );
+  });
 
   logger.info('Sent configureAgent tx', { hash: tx.hash });
   return tx;

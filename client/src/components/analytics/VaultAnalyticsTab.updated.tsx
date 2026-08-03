@@ -75,7 +75,10 @@ export const VaultAnalyticsTab: React.FC<VaultAnalyticsTabProps> = ({
   onTimeRangeChange,
 }) => {
   const context = useContext(RealtimeMetricsContext);
-  const apiBaseUrl = context?.apiBaseUrl || process.env.VITE_API_URL || 'http://localhost:3001';
+  const apiBaseUrl =
+    context?.apiBaseUrl ||
+    import.meta.env.VITE_API_URL ||
+    (typeof window !== 'undefined' ? window.location.origin : '');
 
   const [selectedTimeRange, setSelectedTimeRange] = useState<'7d' | '30d' | '90d' | '1y' | 'all'>(timeRange);
 

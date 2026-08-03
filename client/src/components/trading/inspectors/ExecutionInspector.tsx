@@ -1,5 +1,5 @@
 import React from 'react';
-import { ExecutionNode } from '../../../models/StrategyNode';
+import type { ExecutionNode } from '../../../models/StrategyNode';
 
 export default function ExecutionInspector({ node, onChange }: { node: ExecutionNode; onChange: (patch: any) => void }) {
   return (

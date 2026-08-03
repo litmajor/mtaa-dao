@@ -1,5 +1,6 @@
 import express from "express";
 import type { Request, Response } from "express";
+import type { Socket as SocketIOClientSocket } from 'socket.io';
 import { createServer } from 'http';
 import { Server as SocketIOServer } from 'socket.io';
 import cors from 'cors';
@@ -12,6 +13,7 @@ import { setupInvestmentPoolsAutomation } from "./jobs/investmentPoolsAutomation
 import { logger, requestLogger, logStartup } from './utils/logger';
 import { initializeConsoleLogger, getConsoleLogger } from './utils/console-logger';
 import path from "path";
+import v8 from 'node:v8';
 import { dirname } from "path";
 import { fileURLToPath } from "url";
 import { notificationService } from './notificationService';
@@ -53,7 +55,7 @@ import pollProposalsRouter from './routes/poll-proposals';
 import jobHealthRoutes from './routes/jobHealthRoutes';
 import './middleware/validation'; 
 import { ReputationService } from './reputationService'; 
-import { authenticate, isAuthenticated, refreshTokenHandler, logoutHandler, authUserHandler, authLoginHandler, authRegisterHandler } from './auth';
+import { authenticate, isAuthenticated, refreshTokenHandler, logoutHandler, authUserHandler, authLoginHandler, authRegisterHandler, verifyAccessToken } from './auth';
 import reputationRoutes from './routes/reputation'; 
 import operationalFrameworkRoutes from './routes/admin/operational-framework';
 import healthAdminRoutes from './routes/admin/health';
@@ -65,14 +67,13 @@ import eventsRoutes from './routes/events';
 import treasuryManagementRoutes from './routes/treasuryManagement'; 
 import multisigRoutes from './routes/multisig'; 
 import userPreferencesRoutes from './routes/user-preferences';
-import jwt from 'jsonwebtoken';
 import nftMarketplaceRouter from './routes/nft-marketplace';
 import paymentGatewayRoutes from './routes/payment-gateway';
 import kycRouter from './routes/kyc';
 import referralRewardsRouter from './routes/referral-rewards';
 import economyRouter from './routes/economy';
 import morioRoutes from './routes/morio';
-// ✅ Removed: morioDataHubRoutes and morioElderInsightsRoutes (now mounted internally via morio.ts)
+// Removed: morioDataHubRoutes and morioElderInsightsRoutes (now mounted internally via morio.ts)
 import jobRoutes from './routes/jobs';
 import websocketMonitoringRoutes from './routes/websocket-monitoring';
 import logsRoutes from './routes/logs';
@@ -102,7 +103,13 @@ import { initializeGatewayAgent } from './core/agents/gateway/initialize';
 import { opportunityEngine } from './services/opportunityEngine';
 import { opportunityStream } from './websocket/opportunityStream';
 import { marketStreamService } from './services/marketStreamService';
+import { initializeWebSocketManager } from './websocket/websocket';
+import WebSocketEventService from './websocket/gateway-websocket-integration';
+import { WS_PATHS, NotificationsWS } from './websocket/websocket-events';
+import { initializeEventEmitter } from './middleware/websocket-event-emitter';
+import { JobMonitoringService } from './services/jobMonitoringService';
 import { pool, waitForDatabase } from './db';
+import { withClient } from './utils/dbClient';
 import { startPriceCollectionJob } from './services/cexPriceBackgroundJob';
 import { marketUniverseBuilder } from './services/marketUniverseBuilder';
 import { tokenDiscoveryService } from './services/tokenDiscoveryService';
@@ -110,6 +117,8 @@ import { initTreasuryMonitoring, stopTreasuryMonitoring } from './services/treas
 import { startRotationEventListener } from './services/rotation_listener';
 import { startAchievementListener } from './services/achievement_listener';
 import { startRewardsBatchWorker } from './services/rewards_batch_worker';
+import { watchlistAlertEvaluator } from './services/watchlistAlertEvaluator';
+import { paymentRecoveryWorkflowService } from './services/paymentRecoveryWorkflowService';
 import { schemaValidator } from './utils/schemaValidator';
 import { runAllMigrations } from './db/migrations';
 import { graphPropagationEngine, initializeNode } from './services/graphPropagationEngine';
@@ -123,6 +132,8 @@ import { SystemVisibility } from './middleware/systemVisibility';
 import { externalAPITracker } from './services/externalAPITracker';
 import { setupDefenderAgent } from './middleware/defender-setup';
 import { initializeSystemMonitoring } from './utils/systemHealthMonitor';
+import { signalsStreamHandler, signalsPollHandler, signalsPublishHandler } from './services/signalsStreamer';
+import { requireSuperAdminEnhanced } from './middleware/adminAuth';
 import createDiagnosticsRouter from './utils/diagnosticsAPI';
 import { executeGuardedJob } from './utils/jobExecutionGuard';
 import {  
@@ -143,6 +154,8 @@ import {
 } from './utils/singletonVerifier';
 import { metricsMiddleware, startMetricsReporting } from './middleware/metricsMiddleware';
 import apiRegistryRoutes from './routes/apiRegistry';
+import controlPlaneRouter from './control-plane';
+import eventFabric, { createRequestLifecycleMiddleware } from './event-fabric';
 import { getAgentWorkerManager } from './workers/agent-worker-manager';
 import { isolatedWorkerManager } from './services/IsolatedWorkerManager';
 import { PerformanceOptimizerBufferedWriter } from './services/PerformanceOptimizerBufferedWriter';
@@ -151,10 +164,56 @@ import { strategyDashboardService } from './services/strategyDashboardService';
 import { cacheService } from './services/cacheService';
 import { ExecutionTrackingService } from './services/executionTrackingService';
 import { contributionIndexer } from './services/contributionIndexerService';
+import { advancedOrderMonitor } from './services/advancedOrderMonitor';
+import { ensureYukiAdvancedOrdersTable } from './services/yukiAdvancedOrders';
 import { initializeAutoPromotionJob } from './jobs/auto-promotion';
 import { initializePaymentRequestExpirationJob } from './jobs/payment-request-expiration';
 import { initRetentionJob } from './jobs/retention';
 import swaggerMiddleware from './middleware/swaggerMiddleware';
+
+
+// Helper: safely convert an unknown value into a metadata object for logger calls
+function metaFromUnknown(x: unknown): Record<string, unknown> {
+  if (x == null) return {};
+  if (x instanceof Error) return { message: x.message, stack: x.stack };
+  if (typeof x === 'object') return x as Record<string, unknown>;
+  return { value: String(x) };
+}
+
+// Type guards for optional extension points (adapters/services)
+function hasInitialize(obj: unknown): obj is { initialize: () => Promise<void> | void } {
+  return typeof obj === 'object' && obj !== null && 'initialize' in obj && typeof (obj as { initialize: unknown }).initialize === 'function';
+}
+
+function hasStart(obj: unknown): obj is { start: () => Promise<void> | void } {
+  return typeof obj === 'object' && obj !== null && 'start' in obj && typeof (obj as { start: unknown }).start === 'function';
+}
+
+function hasGetStatus(obj: unknown): obj is { getStatus: () => unknown } {
+  return typeof obj === 'object' && obj !== null && 'getStatus' in obj && typeof (obj as { getStatus: unknown }).getStatus === 'function';
+}
+
+async function withStartupStageTimeout<T>(
+  stage: string,
+  operation: () => Promise<T>,
+  timeoutMs = 10000
+): Promise<T> {
+  console.log(`[STARTUP] >>> ${stage} START`);
+  try {
+    const result = await Promise.race([
+      operation(),
+      new Promise<T>((_, reject) => {
+        setTimeout(() => reject(new Error(`[STARTUP] ${stage} timed out after ${timeoutMs}ms`)), timeoutMs);
+      })
+    ]);
+    console.log(`[STARTUP] <<< ${stage} COMPLETE`);
+    return result;
+  } catch (error) {
+    console.error(`[STARTUP] !!! ${stage} FAILED or TIMED OUT`, error instanceof Error ? error.message : error);
+    throw error;
+  }
+}
+
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const app = express();
@@ -177,8 +236,45 @@ if (process.listenerCount('unhandledRejection') === 0) {
 }
 
 const server = createServer(app);
+interface SocketWithAuth extends SocketIOClientSocket {
+  userId?: string | null;
+}
+
+type SocketNext = (err?: Error) => void;
+
 const io = new SocketIOServer(server, {
-  cors: corsConfig,
+  path: WS_PATHS.NOTIFICATIONS,
+  cors: {
+    origin: (origin: string | undefined, callback: (err: Error | null, allow?: boolean) => void) => {
+      // Mirror the HTTP CORS logic: accept undefined origin (non-browser), or match configured origins
+      try {
+        if (!origin) return callback(null, true);
+        const rawAllowed = (corsConfig.origin as string[]).map((o) => String(o).trim());
+        const normalize = (o: string) => {
+          try {
+            const u = new URL(o.startsWith('http') ? o : `http://${o}`);
+            return `${u.protocol}//${u.hostname}${u.port ? `:${u.port}` : ''}`.toLowerCase();
+          } catch { return o.toLowerCase(); }
+        };
+        const allowedSet = new Set(rawAllowed.map(normalize));
+        const u = new URL(String(origin));
+        const normalized = `${u.protocol}//${u.hostname}${u.port ? `:${u.port}` : ''}`.toLowerCase();
+        if (allowedSet.has(normalized)) return callback(null, true);
+        // allow localhost/127.0.0.1 interchange
+        const hostnames = Array.from(allowedSet).map(a => { try { return new URL(a).hostname; } catch { return a.split('://').pop()?.split(':')[0] ?? a; } });
+        if (hostnames.includes(u.hostname)) return callback(null, true);
+        if (u.hostname === '127.0.0.1' && hostnames.includes('localhost')) return callback(null, true);
+        if (u.hostname === 'localhost' && hostnames.includes('127.0.0.1')) return callback(null, true);
+        console.warn(`[CORS][WS] Blocked socket connection from unauthorized origin: ${origin}`);
+        return callback(new Error('CORS policy violation'));
+      } catch (e) {
+        return callback(null, true);
+      }
+    },
+    credentials: true,
+    methods: ['GET', 'POST'],
+    allowedHeaders: ['Content-Type', 'Authorization', 'X-CSRF-Token'],
+  },
   allowEIO3: true,
 });
 
@@ -196,27 +292,74 @@ const compressionMiddleware = compression({
   }
 });
 
-const allowedOrigins = (
-  process.env.ALLOWED_ORIGINS?.split(',') || [
-    'http://localhost:5000',
-    'http://localhost:5173',
-    'http://localhost:8080',
-    'https://mtaadao.com',
-    'https://www.mtaadao.org',  
-    'https://app.mtaadao.com',
-  ]
-).map(origin => origin.trim());
+const rawAllowedOrigins = (corsConfig.origin as string[]).map((origin) => origin.trim());
+const allowAllOrigins = rawAllowedOrigins.some((o) => ['*', 'all'].includes(o.toLowerCase()));
+
+// Normalize origins to canonical form (protocol://hostname:port) when possible
+const normalizeOrigin = (o: string) => {
+  try {
+    const url = new URL(o.startsWith('http') ? o : `http://${o}`);
+    return `${url.protocol}//${url.hostname}${url.port ? `:${url.port}` : ''}`.toLowerCase();
+  } catch {
+    return o.toLowerCase();
+  }
+};
+
+const normalizedAllowed = new Set(rawAllowedOrigins.map(normalizeOrigin));
+
+const isOriginAllowed = (origin: string | undefined | null) => {
+  if (!origin) return true; // non-browser clients or same-origin
+  if (allowAllOrigins) return true;
+
+  try {
+    const url = new URL(String(origin));
+    const normalized = `${url.protocol}//${url.hostname}${url.port ? `:${url.port}` : ''}`.toLowerCase();
+
+    if (normalizedAllowed.has(normalized)) return true;
+
+    // Accept localhost/127.0.0.1 variants if hostname matches one of the allowed hostnames
+    const hostnames = Array.from(normalizedAllowed).map((a) => {
+      try { return new URL(a).hostname; } catch { return a.split('://').pop()?.split(':')[0] ?? a; }
+    });
+    if (hostnames.includes(url.hostname)) return true;
+
+    // Common dev substitution: allow 127.0.0.1 when localhost is configured
+    if (url.hostname === '127.0.0.1' && hostnames.includes('localhost')) return true;
+    if (url.hostname === 'localhost' && hostnames.includes('127.0.0.1')) return true;
+
+    return false;
+  } catch (e) {
+    return rawAllowedOrigins.map((o) => o.toLowerCase()).includes(String(origin).toLowerCase());
+  }
+};
 
 app.use(cors({
   origin: (origin, callback) => {
-    if (!origin || allowedOrigins.includes(origin)) return callback(null, true);
+    if (isOriginAllowed(origin)) return callback(null, true);
     console.warn(`[CORS] Blocked request from unauthorized origin: ${origin}`);
     callback(new Error('CORS policy violation'));
   },
   credentials: true,
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
   allowedHeaders: ['Content-Type', 'Authorization'],
-  maxAge: 86400
+  maxAge: 86400,
+}));
+
+// Security headers (CSP, HSTS, X-Frame-Options, etc.)
+app.use(helmet({
+  contentSecurityPolicy: {
+    directives: {
+      defaultSrc: ["'self'"],
+      scriptSrc: ["'self'"],
+      styleSrc: ["'self'", "'unsafe-inline'"],
+      imgSrc: ["'self'", 'data:', 'https:'],
+      connectSrc: ["'self'"],
+      fontSrc: ["'self'"],
+      objectSrc: ["'none'"],
+      upgradeInsecureRequests: [],
+    },
+  },
+  crossOriginEmbedderPolicy: false, // allow CDN resources
 }));
 
 app.use(sanitizeInput);
@@ -224,12 +367,18 @@ app.use(preventSqlInjection);
 app.use(preventXSS);
 app.use(auditMiddleware);
 setupOperationalAuditLogging(app);
+app.use(createRequestLifecycleMiddleware());
+// Attach request logger middleware (adds `req.logger` and logs request/response)
+app.use(requestLogger);
 app.use(compressionMiddleware);
 app.use(performanceMonitor(1000));
 
 app.use(metricsCollector.requestMiddleware());
-(app as any).locals = (app as any).locals || {};
-(app as any).locals.metricsCollectorMounted = true;
+app.locals.metricsCollectorMounted = true;
+// Expose requirePermission factory on app.locals for dynamic usages
+(app.locals as any).requirePermission = requirePermission;
+// Additional metrics middleware (instrumentation hooks)
+app.use(metricsMiddleware);
 
 app.use(activityTracker());
 app.use(createRouteUsageLogger(path.join(__dirname, '../visibility/route-usage.csv')));
@@ -237,8 +386,35 @@ app.use('/api', circuitBreakerMiddleware);
 
 const systemVisibility = new SystemVisibility(app, path.join(__dirname, '../visibility'));
 
-if (typeof (externalAPITracker as any).initialize === 'function') {
-  (externalAPITracker as any).initialize();
+// Memory / heap sanity check: warn if Node was started with a low max-old-space-size
+(() => {
+  try {
+    const execArg = process.execArgv.find((a) => a.includes('--max_old_space_size') || a.includes('--max-old-space-size'));
+    let configuredMB: number | null = null;
+    if (execArg) {
+      const parts = execArg.split(/=|\s+/);
+      const val = parts[1] || parts[0].split('=')[1];
+      configuredMB = val ? parseInt(val.replace(/[^0-9]/g, ''), 10) : null;
+    }
+
+    const mem = process.memoryUsage();
+    const usedMB = Math.round((mem.heapUsed / 1024 / 1024) * 100) / 100;
+    const heapLimitMB = Math.round((v8.getHeapStatistics().heap_size_limit / 1024 / 1024) * 100) / 100;
+
+    if (configuredMB && usedMB / configuredMB > 0.9) {
+      logger.warn(`CRITICAL HEAP: ${usedMB}MB/${configuredMB}MB (~${Math.round((usedMB/configuredMB)*100)}%) — Node started with low heap.`);
+      logger.warn('Consider increasing Node heap: update your dev script or run with: cross-env NODE_OPTIONS=--max_old_space_size=2048 npm run run:server');
+    } else if (!configuredMB && usedMB / (heapLimitMB || 1) > 0.9) {
+      logger.warn(`High heap usage detected: ${usedMB}MB/${heapLimitMB}MB (~${Math.round((usedMB/heapLimitMB)*100)}%) of V8 heap limit.`);
+      logger.warn('Example: cross-env NODE_OPTIONS=--max_old_space_size=2048 npm run run:server');
+    }
+  } catch (e) {
+    // best-effort only
+  }
+})();
+
+if (typeof externalAPITracker.setLogDirectory === 'function') {
+  externalAPITracker.setLogDirectory(path.join(__dirname, '../visibility'));
 }
 
 import { getSocketIOService } from './services/SocketIOWebSocketService';
@@ -248,23 +424,67 @@ app.locals.socketIOService = socketIOService;
 opportunityStream.initialize(server);
 marketStreamService.initialize(server);
 
-const userSockets = new Map();
+// Initialize central WebSocket manager and event services
+try {
+  const wsManager = initializeWebSocketManager(server);
+  // Initialize global emitter used by services
+  initializeEventEmitter(wsManager);
 
-io.use(async (socket: any, next) => {
+  // Create the high-level WebSocketEventService and attach for app-wide use
+  const webSocketEventService = new WebSocketEventService(wsManager);
+  app.locals.webSocketEventService = webSocketEventService;
+
+  // Wire job monitoring alerts to push into alerts room by default
+  JobMonitoringService.setAlertHandler(async (metrics) => {
+    try {
+      webSocketEventService.notifyAlert({
+        entityType: 'scheduled-job',
+        entityId: metrics.jobName,
+        alertType: 'job-failure',
+        message: `Job ${metrics.jobName} failed: ${metrics.error}`,
+        severity: 'high'
+      } as any);
+    } catch (err) {
+      logger.error('[Startup] Failed to notify alert via WebSocketEventService', { err });
+    }
+  });
+} catch (err) {
+  logger.warn('[Startup] WebSocket manager/event service initialization failed', { err });
+}
+
+const userSockets = new Map<string, Set<string>>();
+
+io.use(async (socket: SocketWithAuth, next: SocketNext) => {
   try {
-    const token = socket.handshake.query.token || socket.handshake.auth?.token;
+        let token = socket.handshake.auth?.token || socket.handshake.query.token;
+
+    if (!token && socket.handshake.headers?.cookie) {
+      const cookieString = socket.handshake.headers.cookie as string;
+      const cookies = cookieString.split(';').map(c => c.trim());
+      for (const cookie of cookies) {
+        const eqIdx = cookie.indexOf('=');
+        if (eqIdx === -1) continue;
+        const key = decodeURIComponent(cookie.slice(0, eqIdx));
+        const value = decodeURIComponent(cookie.slice(eqIdx + 1));
+        if (key === 'access_token') {
+          token = value;
+          break;
+        }
+      }
+    }
+
     if (!token) {
       socket.userId = null;
       return next();
     }
-    const jwtSecret = process.env.JWT_SECRET;
-    if (!jwtSecret) {
-      logger.error('JWT_SECRET not configured — rejecting Socket.IO authentication');
+
+    const payload = verifyAccessToken(token) as { sub?: string; userId?: string; id?: string } | null;
+    if (!payload) {
       socket.userId = null;
       return next();
     }
-    const decoded = jwt.verify(token, jwtSecret) as any;
-    socket.userId = decoded.userId || decoded.id;
+
+    socket.userId = payload.sub || payload.userId || payload.id;
     next();
   } catch (error) {
     socket.userId = null;
@@ -272,23 +492,30 @@ io.use(async (socket: any, next) => {
   }
 });
 
-io.on('connection', (socket: any) => {
+io.on('connection', (socket: SocketWithAuth) => {
   if (socket.userId) {
-    userSockets.set(socket.userId, socket.id);
-    socket.join(`user_${socket.userId}`);
+    if (!userSockets.has(socket.userId)) {
+      userSockets.set(socket.userId, new Set());
+    }
+    userSockets.get(socket.userId)!.add(socket.id);
+    socket.join(NotificationsWS.Rooms.user(socket.userId));
   }
-  socket.on('authenticate', (userId: string) => {
-    socket.userId = userId;
-    userSockets.set(userId, socket.id);
-    socket.join(`user_${userId}`);
-  });
+
   socket.on('disconnect', () => {
-    if (socket.userId) userSockets.delete(socket.userId);
+    if (socket.userId) {
+      const sockets = userSockets.get(socket.userId);
+      if (sockets) {
+        sockets.delete(socket.id);
+        if (sockets.size === 0) {
+          userSockets.delete(socket.userId);
+        }
+      }
+    }
   });
 });
 
-notificationService.on('notification_created', (data) => {
-  io.to(`user_${data.userId}`).emit('new_notification', data);
+notificationService.on('notification_created', (data: NotificationsWS.NotificationPayload) => {
+  io.to(NotificationsWS.Rooms.user(data.userId)).emit(NotificationsWS.ServerEvents.NEW_NOTIFICATION, data);
 });
 
 app.locals.socketIO = io;
@@ -297,7 +524,7 @@ app.locals.socketIO = io;
 app.use((req, res, next) => {
   const start = Date.now();
   const reqPath = req.path;
-  let capturedJsonResponse: Record<string, any> | undefined = undefined;
+  let capturedJsonResponse: Record<string, unknown> | undefined = undefined;
   const originalResJson = res.json;
 
   res.json = function (bodyJson, ...args) {
@@ -317,52 +544,35 @@ app.use((req, res, next) => {
   next();
 });
 
-// Dynamic Route Registry Definitions 
-const router = express.Router();
-router.use('/payment-reconciliation', paymentReconciliationRoutes);
-router.use('/health', healthRoutes);
-router.use('/analytics', analyticsRoutes);
-router.use('/notifications', notificationRoutes);
-router.use('/system', systemRoutes);
-router.use('/proposal-execution', proposalExecutionRouter);
-router.use('/poll-proposals', pollProposalsRouter);
-router.use('/job-health', jobHealthRoutes);
-router.use('/reputation', reputationRoutes);
-router.use('/admin/health', healthAdminRoutes);
-router.use('/kotanipay-status', kotaniPayStatusRoutes);
-router.use('/mpesa-status', mpesaStatusRoutes);
-router.use('/stripe-status', stripeStatusRoutes);
-router.use('/referrals', referralsRoutes);
-router.use('/events', eventsRoutes);
-router.use('/treasury-management', treasuryManagementRoutes);
-router.use('/multisig', multisigRoutes);
-router.use('/user-preferences', userPreferencesRoutes);
-router.use('/nft-marketplace', nftMarketplaceRouter);
-router.use('/payment-gateway', paymentGatewayRoutes);
-router.use('/kyc', kycRouter);
-router.use('/referral-rewards', referralRewardsRouter);
-router.use('/economy', economyRouter);
-// MORIO CONSOLIDATED: data-hub and elder-insights now mounted as /morio/data-hub and /morio/elder-insights
-router.use('/morio', morioRoutes);
-router.use('/jobs', jobRoutes);
-router.use('/websocket-monitoring', websocketMonitoringRoutes);
-router.use('/logs', logsRoutes);
-router.use('/public-stats', publicStatsRoutes);
-router.use('/analyzer', analyzerRoutes);
-router.use('/defender', defenderRoutes);
-router.use('/exchanges', exchangeRoutes);
-// ⚠️ CONSOLIDATED ROUTES (now mounted at /api/* in app.use() section):
-//  - /feature-analytics → /api/features (line ~1231)
-//  - /graph-propagation → /api/propagation (line ~1233)
-//  - /dex-screener → /api/dex (line ~1267)
-//  - /api-registry → /api/docs (line ~1317)
-// Deprecation redirects added to server/routes.ts for backwards compatibility
-router.use('/personas', personasRouter);
-router.use('/payment-requests', paymentRequestsRoutes);
-router.use('/amara', amaraRoutes);
-router.use('/admin-consolidated', adminConsolidated);
+// ─────────────────────────────────────────────────────────────────────────────
+// PUBLIC-ONLY early router
+//   SECURITY INVARIANT: ONLY genuinely unauthenticated public routes belong
+// here.  Every sensitive route MUST be mounted inside the async IIFE below,
+// where isAuthenticated / requireRole / requireDAORole guards are applied.
+// Adding a protected router here creates an auth-bypass because Express resolves
+// middleware in registration order — this router fires before every guard below.
+// ─────────────────────────────────────────────────────────────────────────────
+const publicRouter = express.Router();
 
-app.use('/api', router);
+// Genuine public endpoints
+publicRouter.use('/health', healthRoutes);
+publicRouter.use('/public-stats', publicStatsRoutes);
+publicRouter.use('/system', systemRoutes);
+publicRouter.use('/events', eventsRoutes);
+
+// Payment-provider status pages (webhook-level, no PII)
+publicRouter.use('/kotanipay-status', kotaniPayStatusRoutes);
+publicRouter.use('/mpesa-status', mpesaStatusRoutes);
+publicRouter.use('/stripe-status', stripeStatusRoutes);
+
+// Real-time Signals (SSE stream & poll are read-only public feeds;
+// /publish is individually guarded by requireSuperAdminEnhanced)
+publicRouter.get('/signals/stream', signalsStreamHandler);
+publicRouter.get('/signals/poll', signalsPollHandler);
+publicRouter.post('/signals/publish', requireSuperAdminEnhanced, signalsPublishHandler);
+
+app.use('/api', publicRouter);
+app.use('/api/control-plane', controlPlaneRouter);
 
 // Expose Prometheus metrics endpoint
 app.get('/metrics', async (_req, res) => {
@@ -375,32 +585,29 @@ app.get('/metrics', async (_req, res) => {
   }
 });
 
+// (debug route removed) `requirePermission` is available on app.locals for runtime wiring
+
 // Mount core application routers via default generator pipeline
 // Route registration is performed later in the async startup block with the HTTP server instance
 
-// Fallback error-handling mappings
-app.use(notFoundHandler);
-app.use(errorHandler);
+// NOTE: notFoundHandler and errorHandler are intentionally mounted INSIDE the
+// async startup IIFE (see bottom of file), after ALL routes have been
+// registered.  Mounting them here would cause every route added in the async
+// block to return 404 because the catch-all would intercept first.
 
 console.log('[STARTUP] Starting async initialization lifecycle...');
 
-// Global process exception bindings
-if (process.listenerCount('unhandledRejection') === 0) {
-  process.on('unhandledRejection', (reason, promise) => {
-    logger.error('🚨 Unhandled Promise Rejection:', {
-      reason: reason instanceof Error ? reason.message : String(reason),
-      stack: reason instanceof Error ? reason.stack : undefined,
-      promise: String(promise),
-    });
-  });
-}
+// unhandledRejection is already registered above (with blockchain-RPC filtering).
+// A second registration is unreachable because the guard
+// `process.listenerCount('unhandledRejection') === 0` was already false
+// after the first registration.  Removed to avoid dead code confusion.
 
 process.on('uncaughtException', (error) => {
   logger.error('🚨 Uncaught Exception:', { message: error.message, stack: error.stack });
   setTimeout(() => { process.exit(1); }, 1000);
 });
 
-(global as any).isServerStarting = true;
+(globalThis as typeof globalThis & { isServerStarting?: boolean }).isServerStarting = true;
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // ASYNC INITIALIZATION BLOCK (STAGE A TO STAGE E)
@@ -427,32 +634,75 @@ process.on('uncaughtException', (error) => {
           logger.info('[STARTUP] ✅ Feature overrides loaded from Redis');
         }
       } catch (e) {
-        logger.warn('[STARTUP] Could not load feature overrides from Redis', e as any);
+        logger.warn('[STARTUP] Could not load feature overrides from Redis', metaFromUnknown(e));
+        try {
+          if (typeof shouldRetry === 'function' && shouldRetry(e)) {
+            logger.info('[STARTUP] Feature overrides load will be retried per shouldRetry policy');
+          }
+        } catch {
+          // ignore
+        }
       }
     } catch (redisErr) {
       console.warn('[STARTUP] Redis unavailable - falling back to internal in-memory system storage matrices.', redisErr instanceof Error ? redisErr.message : redisErr);
     }
-    const migrationResult: any = await runAllMigrations();
-    if (migrationResult?.success) {
-      logger.info('[STARTUP] ✅ Database migrations completed successfully');
-      try {
-        initRetentionJob();
-        logger.info('[STARTUP] ✅ Retention job initialized');
-      } catch (e) {
-        logger.warn('[STARTUP] Retention job failed to initialize:', e instanceof Error ? e.message : e);
+
+    console.log('[STARTUP] Waiting for PostgreSQL to become available...');
+    try {
+      await waitForDatabase();
+      console.log('[STARTUP] ✅ PostgreSQL is available');
+    } catch (err) {
+      logger.error('[STARTUP] PostgreSQL failed to become available during startup:', metaFromUnknown(err));
+      throw err;
+    }
+
+    const shouldRunMigrations = process.env.RUN_MIGRATIONS === 'true';
+
+    if (shouldRunMigrations) {
+      logger.info('[STARTUP] RUN_MIGRATIONS=true -> running database migrations in this process');
+      const migrationResult: any = await runAllMigrations();
+      if (migrationResult?.success) {
+        logger.info('[STARTUP] ✅ Database migrations completed successfully');
+      } else {
+        logger.error('[STARTUP] ❌ Database migrations failed, aborting startup', { errors: migrationResult.errors });
+        throw new Error(`Database migrations failed: ${migrationResult.errors?.join('; ') || 'unknown error'}`);
       }
     } else {
-      logger.warn('[STARTUP] Database migrations completed with baseline environment warnings', { errors: migrationResult.errors });
-      try {
-        initRetentionJob();
-      } catch (e) {}
+      logger.info('[STARTUP] Database migrations are disabled for the main process. Ensure migrations are applied separately before starting.');
+    }
+
+    try {
+      await withStartupStageTimeout(
+        'paymentRecoveryWorkflowService.initialize',
+        () => withClient(async (client) => {
+          // Acquire a short-lived DB client to avoid thundering on shared pool while init runs.
+          await paymentRecoveryWorkflowService.initialize();
+          return true;
+        }, 10000),
+        15000
+      );
+      logger.info('[STARTUP] ✅ Payment recovery workflow service initialized');
+    } catch (e) {
+      logger.error('[STARTUP] ❌ Payment recovery workflow service initialization failed:', metaFromUnknown(e));
+      throw e;
+    }
+
+    try {
+      initRetentionJob();
+      logger.info('[STARTUP] ✅ Retention job initialized');
+    } catch (e) {
+      logger.warn('[STARTUP] Retention job failed to initialize:', metaFromUnknown(e));
     }
 
     console.log('[STARTUP] Validating database schema...');
-    const schemaValid = await schemaValidator.validateDatabaseSchema();
+    const schemaValid = await withStartupStageTimeout(
+      'schemaValidator.validateDatabaseSchema',
+      () => schemaValidator.validateDatabaseSchema(),
+      10000
+    );
     if (!schemaValid) {
-      logger.error('[STARTUP] ❌ Database schema validation failed. Re-executing structure sync migrations...');
-      await runAllMigrations();
+      logger.error('[STARTUP] ❌ Database schema validation failed. Aborting startup. Run migrations in a dedicated process and restart the server.');
+      throw new Error('Database schema validation failed');
     } else {
       logger.info('[STARTUP] ✅ Database schema validation passed');
     }
@@ -461,8 +711,11 @@ process.on('uncaughtException', (error) => {
     console.log('[STARTUP] Initializing consolidated systems...');
     const { circuitBreakerRegistry } = await import('./core/consolidation/CircuitBreakerConsolidation');
     const { healthRegistry } = await import('./core/consolidation/HealthRegistryConsolidation');
+    const { initializeHealthRegistryComponents } = await import('./core/consolidation/HealthBootstrap');
     const { cacheManager } = await import('./core/consolidation/DataCacheConsolidation');
     const { paymentRecoverySAGA } = await import('./services/PaymentRecoverySAGAOrchestrator');
+    
+    initializeHealthRegistryComponents();
     
     if (circuitBreaker) {
       const apiBreakerConfig = {
@@ -476,13 +729,21 @@ process.on('uncaughtException', (error) => {
       circuitBreakerRegistry.getOrCreate('api-calls', 'media', apiBreakerConfig);
       logger.info('[STARTUP] ✅ Circuit Breaker registry system loaded.');
     }
+    // Expose circuit breaker helper on app.locals so it's wired and available
+    try {
+      (app.locals as any).withCircuitBreaker = withCircuitBreaker;
+    } catch {}
     
-    if (healthRegistry) logger.info('[STARTUP] ✅ Health Registry initialized');
-    if (cacheManager) logger.info('[STARTUP] ✅ Data Cache Manager initialized');
-    if (paymentRecoverySAGA) logger.info('[STARTUP] ✅ Payment Recovery SAGA Orchestrator initialized');
+    if (healthRegistry) logger.info('[STARTUP] ✅ Health Registry initialized', {});
+    if (cacheManager) logger.info('[STARTUP] ✅ Data Cache Manager initialized', {});
+    if (paymentRecoverySAGA) logger.info('[STARTUP] ✅ Payment Recovery SAGA Orchestrator initialized', {});
 
     console.log('[STARTUP] Running Phase 7.1 System Singleton Verification...');
-    const verification: any = await verifySingletonInstances();
+    const verification: any = await withStartupStageTimeout(
+      'verifySingletonInstances',
+      () => Promise.resolve(verifySingletonInstances()),
+      10000
+    );
     if (!verification?.success) {
       logger.error('❌ Critical Singleton Conflict Matrix found during startup phase verification:', verification?.errors);
     } else {
@@ -512,34 +773,45 @@ process.on('uncaughtException', (error) => {
     initializePaymentRequestExpirationJob();
     ScheduledAggregationJobs.initializeScheduledJobs();
     // Start on-chain RotationModule event listener to reconcile rotation cycles
-    try {
-      startRotationEventListener();
-      logger.info('[STARTUP] ✅ Rotation event listener started');
-    } catch (err) {
-      logger.warn('[STARTUP] Rotation event listener failed to start:', err);
-    }
+      try {
+        startRotationEventListener();
+        logger.info('[STARTUP] ✅ Rotation event listener started');
+      } catch (err) {
+        logger.warn('[STARTUP] Rotation event listener failed to start:', metaFromUnknown(err));
+      }
 
     try {
       startAchievementListener();
       logger.info('[STARTUP] ✅ Achievement event listener started');
     } catch (err) {
-      logger.warn('[STARTUP] Achievement event listener failed to start:', err);
+      logger.warn('[STARTUP] Achievement event listener failed to start:', metaFromUnknown(err));
     }
 
     try {
       startRewardsBatchWorker();
       logger.info('[STARTUP] ✅ Rewards batch worker started');
     } catch (err) {
-      logger.warn('[STARTUP] Rewards batch worker failed to start:', err);
+      logger.warn('[STARTUP] Rewards batch worker failed to start:', metaFromUnknown(err));
+    }
+
+    try {
+      watchlistAlertEvaluator.start();
+      logger.info('[STARTUP] ✅ WatchlistAlertEvaluator started');
+    } catch (err) {
+      logger.warn('[STARTUP] Failed to start WatchlistAlertEvaluator:', metaFromUnknown(err));
     }
     
     // Agent Payment Gateway indexer for intelligence dashboards
     try {
       const { agentPaymentIndexer } = await import('./services/AgentPaymentIndexer');
-      await agentPaymentIndexer.start();
+      await withStartupStageTimeout(
+        'agentPaymentIndexer.start',
+        () => agentPaymentIndexer.start(),
+        10000
+      );
       logger.info('[STARTUP] ✅ AgentPaymentIndexer started');
     } catch (err) {
-      logger.warn('[STARTUP] AgentPaymentIndexer failed to start:', err);
+      logger.warn('[STARTUP] AgentPaymentIndexer failed to start:', metaFromUnknown(err));
     }
 
     // STAGE E: AGENT NETWORK & REAL-TIME INGESTION STREAM AUTOMATION 
@@ -570,9 +842,11 @@ process.on('uncaughtException', (error) => {
       collectionIntervalSeconds: 30,
       maxConcurrentExchanges: 6,
       tradingPairs: [
-        'BTC/USDT', 'ETH/USDT', 'USDC/USDT', 'USDT/USDT',
-        'DAI/USDT', 'cUSD/USDT', 'cEUR/USDT', 'CELO/USDT',
-        'MATIC/USDT', 'AAVE/USDT', 'LINK/USDT', 'UNI/USDT', 'BNB/USDT'
+        'BTC/USDT', 'ETH/USDT', 'USDC/USDT', 'USDT/USDT', 'ICP/USDT',
+        'DAI/USDT', 'SOL/USDT', 'XRP/USDT', 'CELO/USDT', 'XAUt/USDT',
+        'MATIC/USDT', 'AAVE/USDT', 'LINK/USDT', 'UNI/USDT', 'BNB/USDT',
+        'TRX/USDT', 'LTC/USDT', 'BCH/USDT', 'ZEC/USDT', 'OKB/USDT',
+        'NEAR/USDT', 'ONDO/USDT', 'HYPE/USDT', 'XMR/USDT', 'XLM/USDT'
       ],
     };
 
@@ -583,7 +857,11 @@ process.on('uncaughtException', (error) => {
       const { marketDiscoveryScannerService } = await import('./services/marketDiscoveryScannerService');
       
       // Initialize automatic phase manager
-      await automaticPhaseManager.initialize();
+      await withStartupStageTimeout(
+        'automaticPhaseManager.initialize',
+        () => automaticPhaseManager.initialize(),
+        10000
+      );
       console.log('[STARTUP] ✅ Market Discovery System initialized');
       console.log('[STARTUP]    - Automatic Phase Manager: Phase 1 started');
       console.log('[STARTUP]    - Efficient Pair Caching: Enabled');
@@ -593,23 +871,27 @@ process.on('uncaughtException', (error) => {
       console.log('[STARTUP]      • POST /api/admin/market-discovery/scan/phase/:phase');
       console.log('[STARTUP]      • GET /api/admin/market-discovery/cache-status');
       console.log('[STARTUP]      • DELETE /api/admin/market-discovery/cache');
-    } catch (discoveryError) {
-      logger.error('[STARTUP] Failed to initialize Market Discovery System:', discoveryError);
+      } catch (discoveryError) {
+      logger.error('[STARTUP] Failed to initialize Market Discovery System:', metaFromUnknown(discoveryError));
       // Don't fail startup - market discovery is optional
     }
 
     // Initialize Token Discovery unified universe (resilient startup with local fallback)
     console.log('[STARTUP] Initializing Token Discovery unified universe (with local fallback)...');
     try {
-      await tokenDiscoveryService.buildUnifiedUniverse();
+      await withStartupStageTimeout(
+        'tokenDiscoveryService.buildUnifiedUniverse',
+        () => tokenDiscoveryService.buildUnifiedUniverse(),
+        15000
+      );
       logger.info('[STARTUP] ✅ Token universe built successfully');
     } catch (error) {
-      logger.error('[STARTUP] Failed to build fresh universe, loading local fallback cache...', error);
+      logger.error('[STARTUP] Failed to build fresh universe, loading local fallback cache...', metaFromUnknown(error));
       try {
         await tokenDiscoveryService.loadFallbackUniverse();
         logger.info('[STARTUP] ✅ Loaded fallback token universe cache');
       } catch (fallbackErr) {
-        logger.error('[STARTUP] Failed to load fallback universe cache:', fallbackErr);
+        logger.error('[STARTUP] Failed to load fallback universe cache:', metaFromUnknown(fallbackErr));
       }
     }
 
@@ -654,92 +936,15 @@ process.on('uncaughtException', (error) => {
         },
       };
       
-      const framework = await initializeOperationalFramework(operationalConfig as any);
+      const framework = await withStartupStageTimeout(
+        'initializeOperationalFramework',
+        () => initializeOperationalFramework(operationalConfig as any),
+        10000
+      );
       logger.info('✅ Operational Framework initialized');
     } catch (operationalError) {
       logger.error('[STARTUP] Failed to initialize Operational Framework:', operationalError);
       // Don't fail startup - operational framework is optional
-    }
-
-    // CRITICAL: Validate database schema integrity
-    console.log('[STARTUP] Validating database schema...');
-    try {
-      const schemaValid = await schemaValidator.validateDatabaseSchema();
-      if (!schemaValid) {
-        logger.error('[STARTUP] ❌ Database schema validation failed');
-        logger.info('[STARTUP] 🔄 Running database migrations to set up missing tables...');
-        try {
-          const migrationResult: any = await runAllMigrations();
-          if (migrationResult?.success) {
-            logger.info('[STARTUP] ✅ Database migrations completed successfully');
-          } else {
-            logger.error('[STARTUP] ⚠️ Some migrations had warnings:', migrationResult?.errors);
-          }
-        } catch (migrationError) {
-          logger.error('[STARTUP] ❌ CRITICAL: Migration failed:', migrationError);
-          // In production, should crash here - migrations are essential
-          // For now, warn but continue
-        }
-      } else {
-        logger.info('[STARTUP] ✅ Database schema validation passed');
-      }
-    } catch (schemaError) {
-      logger.error('[STARTUP] Schema validation threw error:', schemaError);
-      // Continue - might be transient DB connection issue
-    }
-
-    // Initialize consolidated systems (Circuit Breaker, Health, Cache, Audit, SAGA)
-    console.log('[STARTUP] Initializing consolidated systems...');
-    try {
-      const { circuitBreakerRegistry } = await import('./core/consolidation/CircuitBreakerConsolidation');
-      const { healthRegistry } = await import('./core/consolidation/HealthRegistryConsolidation');
-      const { cacheManager } = await import('./core/consolidation/DataCacheConsolidation');
-      const { paymentRecoverySAGA } = await import('./services/PaymentRecoverySAGAOrchestrator');
-      
-      // Initialize Circuit Breaker Registry
-      if (circuitBreaker) {
-        const apiBreakerConfig = {
-          name: 'api-calls',
-          domain: 'media' as const,
-          failureThreshold: 5,
-          resetTimeout: 60000,
-          monitoringWindow: 60000,
-          ...circuitBreaker
-        };
-        const apiBreaker = circuitBreakerRegistry.getOrCreate('api-calls', 'media', apiBreakerConfig);
-        logger.info('[STARTUP] ✅ Circuit Breaker initialized for API calls');
-      }
-      
-      // Initialize Health Registry
-      if (healthRegistry) {
-        logger.info('[STARTUP] ✅ Health Registry initialized');
-      }
-      
-      // Initialize Payment Recovery SAGA
-      if (paymentRecoverySAGA) {
-        logger.info('[STARTUP] ✅ Payment Recovery SAGA initialized');
-      }
-      
-      // Initialize cache manager with default caches
-      (cacheManager.registerCache as any)('platform_metrics', { strategy: 'ttl', ttl: 60000, maxSize: 1000 });
-      (cacheManager.registerCache as any)('exchange_data', { strategy: 'ttl', ttl: 30000, maxSize: 5000 });
-      // Register CEX prices cache - use the specialized CEXPriceCache instance to preserve
-      // the legacy `setPrice`/`getPrice` API expected by the collectors.
-      (cacheManager.registerCache as any)('cex_prices', { strategy: 'event-driven', invalidateOn: 'ticker-update' });
-
-      try {
-        const { CEXPriceCache } = await import('./services/cexPriceCache');
-        // Bypass private map via runtime cast to ensure existing modules get the expected API
-        (cacheManager as any).caches.set('cex_prices', CEXPriceCache.getInstance());
-        logger.info('[STARTUP] ✅ Registered specialized CEXPriceCache for cex_prices');
-      } catch (err) {
-        logger.warn('[STARTUP] Failed to register CEXPriceCache specialized instance:', err);
-      }
-      
-      logger.info('[STARTUP] ✅ All consolidated systems initialized (CB, Health, Cache, Audit, SAGA)');
-    } catch (consolidationError) {
-      logger.error('[STARTUP] Failed to initialize consolidated systems:', consolidationError);
-      // Continue - systems have fallbacks
     }
 
     // Initialize Execution Tracking Service
@@ -748,38 +953,34 @@ process.on('uncaughtException', (error) => {
       // Initialize ExecutionTrackingService (singleton)
       if (ExecutionTrackingService) {
         const trackingService = ExecutionTrackingService.getInstance();
-        await trackingService.initialize();
+        await withStartupStageTimeout(
+          'trackingService.initialize',
+          () => trackingService.initialize(),
+          10000
+        );
       }
       
       // Initialize Redis cache service
-      let redisUrl = process.env.REDIS_URL;
-      if (!redisUrl) {
-        const host = process.env.REDIS_HOST || 'localhost';
-        const port = process.env.REDIS_PORT || '6379';
-        const password = process.env.REDIS_PASSWORD;
-        const db = process.env.REDIS_DB || '0';
-        if (password) {
-          redisUrl = `redis://:${encodeURIComponent(password)}@${host}:${port}/${db}`;
-        } else {
-          redisUrl = `redis://${host}:${port}/${db}`;
-        }
-      }
-      await (cacheService.initialize as any)(redisUrl, {
-        enableFallback: true,
-        retryAttempts: 3,
-        retryDelayMs: 1000
-      });
+      await withStartupStageTimeout(
+        'cacheService.initialize',
+        () => cacheService.initialize(),
+        10000
+      );
       logger.info('[STARTUP] ✅ Cache service initialized (Redis with in-memory fallback)');
 
       // Health check on cache service
-      const cacheHealthy = await cacheService.healthCheck();
+      const cacheHealthy = await withStartupStageTimeout(
+        'cacheService.healthCheck',
+        () => cacheService.healthCheck(),
+        10000
+      );
       if (cacheHealthy) {
         logger.info('[STARTUP] ✅ Cache service health check passed');
       } else {
         logger.warn('[STARTUP] ⚠️ Cache service health check failed - using fallback');
       }
     } catch (executionInitError) {
-      logger.error('[STARTUP] Failed to initialize execution quality systems:', executionInitError);
+      logger.error('[STARTUP] Failed to initialize execution quality systems:', metaFromUnknown(executionInitError));
       // Execution tracking has fallbacks, continue
     }
 
@@ -787,93 +988,129 @@ process.on('uncaughtException', (error) => {
     console.log('[STARTUP] Initializing dashboard services...');
     try {
       if (assetGraphService && typeof (assetGraphService as any).initialize === 'function') {
-        await (assetGraphService as any).initialize();
+        await withStartupStageTimeout(
+          'assetGraphService.initialize',
+          () => (assetGraphService as any).initialize(),
+          10000
+        );
         logger.info('[STARTUP] ✅ Asset Graph Service initialized');
       }
       
       if (strategyDashboardService && typeof (strategyDashboardService as any).initialize === 'function') {
-        await (strategyDashboardService as any).initialize();
+        await withStartupStageTimeout(
+          'strategyDashboardService.initialize',
+          () => (strategyDashboardService as any).initialize(),
+          10000
+        );
         logger.info('[STARTUP] ✅ Strategy Dashboard Service initialized');
       }
     } catch (dashboardError) {
-      logger.error('[STARTUP] Failed to initialize dashboard services:', dashboardError);
+      logger.error('[STARTUP] Failed to initialize dashboard services:', metaFromUnknown(dashboardError));
       // Dashboard services are optional, continue
     }
 
     // Initialize Graph Propagation Engine (Layer 4: Capital Intelligence)
     console.log('[STARTUP] Initializing Graph Propagation Engine (Phase A, B, C)...');
     try {
-      // Build initial graph from symbol universe (placeholder - will be enhanced to read from DB)
-      const mockNodes = [
-        initializeNode('BTC', 'asset'),
-        initializeNode('ETH', 'asset'),
-        initializeNode('SOL', 'asset'),
-        initializeNode('USDC', 'asset'),
-        initializeNode('BTC/USDT', 'pair'),
-        initializeNode('ETH/USDT', 'pair'),
-      ];
-      
-      const mockEdges = [
-        {
-          from: 'BTC', to: 'ETH',
-          edgeType: 'correlates_with' as const,
-          weight: 0.85,
-          directional: false,
-          typeMultiplier: 1.0,
-          metadata: { correlation: 0.85 },
-          updatedAt: Date.now(),
-        },
-        {
-          from: 'BTC', to: 'SOL',
-          edgeType: 'correlates_with' as const,
-          weight: 0.72,
-          directional: false,
-          typeMultiplier: 1.0,
-          metadata: { correlation: 0.72 },
-          updatedAt: Date.now(),
-        },
-      ];
-      
-      // Initialize graph engine
-      graphPropagationEngine.initializeGraph(mockNodes, mockEdges);
+      // ── Seed Graph ───────────────────────────────────────────────────────────
+      // In production, seed data should come from DB / real correlation feeds.
+      // The hardcoded mock edges are only used in development/test so that the
+      // engine is never silently running on stale placeholder correlations.
+      if (env.NODE_ENV !== 'production') {
+        const mockNodes = [
+          initializeNode('BTC', 'asset'),
+          initializeNode('ETH', 'asset'),
+          initializeNode('SOL', 'asset'),
+          initializeNode('USDC', 'asset'),
+          initializeNode('BTC/USDT', 'pair'),
+          initializeNode('ETH/USDT', 'pair'),
+        ];
+        const mockEdges = [
+          {
+            from: 'BTC', to: 'ETH',
+            edgeType: 'correlates_with' as const,
+            weight: 0.85,
+            directional: false,
+            typeMultiplier: 1.0,
+            metadata: { correlation: 0.85 },
+            updatedAt: Date.now(),
+          },
+          {
+            from: 'BTC', to: 'SOL',
+            edgeType: 'correlates_with' as const,
+            weight: 0.72,
+            directional: false,
+            typeMultiplier: 1.0,
+            metadata: { correlation: 0.72 },
+            updatedAt: Date.now(),
+          },
+        ];
+        graphPropagationEngine.initializeGraph(mockNodes, mockEdges);
+        logger.info('[STARTUP] ✅ Graph seeded with dev/test placeholder correlations');
+      } else {
+        // Production: initialize empty graph; ohlcvPropagationAdapter will
+        // populate real edges once price history is available.
+        graphPropagationEngine.initializeGraph([], []);
+        logger.info('[STARTUP] ✅ Graph Propagation Engine initialized with empty graph (production mode — real correlations fed by adapters)');
+      }
       logger.info('[STARTUP] ✅ Graph Propagation Engine initialized (Phase A)');
       
       // Initialize propagation adapters (Phase B: Data integration)
-      if (typeof (ohlcvPropagationAdapter as any).initialize === 'function') {
-        await (ohlcvPropagationAdapter as any).initialize();
+      const ohlcvAdapter = ohlcvPropagationAdapter as unknown as { initialize?: () => Promise<void> | void };
+      const taAdapter = technicalAnalysisPropagationAdapter as unknown as { initialize?: () => Promise<void> | void };
+      const nuruAdapter = nuruPropagationAdapter as unknown as { initialize?: () => Promise<void> | void };
+
+      if (hasInitialize(ohlcvAdapter)) {
+        await withStartupStageTimeout(
+          'ohlcvPropagationAdapter.initialize',
+          () => Promise.resolve(ohlcvAdapter.initialize()),
+          10000
+        );
         logger.info('[STARTUP] ✅ OHLCV Propagation Adapter initialized');
       }
-      if (typeof (technicalAnalysisPropagationAdapter as any).initialize === 'function') {
-        await (technicalAnalysisPropagationAdapter as any).initialize();
+      if (hasInitialize(taAdapter)) {
+        await withStartupStageTimeout(
+          'technicalAnalysisPropagationAdapter.initialize',
+          () => Promise.resolve(taAdapter.initialize()),
+          10000
+        );
         logger.info('[STARTUP] ✅ Technical Analysis Propagation Adapter initialized');
       }
-      if (typeof (nuruPropagationAdapter as any).initialize === 'function') {
-        await (nuruPropagationAdapter as any).initialize();
+      if (hasInitialize(nuruAdapter)) {
+        await withStartupStageTimeout(
+          'nuruPropagationAdapter.initialize',
+          () => Promise.resolve(nuruAdapter.initialize()),
+          10000
+        );
         logger.info('[STARTUP] ✅ NURU Propagation Adapter initialized');
       }
       
       // Initialize monitoring service (if available)
-      if (typeof (propagationMonitoringService as any).start === 'function') {
-        (propagationMonitoringService as any).start();
+      if (hasStart(propagationMonitoringService)) {
+        propagationMonitoringService.start();
       }
       logger.info('[STARTUP] ✅ Propagation Monitoring Service started (Phase B)');
       
       // Initialize production hardening (if available)
-      if (typeof (productionHardeningService as any).getStatus === 'function') {
-        const hardeningStatus = (productionHardeningService as any).getStatus();
-        logger.info('[STARTUP] ✅ Production Hardening initialized (Phase C)', hardeningStatus);
+      if (hasGetStatus(productionHardeningService)) {
+        const hardeningStatus = productionHardeningService.getStatus();
+        logger.info('[STARTUP] ✅ Production Hardening initialized (Phase C)', metaFromUnknown(hardeningStatus));
       } else {
         logger.info('[STARTUP] ✅ Production Hardening initialized (Phase C)');
       }
       
       // Initialize integration hooks
       const { initializeGraphPropagationHooks } = await import('./services/graphPropagationIntegration');
-      await initializeGraphPropagationHooks();
+      await withStartupStageTimeout(
+        'initializeGraphPropagationHooks',
+        () => initializeGraphPropagationHooks(),
+        10000
+      );
       logger.info('[STARTUP] ✅ Graph Propagation Integration Hooks initialized (Phase B callbacks)');
       
       logger.info('[STARTUP] Graph Propagation Engine fully initialized (1,700+ lines)');
-    } catch (propagationError) {
-      logger.error('[STARTUP] Failed to initialize Graph Propagation Engine:', propagationError);
+      } catch (propagationError) {
+      logger.error('[STARTUP] Failed to initialize Graph Propagation Engine:', metaFromUnknown(propagationError));
       logger.warn('[STARTUP] Continuing without graph propagation - capital intelligence degraded');
     }
 
@@ -892,12 +1129,18 @@ process.on('uncaughtException', (error) => {
       };
 
       // Run initial flush in background and schedule recurring flushes
-      performFlush().catch(err => logger.warn('[BufferedWriter] Initial flush failed', err));
+      performFlush().catch(err => logger.warn('[BufferedWriter] Initial flush failed', metaFromUnknown(err)));
       setInterval(() => {
-        performFlush().catch(err => logger.error('[BufferedWriter] Scheduled flush failed', err));
+        performFlush().catch(err => logger.error('[BufferedWriter] Scheduled flush failed', metaFromUnknown(err)));
       }, FLUSH_INTERVAL_MS);
+      // Start metrics reporting background task
+      try {
+        if (typeof startMetricsReporting === 'function') startMetricsReporting();
+      } catch (e) {
+        logger.warn('[STARTUP] startMetricsReporting failed to start', metaFromUnknown(e));
+      }
     } catch (metricsError) {
-      logger.warn('[STARTUP] Metrics buffering setup warning:', metricsError);
+      logger.warn('[STARTUP] Metrics buffering setup warning:', metaFromUnknown(metricsError));
     }
 
     // Initialize High-Value Agents
@@ -917,16 +1160,16 @@ process.on('uncaughtException', (error) => {
           const agentInfo = await agentRegistry.createAgent(agentType);
           await agentRegistry.initializeAgent(agentInfo.id);
           logger.info(`[STARTUP] ✅ ${agentType} agent initialized: ${agentInfo.id}`);
-        } catch (agentError) {
-          logger.warn(`[STARTUP] Failed to initialize ${agentType} agent:`, agentError);
+          } catch (agentError) {
+          logger.warn(`[STARTUP] Failed to initialize ${agentType} agent:`, metaFromUnknown(agentError));
           // Continue - individual agent failures shouldn't block startup
         }
       }
 
       const summary = agentRegistry.getStatusSummary();
       logger.info('[STARTUP] Agent registry status:', summary);
-    } catch (agentError) {
-      logger.error('[STARTUP] Failed to initialize agent system:', agentError);
+      } catch (agentError) {
+      logger.error('[STARTUP] Failed to initialize agent system:', metaFromUnknown(agentError));
       // Continue - agents are optional
     }
 
@@ -947,7 +1190,7 @@ process.on('uncaughtException', (error) => {
       await isolatedWorkerManager.start(performanceOptimizer, healthMonitor);
       logger.info('[STARTUP] ✅ Isolated worker manager started (agents + metrics flusher)');
     } catch (workerError) {
-      logger.warn('[STARTUP] Isolated worker manager setup warning:', workerError);
+      logger.warn('[STARTUP] Isolated worker manager setup warning:', metaFromUnknown(workerError));
       // Continue - workers are optional but recommended
     }
 
@@ -970,15 +1213,19 @@ process.on('uncaughtException', (error) => {
       logger.info('[STARTUP]    - GET /api/dashboard/risks');
       logger.info('[STARTUP]    - GET /api/dashboard/yields');
       logger.info('[STARTUP]    - GET /api/dashboard/summary');
-    } catch (assetGraphError) {
-      logger.error('[STARTUP] Failed to initialize Asset Graph Service:', assetGraphError);
+      } catch (assetGraphError) {
+      logger.error('[STARTUP] Failed to initialize Asset Graph Service:', metaFromUnknown(assetGraphError));
       // Continue - asset graph is optional for core functionality
     }
 
     console.log('[STARTUP] Registering routes...');
     
     // Add timeout to route registration (30 seconds max)
-    const routesPromise = registerRoutes(app, server);
+    const routesPromise = withStartupStageTimeout(
+      'registerRoutes',
+      () => registerRoutes(app, server),
+      10000
+    );
     const routesTimeout = new Promise((_, reject) =>
       setTimeout(() => reject(new Error('Route registration timeout')), 30000)
     );
@@ -989,7 +1236,8 @@ process.on('uncaughtException', (error) => {
     } catch (routesError: any) {
       const errorMsg = routesError instanceof Error ? routesError.message : String(routesError);
       console.error('[STARTUP] Route registration failed:', errorMsg);
-      console.log('[STARTUP] Continuing without all routes...');
+      // FATAL: Do not start the server if routes failed to register, avoiding silent partial failures
+      throw new Error(`Critical startup failure: Route registration failed - ${errorMsg}`);
     }
 
     // Initialize Defender Agent Integration
@@ -997,9 +1245,9 @@ process.on('uncaughtException', (error) => {
     try {
       setupDefenderAgent(app, authenticate);
       console.log('[STARTUP] Defender Agent integration complete');
-    } catch (defenderError: any) {
+      } catch (defenderError: any) {
       const errorMsg = defenderError instanceof Error ? defenderError.message : String(defenderError);
-      logger.error('[STARTUP] Defender Agent setup failed:', errorMsg);
+      logger.error('[STARTUP] Defender Agent setup failed:', metaFromUnknown(errorMsg));
       // Continue without defender agent - core functionality can still work
     }
 
@@ -1211,18 +1459,25 @@ process.on('uncaughtException', (error) => {
     app.use('/api/events', eventsRoutes);
     app.use('/api/notifications', isAuthenticated, notificationRoutes);
     app.use('/api/system', systemRoutes);
+    // Mount job routes (admin protected)
+    try {
+      if (!(app as any).locals?.routesRegistered) {
+        app.use('/api/jobs', isAuthenticated, requireRole('super_admin'), jobRoutes);
+      } else {
+        console.log('[STARTUP] Skipping duplicate mount: /api/jobs (handled by registerRoutes)');
+      }
+    } catch (e) {
+      logger.warn('[STARTUP] Failed to mount job routes', metaFromUnknown(e));
+    }
     // Billing routes migrated to v1 API
     app.use('/api/health', healthRoutes);
-    app.use('/api/logs', logsRoutes);
+    // Logs are sensitive (stack traces, internal paths, request payloads) — guard them.
+    app.use('/api/logs', isAuthenticated, requireRole('super_admin'), logsRoutes);
     app.use('/api/referral-rewards', isAuthenticated, referralRewardsRouter);
     app.use('/api/economy', isAuthenticated, requireDAORole('member', 'admin', 'owner'), economyRouter);
     app.use('/api/dao/:daoId/executions', isAuthenticated, requireDAORole('member', 'admin', 'owner'), proposalExecutionRouter);
     app.use('/api/poll-proposals', isAuthenticated, requireDAORole('member', 'admin', 'owner'), pollProposalsRouter);
-    if (!(app as any).locals?.routesRegistered) {
-      app.use('/api/reputation', isAuthenticated, requireDAORole('member', 'admin', 'owner'), reputationRoutes); // Added reputation routes
-    } else {
-      console.log('[STARTUP] Skipping duplicate mount: /api/reputation (handled by registerRoutes)');
-    }
+    app.use('/api/reputation', isAuthenticated, requireDAORole('member', 'admin', 'owner'), reputationRoutes); // Added reputation routes
     // Admin-only routes with authentication and superuser role check
     app.use('/api/admin/operational', isAuthenticated, requireRole('super_admin'), operationalFrameworkRoutes); // Operational Framework routes
     app.use('/api/admin/health', isAuthenticated, requireRole('super_admin'), healthAdminRoutes); // Health & System State routes
@@ -1238,12 +1493,37 @@ process.on('uncaughtException', (error) => {
     
     // Cross-chain routes moved to v1 API
     app.use('/api/user/preferences', isAuthenticated, userPreferencesRoutes);
-    if (!(app as any).locals?.routesRegistered) {
-      app.use('/api/morio', isAuthenticated, morioRoutes);
-    } else {
-      console.log('[STARTUP] Skipping duplicate mount: /api/morio (handled by registerRoutes)');
-    }
+    app.use('/api/morio', isAuthenticated, morioRoutes);
     app.use('/api/personas', isAuthenticated, personasRouter);
+    // WebSocket monitoring (was orphaned when the public router was stripped; re-mount with guard)
+    app.use('/api/websocket-monitoring', isAuthenticated, requireRole('super_admin'), websocketMonitoringRoutes);
+
+    // ── Compat redirects for renamed paths ─────────────────────────────────────────
+    // These public aliases were removed from the early router; the authoritative
+    // guarded mount now lives at a different path.  Rather than silently 404-ing
+    // any consumer that still calls the old path, we return a 301 that points to
+    // the correct endpoint so issues are immediately visible in logs/network tabs.
+    app.use('/api/admin-consolidated', isAuthenticated, requireRole('super_admin'), (req: Request, res: Response) => {
+      res.redirect(308, req.originalUrl.replace('/api/admin-consolidated', '/api/admin'));
+    });
+    app.use('/api/job-health', isAuthenticated, requireRole('super_admin'), (req: Request, res: Response) => {
+      res.redirect(308, req.originalUrl.replace('/api/job-health', '/api/admin/jobs'));
+    });
+    // /api/proposal-execution is now /api/dao/:daoId/executions — a daoId is required.
+    // We cannot inject an unknown daoId, so return a descriptive 410 Gone.
+    app.use('/api/proposal-execution', isAuthenticated, (_req: Request, res: Response) => {
+      res.status(410).json({
+        error: 'ENDPOINT_MOVED',
+        message: 'This endpoint has moved to /api/dao/:daoId/executions. Supply the target DAO id in the URL.',
+      });
+    });
+    app.use('/api/amara', isAuthenticated, (req: Request, res: Response) => {
+      res.redirect(308, req.originalUrl.replace('/api/amara', '/api/dashboard'));
+    });
+    // /api/user-preferences (dash) → /api/user/preferences (slash) — same router, different path.
+    app.use('/api/user-preferences', isAuthenticated, (req: Request, res: Response) => {
+      res.redirect(308, req.originalUrl.replace('/api/user-preferences', '/api/user/preferences'));
+    });
     app.use('/api/public-stats', publicStatsRoutes);
     // Treasury intelligence routes moved to v1 API
     app.use('/api/analyzer', isAuthenticated, requireRole('super_admin'), analyzerRoutes);
@@ -1278,7 +1558,7 @@ process.on('uncaughtException', (error) => {
     // NFT Marketplace routes
     app.use('/api/nft-marketplace', isAuthenticated, nftMarketplaceRouter);
 
-    // ✅ V1 WALLETS ROUTER - Canonical versioned wallet endpoints
+    // V1 WALLETS ROUTER - Canonical versioned wallet endpoints
     // All legacy /api/wallet* routes have been migrated to /api/v1/wallets hierarchy
     // Migration completed on: 2026-03-13
     // ~  Core wallet CRUD: sub-router 'core'
@@ -1359,14 +1639,14 @@ process.on('uncaughtException', (error) => {
         const { setupVite } = await import('./vite');
         await setupVite(app, server);
       } catch (err) {
-        logger.warn('⚠️ Dev Vite setup failed:', err);
+        logger.warn('⚠️ Dev Vite setup failed:', metaFromUnknown(err));
       }
     } else {
       try {
         const { serveStatic } = await import('./vite');
         serveStatic(app);
       } catch (err) {
-        logger.warn('⚠️ serveStatic import failed:', err);
+        logger.warn('⚠️ serveStatic import failed:', metaFromUnknown(err));
       }
     }
 
@@ -1374,7 +1654,11 @@ process.on('uncaughtException', (error) => {
     // Initialize Async Job Queue Infrastructure
     // ═══════════════════════════════════════════════════════════════════════════════
     try {
-      await initializeWorkers();
+      await withStartupStageTimeout(
+        'initializeWorkers',
+        () => initializeWorkers(),
+        10000
+      );
       logger.info('✅ Async job workers initialized');
     } catch (error) {
       logger.error('❌ Failed to initialize async job workers:', error);
@@ -1395,9 +1679,14 @@ process.on('uncaughtException', (error) => {
     const PORT = parseInt(process.env.PORT || '5000');
     const HOST = process.env.HOST || '0.0.0.0'; // Bind to all network interfaces
 
+    eventFabric.publish('server.startup.begin', { port: PORT, host: HOST, environment: process.env.NODE_ENV || 'development' });
     console.log('[STARTUP] Starting server on port ' + PORT + ' (HOST: ' + HOST + ')');
+    // Explicit, unambiguous log of the exact parameters used for server.listen
+    console.log(`[STARTUP] SERVER_LISTEN_PARAMS host=${HOST} port=${PORT} pid=${process.pid} exec=${process.execPath}`);
+    logger.info('[STARTUP] server.listen parameters', { port: PORT, host: HOST, pid: process.pid, execPath: process.execPath, argv: process.argv, envHOST: process.env.HOST });
     server.listen(PORT, HOST, () => {
       console.log('[STARTUP] ✅ Server listening on port ' + PORT);
+      eventFabric.publish('server.startup.ready', { port: PORT, host: HOST, environment: process.env.NODE_ENV || 'development' });
       logStartup(PORT.toString());
 
       // Start system health monitoring (event loop saturation detection)
@@ -1412,13 +1701,15 @@ process.on('uncaughtException', (error) => {
       logger.info('🏥 Health Monitor Agent running (polling every 15s)');
 
       // Start deferred background jobs that require network/cache to be hot
-      (async () => {
+      const deferredBackgroundStartupDelayMs = 15_000;
+      console.log(`[STARTUP] Scheduling deferred background startup in ${deferredBackgroundStartupDelayMs}ms`);
+      setTimeout(async () => {
         if (typeof _deferStartOpportunityEngine !== 'undefined' && _deferStartOpportunityEngine) {
           try {
             await opportunityEngine.startScanning(_opportunityEngineScanIntervalMs);
             logger.info('✅ Opportunity Engine started (deferred)');
           } catch (err) {
-            logger.error('Failed to start Opportunity Engine (deferred):', err);
+            logger.error('Failed to start Opportunity Engine (deferred):', metaFromUnknown(err));
           }
         }
 
@@ -1448,13 +1739,13 @@ process.on('uncaughtException', (error) => {
                 logger.warn('[STARTUP] No dynamic tradingPairs found - falling back to static pending list');
               }
             } catch (e) {
-              logger.warn('[STARTUP] Failed to build dynamic tradingPairs:', e instanceof Error ? e.message : e);
+              logger.warn('[STARTUP] Failed to build dynamic tradingPairs:', metaFromUnknown(e));
             }
 
             await startPriceCollectionJob(pool, _pendingPriceJobConfig);
             logger.info('✅ CEX Price Background Job initialized (deferred)');
           } catch (err) {
-            logger.error('Failed to initialize CEX Price Background Job (deferred):', err);
+            logger.error('Failed to initialize CEX Price Background Job (deferred):', metaFromUnknown(err));
           }
         }
         // Start SAGA reconciliation job (background)
@@ -1466,7 +1757,7 @@ process.on('uncaughtException', (error) => {
           startSagaReconciliationJob();
           logger.info('✅ SAGA reconciliation job scheduled (background)');
         } catch (err) {
-          logger.error('Failed to initialize SAGA reconciliation job:', err);
+          logger.error('Failed to initialize SAGA reconciliation job:', metaFromUnknown(err));
         }
         // Start webhook reconciliation worker (periodic catch-up for missed webhooks)
         try {
@@ -1474,9 +1765,9 @@ process.on('uncaughtException', (error) => {
           startWebhookReconciliationWorker();
           logger.info('✅ Webhook reconciliation worker started (background)');
         } catch (err) {
-          logger.error('Failed to initialize webhook reconciliation worker:', err);
+          logger.error('Failed to initialize webhook reconciliation worker:', metaFromUnknown(err));
         }
-      })();
+      }, deferredBackgroundStartupDelayMs);
       
       // ═══════════════════════════════════════════════════════════════════════════════
       // TIER 2: Advanced Monitoring Agents (Isolated Worker)
@@ -1651,38 +1942,47 @@ process.on('uncaughtException', (error) => {
     }
 
     // Initialize Gateway Agent
-    console.log('🌐 Initializing Gateway Agent...');
+    logger.info('🌐 Initializing Gateway Agent...');
     try {
       const gatewayService = await initializeGatewayAgent(
         undefined, // Use default config
         coordinator, // Pass coordinator for integration
         undefined // Use default adapter config
       );
-      console.log('✅ Gateway Agent initialized');
-      console.log('✅ Gateway adapters ready: Chainlink, Uniswap, CoinGecko, Moola, Beefyfi, Blockchain');
+      logger.info('✅ Gateway Agent initialized');
+      logger.info('✅ Gateway adapters ready: Chainlink, Mento, Ubeswap, Curve, Uniswap, Sushi, CoinGecko, Moola, Beefyfi, Blockchain');
 
       // Mount Gateway Agent routes now that service is initialized
       try {
         const { createGatewayRoutes } = await import('./routes/gateway');
         const gatewayRoutes = createGatewayRoutes(gatewayService);
+        app.use('/api/v1/market', gatewayRoutes);
         app.use('/api/gateway', gatewayRoutes);
-        console.log('✅ Gateway Agent API routes mounted at /api/gateway');
+        logger.info('✅ Gateway Agent API routes mounted at /api/v1/market and /api/gateway');
       } catch (routeError) {
-        console.warn('⚠️ Failed to mount Gateway Agent routes:', (routeError as Error).message);
+        logger.warn('⚠️ Failed to mount Gateway Agent routes:', { message: (routeError as Error).message, stack: (routeError as any)?.stack });
       }
-    } catch (error) {
-      console.error('⚠️ Gateway Agent initialization failed:', error);
-      console.error('   Gateway features will be unavailable, but server will continue');
+    } catch (error: any) {
+      const errMsg = error instanceof Error ? error.message : (Object.keys(error || {}).length ? JSON.stringify(error) : String(error));
+      const errStack = error instanceof Error ? error.stack : (error && (error as any).stack) || undefined;
+      logger.error('⚠️ Gateway Agent initialization failed: ' + errMsg, error, { stack: errStack });
+      logger.warn('   Gateway features will be unavailable, but server will continue');
       // Don't crash the server if Gateway fails
     }
 
     // Start bridge relayer service
     bridgeRelayerService.start();
 
+    // Initialize Yuki Advanced Orders table before starting monitor
+    await ensureYukiAdvancedOrdersTable();
+
+    // Start Advanced Orders Background Monitor
+    advancedOrderMonitor.start();
+
     console.log('✅ Blockchain services initialized successfully');
 
     // STARTUP COMPLETE: Clear flag to enable INFO logging now that services are running
-    (global as any).isServerStarting = false;
+    (globalThis as typeof globalThis & { isServerStarting?: boolean }).isServerStarting = false;
 
     // ═══════════════════════════════════════════════════════════════════════════════
     // PHASE 7.1: SINGLETON VERIFICATION (After all services initialized)
@@ -1692,9 +1992,9 @@ process.on('uncaughtException', (error) => {
     try {
       verifySingletonInstances();
       console.log('[STARTUP] ✅ Singleton instance verification complete');
-    } catch (err) {
+      } catch (err) {
       console.warn('[STARTUP] ⚠️ Singleton verification failed:', err);
-      logger.warn('Singleton verification error (non-fatal):', err);
+      logger.warn('Singleton verification error (non-fatal):', metaFromUnknown(err));
     }
 
     // Graceful shutdown
@@ -1716,6 +2016,14 @@ process.on('uncaughtException', (error) => {
         logger.info('Opportunity Engine stopped');
       } catch (err) {
         logger.error('Error stopping Opportunity Engine:', err);
+      }
+
+      // Stop Advanced Order Monitor
+      try {
+        advancedOrderMonitor.stop();
+        logger.info('Advanced Order Monitor stopped');
+      } catch (err) {
+        logger.error('Error stopping Advanced Order Monitor:', err);
       }
 
       // Shutdown Socket.IO service (gracefully closes all WebSocket connections)
@@ -1748,7 +2056,7 @@ process.on('uncaughtException', (error) => {
         await shutdownWorkers();
         logger.info('Async job workers shutdown complete');
       } catch (err) {
-        logger.error('Error shutting down job workers:', err);
+        logger.error('Error shutting down job workers:', metaFromUnknown(err));
       }
 
       // Reset circuit breakers (Phase 6)
@@ -1756,7 +2064,7 @@ process.on('uncaughtException', (error) => {
         resetAllCircuits();
         logger.info('Circuit breakers reset during shutdown');
       } catch (err) {
-        logger.error('Error resetting circuit breakers:', err);
+        logger.error('Error resetting circuit breakers:', metaFromUnknown(err));
       }
 
       // Finalize console logging
@@ -1765,7 +2073,7 @@ process.on('uncaughtException', (error) => {
         consoleLogger.closeLogging();
         logger.info('Console logging finalized');
       } catch (err) {
-        logger.error('Error finalizing console logging:', err);
+        logger.error('Error finalizing console logging:', metaFromUnknown(err));
       }
 
       // Close PostgreSQL pool to free database connections
@@ -1773,7 +2081,7 @@ process.on('uncaughtException', (error) => {
         await pool.end();
         logger.info('PostgreSQL pool closed successfully');
       } catch (err) {
-        logger.error('Error while closing PostgreSQL pool during shutdown:', err);
+        logger.error('Error while closing PostgreSQL pool during shutdown:', metaFromUnknown(err));
       }
 
       server.close(() => {

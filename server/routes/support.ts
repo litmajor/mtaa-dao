@@ -4,6 +4,7 @@ import { db } from '../db';
 import { eq, desc } from 'drizzle-orm';
 import { supportTickets } from '../../shared/schema';
 import { logger } from '../utils/logger';
+import { EmailService } from '../services/emailService';
 
 const router = Router();
 
@@ -38,9 +39,8 @@ router.post('/tickets', async (req, res) => {
     logger.info(`Support ticket created: ${ticketNumber} by ${email}`);
 
     // Send email notification to support team
-    const emailService = new EmailService(); // Initialize email service (SendGrid, Resend, etc)
     try {
-      await emailService.sendEmail({
+      await EmailService.send({
         to: process.env.SUPPORT_EMAIL || 'support@mtaa-dao.com',
         subject: `[${priority.toUpperCase()}] New Support Ticket: ${subject}`,
         html: `

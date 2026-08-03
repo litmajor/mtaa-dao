@@ -1,29 +1,15 @@
 
 import bcrypt from 'bcryptjs';
 import crypto from 'crypto';
-import { Request, Response } from 'express';
+import type { Request, Response } from 'express';
 import { db } from './db';
 import { users } from '../shared/schema';
 import { eq, and, gt } from 'drizzle-orm';
-import nodemailer from 'nodemailer';
+import { EmailService } from './services/emailService';
+import { redis } from './services/redis';
 
-// In-memory store for reset tokens (replace with Redis in production)
-const resetTokens = new Map<string, { userId: string; expires: Date; used: boolean }>();
-
-const TOKEN_EXPIRY = 15 * 60 * 1000; // 15 minutes
-
-// Email transporter setup
-const createEmailTransporter = () => {
-  return nodemailer.createTransport({
-    host: process.env.EMAIL_HOST || 'smtp.gmail.com',
-    port: parseInt(process.env.EMAIL_PORT || '587'),
-    secure: false,
-    auth: {
-      user: process.env.EMAIL_USER,
-      pass: process.env.EMAIL_PASS,
-    },
-  });
-};
+// TTL in seconds for password reset tokens
+const TOKEN_EXPIRY_SECONDS = 15 * 60; // 15 minutes
 
 export const requestPasswordReset = async (req: Request, res: Response) => {
   try {
@@ -47,21 +33,14 @@ export const requestPasswordReset = async (req: Request, res: Response) => {
     // Generate reset token
     const resetToken = crypto.randomBytes(32).toString('hex');
     const hashedToken = crypto.createHash('sha256').update(resetToken).digest('hex');
-    const expires = new Date(Date.now() + TOKEN_EXPIRY);
+    const expires = new Date(Date.now() + TOKEN_EXPIRY_SECONDS * 1000);
 
-    // Store token
-    resetTokens.set(hashedToken, {
-      userId: user.id,
-      expires,
-      used: false
-    });
+    // Store token in Redis with TTL
+    await redis.set(`pwdreset:${hashedToken}`, { userId: user.id, used: false }, TOKEN_EXPIRY_SECONDS);
 
-    // Send email
-    const transporter = createEmailTransporter();
     const resetUrl = `${process.env.NEXTAUTH_URL}/reset-password?token=${resetToken}`;
 
-    const mailOptions = {
-      from: process.env.EMAIL_USER,
+    await EmailService.send({
       to: email,
       subject: 'Password Reset Request - MtaaDAO',
       html: `
@@ -72,9 +51,7 @@ export const requestPasswordReset = async (req: Request, res: Response) => {
         <p>This link will expire in 15 minutes.</p>
         <p>If you didn't request this reset, please ignore this email.</p>
       `
-    };
-
-    await transporter.sendMail(mailOptions);
+    });
 
     res.status(200).json({ 
       message: 'If an account with that email exists, a password reset link has been sent.' 
@@ -99,16 +76,11 @@ export const resetPassword = async (req: Request, res: Response) => {
 
     // Hash the token to find it in storage
     const hashedToken = crypto.createHash('sha256').update(token).digest('hex');
-    const tokenData = resetTokens.get(hashedToken);
+    const tokenData = await redis.get(`pwdreset:${hashedToken}`) as { userId: string; used?: boolean } | null;
 
-    if (!tokenData || tokenData.used || new Date() > tokenData.expires) {
+    if (!tokenData || tokenData.used) {
       return res.status(400).json({ error: 'Invalid or expired reset token' });
     }
-
-    // Mark token as used
-    tokenData.used = true;
-    resetTokens.set(hashedToken, tokenData);
-
     // Hash new password
     const hashedPassword = await bcrypt.hash(newPassword, 12);
 
@@ -121,7 +93,7 @@ export const resetPassword = async (req: Request, res: Response) => {
       .where(eq(users.id, tokenData.userId));
 
     // Clean up the token
-    resetTokens.delete(hashedToken);
+    await redis.delete(`pwdreset:${hashedToken}`);
 
     res.status(200).json({ message: 'Password reset successful' });
   } catch (error) {
@@ -139,9 +111,9 @@ export const verifyResetToken = async (req: Request, res: Response) => {
     }
 
     const hashedToken = crypto.createHash('sha256').update(token as string).digest('hex');
-    const tokenData = resetTokens.get(hashedToken);
+    const tokenData = await redis.get(`pwdreset:${hashedToken}`) as { userId: string; used?: boolean } | null;
 
-    if (!tokenData || tokenData.used || new Date() > tokenData.expires) {
+    if (!tokenData || tokenData.used) {
       return res.status(400).json({ valid: false, error: 'Invalid or expired reset token' });
     }
 
@@ -152,12 +124,4 @@ export const verifyResetToken = async (req: Request, res: Response) => {
   }
 };
 
-// Clean up expired tokens every hour
-setInterval(() => {
-  const now = new Date();
-  for (const [hashedToken, tokenData] of resetTokens.entries()) {
-    if (now > tokenData.expires) {
-      resetTokens.delete(hashedToken);
-    }
-  }
-}, 60 * 60 * 1000);
+// Redis manages TTL; no in-process cleanup required

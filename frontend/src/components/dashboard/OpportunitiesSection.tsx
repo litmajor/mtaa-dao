@@ -1,7 +1,7 @@
 // frontend/src/components/dashboard/OpportunitiesSection.tsx
 import React from 'react';
 
-interface Opportunity {
+export interface Opportunity {
   id: string;
   type: 'exchange_spread' | 'flash_loan' | 'dex_spread';
   entryPrice: number;

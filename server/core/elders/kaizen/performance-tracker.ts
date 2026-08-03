@@ -145,12 +145,20 @@ export class PerformanceTracker {
    * Extract treasury metrics from analysis response
    */
   private extractTreasuryMetrics(analysis: AnalysisResponse): TreasuryMetrics {
+    const runway = Number(analysis.metrics.runway ?? 0);
+    const hasActivity = Number(analysis.metrics.currentBalance ?? 0) > 0
+      || Number(analysis.metrics.burnRate ?? 0) > 0
+      || Number(analysis.metrics.treasuryGrowthRate ?? 0) !== 0;
+    const healthScore = hasActivity
+      ? (Number.isFinite(runway) && runway > 6 ? 100 : Math.max(0, Math.min(100, (runway / 6) * 100)))
+      : 50;
+
     return {
       balance: Number(analysis.metrics.currentBalance || 0),
       burnRate: Number(analysis.metrics.burnRate || 0),
-      runway: Number(analysis.metrics.runway || 0),
+      runway,
       growthRate: Number(analysis.metrics.treasuryGrowthRate || 0),
-      healthScore: analysis.metrics.runway > 6 ? 100 : (analysis.metrics.runway / 6) * 100
+      healthScore
     };
   }
 
@@ -158,11 +166,15 @@ export class PerformanceTracker {
    * Extract governance metrics from analysis response
    */
   private extractGovernanceMetrics(analysis: AnalysisResponse): GovernanceMetrics {
+    const delegatedVotes = Number(analysis.metrics.delegatedVotes ?? 0);
+    const uniqueVoters = Number(analysis.metrics.uniqueVoters ?? 0);
+    const delegationRate = uniqueVoters > 0 ? Math.min(100, (delegatedVotes / uniqueVoters) * 100) : 0;
+
     return {
-      participationRate: Number(analysis.metrics.avgParticipationRate || 0) * 100,
-      proposalSuccessRate: Number(analysis.metrics.proposalSuccessRate || 0) * 100,
-      quorumMet: Number(analysis.metrics.avgQuorum || 0) * 100,
-      delegationRate: analysis.metrics.delegatedVotes / Math.max(analysis.metrics.uniqueVoters, 1) * 100,
+      participationRate: Math.min(100, Math.max(0, Number(analysis.metrics.avgParticipationRate || 0) * 100)),
+      proposalSuccessRate: Math.min(100, Math.max(0, Number(analysis.metrics.proposalSuccessRate || 0) * 100)),
+      quorumMet: Math.min(100, Math.max(0, Number(analysis.metrics.avgQuorum || 0) * 100)),
+      delegationRate,
       governanceHealth: this.calculateGovernanceHealth(analysis.metrics)
     };
   }
@@ -173,9 +185,9 @@ export class PerformanceTracker {
   private extractCommunityMetrics(analysis: AnalysisResponse): CommunityMetrics {
     return {
       activeMembers: Number(analysis.metrics.activeMembers || 0),
-      engagementScore: Number(analysis.metrics.engagementScore || 0) * 100,
-      retentionRate: Number(analysis.metrics.retentionRate || 0) * 100,
-      growthRate: Number(analysis.metrics.communityGrowthRate || 0) * 100,
+      engagementScore: Math.min(100, Math.max(0, Number(analysis.metrics.engagementScore || 0) * 100)),
+      retentionRate: Math.min(100, Math.max(0, Number(analysis.metrics.retentionRate || 0) * 100)),
+      growthRate: Math.min(100, Math.max(-100, Number(analysis.metrics.communityGrowthRate || 0) * 100)),
       communityHealth: this.calculateCommunityHealth(analysis.metrics)
     };
   }
@@ -280,22 +292,38 @@ export class PerformanceTracker {
    * Calculate governance health score
    */
   private calculateGovernanceHealth(metrics: Record<string, any>): number {
-    const participation = (metrics.avgParticipationRate || 0) * 100;
-    const successRate = (metrics.proposalSuccessRate || 0) * 100;
-    const quorum = (metrics.avgQuorum || 0) * 100;
+    const participation = (Number(metrics.avgParticipationRate ?? 0)) * 100;
+    const successRate = (Number(metrics.proposalSuccessRate ?? 0)) * 100;
+    const quorum = (Number(metrics.avgQuorum ?? 0)) * 100;
+    const hasActivity = Number(metrics.totalProposals ?? 0) > 0
+      || Number(metrics.delegatedVotes ?? 0) > 0
+      || Number(metrics.uniqueVoters ?? 0) > 0;
 
-    return (participation * 0.4 + successRate * 0.35 + quorum * 0.25);
+    if (!hasActivity) {
+      return 50;
+    }
+
+    return Math.max(0, Math.min(100, (participation * 0.4 + successRate * 0.35 + quorum * 0.25)));
   }
 
   /**
    * Calculate community health score
    */
   private calculateCommunityHealth(metrics: Record<string, any>): number {
-    const engagement = (metrics.engagementScore || 0) * 100;
-    const retention = (metrics.retentionRate || 0) * 100;
-    const growth = Math.min(100, (metrics.communityGrowthRate || 0) * 100 + 50);
+    const engagement = (Number(metrics.engagementScore ?? 0)) * 100;
+    const retention = (Number(metrics.retentionRate ?? 0)) * 100;
+    const growth = Math.min(100, (Number(metrics.communityGrowthRate ?? 0)) * 100 + 50);
+    const hasActivity = Number(metrics.totalMembers ?? 0) > 0
+      || Number(metrics.activeMembers ?? 0) > 0
+      || Number(metrics.newMembers ?? 0) > 0
+      || Number(metrics.avgContributionPerMember ?? 0) > 0
+      || Number(metrics.topContributors ?? 0) > 0;
 
-    return (engagement * 0.4 + retention * 0.35 + growth * 0.25);
+    if (!hasActivity) {
+      return 50;
+    }
+
+    return Math.max(0, Math.min(100, (engagement * 0.4 + retention * 0.35 + growth * 0.25)));
   }
 
   /**

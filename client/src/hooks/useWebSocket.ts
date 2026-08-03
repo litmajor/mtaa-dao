@@ -63,8 +63,13 @@ export function useWebSocket(options: UseWebSocketOptions = {}) {
   const [isConnecting, setIsConnecting] = useState(false);
   const [lastError, setLastError] = useState<string | null>(null);
 
-  // Construct WebSocket URL
-  const wsUrl = API_CONFIG.WS_URL || 'ws://localhost:5000';
+  // Construct WebSocket URL. In dev, this should use the current origin when
+  // no explicit VITE_WS_URL is configured, so Vite's /ws proxy can route it.
+  const wsUrl =
+    API_CONFIG.WS_URL ||
+    (typeof window !== 'undefined'
+      ? `${window.location.protocol === 'https:' ? 'wss' : 'ws'}://${window.location.host}`
+      : 'ws://localhost:5000');
 
   const connect = useCallback(() => {
     if (isConnecting || isConnected) return;

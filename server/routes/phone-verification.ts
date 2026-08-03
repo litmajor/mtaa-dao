@@ -1,62 +1,104 @@
-
-import express, { Request, Response } from 'express';
+import express from 'express';
+import type { Request, Response } from 'express';
+import { parsePhoneNumberWithError } from 'libphonenumber-js';
 import { db } from '../db';
 import { eq } from 'drizzle-orm';
 import { economicIdentity } from '../../shared/reputationSchema';
 import { isAuthenticated } from '../auth';
 import { ReputationService, REPUTATION_VALUES } from '../reputationService';
-import { otpService } from '../services/otpService';
+import { OTPService } from '../services/otpService';
 
 const router = express.Router();
 
-// Request phone verification OTP
+function normalizePhoneNumber(phoneNumber: unknown): string {
+  if (typeof phoneNumber !== 'string' || phoneNumber.trim().length === 0) {
+    throw new Error('Invalid phone number');
+  }
+
+  const parsed = parsePhoneNumberWithError(phoneNumber, 'KE');
+  if (!parsed.isValid()) {
+    throw new Error('Invalid phone number');
+  }
+
+  return parsed.number;
+}
+
+/**
+ * POST /api/phone-verification/request-otp
+ * Generates an OTP and dispatches it via the active SMS provider (Africa's Talking / Twilio).
+ */
 router.post('/request-otp', isAuthenticated, async (req: Request, res: Response) => {
   try {
-    const userId = (req.user as any).claims?.sub || (req.user as any).claims?.id;
+    const userId = (req.user as any)?.claims?.sub || (req.user as any)?.claims?.id || (req.user as any)?.id;
     const { phoneNumber } = req.body;
 
-    if (!phoneNumber || !/^\+254\d{9}$/.test(phoneNumber)) {
-      return res.status(400).json({ error: 'Valid Kenyan phone number required (+254...)' });
+    let normalizedPhone: string;
+    try {
+      normalizedPhone = normalizePhoneNumber(phoneNumber);
+    } catch (err) {
+      return res.status(400).json({ error: 'Invalid phone number format' });
     }
 
-    // Generate and send OTP via SMS
-    const otp = await otpService.storeOTP(phoneNumber, '');
-    
-    // TODO: Integrate with Africa's Talking or Twilio to send SMS
-    console.log(`OTP for ${phoneNumber}: ${otp}`);
+    // Generate and dispatch OTP via Africa's Talking / Twilio
+    await OTPService.generateOTP(userId, normalizedPhone);
 
     res.json({ 
       message: 'OTP sent to your phone',
       expiresIn: 300 // 5 minutes
     });
   } catch (error: any) {
-    res.status(500).json({ error: error.message });
+    console.error('[PhoneVerification] Request OTP Error:', error);
+    res.status(500).json({ error: error.message || 'Failed to send OTP' });
   }
 });
 
-// Verify phone with OTP
+/**
+ * POST /api/phone-verification/verify-otp
+ * Verifies the submitted OTP, updates economic identity status, and awards reputation points.
+ */
 router.post('/verify-otp', isAuthenticated, async (req: Request, res: Response) => {
   try {
-    const userId = (req.user as any).claims?.sub || (req.user as any).claims?.id;
+    const userId = (req.user as any)?.claims?.sub || (req.user as any)?.claims?.id || (req.user as any)?.id;
     const { phoneNumber, otp } = req.body;
 
-    const result = await otpService.verifyOTP(phoneNumber, otp);
-    const isValid = result.valid;
+    if (!phoneNumber || !otp) {
+      return res.status(400).json({ error: 'Phone number and OTP are required' });
+    }
+
+    let normalizedPhone: string;
+    try {
+      normalizedPhone = normalizePhoneNumber(phoneNumber);
+    } catch (err) {
+      return res.status(400).json({ error: 'Invalid phone number format' });
+    }
+
+    const isValid = await OTPService.verifyOTP(userId, normalizedPhone, otp);
 
     if (!isValid) {
       return res.status(400).json({ error: 'Invalid or expired OTP' });
     }
 
-    // Update economic identity with verified phone
-    const existing = await db.select().from(economicIdentity).where(eq(economicIdentity.userId, userId));
+    // Fetch existing economic identity record
+    const existing = await db
+      .select()
+      .from(economicIdentity)
+      .where(eq(economicIdentity.userId, userId));
+
+    const now = new Date();
 
     if (existing.length > 0) {
-      await db.update(economicIdentity)
+      const currentMetadata = (existing[0].verificationMetadata as Record<string, any>) || {};
+
+      await db
+        .update(economicIdentity)
         .set({
           phoneNumber,
           phoneVerified: true,
-          verificationMetadata: { phoneVerifiedAt: new Date() },
-          updatedAt: new Date()
+          verificationMetadata: {
+            ...currentMetadata,
+            phoneVerifiedAt: now.toISOString()
+          },
+          updatedAt: now
         })
         .where(eq(economicIdentity.userId, userId));
     } else {
@@ -64,7 +106,9 @@ router.post('/verify-otp', isAuthenticated, async (req: Request, res: Response) 
         userId,
         phoneNumber,
         phoneVerified: true,
-        verificationMetadata: { phoneVerifiedAt: new Date() }
+        verificationMetadata: {
+          phoneVerifiedAt: now.toISOString()
+        }
       });
     }
 
@@ -82,7 +126,8 @@ router.post('/verify-otp', isAuthenticated, async (req: Request, res: Response) 
       pointsAwarded: REPUTATION_VALUES.PHONE_VERIFIED
     });
   } catch (error: any) {
-    res.status(500).json({ error: error.message });
+    console.error('[PhoneVerification] Verify OTP Error:', error);
+    res.status(500).json({ error: error.message || 'Failed to verify OTP' });
   }
 });
 

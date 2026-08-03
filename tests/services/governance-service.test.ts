@@ -11,6 +11,7 @@ import {
   addDAOMember,
   getDAOMembers,
   getMember,
+  updateMemberVotingPower,
   createGovernanceToken,
   getGovernanceToken,
   createProposal,
@@ -37,7 +38,8 @@ import {
   getGovernanceEvents,
   generateGovernanceReport,
   getDAOGovernanceStatus,
-} from "@/server/services/governance-service";
+  resetGovernanceServiceState,
+} from "../../server/services/governance-service";
 
 describe("Governance & Treasury Service", () => {
   const founderWalletId = "wallet-founder";
@@ -46,6 +48,7 @@ describe("Governance & Treasury Service", () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
+    resetGovernanceServiceState();
   });
 
   describe("DAO Management", () => {
