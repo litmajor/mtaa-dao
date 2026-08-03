@@ -16,6 +16,31 @@ export interface TableSchema {
   }[];
 }
 
+function normalizeDbResult<T>(result: unknown): T[] {
+  if (!result) return [];
+  if (Array.isArray(result)) return result;
+  if (typeof result === 'object' && result !== null) {
+    if ('rows' in result) {
+      return ((result as any).rows ?? []) as T[];
+    }
+    if ('rows' in (result as any)?.result) {
+      return (((result as any).result as any).rows ?? []) as T[];
+    }
+  }
+  return [];
+}
+
+function parseExistsResult(result: unknown): boolean {
+  const rows = normalizeDbResult<Record<string, unknown>>(result);
+  if (!rows.length) return false;
+  const firstRow = rows[0] || {};
+  const keys = Object.keys(firstRow);
+  if (!keys.length) return false;
+  const key = keys.find(k => k.toLowerCase() === 'exists');
+  const value = key ? firstRow[key] : undefined;
+  return value === true || value === 't' || value === 'true' || value === 1 || value === '1';
+}
+
 /**
  * Validate that required tables exist with correct structure
  */
@@ -39,6 +64,9 @@ export async function validateDatabaseSchema(): Promise<boolean> {
       'reward_distribution',
       'dao_analytics',
       'support_ticket_metrics',
+      'circuit_breaker_states',
+      'provider_fallbacks',
+      'blockchain_transactions',
     ];
 
     const existingTables: string[] = [];
@@ -48,10 +76,10 @@ export async function validateDatabaseSchema(): Promise<boolean> {
     for (const tableName of requiredTables) {
       try {
         const result = await db.execute(sql.raw(
-          `SELECT EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = '${tableName}')`
+          `SELECT EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = '${tableName}') AS exists`
         ));
-        
-        if (result && result[0]) {
+
+        if (parseExistsResult(result)) {
           existingTables.push(tableName);
           logger.info(`[SCHEMA] ✅ Table exists: ${tableName}`);
         } else {
@@ -96,7 +124,7 @@ export async function validatePlatformMetricsSchema(): Promise<boolean> {
     'total_tvl',
     'total_transactions',
     'total_fees',
-    'total_revenue', // THIS WAS MISSING - CRITICAL
+    'total_revenue', 
     'cpu_usage',
     'memory_usage',
     'disk_usage',
@@ -113,12 +141,13 @@ export async function validatePlatformMetricsSchema(): Promise<boolean> {
       ORDER BY ordinal_position
     `));
 
-    if (!result || result.length === 0) {
+    const rows = normalizeDbResult<{ column_name: string }>(result);
+    if (rows.length === 0) {
       logger.error('[SCHEMA] platform_metrics table not found');
       return false;
     }
 
-    const existingColumns = (result as any[]).map(row => row.column_name);
+    const existingColumns = rows.map(row => row.column_name);
     const missingColumns = requiredColumns.filter(col => !existingColumns.includes(col));
 
     if (missingColumns.length > 0) {
@@ -150,7 +179,7 @@ export function validateInsertMetrics(data: any): { valid: boolean; errors: stri
     'totalTVL',
     'totalTransactions',
     'totalFees',
-    'totalRevenue', // CRITICAL - was missing
+    'totalRevenue',
     'cpuUsage',
     'memoryUsage',
     'diskUsage',

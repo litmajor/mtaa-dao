@@ -66,6 +66,10 @@ cache/solidity-files-cache.json
 /server/logs/
 /route-usage.csv
 
+#log formats
+*.log
+
+
 # Ignore local environment files
 .env
 
