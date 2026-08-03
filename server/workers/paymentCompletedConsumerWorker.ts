@@ -1,0 +1,162 @@
+import { getRedisInstanceAsync } from '../config/redisConnectionManager';
+import { RedisStreamConsumer, StreamNames } from '../infrastructure/redis/RedisStreamAdapter';
+import { IdempotencyGuard } from '../infrastructure/consumers/IdempotencyGuard';
+import type {StreamAcknowledger} from '../infrastructure/consumers/IdempotencyGuard';
+import { DrizzleProcessedEventRepository } from '../infrastructure/postgres/DrizzleProcessedEventRepository';
+import { triggerDAOSpawnFromPayment } from '../services/daoSpawnService';
+import { logger } from '../utils/logger';
+import { EventCatalog } from '../domain/events/catalog';
+
+const STREAM_NAME = StreamNames.DOMAIN_DAO;
+const CONSUMER_GROUP = 'payment-completed-group';
+const CONSUMER_NAME = 'payment-completed-worker';
+const READ_COUNT = 10;
+const POLL_INTERVAL_MS = 2500;
+const BLOCK_MS = 2000;
+
+class RedisAcknowledger implements StreamAcknowledger {
+  constructor(
+    private consumer: RedisStreamConsumer,
+    private stream: typeof STREAM_NAME,
+    private group: string,
+  ) {}
+
+  async ack(streamMessageId: string): Promise<void> {
+    await this.consumer.ack(this.stream, this.group, streamMessageId);
+  }
+}
+
+export class PaymentCompletedConsumerWorker {
+  private consumer: RedisStreamConsumer;
+  private guard: IdempotencyGuard;
+  private timer: ReturnType<typeof setInterval> | null = null;
+  private running = false;
+
+  constructor(redisClient: Awaited<ReturnType<typeof getRedisInstanceAsync>>) {
+    this.consumer = new RedisStreamConsumer(redisClient);
+    this.guard = new IdempotencyGuard(
+      new DrizzleProcessedEventRepository(),
+      new RedisAcknowledger(this.consumer, STREAM_NAME, CONSUMER_GROUP),
+      { maxRetries: 3, stalledThresholdMs: 5 * 60 * 1000 },
+    );
+  }
+
+  static async initialize(): Promise<void> {
+    const redisClient = await getRedisInstanceAsync();
+    const worker = new PaymentCompletedConsumerWorker(redisClient);
+    await worker.start();
+    this.instance = worker;
+  }
+
+  static async shutdown(): Promise<void> {
+    if (this.instance) {
+      await this.instance.stop();
+    }
+  }
+
+  private static instance: PaymentCompletedConsumerWorker | null = null;
+
+  async start(): Promise<void> {
+    await this.consumer.ensureGroup(STREAM_NAME, CONSUMER_GROUP, '$');
+
+    logger.info('[PaymentCompletedConsumer] Consumer group ensured', {
+      stream: STREAM_NAME,
+      group: CONSUMER_GROUP,
+      consumer: CONSUMER_NAME,
+    });
+
+    if (this.timer) return;
+    this.timer = setInterval(() => void this.tick(), POLL_INTERVAL_MS);
+    logger.info('[PaymentCompletedConsumer] Started polling loop');
+  }
+
+  async stop(): Promise<void> {
+    if (!this.timer) return;
+    clearInterval(this.timer);
+    this.timer = null;
+    logger.info('[PaymentCompletedConsumer] Stopped polling loop');
+  }
+
+  private async tick(): Promise<void> {
+    if (this.running) return;
+    this.running = true;
+
+    try {
+      const messages = await this.consumer.readGroup(
+        STREAM_NAME,
+        CONSUMER_GROUP,
+        CONSUMER_NAME,
+        READ_COUNT,
+        BLOCK_MS,
+      );
+
+      if (messages.length === 0) {
+        return;
+      }
+
+      for (const message of messages) {
+        try {
+          await this.handleMessage(message);
+        } catch (error: any) {
+          logger.error('[PaymentCompletedConsumer] Message handling failed', {
+            streamMessageId: message.id,
+            error: error?.message ?? String(error),
+          });
+        }
+      }
+    } catch (error: any) {
+      logger.error('[PaymentCompletedConsumer] Redis readGroup failed', {
+        error: error?.message ?? String(error),
+      });
+    } finally {
+      this.running = false;
+    }
+  }
+
+  private async handleMessage(message: { id: string; fields: Record<string, string> }): Promise<void> {
+    const eventId = message.fields.eventId;
+    if (!eventId) {
+      logger.warn('[PaymentCompletedConsumer] Missing eventId on stream message', {
+        streamMessageId: message.id,
+      });
+      await this.consumer.ack(STREAM_NAME, CONSUMER_GROUP, message.id);
+      return;
+    }
+
+    const eventType = message.fields.eventType;
+    if (eventType !== EventCatalog.PaymentCompleted) {
+      logger.info('[PaymentCompletedConsumer] Skipping non-payment event', {
+        streamMessageId: message.id,
+        eventType,
+      });
+      await this.consumer.ack(STREAM_NAME, CONSUMER_GROUP, message.id);
+      return;
+    }
+
+    let payload: any;
+    try {
+      payload = JSON.parse(message.fields.payload);
+    } catch (error: any) {
+      logger.error('[PaymentCompletedConsumer] Failed to parse event payload', {
+        streamMessageId: message.id,
+        error: error?.message ?? String(error),
+      });
+      await this.consumer.ack(STREAM_NAME, CONSUMER_GROUP, message.id);
+      return;
+    }
+
+    const reference = payload?.reference;
+    if (!reference || typeof reference !== 'string') {
+      logger.error('[PaymentCompletedConsumer] PaymentCompleted event missing reference', {
+        eventId,
+        streamMessageId: message.id,
+      });
+      await this.consumer.ack(STREAM_NAME, CONSUMER_GROUP, message.id);
+      return;
+    }
+
+    await this.guard.execute(eventId, CONSUMER_NAME, message.id, async () => {
+      await triggerDAOSpawnFromPayment(reference);
+    });
+  }
+}
