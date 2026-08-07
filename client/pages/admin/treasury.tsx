@@ -1,9 +1,10 @@
 import React, { useState, useEffect } from 'react';
-import { useRouter } from 'next/router';
+import { useParams } from 'react-router-dom';
 import { useSession } from 'next-auth/react';
-import AdminLayout from '@/pages/admin/AdminLayout';
-import AdminTable from '@/components/admin/AdminTable';
-import StatCard from '@/components/admin/StatCard';
+import { AdminLayout } from '../../components/admin/AdminLayout';
+import AdminTable from '../../components/admin/AdminTable';
+import StatCard from '../../components/admin/StatCard';
+import { DollarSign, Banknote, BarChart3, ShieldAlert, TrendingUp, ClipboardList } from 'lucide-react';
 import styles from './treasury.module.css';
 
 interface Vault {
@@ -21,6 +22,7 @@ interface Transaction {
   description?: string;
   createdAt: string;
   status: string;
+  [key: string]: any;
 }
 
 interface TreasuryHealth {
@@ -36,7 +38,6 @@ interface TreasuryHealth {
 }
 
 export default function TreasuryPage() {
-  const router = useRouter();
   const { data: session } = useSession();
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [vaults, setVaults] = useState<Vault[]>([]);
@@ -53,7 +54,7 @@ export default function TreasuryPage() {
   const [isFrozen, setIsFrozen] = useState(false);
   const [freezing, setFreezing] = useState(false);
 
-  const daoId = router.query.daoId as string;
+  const { daoId } = useParams() as { daoId?: string };
 
   // Fetch treasury overview
   useEffect(() => {
@@ -121,7 +122,7 @@ export default function TreasuryPage() {
     };
 
     fetchTransactions();
-  }, [daoId, page, typeFilter, statusFilter, session]);
+  }, [daoId, page, limit, typeFilter, statusFilter, session]);
 
   // Fetch health status
   useEffect(() => {
@@ -208,35 +209,35 @@ export default function TreasuryPage() {
     {
       key: 'type',
       label: 'Type',
-      render: (value: string) => (
-        <span className={styles.typeCell}>{value}</span>
-      ),
+        render: (value: any, row?: any) => (
+          <span className={styles.typeCell}>{value}</span>
+        ),
     },
     {
       key: 'amount',
       label: 'Amount',
-      render: (value: string) => (
-        <span className={styles.amountCell}>{parseFloat(value).toLocaleString('en-US', { maximumFractionDigits: 2 })}</span>
-      ),
+        render: (value: any, row?: any) => (
+          <span className={styles.amountCell}>{parseFloat(value).toLocaleString('en-US', { maximumFractionDigits: 2 })}</span>
+        ),
     },
     {
       key: 'status',
       label: 'Status',
-      render: (value: string) => (
-        <span className={`${styles.statusBadge} ${styles[`status-${value}`]}`}>
-          {value}
-        </span>
-      ),
+        render: (value: any, row?: any) => (
+          <span className={`${styles.statusBadge} ${styles[`status-${value}`]}`}>
+            {value}
+          </span>
+        ),
     },
     {
       key: 'createdAt',
       label: 'Date',
-      render: (value: string) => new Date(value).toLocaleDateString(),
+        render: (value: any, row?: any) => new Date(value).toLocaleDateString(),
     },
     {
       key: 'description',
       label: 'Description',
-      render: (value?: string) => <span className={styles.descriptionCell}>{value || '-'}</span>,
+        render: (value?: any, row?: any) => <span className={styles.descriptionCell}>{value || '-'}</span>,
     },
   ];
 
@@ -296,37 +297,37 @@ export default function TreasuryPage() {
             <StatCard
               title="Total Balance"
               value={`$${health.totalBalance.toLocaleString('en-US', { maximumFractionDigits: 2 })}`}
-              icon="💰"
+              icon={DollarSign}
               trend={undefined}
             />
             <StatCard
               title="Active Vaults"
               value={`${health.vaultCount} total`}
-              icon="🏦"
+              icon={Banknote}
               trend={undefined}
             />
             <StatCard
               title="Status"
               value={health.status.toUpperCase()}
-              icon="📊"
+              icon={BarChart3}
               trend={undefined}
             />
             <StatCard
               title="Risk Level"
               value={health.riskLevel.toUpperCase()}
-              icon="⚠️"
+              icon={ShieldAlert}
               trend={undefined}
             />
             <StatCard
               title="30d Volume"
               value={`$${health.recentActivity.volumeInPeriod.toLocaleString('en-US', { maximumFractionDigits: 2 })}`}
-              icon="📈"
+              icon={TrendingUp}
               trend={undefined}
             />
             <StatCard
               title="Recent Transactions"
               value={health.recentActivity.transactionCount}
-              icon="📝"
+              icon={ClipboardList}
               trend={undefined}
             />
           </div>
@@ -392,6 +393,22 @@ export default function TreasuryPage() {
                 <option value="completed">Completed</option>
                 <option value="failed">Failed</option>
               </select>
+              <label className={styles.pageSizeLabel}>
+                <span className="sr-only">Page size</span>
+                <select
+                  value={limit}
+                  onChange={(e) => {
+                    const v = Number(e.target.value) || 20;
+                    setLimit(v);
+                    setPage(1);
+                  }}
+                  className={styles.filterSelect}
+                >
+                  <option value={10}>10</option>
+                  <option value={20}>20</option>
+                  <option value={50}>50</option>
+                </select>
+              </label>
             </div>
           </div>
 
@@ -402,12 +419,12 @@ export default function TreasuryPage() {
               <p className={styles.emptyState}>No transactions found</p>
             ) : (
               <AdminTable
-                data={transactions}
+                rows={transactions}
                 columns={columns}
                 actions={[]}
-                selectedRows={new Set()}
-                onSelectRow={() => {}}
-                onSelectAll={() => {}}
+                selectable
+                onSelectionChange={() => {}}
+                pagination={{ current: page, total, pageSize: limit, onChange: setPage }}
               />
             )}
           </div>

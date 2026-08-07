@@ -7,7 +7,7 @@
  * - Multisig approval workflows
  */
 
-import authClient from '@/services/authClient';
+import { authClient } from '@/utils/authClient';
 
 export interface TreasuryWhitelistEntry {
   id: string;

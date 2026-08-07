@@ -1,9 +1,15 @@
-import { Router, Request, Response, NextFunction } from 'express';
+import type { Request, Response, NextFunction } from 'express';
+import { Router } from 'express';
 import { authenticateToken } from '../middleware/auth';
+import { requireDAORole } from '../middleware/rbac';
 import { ActivityService, ActivityType } from '../services/activity-service';
 import { PromotionService, UserRole } from '../services/promotion-service';
 
-const router = Router();
+const router = Router({ mergeParams: true });
+
+// Apply DAO role guard at the DAO-scoped router level where :daoId is available.
+// Governance activity and promotion flows should remain available to members and delegated DAO stewards.
+router.use('/:daoId/*', requireDAORole('member', 'elder', 'manager', 'rebalancer', 'secretary', 'admin', 'owner'));
 
 /**
  * Activity & Promotion Routes

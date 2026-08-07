@@ -9,8 +9,10 @@
  * PHASE 2 Security: Whitelist, Amount Limits, Multisig Requirements
  */
 
-import express, { Request, Response } from 'express';
+import express from 'express';
+import type { Request, Response } from 'express';
 import { isAuthenticated } from '../nextAuthMiddleware';
+import { requireDAORole } from '../middleware/rbac';
 import { TreasuryValidationService } from '../services/treasuryValidationService';
 import { Logger } from '../utils/logger';
 import { db } from '../db';
@@ -18,7 +20,11 @@ import { daoMemberships, treasuryWhitelist } from '../../shared/schema';
 import { eq, and } from 'drizzle-orm';
 
 const logger = Logger.getLogger();
-const router = express.Router();
+const router = express.Router({ mergeParams: true });
+
+// Apply DAO role guard at the DAO-scoped router level where :daoId is available.
+// Treasury operations are allowed for delegated treasury stewards as well as admins/owners.
+router.use('/:daoId/*', requireDAORole('elder', 'manager', 'rebalancer', 'secretary', 'admin', 'owner'));
 
 /**
  * POST /api/treasury-management/:daoId/whitelist/request
@@ -31,7 +37,7 @@ const router = express.Router();
  * Optional:
  * - recipientName: string
  */
-router.post('/:daoId/whitelist/request', isAuthenticated, async (req: any, res) => {
+router.post('/:daoId/whitelist/request', isAuthenticated, async (req: Request, res: Response) => {
   try {
     const { daoId } = req.params;
     const { walletAddress, recipientName, category } = req.body;
@@ -122,7 +128,7 @@ router.post('/:daoId/whitelist/request', isAuthenticated, async (req: any, res) 
  * 
  * Admin/Creator/Elder required
  */
-router.post('/:daoId/whitelist/:entryId/approve', isAuthenticated, async (req: any, res) => {
+router.post('/:daoId/whitelist/:entryId/approve', isAuthenticated, async (req: Request, res: Response) => {
   try {
     const { daoId, entryId } = req.params;
     const userId = req.user?.id;
@@ -176,7 +182,7 @@ router.post('/:daoId/whitelist/:entryId/approve', isAuthenticated, async (req: a
  * GET /api/treasury-management/:daoId/whitelist
  * Get all whitelist entries for this DAO
  */
-router.get('/:daoId/whitelist', isAuthenticated, async (req: any, res) => {
+router.get('/:daoId/whitelist', isAuthenticated, async (req: Request, res: Response) => {
   try {
     const { daoId } = req.params;
     const userId = req.user?.id;
@@ -244,7 +250,7 @@ router.get('/:daoId/whitelist', isAuthenticated, async (req: any, res) => {
  * - multisigThresholdUSD: amount in USD that triggers multisig requirement
  * - multisigRequiredSignatures: number required (e.g., 2 of 3)
  */
-router.get('/:daoId/limits', isAuthenticated, async (req: any, res) => {
+router.get('/:daoId/limits', isAuthenticated, async (req: Request, res: Response) => {
   try {
     const { daoId } = req.params;
 
@@ -308,7 +314,7 @@ router.get('/:daoId/limits', isAuthenticated, async (req: any, res) => {
  * - multisigThresholdUSD: number (in USD)
  * - multisigRequiredSignatures: number (e.g., 2 for 2-of-3)
  */
-router.put('/:daoId/limits', isAuthenticated, async (req: any, res) => {
+router.put('/:daoId/limits', isAuthenticated, async (req: Request, res: Response) => {
   try {
     const { daoId } = req.params;
     const userId = req.user?.id;

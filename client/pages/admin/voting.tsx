@@ -1,8 +1,8 @@
 import React, { useState, useEffect } from 'react';
-import ConfirmDialog from '@/components/ConfirmDialog';
-import { useRouter } from 'next/router';
-import { useAuth } from '@clerk/nextjs';
-import Head from 'next/head';
+import ConfirmDialog from '../../src/components/ConfirmDialog';
+import { Helmet } from 'react-helmet-async';
+import { useNavigate, useParams } from 'react-router-dom';
+import { useAuth } from '../../src/pages/hooks/useAuth';
 import styles from './voting.module.css';
 
 interface VotingConfig {
@@ -34,9 +34,11 @@ interface ParticipationMember {
 }
 
 export default function VotingPage() {
-  const router = useRouter();
-  const { daoId } = router.query;
-  const { userId } = useAuth();
+  const navigate = useNavigate();
+  const params = useParams();
+  const daoId = params.daoId as string;
+  const { user } = useAuth();
+  const userId = user?.id;
   const [config, setConfig] = useState<VotingConfig | null>(null);
   const [analytics, setAnalytics] = useState<VotingAnalytics | null>(null);
   const [participation, setParticipation] = useState<ParticipationMember[]>([]);
@@ -208,10 +210,10 @@ export default function VotingPage() {
 
   return (
     <>
-      <Head>
+      <Helmet>
         <title>Voting Configuration</title>
         <meta name="description" content="Configure DAO voting mechanics" />
-      </Head>
+      </Helmet>
 
       <div className={styles.container}>
         <div className={styles.header}>

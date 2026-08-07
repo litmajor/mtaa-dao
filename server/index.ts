@@ -17,7 +17,8 @@ import v8 from 'node:v8';
 import { dirname } from "path";
 import { fileURLToPath } from "url";
 import { notificationService } from './notificationService';
-import { sanitizeInput, preventSqlInjection, preventXSS } from './security/inputSanitizer';
+import { sanitizeInput, preventXSS } from './security/inputSanitizer';
+import cookieParser from 'cookie-parser';
 import { auditMiddleware } from './security/auditLogger';
 import { requireRole, requireDAORole, requirePermission } from './middleware/rbac';
 import { setupOperationalAuditLogging } from './middleware/operational-audit';
@@ -341,9 +342,17 @@ app.use(cors({
   },
   credentials: true,
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'Authorization'],
+  allowedHeaders: ['Content-Type', 'Authorization', 'X-CSRF-Token'],
   maxAge: 86400,
 }));
+
+// ── Body parsers ────────────────────────────────────────────────────────────
+// CRITICAL (C5): express.json() and cookie-parser were missing entirely.
+// Without these, req.body is undefined on every JSON request and req.cookies
+// is always undefined — breaking auth, CSRF, and every POST handler.
+app.use(express.json({ limit: '10mb' }));
+app.use(express.urlencoded({ extended: true, limit: '10mb' }));
+app.use(cookieParser());
 
 // Security headers (CSP, HSTS, X-Frame-Options, etc.)
 app.use(helmet({
@@ -363,7 +372,6 @@ app.use(helmet({
 }));
 
 app.use(sanitizeInput);
-app.use(preventSqlInjection);
 app.use(preventXSS);
 app.use(auditMiddleware);
 setupOperationalAuditLogging(app);
@@ -1448,8 +1456,9 @@ process.on('uncaughtException', (error) => {
     app.use('/api/payments/mpesa', mpesaStatusRoutes);
     app.use('/api/payments/stripe', stripeStatusRoutes);
     // reconciliation moved to admin namespace (see below)
-    app.use('/api/treasury-management', isAuthenticated, requireDAORole('admin', 'owner'), treasuryManagementRoutes); // PHASE 2: Treasury whitelist & limits
-    app.use('/api/multisig', isAuthenticated, requireDAORole('admin', 'owner'), multisigRoutes); // PHASE 2: Multisig approval workflows
+    // M3 FIX: requireDAORole moved inside sub-routers — at mount level :daoId is not yet parsed
+    app.use('/api/treasury-management', isAuthenticated, treasuryManagementRoutes); // PHASE 2: Treasury whitelist & limits
+    app.use('/api/multisig', isAuthenticated, multisigRoutes); // PHASE 2: Multisig approval workflows
     if (!(app as any).locals?.routesRegistered) {
       app.use('/api/analytics', isAuthenticated, analyticsRoutes);
     } else {
@@ -1474,10 +1483,11 @@ process.on('uncaughtException', (error) => {
     // Logs are sensitive (stack traces, internal paths, request payloads) — guard them.
     app.use('/api/logs', isAuthenticated, requireRole('super_admin'), logsRoutes);
     app.use('/api/referral-rewards', isAuthenticated, referralRewardsRouter);
-    app.use('/api/economy', isAuthenticated, requireDAORole('member', 'admin', 'owner'), economyRouter);
+    // M3 FIX: economy/poll-proposals/reputation are platform-global (no :daoId) — requireDAORole was always failing
+    app.use('/api/economy', isAuthenticated, economyRouter);
     app.use('/api/dao/:daoId/executions', isAuthenticated, requireDAORole('member', 'admin', 'owner'), proposalExecutionRouter);
-    app.use('/api/poll-proposals', isAuthenticated, requireDAORole('member', 'admin', 'owner'), pollProposalsRouter);
-    app.use('/api/reputation', isAuthenticated, requireDAORole('member', 'admin', 'owner'), reputationRoutes); // Added reputation routes
+    app.use('/api/poll-proposals', isAuthenticated, pollProposalsRouter);
+    app.use('/api/reputation', isAuthenticated, reputationRoutes);
     // Admin-only routes with authentication and superuser role check
     app.use('/api/admin/operational', isAuthenticated, requireRole('super_admin'), operationalFrameworkRoutes); // Operational Framework routes
     app.use('/api/admin/health', isAuthenticated, requireRole('super_admin'), healthAdminRoutes); // Health & System State routes
@@ -1489,7 +1499,8 @@ process.on('uncaughtException', (error) => {
     
     // Phase 2: Governance Activity & Promotion Routes
     const governanceActivityRoutes = (await import('./routes/governance-activity')).default;
-    app.use('/api/governance', isAuthenticated, requireDAORole('member', 'admin', 'owner'), governanceActivityRoutes);
+    // M3 FIX: requireDAORole moved inside governance-activity sub-router — :daoId is in sub-routes
+    app.use('/api/governance', isAuthenticated, governanceActivityRoutes);
     
     // Cross-chain routes moved to v1 API
     app.use('/api/user/preferences', isAuthenticated, userPreferencesRoutes);

@@ -1,9 +1,10 @@
 import React, { useState, useEffect } from 'react';
-import { useRouter } from 'next/router';
+import { useNavigate, useParams } from 'react-router-dom';
 import { useSession } from 'next-auth/react';
-import AdminLayout from '@/components/admin/AdminLayout';
-import AdminTable from '@/components/admin/AdminTable';
-import StatCard from '@/components/admin/StatCard';
+import { Clipboard, Zap, CheckCircle2, XCircle, Slash, Flag } from 'lucide-react';
+import AdminLayout from '../../components/admin/AdminLayout';
+import AdminTable from '../../components/admin/AdminTable';
+import StatCard from '../../components/admin/StatCard';
 import styles from './proposals.module.css';
 
 interface Proposal {
@@ -15,6 +16,7 @@ interface Proposal {
   createdAt: string;
   votingEndDate?: string;
   flagged?: boolean;
+  [key: string]: any;
 }
 
 interface ProposalStats {
@@ -27,7 +29,8 @@ interface ProposalStats {
 }
 
 export default function ProposalsPage() {
-  const router = useRouter();
+  const navigate = useNavigate();
+  const { daoId } = useParams() as { daoId?: string };
   const { data: session } = useSession();
   const [proposals, setProposals] = useState<Proposal[]>([]);
   const [stats, setStats] = useState<ProposalStats>({
@@ -50,7 +53,15 @@ export default function ProposalsPage() {
   const [canManage, setCanManage] = useState(false);
   const [flaggingId, setFlaggingId] = useState<string | null>(null);
 
-  const daoId = router.query.daoId as string;
+  if (!daoId) {
+    return (
+      <AdminLayout>
+        <div className={styles.container}>
+          <p>DAO ID is required to view proposals.</p>
+        </div>
+      </AdminLayout>
+    );
+  }
 
   // Fetch proposals
   useEffect(() => {
@@ -177,7 +188,8 @@ export default function ProposalsPage() {
   };
 
   const handleViewDetails = (proposalId: string) => {
-    router.push(`/admin/proposals/${daoId}/${proposalId}`);
+    if (!daoId) return;
+    navigate(`/admin/proposals/${daoId}/${proposalId}`);
   };
 
   const columns = [
@@ -216,7 +228,7 @@ export default function ProposalsPage() {
     },
   ];
 
-  const actions = [
+  const actions: any[] = [
     {
       label: 'View',
       onClick: (row: Proposal) => handleViewDetails(row.id),
@@ -228,13 +240,13 @@ export default function ProposalsPage() {
             label: 'Flag',
             onClick: (row: Proposal) => handleFlagProposal(row.id),
             variant: 'warning' as const,
-            disabled: row.flagged || flaggingId === row.id,
+            disabled: (row: Proposal) => row.flagged || flaggingId === row.id,
           },
           {
             label: 'Suspend',
             onClick: (row: Proposal) => handleSuspendProposal(row.id),
             variant: 'danger' as const,
-            disabled: row.status === 'suspended' || flaggingId === row.id,
+            disabled: (row: Proposal) => row.status === 'suspended' || flaggingId === row.id,
           },
         ]
       : []),
@@ -275,37 +287,37 @@ export default function ProposalsPage() {
           <StatCard
             title="Total Proposals"
             value={stats.totalProposals}
-            icon="📋"
+            icon={Clipboard}
             trend={undefined}
           />
           <StatCard
             title="Active"
             value={stats.activeProposals}
-            icon="⚡"
+            icon={Zap}
             trend={undefined}
           />
           <StatCard
             title="Passed"
             value={stats.passedProposals}
-            icon="✅"
+            icon={CheckCircle2}
             trend={undefined}
           />
           <StatCard
             title="Failed"
             value={stats.failedProposals}
-            icon="❌"
+            icon={XCircle}
             trend={undefined}
           />
           <StatCard
             title="Suspended"
             value={stats.suspendedProposals}
-            icon="⛔"
+            icon={Slash}
             trend={undefined}
           />
           <StatCard
             title="Flagged"
             value={stats.flaggedProposals}
-            icon="🚩"
+            icon={Flag}
             trend={undefined}
           />
         </div>
@@ -337,20 +349,17 @@ export default function ProposalsPage() {
             <p className={styles.emptyState}>No proposals found</p>
           ) : (
             <AdminTable
-              data={proposals}
+              rows={proposals}
               columns={columns}
               actions={actions}
-              selectedRows={selectedProposals}
-              onSelectRow={(id) => {
-                const newSelected = new Set(selectedProposals);
-                if (newSelected.has(id)) {
-                  newSelected.delete(id);
-                } else {
-                  newSelected.add(id);
-                }
-                setSelectedProposals(newSelected);
+              selectable
+              onSelectionChange={(ids: string[]) => setSelectedProposals(new Set(ids))}
+              pagination={{
+                current: page,
+                total,
+                pageSize: limit,
+                onChange: setPage,
               }}
-              onSelectAll={(ids) => setSelectedProposals(new Set(ids))}
             />
           )}
         </div>

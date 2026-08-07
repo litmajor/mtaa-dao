@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
-import { AdminLayout } from '@/components/admin/AdminLayout';
-import { StatCard } from '@/components/admin/StatCard';
+import AdminLayout from '../../components/admin/AdminLayout';
+import StatCard from '../../components/admin/StatCard';
 import {
   Users,
   Building,

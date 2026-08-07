@@ -1,6 +1,7 @@
 {
   "include": [
     "client/src/**/*",
+    "client/pages/**/*",
     "shared/**/*",
     "server/**/*",
     "server/register.ts",

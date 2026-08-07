@@ -4,25 +4,24 @@
  */
 
 import React, { useState, useEffect } from 'react';
-import { useRouter } from 'next/router';
+import { useSearchParams, useNavigate } from 'react-router-dom';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import AdvancedSwap from '@/components/dex/AdvancedSwap';
 import AdvancedBridge from '@/components/dex/AdvancedBridge';
 
 export default function DEXPage() {
-  const router = useRouter();
+  const [searchParams, setSearchParams] = useSearchParams();
   const [activeTab, setActiveTab] = useState('swap');
 
   // Handle URL query parameter for tab selection
   useEffect(() => {
-    if (router.query.tab) {
-      setActiveTab(router.query.tab as string);
-    }
-  }, [router.query.tab]);
+    const tab = searchParams.get('tab');
+    if (tab) setActiveTab(tab);
+  }, [searchParams]);
 
   const handleTabChange = (tab: string) => {
     setActiveTab(tab);
-    router.push(`/dex?tab=${tab}`);
+    setSearchParams({ tab });
   };
 
   return (

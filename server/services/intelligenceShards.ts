@@ -32,14 +32,15 @@
  *    - Full matrices stored separately
  */
 
-import { 
+import type { 
   AssetStateSnapshot, 
   CoreShardData, 
   SupportedChain, 
   DaoType 
 } from '../types/assetGraph';
 import { logger } from '../utils/logger';
-import { gatewayAggregator, TreasuryProfile } from './gatewayAggregator';
+import type { TreasuryProfile} from './gatewayAggregator';
+import { gatewayAggregator } from './gatewayAggregator';
 import { snapshotGovernanceService } from './snapshotGovernanceService';
 import { priceOracle } from './priceOracle';
 import { priceHistoryService } from './priceHistoryService';
@@ -523,12 +524,17 @@ export class RiskIndexShard extends IntelligenceShard {
   private async assessOracleRisk(symbol: string): Promise<number> {
     // Check Chainlink oracle status, Pyth, Band oracles
     // For now: check if oracle data is stale (> 1 hour)
-    // Real implementation: query oracle health APIs
     try {
-      // Chainlink oracle freshness check (simplified)
-      const oracleStale = Math.random() > 0.95; // 5% chance oracle is stale
-      if (oracleStale) return 65; // Oracle risk if stale
-      return 20; // Low risk if oracle is fresh
+      // Chainlink oracle freshness check based on real cached updates
+      const priceData = await priceOracle.getPrice(symbol);
+      if (priceData && priceData.lastUpdated) {
+        const ageMs = Date.now() - priceData.lastUpdated.getTime();
+        if (ageMs > 3600000) { // Older than 1 hour
+          return 65; // Stale risk
+        }
+        return 20; // Low risk, fresh
+      }
+      return 50; // Missing timestamp or data
     } catch {
       return 50; // Medium risk if oracle check fails
     }
@@ -1559,8 +1565,7 @@ export class ShardOrchestrator {
       for (const [key, value] of Object.entries(update)) {
         if (!ownedFields.includes(key as keyof CoreShardData)) {
           logger.warn(
-            `⚠️ Shard ${shardName} tried to write unowned field: ${key}`,
-            'This has been silently ignored (but is a bug)'
+            `⚠️ Shard ${shardName} tried to write unowned field: ${key}. This has been silently ignored (but is a bug).`
           );
           continue;
         }

@@ -23,7 +23,7 @@ import {
   CheckCircle,
   AlertTriangle
 } from 'lucide-react';
-import { useParams } from 'next/navigation';
+import { useParams } from 'react-router-dom';
 
 interface MetricTrend {
   timestamp: string;
@@ -92,7 +92,7 @@ interface DAORecommendations {
 }
 
 export default function DAOKaizenDashboard() {
-  const params = useParams();
+  const params = useParams<{ daoId?: string }>();
   const daoId = params?.daoId as string;
 
   const [status, setStatus] = useState<DAOStatus | null>(null);

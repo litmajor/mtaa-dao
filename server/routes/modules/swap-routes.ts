@@ -1,6 +1,8 @@
 import { Router } from 'express';
 import { z } from 'zod';
+import type { SwapQuote } from '../../services/crossChainSwapService';
 import { crossChainSwapService } from '../../services/crossChainSwapService';
+import { SupportedChain } from '../../../shared/chainRegistry';
 import { asyncHandler } from '../../middleware/errorHandler';
 import { isAuthenticated } from '../../nextAuthMiddleware';
 import { requirePINVerification, checkAmountThreshold } from '../../middleware/pin-verification';
@@ -14,8 +16,8 @@ router.post('/swap/quote', isAuthenticated, asyncHandler(async (req, res) => {
     const validated = swapQuoteSchema.parse(req.body);
     
     const quote = await crossChainSwapService.getSwapQuote(
-      validated.fromChain,
-      validated.toChain,
+      validated.fromChain as SupportedChain,
+      validated.toChain as SupportedChain,
       validated.fromToken,
       validated.toToken,
       validated.fromAmount,
@@ -55,9 +57,10 @@ router.post('/swap/execute',
       });
     }
 
+    const quote = validated.quote as unknown as SwapQuote;
     const execution = await crossChainSwapService.executeSwap(
       userId,
-      validated.quote,
+      quote,
       validated.userAddress
     );
 
@@ -81,7 +84,7 @@ router.post('/swap/execute',
 router.get('/swap/:swapId', isAuthenticated, asyncHandler(async (req, res) => {
   const { swapId } = req.params;
 
-  const status = await crossChainSwapService.getSwapStatus(swapId);
+  const status = await crossChainSwapService.getSwapExecutionStatus(swapId);
 
   if (!status) {
     return res.status(404).json({

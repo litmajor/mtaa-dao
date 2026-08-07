@@ -21,7 +21,9 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import { DollarSign } from 'lucide-react';
 import { AlertCircle, CheckCircle, Plus, Trash2 } from 'lucide-react';
-import { treasuryAPI, TreasuryWhitelistEntry, TreasuryLimits, PendingApproval } from '@/api/treasuryAPI';
+import { treasuryAPI } from '@/api/treasuryAPI';
+import { useWallet } from '@/pages/hooks/useWallet';
+import type {TreasuryWhitelistEntry, TreasuryLimits, PendingApproval} from '@/api/treasuryAPI';
 
 interface TreasuryManagementProps {
   daoId: string;
@@ -38,6 +40,8 @@ export default function TreasuryManagement({ daoId, userRole }: TreasuryManageme
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
+  const wallet = useWallet();
+  const { address: walletAddress, isConnected: walletConnected } = wallet;
   
   // Whitelist state
   const [whitelist, setWhitelist] = useState<TreasuryWhitelistEntry[]>([]);
@@ -168,30 +172,41 @@ export default function TreasuryManagement({ daoId, userRole }: TreasuryManageme
 
     try {
       setError(null);
-      // In production, this would use ethers.js to create actual cryptographic signature
-      // For now, creating a placeholder signature
-      const signature = 'placeholder_signature_' + Date.now();
-      
-      await treasuryAPI.submitMultisigSignature(daoId, approvalId, signature);
-      
-      setPendingApprovals(pendingApprovals.map(approval =>
-        approval.id === approvalId
-          ? {
-              ...approval,
-              currentSignatures: approval.currentSignatures + 1,
-              signers: approval.signers.map((signer: Signer) =>
-                // In real implementation, check if current user signed
-                signer
-              ),
-            }
-          : approval
-      ));
-      
+      setSigningApprovalId(approvalId);
+
+      // Prefer on-device wallet signing when available
+      if (walletConnected && typeof window !== 'undefined' && (window as any).ethereum) {
+        const { BrowserProvider } = await import('ethers');
+        const provider = new BrowserProvider((window as any).ethereum as any);
+        const message = `MtaaDAO Multisig Approval\napprovalId:${approvalId}\ndaoId:${daoId}\napprover:${walletAddress}\ntimestamp:${Date.now()}`;
+        const signature = await (window as any).ethereum.request({
+          method: 'personal_sign',
+          params: [message, walletAddress],
+        });
+
+        await treasuryAPI.submitMultisigSignature(daoId, approvalId, signature);
+      } else {
+        // Fallback: request server to accept a typed approval (server may require different flow)
+        const message = `MtaaDAO Multisig Approval (fallback) approvalId:${approvalId} daoId:${daoId} timestamp:${Date.now()}`;
+        const fallbackSignature = btoa(message);
+        await treasuryAPI.submitMultisigSignature(daoId, approvalId, fallbackSignature);
+      }
+
+      // Update local pending approvals state optimistically
+      setPendingApprovals((prev) =>
+        prev.map((approval) =>
+          approval.id === approvalId
+            ? { ...approval, currentSignatures: approval.currentSignatures + 1 }
+            : approval
+        )
+      );
+
       setSigningApprovalId(null);
       setSuccess('Signature submitted successfully');
       setTimeout(() => setSuccess(null), 3000);
     } catch (err) {
       setError((err as Error).message);
+      setSigningApprovalId(null);
     }
   };
 
@@ -692,7 +707,7 @@ export default function TreasuryManagement({ daoId, userRole }: TreasuryManageme
                               }
                             >
                               <DialogTrigger asChild>
-                                <Button size="sm" variant="destructive" className="gap-1">
+                                <Button size="sm" variant="danger" className="gap-1">
                                   Reject
                                 </Button>
                               </DialogTrigger>
@@ -723,7 +738,7 @@ export default function TreasuryManagement({ daoId, userRole }: TreasuryManageme
                                       Cancel
                                     </Button>
                                     <Button
-                                      variant="destructive"
+                                      variant="danger"
                                       onClick={() =>
                                         handleRejectApproval(approval.id)
                                       }

@@ -429,6 +429,16 @@ contract MaonoVault_Phase1B is
     // ======================================================================
     // ERC4626 OVERRIDES
     // ======================================================================
+    //  Override _decimalsOffset to mitigate the ERC4626 first-depositor
+    // inflation / donation attack. With offset=3, the vault uses virtual shares
+    // (totalSupply * 10^3) and virtual assets (totalAssets * 10^3) in its
+    // share-price calculation. An attacker must donate 10^3 times more assets
+    // to steal the same rounding error from subsequent depositors, making the
+    // attack economically impractical. This is the OpenZeppelin-recommended fix.
+    function _decimalsOffset() internal pure override returns (uint8) {
+        return 3;
+    }
+
     // FIX #1: All four entry-points now check vault-level status (no address param)
     // FIX #2: All four are guarded by whenNotPaused (previously missing on mint/redeem)
     // FIX #3: All four carry nonReentrant (ERC4626 base does not add this)

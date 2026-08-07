@@ -1,8 +1,7 @@
 import React, { useState, useEffect } from 'react';
-import { useRouter } from 'next/router';
-import Link from 'next/link';
-import ConfigEditor from '@/components/admin/ConfigEditor';
-import AdminLayout from '@/components/admin/AdminLayout';
+import { Link } from 'react-router-dom';
+import ConfigEditor from '../../components/admin/ConfigEditor';
+import AdminLayout from '../../components/admin/AdminLayout';
 import styles from './config.module.css';
 
 interface Agent {
@@ -21,7 +20,6 @@ interface SelectOption {
 }
 
 export default function ConfigAgentsPage() {
-  const router = useRouter();
   const [agents, setAgents] = useState<Agent[]>([]);
   const [selectedAgentId, setSelectedAgentId] = useState<string>('');
   const [selectedAgent, setSelectedAgent] = useState<Agent | null>(null);
@@ -66,37 +64,29 @@ export default function ConfigAgentsPage() {
   };
 
   // Handle configuration save
-  const handleConfigSave = async (updatedConfig: Record<string, any>) => {
+  const handleConfigSave = async (updatedConfig: Record<string, any>): Promise<void> => {
     if (!selectedAgentId) return;
 
-    try {
-      const response = await fetch(`/api/admin/agents-elders/config/agents/${selectedAgentId}`, {
-        method: 'PUT',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ configuration: updatedConfig }),
-      });
+    const response = await fetch(`/api/admin/agents-elders/config/agents/${selectedAgentId}`, {
+      method: 'PUT',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ configuration: updatedConfig }),
+    });
 
-      if (!response.ok) {
-        const data = await response.json();
-        throw new Error(data.error || 'Failed to update configuration');
-      }
-
+    if (!response.ok) {
       const data = await response.json();
-      
-      // Update local state
-      setSelectedAgent(data.data);
-      setAgents(agents.map(a => 
-        a.id === selectedAgentId ? data.data : a
-      ));
-
-      return { success: true };
-    } catch (err) {
-      const message = err instanceof Error ? err.message : 'Failed to save configuration';
-      console.error('Error saving configuration:', err);
-      return { success: false, error: message };
+      throw new Error(data.error || 'Failed to update configuration');
     }
+
+    const data = await response.json();
+
+    // Update local state
+    setSelectedAgent(data.data);
+    setAgents(agents.map(a => 
+      a.id === selectedAgentId ? data.data : a
+    ));
   };
 
   const agentOptions: SelectOption[] = agents.map(a => ({
@@ -142,7 +132,7 @@ export default function ConfigAgentsPage() {
         <div className={styles.container}>
           <div className={styles.emptyState}>
             <p>No agents found</p>
-            <Link href="/admin/agents-elders">
+            <Link to="/admin/agents-elders">
               <button className={styles.backButton}>Back to Agents & Elders</button>
             </Link>
           </div>
@@ -161,7 +151,7 @@ export default function ConfigAgentsPage() {
               Manage settings and parameters for each agent
             </p>
           </div>
-          <Link href="/admin/agents-elders">
+          <Link to="/admin/agents-elders">
             <button className={styles.backButton}>Back</button>
           </Link>
         </div>
@@ -223,9 +213,13 @@ export default function ConfigAgentsPage() {
               <ConfigEditor
                 title={`Configure ${selectedAgent.name}`}
                 description={`Edit configuration for ${selectedAgent.type} agent`}
-                config={selectedAgent.configuration}
+                entityType="agent"
+                entityId={selectedAgent.id}
+                entityName={selectedAgent.name}
+                initialValues={selectedAgent.configuration}
                 fields={getAgentConfigFields(selectedAgent.type)}
                 onSave={handleConfigSave}
+                onCancel={() => {}}
               />
             ) : (
               <div className={styles.noSelection}>

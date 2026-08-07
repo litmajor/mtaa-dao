@@ -1,6 +1,6 @@
 
 import rateLimit from 'express-rate-limit';
-import { Request, Response } from 'express';
+import type { Request, Response } from 'express';
 
 // Different rate limits for different endpoints
 export const generalRateLimit = rateLimit({

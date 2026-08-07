@@ -1,8 +1,8 @@
 import React, { useState, useEffect } from 'react';
-import ConfirmDialog from '@/components/ConfirmDialog';
-import { useRouter } from 'next/router';
-import { useAuth } from '@clerk/nextjs';
-import Head from 'next/head';
+import { Helmet } from 'react-helmet-async';
+import { useParams } from 'react-router-dom';
+import { useAuth } from '../../src/pages/hooks/useAuth';
+import ConfirmDialog from '../../src/components/ConfirmDialog';
 import styles from './members.module.css';
 
 interface Member {
@@ -29,9 +29,10 @@ interface MembersStats {
 }
 
 export default function MembersPage() {
-  const router = useRouter();
-  const { daoId } = router.query;
-  const { userId } = useAuth();
+  const params = useParams();
+  const daoId = params.daoId as string;
+  const { user } = useAuth();
+  const userId = user?.id;
   const [members, setMembers] = useState<Member[]>([]);
   const [stats, setStats] = useState<MembersStats | null>(null);
   const [loading, setLoading] = useState(false);
@@ -215,10 +216,10 @@ export default function MembersPage() {
 
   return (
     <>
-      <Head>
+      <Helmet>
         <title>Member Management</title>
         <meta name="description" content="Manage DAO members and roles" />
-      </Head>
+      </Helmet>
 
       <div className={styles.container}>
         <div className={styles.header}>

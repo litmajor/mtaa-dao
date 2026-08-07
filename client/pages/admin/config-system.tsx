@@ -1,8 +1,7 @@
 import React, { useState, useEffect } from 'react';
-import { useRouter } from 'next/router';
-import Link from 'next/link';
-import ConfigEditor from '@/components/admin/ConfigEditor';
-import AdminLayout from '@/components/admin/AdminLayout';
+import { Link } from 'react-router-dom';
+import ConfigEditor from '../../components/admin/ConfigEditor';
+import AdminLayout from '../../components/admin/AdminLayout';
 import styles from './config.module.css';
 
 interface SystemConfig {
@@ -13,7 +12,6 @@ interface SystemConfig {
 }
 
 export default function ConfigSystemPage() {
-  const router = useRouter();
   const [config, setConfig] = useState<SystemConfig | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -40,29 +38,22 @@ export default function ConfigSystemPage() {
   }, []);
 
   // Handle configuration save
-  const handleConfigSave = async (updatedConfig: Record<string, any>) => {
-    try {
-      const response = await fetch('/api/admin/agents-elders/config/system', {
-        method: 'PUT',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ settings: updatedConfig }),
-      });
+  const handleConfigSave = async (updatedConfig: Record<string, any>): Promise<void> => {
+    const response = await fetch('/api/admin/agents-elders/config/system', {
+      method: 'PUT',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ settings: updatedConfig }),
+    });
 
-      if (!response.ok) {
-        const data = await response.json();
-        throw new Error(data.error || 'Failed to update system configuration');
-      }
-
+    if (!response.ok) {
       const data = await response.json();
-      setConfig(data.configuration);
-      return { success: true };
-    } catch (err) {
-      const message = err instanceof Error ? err.message : 'Failed to save configuration';
-      console.error('Error saving system configuration:', err);
-      return { success: false, error: message };
+      throw new Error(data.error || 'Failed to update system configuration');
     }
+
+    const data = await response.json();
+    setConfig(data.configuration);
   };
 
   if (loading) {
@@ -103,7 +94,7 @@ export default function ConfigSystemPage() {
         <div className={styles.container}>
           <div className={styles.emptyState}>
             <p>System configuration not initialized</p>
-            <Link href="/admin/agents-elders">
+            <Link to="/admin/agents-elders">
               <button className={styles.backButton}>Back to Agents & Elders</button>
             </Link>
           </div>
@@ -122,7 +113,7 @@ export default function ConfigSystemPage() {
               Configure global settings for agents and elders
             </p>
           </div>
-          <Link href="/admin/agents-elders">
+          <Link to="/admin/agents-elders">
             <button className={styles.backButton}>Back</button>
           </Link>
         </div>
@@ -160,9 +151,12 @@ export default function ConfigSystemPage() {
             <ConfigEditor
               title="Global System Settings"
               description="Manage system-wide configuration"
-              config={config.settings}
+              entityType="system"
+              entityId={config.id}
+              initialValues={config.settings}
               fields={getSystemConfigFields()}
               onSave={handleConfigSave}
+              onCancel={() => {}}
             />
           </main>
         </div>

@@ -1,4 +1,4 @@
-
+ 
 import { useQuery } from '@tanstack/react-query';
 import { useRoute } from 'wouter';
 import { Card, CardContent } from '@/components/ui/card';
@@ -7,6 +7,15 @@ import { Button } from '@/components/ui/button';
 import { Calendar, Clock, User, ArrowLeft, Share2 } from 'lucide-react';
 import { Link } from 'wouter';
 import { authClient } from '@/utils/authClient';
+
+const sanitizeBlogHtml = (html: string) => {
+  if (!html) return '';
+
+  return html
+    .replace(/<script[\s\S]*?<\/script>/gi, '')
+    .replace(/\s(on[a-z]+)=['"][^'"]*['"]/gi, '')
+    .replace(/javascript:/gi, '');
+};
 
 export default function BlogPostPage() {
   const [, params] = useRoute('/blog/:id');
@@ -70,7 +79,7 @@ export default function BlogPostPage() {
           <CardContent className="p-8">
             <div 
               className="prose dark:prose-invert max-w-none"
-              dangerouslySetInnerHTML={{ __html: post.content }}
+              dangerouslySetInnerHTML={{ __html: sanitizeBlogHtml(post.content) }}
             />
           </CardContent>
         </Card>

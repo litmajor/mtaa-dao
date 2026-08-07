@@ -345,17 +345,28 @@ class SoftDeleteService {
    */
   async listSoftDeleted(targetType: string, limit: number = 50, offset: number = 0): Promise<SoftDeletedItem[]> {
     try {
-      const table = targetType === 'user' ? 'users' : targetType === 'dao' ? 'daos' : 'admin_users';
-      const nameColumn = targetType === 'user' ? 'email' : 'name';
+      const tableMap: Record<string, { table: string; nameCol: string }> = {
+        user: { table: 'users', nameCol: 'email' },
+        dao: { table: 'daos', nameCol: 'name' },
+        admin: { table: 'admin_users', nameCol: 'name' },
+      };
 
-      const result = await db.execute(sql.raw(`
+      const mapping = tableMap[targetType];
+      if (!mapping) {
+        throw new Error(`Invalid target type: ${targetType}`);
+      }
+
+      const safeLimit = Math.max(1, Math.min(1000, Number(limit) || 50));
+      const safeOffset = Math.max(0, Number(offset) || 0);
+
+      const result = await db.execute(sql`
         SELECT 
-          id, ${nameColumn} as name, deleted_at, deleted_by, delete_reason, deleted_recovery_deadline
-        FROM ${table}
+          id, ${sql.raw(mapping.nameCol)} as name, deleted_at, deleted_by, delete_reason, deleted_recovery_deadline
+        FROM ${sql.raw(mapping.table)}
         WHERE deleted_at IS NOT NULL AND deleted_recovery_deadline > NOW()
         ORDER BY deleted_recovery_deadline ASC
-        LIMIT ${limit} OFFSET ${offset}
-      `));
+        LIMIT ${safeLimit} OFFSET ${safeOffset}
+      `);
 
       if (!result.rows) return [];
 
@@ -386,13 +397,22 @@ class SoftDeleteService {
    */
   async permanentlyDelete(targetId: string, targetType: string, reason: string): Promise<void> {
     try {
-      const table = targetType === 'user' ? 'users' : targetType === 'dao' ? 'daos' : 'admin_users';
+      const tableMap: Record<string, string> = {
+        user: 'users',
+        dao: 'daos',
+        admin: 'admin_users',
+      };
+
+      const table = tableMap[targetType];
+      if (!table) {
+        throw new Error(`Invalid target type: ${targetType}`);
+      }
 
       // Check if 30-day period has passed
-      const result = await db.execute(sql.raw(`
-        SELECT deleted_recovery_deadline FROM ${table}
-        WHERE id = '${targetId}' AND deleted_at IS NOT NULL
-      `));
+      const result = await db.execute(sql`
+        SELECT deleted_recovery_deadline FROM ${sql.raw(table)}
+        WHERE id = ${targetId} AND deleted_at IS NOT NULL
+      `);
 
       if (!result.rows || result.rows.length === 0) {
         throw new Error(`Resource not found or not soft deleted: ${targetId}`);
@@ -404,9 +424,9 @@ class SoftDeleteService {
       }
 
       // Permanently delete
-      await db.execute(sql.raw(`
-        DELETE FROM ${table} WHERE id = '${targetId}'
-      `));
+      await db.execute(sql`
+        DELETE FROM ${sql.raw(table)} WHERE id = ${targetId}
+      `);
     } catch (error) {
       console.error('Error permanently deleting:', error);
       throw error;

@@ -17,6 +17,7 @@ interface ConfigField {
 
 interface ConfigEditorProps {
   title: string;
+  description?: string;
   entityType: 'elder' | 'agent' | 'system';
   entityId?: string;
   entityName?: string;
@@ -29,6 +30,7 @@ interface ConfigEditorProps {
 
 export const ConfigEditor: React.FC<ConfigEditorProps> = ({
   title,
+  description,
   entityType,
   entityId,
   entityName,
@@ -39,7 +41,7 @@ export const ConfigEditor: React.FC<ConfigEditorProps> = ({
   isDirty: externalIsDirty,
 }) => {
   const [values, setValues] = useState<Record<string, any>>(initialValues);
-  const [errors, setErrors] = useState<Record<string, string>>({});
+  const [errors, setErrors] = useState<Record<string, string | undefined>>({});
   const [touched, setTouched] = useState<Record<string, boolean>>({});
   const [loading, setLoading] = useState(false);
   const [isDirty, setIsDirty] = useState(externalIsDirty || false);
@@ -132,7 +134,7 @@ export const ConfigEditor: React.FC<ConfigEditorProps> = ({
     e.preventDefault();
 
     // Validate all fields
-    const newErrors: Record<string, string> = {};
+    const newErrors: Record<string, string | undefined> = {};
     for (const field of fields) {
       const error = validateField(field, values[field.name]);
       if (error) {
@@ -177,6 +179,7 @@ export const ConfigEditor: React.FC<ConfigEditorProps> = ({
     <div className={styles.container}>
       <div className={styles.header}>
         <h2>{title}</h2>
+        {description && <p className={styles.description}>{description}</p>}
         {entityName && <p className={styles.subtitle}>{entityName}</p>}
       </div>
 

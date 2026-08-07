@@ -25,6 +25,9 @@
  */
 
 import { redis } from './redis';
+import { db } from '../db';
+import { refreshTokens } from '../../shared/schema';
+import { eq, and, isNull, isNotNull } from 'drizzle-orm';
 import NodeCache from 'node-cache';
 
 const tokenBlacklistCache = new NodeCache({ stdTTL: 600, checkperiod: 60 });
@@ -37,20 +40,28 @@ const BLACKLIST_TTL = 24 * 60 * 60; // 24 hours — for individual per-token ent
 const USER_REVOCATION_TTL = 7 * 24 * 60 * 60 + 60 * 60;
 
 export async function blacklistToken(tokenHash: string, expiresIn: number, type: 'refresh' | 'access' = 'refresh'): Promise<void> {
-  try {
-    const key = `${BLACKLIST_PREFIX}:${type}:${tokenHash}`;
-    const ttl = expiresIn + 60;
+  const key = `${BLACKLIST_PREFIX}:${type}:${tokenHash}`;
+  const ttl = expiresIn + 60;
 
+  try {
     await redis.set(key, 'revoked', ttl);
     tokenBlacklistCache.set(`${type}:${tokenHash}`, true, ttl);
+  } catch (error) {
+    console.error('[TOKEN_BLACKLIST] Redis write failed, falling back to DB-backed revocation:', error);
+  }
 
+  try {
+    await db.update(refreshTokens)
+      .set({
+        revokedAt: new Date(),
+        revokedReason: 'revoked',
+      })
+      .where(eq(refreshTokens.tokenHash, tokenHash));
+
+    tokenBlacklistCache.set(`${type}:${tokenHash}`, true, BLACKLIST_TTL);
     console.log(`[TOKEN_BLACKLIST] Blacklisted ${type} token: ${tokenHash.substring(0, 10)}...`);
   } catch (error) {
-    console.error('[TOKEN_BLACKLIST] Error blacklisting token:', error);
-    // NOTE: this fallback only protects the CURRENT process. In a
-    // multi-instance deployment, other replicas won't see this token as
-    // blacklisted until Redis recovers — flagging since Option A (DB-backed
-    // revocation) doesn't appear to be consulted anywhere as a backstop.
+    console.error('[TOKEN_BLACKLIST] Error persisting token revocation to DB:', error);
     tokenBlacklistCache.set(`${type}:${tokenHash}`, true, BLACKLIST_TTL);
   }
 }
@@ -76,7 +87,22 @@ export async function isTokenBlacklisted(tokenHash: string): Promise<boolean> {
     console.error('[TOKEN_BLACKLIST] Error checking Redis:', error);
   }
 
-  return false;
+  try {
+    const revokedToken = await db.select().from(refreshTokens).where(and(
+      eq(refreshTokens.tokenHash, tokenHash),
+      isNotNull(refreshTokens.revokedAt)
+    )).limit(1);
+
+    if (revokedToken.length === 0) {
+      return false;
+    }
+
+    tokenBlacklistCache.set(`refresh:${tokenHash}`, true, BLACKLIST_TTL);
+    return true;
+  } catch (error) {
+    console.error('[TOKEN_BLACKLIST] Error checking database revocation:', error);
+    return false;
+  }
 }
 
 /**
@@ -84,22 +110,40 @@ export async function isTokenBlacklisted(tokenHash: string): Promise<boolean> {
  * Used for: password reset, account compromise, admin force-logout
  */
 export async function blacklistUserTokens(userId: string): Promise<void> {
+  const userBlacklistKey = `user:blacklist:${userId}`;
+
   try {
-    // FIX #2: removed the unused/broken `pattern` variable that was here —
-    // it was never read and had a missing ':' separator bug.
-    const userBlacklistKey = `user:blacklist:${userId}`;
     await redis.set(userBlacklistKey, 'all_revoked', USER_REVOCATION_TTL); // FIX #1
+  } catch (error) {
+    console.error('[TOKEN_BLACKLIST] Error blacklisting user tokens in Redis:', error);
+  }
+
+  try {
+    await db.update(refreshTokens)
+      .set({
+        revokedAt: new Date(),
+        revokedReason: 'user_revoke',
+      })
+      .where(eq(refreshTokens.userId, userId));
 
     console.log(`[TOKEN_BLACKLIST] Blacklisted all tokens for user: ${userId}`);
   } catch (error) {
-    console.error('[TOKEN_BLACKLIST] Error blacklisting user tokens:', error);
+    console.error('[TOKEN_BLACKLIST] Error persisting user-wide revocation to DB:', error);
   }
 }
 
 export async function areUserTokensRevoked(userId: string): Promise<boolean> {
   try {
     const key = `user:blacklist:${userId}`;
-    return (await redis.exists(key)) > 0;
+    const redisRevoked = (await redis.exists(key)) > 0;
+    if (redisRevoked) return true;
+
+    const revokedTokens = await db.select().from(refreshTokens).where(and(
+      eq(refreshTokens.userId, userId),
+      isNotNull(refreshTokens.revokedAt)
+    )).limit(1);
+
+    return revokedTokens.length > 0;
   } catch (error) {
     console.error('[TOKEN_BLACKLIST] Error checking user tokens:', error);
     return false;

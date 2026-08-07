@@ -16,23 +16,77 @@
  * POST   /api/v1/wallets/withdrawals/webhook           Provider webhook (no auth)
  * 
  * 2FA & PIN Requirement:
- * - All withdrawal initiations require 2FA verification
- * - PIN verification required to complete withdrawal
- * - 2FA middleware applied at /initiate endpoint
+ * - /initiate creates a withdrawal intent in DB (status: pending_2fa)
+ * - /verify-2fa validates the OTP and transitions to pending_pin
+ * - /complete validates PIN and transitions to processing (uses FOR UPDATE lock)
+ * - Skipping any step is not possible — each step checks the prior status
  */
-
-import express, { Request, Response, NextFunction } from 'express';
+import express from 'express';
+import type { Request, Response, NextFunction } from 'express';
 import { z } from 'zod';
 import { isAuthenticated } from '../../../auth';
 import { validateRequest } from '../../../middleware/validation';
 import { createRateLimiter } from '../../../middleware/rateLimiting';
 import { twoFAService } from '../../../services/two-fa-service';
 import { pinService } from '../../../services/pin-service';
+import { kycService } from '../../../services/kycService';
 import { db } from '../../../storage';
 import { walletTransactions } from '../../../../shared/schema';
-import { and, eq, inArray, desc, count, gte, sum } from 'drizzle-orm';
+import { and, eq, inArray, desc, count, gte, sum, sql } from 'drizzle-orm';
 
 const router = express.Router({ mergeParams: true });
+
+const DEFAULT_WITHDRAWAL_LIMITS = {
+  currency: 'USD',
+  stripe: {
+    minWithdrawal: 10,
+    perTransaction: 2500,
+    daily: 5000,
+    monthly: 25000,
+  },
+  kotanipay: {
+    minWithdrawal: 5,
+    perTransaction: 1000,
+    daily: 2000,
+    monthly: 10000,
+  },
+  mpesa: {
+    minWithdrawal: 1,
+    perTransaction: 1500,
+    daily: 3500,
+    monthly: 15000,
+  },
+  bank_transfer: {
+    minWithdrawal: 20,
+    perTransaction: 5000,
+    daily: 15000,
+    monthly: 50000,
+  },
+};
+
+async function getDynamicWithdrawalLimits(userId?: string) {
+  const tier = userId ? await kycService.getCurrentTier(userId) : null;
+  const capDaily = tier?.dailyLimit ?? 100;
+  const capMonthly = tier?.monthlyLimit ?? 500;
+
+  const applyTierCaps = (limits: { minWithdrawal: number; perTransaction: number; daily: number; monthly: number }) => ({
+    minWithdrawal: limits.minWithdrawal,
+    perTransaction: Math.min(limits.perTransaction, capDaily),
+    daily: Math.min(limits.daily, capDaily),
+    monthly: Math.min(limits.monthly, capMonthly),
+  });
+
+  return {
+    currency: 'USD',
+    kycTier: tier?.tier ?? 'none',
+    kycDailyLimit: capDaily,
+    kycMonthlyLimit: capMonthly,
+    stripe: applyTierCaps(DEFAULT_WITHDRAWAL_LIMITS.stripe),
+    kotanipay: applyTierCaps(DEFAULT_WITHDRAWAL_LIMITS.kotanipay),
+    mpesa: applyTierCaps(DEFAULT_WITHDRAWAL_LIMITS.mpesa),
+    bank_transfer: applyTierCaps(DEFAULT_WITHDRAWAL_LIMITS.bank_transfer),
+  };
+}
 
 // ════════════════════════════════════════════════════════════════════════════════
 // RATE LIMITERS
@@ -67,6 +121,7 @@ const initiateWithdrawalSchema = z.object({
 });
 
 const verify2FASchema = z.object({
+  withdrawalId: z.string().uuid('Invalid withdrawal ID'),
   otpId: z.string(),
   code: z.string().regex(/^\d{6}$/, 'OTP must be 6 digits'),
   useBackupCode: z.boolean().optional(),
@@ -118,6 +173,11 @@ async function require2FA(req: Request, res: Response, next: NextFunction) {
 }
 
 // ════════════════════════════════════════════════════════════════════════════════
+// WITHDRAWAL INTENT EXPIRY (5 minutes)
+// ════════════════════════════════════════════════════════════════════════════════
+const WITHDRAWAL_INTENT_TTL_MS = 5 * 60 * 1000;
+
+// ════════════════════════════════════════════════════════════════════════════════
 // WITHDRAWAL OPERATIONS (8 endpoints)
 // ════════════════════════════════════════════════════════════════════════════════
 
@@ -125,12 +185,16 @@ async function require2FA(req: Request, res: Response, next: NextFunction) {
  * POST /withdrawals/initiate
  * Initiate a withdrawal (requires 2FA)
  * 
+ * FIX : Now persists a withdrawal intent record in the DB with status
+ * 'pending_2fa'. The record binds the validated amount, destination, and
+ * provider so that /complete cannot be called with arbitrary values.
+ * 
  * Flow:
  * 1. User calls this endpoint with withdrawal details
- * 2. System generates OTP and sends via 2FA method
- * 3. User receives OTP in email/SMS/authenticator
- * 4. User calls /verify-2fa with OTP code
- * 5. User calls /complete with PIN to finalize withdrawal
+ * 2. System creates withdrawal record (status: pending_2fa)
+ * 3. System generates OTP and sends via 2FA method
+ * 4. User calls /verify-2fa with withdrawalId + OTP code → status: pending_pin
+ * 5. User calls /complete with withdrawalId + PIN → status: processing
  */
 router.post(
   '/initiate',
@@ -150,10 +214,35 @@ router.post(
         });
       }
 
+      // FIX (C3): Persist a withdrawal intent record so the 2FA step is bound
+      // to a specific withdrawal. The record starts in 'pending_2fa' status.
+      const [withdrawalRecord] = await db.insert(walletTransactions).values({
+        fromUserId: userId,
+        toUserId: destination || null,
+        walletAddress: fromAccountId,
+        amount: amount,
+        currency: currency || 'USDC',
+        type: 'withdrawal',
+        status: 'pending_2fa',
+        description: `Withdrawal via ${provider}`,
+        metadata: {
+          provider,
+          fromAccountId,
+          destination,
+          initiatedAt: new Date().toISOString(),
+          expiresAt: new Date(Date.now() + WITHDRAWAL_INTENT_TTL_MS).toISOString(),
+          ...(metadata || {}),
+        },
+      }).returning();
+
       // Generate OTP for 2FA verification
       const otpResult = await twoFAService.createWithdrawalOTP(userId);
 
       if (!otpResult.success) {
+        // Rollback: mark as failed if OTP generation fails
+        await db.update(walletTransactions)
+          .set({ status: 'failed', updatedAt: new Date() })
+          .where(eq(walletTransactions.id, withdrawalRecord.id));
         return res.status(400).json(otpResult);
       }
 
@@ -174,14 +263,15 @@ router.post(
         }
       }
 
-      // Return OTP ID for next step (user will verify with this ID + code)
+      // Return withdrawal ID and OTP ID for next step
       res.status(202).json({
         success: true,
         data: {
+          withdrawalId: withdrawalRecord.id,
           otpId: otpResult.otpId,
           message: 'OTP sent to your configured 2FA method. Verify with the code to complete withdrawal.',
           nextStep: 'POST /withdrawals/verify-2fa',
-          expiresIn: 300, // 5 minutes
+          expiresIn: WITHDRAWAL_INTENT_TTL_MS / 1000,
         },
       });
     } catch (error) {
@@ -192,7 +282,12 @@ router.post(
 
 /**
  * POST /withdrawals/verify-2fa
- * Verify 2FA code and prepare for PIN verification
+ * Verify 2FA code and transition withdrawal to pending_pin
+ * 
+ * FIX (C3): The verification result is now bound server-side to the
+ * withdrawal record. The status transitions from 'pending_2fa' to
+ * 'pending_pin'. The verification token is no longer returned to the
+ * client — server state is the single source of truth.
  */
 router.post(
   '/verify-2fa',
@@ -202,7 +297,7 @@ router.post(
   async (req: Request, res: Response, next: NextFunction) => {
     try {
       const userId = (req as any).user?.id || (req as any).user?.claims?.sub;
-      const { otpId, code, useBackupCode } = req.body;
+      const { withdrawalId, otpId, code, useBackupCode } = req.body;
 
       if (!userId) {
         return res.status(401).json({
@@ -211,20 +306,53 @@ router.post(
         });
       }
 
-      if (!otpId || !code) {
+      if (!withdrawalId || !otpId || !code) {
         return res.status(400).json({
           success: false,
-          error: 'OTP ID and code are required',
+          error: 'withdrawalId, OTP ID and code are required',
+        });
+      }
+
+      // Verify the withdrawal belongs to this user AND is in the
+      // correct state (pending_2fa). Prevents replay / out-of-order calls.
+      const [withdrawal] = await db.select().from(walletTransactions)
+        .where(and(
+          eq(walletTransactions.id, withdrawalId),
+          eq(walletTransactions.fromUserId, userId)
+        ))
+        .limit(1);
+
+      if (!withdrawal) {
+        return res.status(404).json({
+          success: false,
+          error: 'Withdrawal not found',
+        });
+      }
+
+      if (withdrawal.status !== 'pending_2fa') {
+        return res.status(400).json({
+          success: false,
+          error: `Withdrawal is in '${withdrawal.status}' state, expected 'pending_2fa'`,
+        });
+      }
+
+      // Check expiry
+      const meta = withdrawal.metadata as any;
+      if (meta?.expiresAt && new Date(meta.expiresAt) < new Date()) {
+        await db.update(walletTransactions)
+          .set({ status: 'expired', updatedAt: new Date() })
+          .where(eq(walletTransactions.id, withdrawalId));
+        return res.status(410).json({
+          success: false,
+          error: 'Withdrawal intent has expired. Please initiate a new withdrawal.',
         });
       }
 
       let verifyResult;
 
       if (useBackupCode) {
-        // Verify backup code instead
         verifyResult = await twoFAService.verifyBackupCode(userId, code);
       } else {
-        // Verify regular OTP
         verifyResult = await twoFAService.verifyWithdrawalOTP(userId, otpId, code);
       }
 
@@ -232,13 +360,18 @@ router.post(
         return res.status(400).json(verifyResult);
       }
 
-      // Generate verification token for withdrawal creation
-      const verificationToken = `withdrawal_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+      // Transition to 'pending_pin' — server-side state is the gate.
+      await db.update(walletTransactions)
+        .set({
+          status: 'pending_pin',
+          updatedAt: new Date(),
+        })
+        .where(eq(walletTransactions.id, withdrawalId));
 
       res.json({
         success: true,
         data: {
-          verificationToken,
+          withdrawalId,
           message: '2FA verified. Provide PIN to complete withdrawal.',
           nextStep: 'POST /withdrawals/complete',
         },
@@ -252,7 +385,10 @@ router.post(
 /**
  * POST /withdrawals/complete
  * Complete withdrawal with PIN verification
- * Uses completeWithdrawalSchema to validate withdrawalId
+ * 
+ * This requires the withdrawal to be in 'pending_pin' status,
+ * proving that 2FA was completed server-side. Uses atomic UPDATE ... WHERE
+ * to prevent TOCTOU race conditions on status transitions.
  */
 router.post(
   '/complete',
@@ -280,40 +416,45 @@ router.post(
         });
       }
 
-      // Retrieve withdrawal record to verify user owns it
-      const [withdrawal] = await db.select().from(walletTransactions)
-        .where(and(
-          eq(walletTransactions.id, withdrawalId),
-          eq(walletTransactions.fromUserId, userId)
-        ))
-        .limit(1);
+      // This requires the withdrawal to be in 'pending_pin' status,
+      // proving that 2FA was completed server-side.
+      const result = await db.execute(sql`
+        UPDATE wallet_transactions
+        SET status = 'processing', updated_at = NOW()
+        WHERE id = ${withdrawalId}
+          AND from_user_id = ${userId}
+          AND status = 'pending_pin'
+        RETURNING id, amount, currency, status
+      `);
 
-      if (!withdrawal) {
-        return res.status(404).json({
-          success: false,
-          error: 'Withdrawal not found',
-        });
-      }
+      const rows = (result as any).rows || [];
+      if (!rows.length) {
+        const [existing] = await db.select().from(walletTransactions)
+          .where(and(
+            eq(walletTransactions.id, withdrawalId),
+            eq(walletTransactions.fromUserId, userId)
+          ))
+          .limit(1);
 
-      if (withdrawal.status !== 'pending') {
+        if (!existing) {
+          return res.status(404).json({
+            success: false,
+            error: 'Withdrawal not found',
+          });
+        }
+
         return res.status(400).json({
           success: false,
-          error: 'Withdrawal already processed',
+          error: `Withdrawal is in '${existing.status}' state. 2FA verification must be completed first.`,
         });
       }
 
-      // Update withdrawal to 'processing' status
-      await db.update(walletTransactions)
-        .set({
-          status: 'processing',
-          updatedAt: new Date(),
-        })
-        .where(eq(walletTransactions.id, withdrawalId));
+      const updated = rows[0];
 
       res.json({
         success: true,
         data: {
-          withdrawalId,
+          withdrawalId: updated.id,
           status: 'processing',
           message: 'Withdrawal processing. You will be notified when complete.',
         },
@@ -336,7 +477,6 @@ router.get(
       const { txId } = req.params;
       const userId = (req as any).user?.id || (req as any).user?.claims?.sub;
 
-      // Retrieve withdrawal status from database
       const withdrawal = await db.select()
         .from(walletTransactions)
         .where(and(
@@ -363,7 +503,7 @@ router.get(
           provider: (tx as any).provider || 'stripe',
           createdAt: tx.createdAt,
           completedAt: (tx as any).completedAt || null,
-          userId, // For auth verification
+          userId,
         },
       });
     } catch (error) {
@@ -383,36 +523,12 @@ router.get(
   async (req: Request, res: Response, next: NextFunction) => {
     try {
       const userId = (req as any).user?.id || (req as any).user?.claims?.sub;
+      const limits = await getDynamicWithdrawalLimits(userId);
 
       res.json({
         success: true,
         data: {
-          limits: {
-            stripe: {
-              daily: '5000',
-              monthly: '25000',
-              perTransaction: '2500',
-              minWithdrawal: '10',
-            },
-            kotanipay: {
-              daily: '2500',
-              monthly: '12500',
-              perTransaction: '1250',
-              minWithdrawal: '5',
-            },
-            mpesa: {
-              daily: '500',
-              monthly: '5000',
-              perTransaction: '250',
-              minWithdrawal: '1',
-            },
-            bank_transfer: {
-              daily: '10000',
-              monthly: '50000',
-              perTransaction: '5000',
-              minWithdrawal: '50',
-            },
-          },
+          limits,
         },
       });
     } catch (error) {
@@ -424,7 +540,6 @@ router.get(
 /**
  * GET /withdrawals/stable-assets
  * DEPRECATED: Use /v1/wallets/inflows/stable-assets instead
- * Kept for backward compatibility
  */
 router.get(
   '/stable-assets',
@@ -462,7 +577,6 @@ router.get(
       const limit = Math.min(parseInt(req.query.limit as string) || 50, 500);
       const offset = parseInt(req.query.offset as string) || 0;
 
-      // Retrieve withdrawal history from database
       const withdrawals = await db.select()
         .from(walletTransactions)
         .where(and(
@@ -513,7 +627,6 @@ router.get(
     try {
       const userId = (req as any).user?.id || (req as any).user?.claims?.sub;
 
-      // Calculate withdrawal summary from database
       const completed = await db.select({ total: sum(walletTransactions.amount) })
         .from(walletTransactions)
         .where(and(
@@ -587,7 +700,6 @@ router.post(
         });
       }
 
-      // Process withdrawal status update from provider webhook
       const withdrawal = await db.select()
         .from(walletTransactions)
         .where(eq(walletTransactions.id, withdrawalId))
@@ -600,7 +712,6 @@ router.post(
         });
       }
 
-      // Update withdrawal record with new status
       const updateData: any = {
         status,
         updatedAt: new Date(),
@@ -622,7 +733,6 @@ router.post(
         .set(updateData)
         .where(eq(walletTransactions.id, withdrawalId));
 
-      // Log webhook receipt
       console.log(`[Withdrawal Webhook] ID: ${withdrawalId}, Status: ${status}, Reference: ${externalReference}`);
 
       res.json({

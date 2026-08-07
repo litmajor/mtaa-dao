@@ -1,18 +1,24 @@
 import React, { useState } from 'react';
 import { ChevronLeft, ChevronRight, MoreVertical } from 'lucide-react';
-// @ts-ignore - CSS module types may not be declared in this scope
 import styles from './AdminTable.module.css';
+
+interface Row {
+  id: string;
+  [key: string]: unknown;
+}
 
 interface Column {
   key: string;
   label: string;
-  render?: (value: any, row: any) => React.ReactNode;
+  render?: (value: any, row?: any) => React.ReactNode;
   width?: string;
 }
 
-interface Row {
-  id: string;
-  [key: string]: any;
+interface TableAction {
+  label: string;
+  onClick: (row: Row) => void | Promise<void>;
+  variant?: string;
+  disabled?: (row: Row) => boolean;
 }
 
 interface AdminTableProps {
@@ -21,6 +27,7 @@ interface AdminTableProps {
   loading?: boolean;
   onRowClick?: (row: Row) => void;
   onAction?: (action: string, row: Row) => void;
+  actions?: TableAction[];
   pagination?: {
     current: number;
     total: number;
@@ -31,16 +38,18 @@ interface AdminTableProps {
   onSelectionChange?: (selected: string[]) => void;
 }
 
-export const AdminTable: React.FC<AdminTableProps> = ({
-  columns,
-  rows,
-  loading = false,
-  onRowClick,
-  onAction,
-  pagination,
-  selectable = false,
-  onSelectionChange,
-}) => {
+export const AdminTable: React.FC<AdminTableProps> = (props: AdminTableProps) => {
+  const {
+    columns,
+    rows,
+    loading = false,
+    onRowClick,
+    onAction,
+    actions = [],
+    pagination,
+    selectable = false,
+    onSelectionChange,
+  } = props;
   const [selectedRows, setSelectedRows] = useState<Set<string>>(new Set());
 
   const handleSelectAll = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -122,22 +131,43 @@ export const AdminTable: React.FC<AdminTableProps> = ({
                 )}
                 {columns.map((col) => (
                   <td key={`${row.id}-${col.key}`}>
-                    {col.render ? col.render(row[col.key], row) : row[col.key]}
+                    <>
+                      {col.render ? col.render(row[col.key], row) : (row[col.key] as any)}
+                    </>
                   </td>
                 ))}
                 <td className={styles.actionsCol}>
-                  <button
-                    className={styles.menuBtn}
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      // TODO: Show context menu
-                    }}
-                    aria-label="Row actions"
-                    title="Row actions"
-                  >
-                    {/* use MoreVertical icon */}
-                    <MoreVertical size={18} />
-                  </button>
+                  {actions.length > 0 ? (
+                    <div className={styles.actionButtons}>
+                      {actions.map((action, index) => (
+                        <button
+                          key={`${row.id}-action-${index}`}
+                          className={styles.menuBtn}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            action.onClick(row);
+                          }}
+                          disabled={action.disabled?.(row)}
+                          title={action.label}
+                        >
+                          {action.label}
+                        </button>
+                      ))}
+                    </div>
+                  ) : (
+                    <button
+                      className={styles.menuBtn}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        // TODO: Show context menu
+                      }}
+                      aria-label="Row actions"
+                      title="Row actions"
+                    >
+                      {/* use MoreVertical icon */}
+                      <MoreVertical size={18} />
+                    </button>
+                  )}
                 </td>
               </tr>
             ))}

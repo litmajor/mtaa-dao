@@ -5,8 +5,7 @@
  */
 
 import React from 'react';
-import Link from 'next/link';
-import { useRouter } from 'next/router';
+import { Link, useLocation } from 'wouter';
 
 interface SidebarProps {
   isOpen: boolean;
@@ -21,7 +20,7 @@ interface NavItem {
 }
 
 export default function Sidebar({ isOpen, onToggle }: SidebarProps) {
-  const router = useRouter();
+  const [location] = useLocation();
 
   const navItems: NavItem[] = [
     { icon: '📊', label: 'Dashboard', href: '/dashboard' },
@@ -36,16 +35,18 @@ export default function Sidebar({ isOpen, onToggle }: SidebarProps) {
   ];
 
   const isActive = (href: string): boolean => {
-    // Handle both exact and prefix matches
+    const currentPath = location || '/';
+
     if (href.includes('?tab=')) {
-      // For query parameters, check both path and query
       const [path, query] = href.split('?');
-      return router.pathname === path && router.asPath.includes(query);
+      return currentPath.startsWith(path) && currentPath.includes(query ?? '');
     }
+
     if (href === '/dashboard') {
-      return router.pathname === '/dashboard' && !router.asPath.includes('?tab=');
+      return currentPath === '/dashboard' || currentPath === '/dashboard/';
     }
-    return router.pathname.startsWith(href) && !router.asPath.includes('?tab=');
+
+    return currentPath.startsWith(href);
   };
 
   return (
@@ -86,7 +87,7 @@ export default function Sidebar({ isOpen, onToggle }: SidebarProps) {
         <nav className="flex-1 px-4 py-6 space-y-2 overflow-y-auto">
           {navItems.map((item) => (
             <Link key={item.href} href={item.href}>
-              <a
+              <div
                 className={`flex items-center justify-between px-4 py-3 rounded-lg font-semibold transition-all group ${
                   isActive(item.href)
                     ? 'bg-blue-600 text-white shadow-lg'
@@ -104,7 +105,7 @@ export default function Sidebar({ isOpen, onToggle }: SidebarProps) {
                     {item.badge}
                   </span>
                 )}
-              </a>
+              </div>
             </Link>
           ))}
         </nav>
@@ -113,15 +114,15 @@ export default function Sidebar({ isOpen, onToggle }: SidebarProps) {
         <div className="border-t border-slate-700 p-4 space-y-2">
           {/* Help */}
           <Link href="/help">
-            <a className="flex items-center gap-3 px-4 py-2 rounded-lg text-slate-400 hover:text-white hover:bg-slate-700/50 transition-all">
+            <div className="flex items-center gap-3 px-4 py-2 rounded-lg text-slate-400 hover:text-white hover:bg-slate-700/50 transition-all">
               <span className="text-lg">❓</span>
               <span>Help & Support</span>
-            </a>
+            </div>
           </Link>
 
           {/* Docs */}
           <a
-            href="https://docs.mtaaprotocol.com"
+            href="https://docs.mtaadao.com"
             target="_blank"
             rel="noopener noreferrer"
             className="flex items-center gap-3 px-4 py-2 rounded-lg text-slate-400 hover:text-white hover:bg-slate-700/50 transition-all"
@@ -139,7 +140,7 @@ export default function Sidebar({ isOpen, onToggle }: SidebarProps) {
 
         {/* Version Info */}
         <div className="px-4 py-3 border-t border-slate-700 text-center">
-          <p className="text-slate-500 text-xs">MTAA Protocol</p>
+          <p className="text-slate-500 text-xs">MTAA DAO Protocol</p>
           <p className="text-slate-600 text-xs">v1.0.0</p>
         </div>
       </aside>

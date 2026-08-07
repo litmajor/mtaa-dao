@@ -259,7 +259,7 @@ class MarketStreamService {
       const exchangeIds = exchangeEntries.map(([, exchangeId]) => exchangeId);
       const rawPrices = await ccxtService.getPricesFromMultipleExchanges(symbol, exchangeIds);
 
-      const updates: MarketStreamUpdate[] = exchangeEntries.map(([exchange, exchangeId]) => {
+      const updatePromises = exchangeEntries.map(async ([exchange, exchangeId]) => {
         const priceData = rawPrices[exchangeId];
 
         if (priceData && typeof priceData.last === 'number') {
@@ -268,6 +268,26 @@ class MarketStreamService {
           const priceChange = prev ? ((price - prev) / (prev || 1)) * 100 : 0;
           this.mockPrices.set(`${exchangeId}:${symbol}`, price);
 
+          let liquidity = 0;
+          try {
+            // Fetch orderbook to calculate real liquidity depth (within 2% spread)
+            const orderBook = await ccxtService.fetchOrderBook(exchangeId, symbol, 20);
+            if (orderBook) {
+              const midPrice = price;
+              const calculateDepth = (orders: [number, number][], isBid: boolean) => {
+                return orders.reduce((sum, [p, v]) => {
+                  const diff = isBid ? (midPrice - p) / midPrice : (p - midPrice) / midPrice;
+                  return diff <= 0.02 ? sum + (p * v) : sum;
+                }, 0);
+              };
+              const bidDepth = calculateDepth(orderBook.bids || [], true);
+              const askDepth = calculateDepth(orderBook.asks || [], false);
+              liquidity = bidDepth + askDepth;
+            }
+          } catch (e) {
+            // Ignore rate limits/errors for orderbook specifically
+          }
+
           return {
             exchange,
             price: parseFloat(Number(price).toFixed(2)),
@@ -275,30 +295,15 @@ class MarketStreamService {
             priceChange: parseFloat(priceChange.toFixed(3)),
             volumeChange: 0,
             timestamp: new Date().toISOString(),
-            liquidity: parseFloat((85 + Math.random() * 15).toFixed(1)),
+            liquidity: parseFloat(liquidity.toFixed(2)),
             source: 'live',
           };
         }
 
-        // fallback random-walk per exchange+symbol
-        const key = `${exchangeId}:${symbol}`;
-        if (!this.mockPrices.has(key)) this.mockPrices.set(key, 2500 + Math.random() * 500);
-        const currentPrice = this.mockPrices.get(key) || 2500;
-        const priceVariation = (Math.random() - 0.5) * 0.01;
-        const newPrice = currentPrice * (1 + priceVariation);
-        this.mockPrices.set(key, newPrice);
-
-        return {
-          exchange,
-          price: parseFloat(newPrice.toFixed(2)),
-          volume24h: Math.random() * 1000000000,
-          priceChange: parseFloat((priceVariation * 100).toFixed(3)),
-          volumeChange: parseFloat((Math.random() * 10).toFixed(2)),
-          timestamp: new Date().toISOString(),
-          liquidity: parseFloat((85 + Math.random() * 15).toFixed(1)),
-          source: 'mock',
-        };
+        return null;
       });
+
+      const updates = (await Promise.all(updatePromises)).filter(Boolean) as MarketStreamUpdate[];
 
       return updates;
     } catch (error) {

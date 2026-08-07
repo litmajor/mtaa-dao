@@ -1,5 +1,5 @@
 
-import { Request, Response, NextFunction } from 'express';
+import type { Request, Response, NextFunction } from 'express';
 import { db } from '../storage';
 import { users, daoMemberships } from '../../shared/schema';
 import { eq, and } from 'drizzle-orm';
@@ -72,6 +72,38 @@ const DAO_ROLE_PERMISSIONS: Record<string, UserPermissions> = {
   admin: {
     canCreateDAO: false,
     canManageUsers: true,
+    canAccessAnalytics: true,
+    canManageBilling: true,
+    canExecuteProposals: true,
+    canManageVaults: true,
+  },
+  manager: {
+    canCreateDAO: false,
+    canManageUsers: false,
+    canAccessAnalytics: true,
+    canManageBilling: false,
+    canExecuteProposals: true,
+    canManageVaults: true,
+  },
+  rebalancer: {
+    canCreateDAO: false,
+    canManageUsers: false,
+    canAccessAnalytics: true,
+    canManageBilling: false,
+    canExecuteProposals: true,
+    canManageVaults: true,
+  },
+  secretary: {
+    canCreateDAO: false,
+    canManageUsers: false,
+    canAccessAnalytics: true,
+    canManageBilling: false,
+    canExecuteProposals: false,
+    canManageVaults: false,
+  },
+  elder: {
+    canCreateDAO: false,
+    canManageUsers: false,
     canAccessAnalytics: true,
     canManageBilling: false,
     canExecuteProposals: true,

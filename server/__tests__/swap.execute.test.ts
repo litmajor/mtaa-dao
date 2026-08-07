@@ -1,6 +1,7 @@
 import { describe, expect, it, vi, beforeEach, afterEach } from 'vitest';
 import { Pool, PoolClient } from 'pg';
 import { crossChainSwapService, type SwapQuote } from '../services/crossChainSwapService';
+import { SupportedChain } from '../../shared/chainRegistry';
 import { randomUUID } from 'crypto';
 
 // Mock db.insert to use raw SQL (avoiding Drizzle ORM initialization issues)
@@ -92,9 +93,9 @@ describe('executeSwap persistence (real database)', () => {
     const testUserId = `test-user-${Date.now()}`;
     const userAddress = '0xuser123abc';
 
-    const dummyQuote: SwapQuote = {
-      fromChain: 'celo',
-      toChain: 'polygon',
+    const dummyQuote = {
+      fromChain: SupportedChain.CELO,
+      toChain: SupportedChain.POLYGON,
       fromToken: '0x471EcE3750Da237f93B8E339c536989b8978a438',
       toToken: '0x2791Bca1f2de4661ED88A30C99A7a9449Aa84174',
       fromAmount: '1000000000000000000', // 1 CELO
@@ -105,7 +106,7 @@ describe('executeSwap persistence (real database)', () => {
       route: ['0x471EcE3750Da237f93B8E339c536989b8978a438', 'Bridge', '0x2791Bca1f2de4661ED88A30C99A7a9449Aa84174'],
       bridgeFee: '1000000000000000',
       slippageTolerance: 1.0,
-    };
+    } as unknown as SwapQuote;
 
     // Execute swap (writes to DB)
     let execution;
@@ -150,9 +151,9 @@ describe('executeSwap persistence (real database)', () => {
     const testUserId = `test-user-slippage-${Date.now()}`;
     const userAddress = '0xuser456def';
 
-    const quoteWithSlippage: SwapQuote = {
-      fromChain: 'bsc',
-      toChain: 'ethereum',
+    const quoteWithSlippage = {
+      fromChain: SupportedChain.BSC,
+      toChain: SupportedChain.ETHEREUM,
       fromToken: '0x55d398326f99059fF775485246999027B3197955', // USDT on BSC
       toToken: '0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48', // USDC on Ethereum
       fromAmount: '5000000000000000000', // 5 tokens
@@ -163,7 +164,7 @@ describe('executeSwap persistence (real database)', () => {
       route: ['0x55d398326f99059fF775485246999027B3197955', 'Bridge', '0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48'],
       bridgeFee: '5000000000000000', // 0.1%
       slippageTolerance: 2.0,
-    };
+    } as unknown as SwapQuote;
 
     const execution = await crossChainSwapService.executeSwap(testUserId, quoteWithSlippage, userAddress);
 
@@ -188,9 +189,9 @@ describe('executeSwap persistence (real database)', () => {
     const testUserId = `test-user-unique-${Date.now()}`;
     const userAddress = '0xuserUnique';
 
-    const quote: SwapQuote = {
-      fromChain: 'celo',
-      toChain: 'celo',
+    const quote = {
+      fromChain: SupportedChain.CELO,
+      toChain: SupportedChain.CELO,
       fromToken: '0x471EcE3750Da237f93B8E339c536989b8978a438',
       toToken: '0x471EcE3750Da237f93B8E339c536989b8978a438',
       fromAmount: '1000000000000000000',
@@ -201,7 +202,7 @@ describe('executeSwap persistence (real database)', () => {
       route: ['direct'],
       bridgeFee: '0',
       slippageTolerance: 0.1,
-    };
+    } as unknown as SwapQuote;
 
     // Execute two swaps
     const exec1 = await crossChainSwapService.executeSwap(testUserId, quote, userAddress);
@@ -221,9 +222,9 @@ describe('executeSwap persistence (real database)', () => {
     // This represents a realistic large swap
     const largeAmount = '99000000000000000000'; // 99 tokens, 18 decimals
 
-    const largeQuote: SwapQuote = {
-      fromChain: 'ethereum',
-      toChain: 'polygon',
+    const largeQuote = {
+      fromChain: SupportedChain.ETHEREUM,
+      toChain: SupportedChain.POLYGON,
       fromToken: '0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2', // WETH
       toToken: '0x2791Bca1f2de4661ED88A30C99A7a9449Aa84174', // USDC
       fromAmount: largeAmount, // 99 WETH
@@ -234,7 +235,7 @@ describe('executeSwap persistence (real database)', () => {
       route: ['0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2', 'Uniswap', '0x2791Bca1f2de4661ED88A30C99A7a9449Aa84174'],
       bridgeFee: '1485000000', // 0.1%
       slippageTolerance: 1.0,
-    };
+    } as unknown as SwapQuote;
 
     const execution = await crossChainSwapService.executeSwap(testUserId, largeQuote, userAddress);
     expect(execution.status).toBe('pending');

@@ -126,8 +126,7 @@ function verifyWebhookSignature(
     const expectedBuffer = Buffer.from(hash);
     const actualBuffer = Buffer.from(signature);
 
-    crypto.timingSafeEqual(expectedBuffer, actualBuffer);
-    return true;
+    return crypto.timingSafeEqual(expectedBuffer, actualBuffer);
   } catch (error) {
     logger.debug(`Webhook signature verification failed for ${provider}`, { error: (error as Error).message });
     return false;
@@ -275,7 +274,7 @@ router.post('/paychant', rawBodyParser, async (req: Request, res: Response) => {
     const signature = req.headers['x-paychant-signature'] as string;
     const rawPayload = req.body;
 
-    if (signature && !verifyWebhookSignature('paychant', rawPayload, signature)) {
+    if (!signature || !verifyWebhookSignature('paychant', rawPayload, signature)) {
       logger.warn('Invalid Paychant webhook signature');
       return res.status(401).json({ success: false, error: 'Invalid signature' });
     }
@@ -337,7 +336,7 @@ router.post('/kotani', rawBodyParser, async (req: Request, res: Response) => {
     const signature = req.headers['x-kotani-signature'] as string;
     const rawPayload = req.body;
 
-    if (signature && !verifyWebhookSignature('kotani', rawPayload, signature)) {
+    if (!signature || !verifyWebhookSignature('kotani', rawPayload, signature)) {
       logger.warn('Invalid Kotani webhook signature');
       return res.status(401).json({ success: false, error: 'Invalid signature' });
     }
@@ -583,7 +582,7 @@ router.post('/airtel', rawBodyParser, async (req: Request, res: Response) => {
     const signature = req.headers['x-airtel-signature'] as string;
     const rawPayload = req.body;
 
-    if (signature && !verifyWebhookSignature('airtel', rawPayload, signature)) {
+    if (!signature || !verifyWebhookSignature('airtel', rawPayload, signature)) {
       logger.warn('Invalid Airtel webhook signature');
       return res.status(401).json({ success: false, error: 'Invalid signature' });
     }

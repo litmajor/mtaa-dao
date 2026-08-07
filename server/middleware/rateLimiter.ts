@@ -1,4 +1,4 @@
-import { Request, Response, NextFunction } from 'express';
+import type { Request, Response, NextFunction } from 'express';
 import { redis } from '../services/redis';
 
 interface RateLimitOptions {
@@ -22,40 +22,32 @@ export function rateLimiter(options: RateLimitOptions) {
   return async (req: Request, res: Response, next: NextFunction) => {
     try {
       const key = `rate_limit:${keyGenerator(req)}`;
-      const current = await redis.get(key);
+      const windowSeconds = Math.floor(windowMs / 1000);
       
-      if (current === null) {
-        // First request in window
-        await redis.set(key, '1', Math.floor(windowMs / 1000));
-        res.setHeader('X-RateLimit-Limit', max.toString());
-        res.setHeader('X-RateLimit-Remaining', (max - 1).toString());
-        res.setHeader('X-RateLimit-Reset', new Date(Date.now() + windowMs).toISOString());
-        return next();
-      }
-
-      const count = parseInt(current);
+      const count = await redis.incrWithExpiry(key, windowSeconds);
       
-      if (count >= max) {
-        res.setHeader('X-RateLimit-Limit', max.toString());
+      res.setHeader('X-RateLimit-Limit', max.toString());
+      
+      if (count > max) {
         res.setHeader('X-RateLimit-Remaining', '0');
-        res.setHeader('Retry-After', Math.floor(windowMs / 1000).toString());
+        res.setHeader('Retry-After', windowSeconds.toString());
         
         return res.status(429).json({
           success: false,
           error: message,
-          retryAfter: Math.floor(windowMs / 1000),
+          retryAfter: windowSeconds,
         });
       }
-
-      await redis.incr(key);
-      res.setHeader('X-RateLimit-Limit', max.toString());
-      res.setHeader('X-RateLimit-Remaining', (max - count - 1).toString());
       
+      res.setHeader('X-RateLimit-Remaining', (max - count).toString());
       next();
     } catch (error) {
       console.error('Rate limiter error:', error);
-      // On error, allow the request (fail open)
-      next();
+      // Fail closed — don't let requests through when Redis is down
+      return res.status(503).json({
+        success: false,
+        error: 'Service temporarily unavailable. Please try again later.',
+      });
     }
   };
 }

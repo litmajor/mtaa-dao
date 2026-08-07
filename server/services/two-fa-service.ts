@@ -8,6 +8,8 @@ import { users, walletSecuritySettings, wallets } from '@shared/schema';
 import { eq, and } from 'drizzle-orm';
 import { v4 as uuid } from 'uuid';
 import crypto from 'crypto';
+import { otpService } from './otpService';
+import { EmailService } from './emailService';
 
 /**
  * 2FA Methods
@@ -42,7 +44,7 @@ const OTP_LENGTH = 6;
  * Generate OTP code
  */
 function generateOTP(): string {
-  return Math.floor(100000 + Math.random() * 900000).toString().slice(0, OTP_LENGTH);
+  return crypto.randomInt(100000, 1000000).toString();
 }
 
 /**
@@ -78,7 +80,9 @@ export async function createWithdrawalOTP(userId: string): Promise<{
       attempts: 0,
     });
 
-    console.log(`🔐 Generated 2FA OTP for user ${userId}: ${code}`);
+    if (process.env.NODE_ENV === 'development') {
+      console.log(`🔐 Generated 2FA OTP for user ${userId}: ${code}`);
+    }
 
     return {
       success: true,
@@ -137,7 +141,8 @@ export async function verifyWithdrawalOTP(
     }
 
     // Verify code
-    if (otp.code !== code) {
+    const codeMatch = otp.code.length === code.length && crypto.timingSafeEqual(Buffer.from(otp.code), Buffer.from(code));
+    if (!codeMatch) {
       otp.attempts++;
       return {
         success: false,
@@ -421,13 +426,33 @@ export async function send2FAOTP(
       };
     }
 
-    // In production, integrate with SMS/Email providers
-    // For now, just log
+    switch (method) {
+      case TwoFAMethod.SMS:
+        await otpService.sendSMSOTP(destination, otp.code);
+        break;
+      case TwoFAMethod.EMAIL:
+        await EmailService.send({
+          to: destination,
+          subject: 'Your MtaaDAO 2FA verification code',
+          template: 'otp',
+          variables: { otp: otp.code },
+        });
+        break;
+      case TwoFAMethod.AUTHENTICATOR:
+        // Authenticator apps are handled client-side; no external delivery is needed.
+        return {
+          success: true,
+          message: 'Authenticator setup requires the app-generated code.',
+        };
+      default:
+        return {
+          success: false,
+          error: `Unsupported 2FA method: ${String(method)}`,
+        };
+    }
 
-    if (method === TwoFAMethod.SMS) {
-      console.log(`📱 2FA SMS sent to ${destination}: ${otp.code}`);
-    } else if (method === TwoFAMethod.EMAIL) {
-      console.log(`📧 2FA Email sent to ${destination}: ${otp.code}`);
+    if (process.env.NODE_ENV === 'development') {
+      console.log(`📤 2FA delivery attempted for ${method} to ${destination}`);
     }
 
     return {

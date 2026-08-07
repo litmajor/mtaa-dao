@@ -2,6 +2,7 @@ import jwt from 'jsonwebtoken';
 import bcrypt from 'bcryptjs';
 import crypto from 'crypto';
 import type { Request, Response, NextFunction } from 'express';
+import { env } from '../shared/config';
 
 /**
  * FIXES APPLIED:
@@ -26,17 +27,17 @@ import type { Request, Response, NextFunction } from 'express';
  *    an ESM-style file is fragile under strict ESM runtimes.
  */
 
-if (!process.env.JWT_SECRET || !process.env.JWT_REFRESH_SECRET) {
+if (!env.JWT_SECRET || !env.JWT_REFRESH_SECRET) {
   throw new Error(
     `Missing required JWT secrets. Set JWT_SECRET and JWT_REFRESH_SECRET environment variables.`
   );
 }
 
-const JWT_SECRET = process.env.JWT_SECRET;
-const JWT_REFRESH_SECRET = process.env.JWT_REFRESH_SECRET;
+const JWT_SECRET = env.JWT_SECRET;
+const JWT_REFRESH_SECRET = env.JWT_REFRESH_SECRET;
 const ACCESS_TOKEN_EXPIRY = '15m';
 const REFRESH_TOKEN_EXPIRY = '7d';
-const JWT_ALGORITHMS: jwt.Algorithm[] = ['HS256']; // FIX #2
+const JWT_ALGORITHMS: jwt.Algorithm[] = ['HS256']; 
 
 export interface TokenPayload {
   id?: string;

@@ -10,8 +10,10 @@
  * PHASE 2 Feature: Transfers > $10,000 USD require 2-of-3 admin signatures
  */
 
-import express, { Request, Response } from 'express';
+import express from 'express';
+import type { Request, Response } from 'express';
 import { isAuthenticated } from '../nextAuthMiddleware';
+import { requireDAORole } from '../middleware/rbac';
 import { TreasuryValidationService } from '../services/treasuryValidationService';
 import { Logger } from '../utils/logger';
 import { db } from '../db';
@@ -19,7 +21,11 @@ import { daoMemberships, treasuryApprovals } from '../../shared/schema';
 import { eq, and, desc } from 'drizzle-orm';
 
 const logger = Logger.getLogger();
-const router = express.Router();
+const router = express.Router({ mergeParams: true });
+
+// Apply DAO role guard at the DAO-scoped router level where :daoId is available.
+// Multisig approvals are available to treasury stewards and governance leads as well as admins/owners.
+router.use('/:daoId/*', requireDAORole('elder', 'manager', 'rebalancer', 'secretary', 'admin', 'owner'));
 
 // Deprecation middleware: mark legacy multisig endpoints as deprecated
 // and suggest the canonical v1 DAO-scoped multisig endpoints.
@@ -37,7 +43,7 @@ router.use((req, res, next) => {
  * Admin/Creator/Elder can view all pending approvals
  * Returns: list of approvals waiting for signatures
  */
-router.get('/:daoId/pending', isAuthenticated, async (req: any, res) => {
+router.get('/:daoId/pending', isAuthenticated, async (req: Request, res: Response ) => {
   try {
     const { daoId } = req.params;
     const userId = req.user?.id;
@@ -120,7 +126,7 @@ router.get('/:daoId/pending', isAuthenticated, async (req: any, res) => {
  * GET /api/multisig/:daoId/approval/:approvalId
  * Get detailed status of a specific multisig approval
  */
-router.get('/:daoId/approval/:approvalId', isAuthenticated, async (req: any, res) => {
+router.get('/:daoId/approval/:approvalId', isAuthenticated, async (req: Request, res: Response) => {
   try {
     const { daoId, approvalId } = req.params;
     const userId = req.user?.id;
@@ -215,7 +221,7 @@ router.get('/:daoId/approval/:approvalId', isAuthenticated, async (req: any, res
  * 
  * Admin/Creator/Elder can sign
  */
-router.post('/:daoId/approval/:approvalId/sign', isAuthenticated, async (req: any, res) => {
+router.post('/:daoId/approval/:approvalId/sign', isAuthenticated, async (req: Request, res: Response) => {
   try {
     const { daoId, approvalId } = req.params;
     const { signature } = req.body;
@@ -364,7 +370,7 @@ router.post('/:daoId/approval/:approvalId/sign', isAuthenticated, async (req: an
  * 
  * Admin/Creator can reject
  */
-router.post('/:daoId/approval/:approvalId/reject', isAuthenticated, async (req: any, res) => {
+router.post('/:daoId/approval/:approvalId/reject', isAuthenticated, async (req: Request, res: Response) => {
   try {
     const { daoId, approvalId } = req.params;
     const { reason } = req.body;
@@ -464,7 +470,7 @@ router.post('/:daoId/approval/:approvalId/reject', isAuthenticated, async (req: 
  * - signaturesRemaining: number
  * - expiresAt: ISO timestamp
  */
-router.get('/:daoId/approval/:approvalId/status', isAuthenticated, async (req: any, res) => {
+router.get('/:daoId/approval/:approvalId/status', isAuthenticated, async (req: Request, res: Response) => {
   try {
     const { daoId, approvalId } = req.params;
     const userId = req.user?.id;

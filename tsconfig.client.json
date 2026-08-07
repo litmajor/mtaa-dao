@@ -3,6 +3,6 @@
   "compilerOptions": {
     "noEmit": true
   },
-  "include": ["client/src/**/*", "shared/**/*"],
+  "include": ["client/src/**/*", "client/pages/**/*", "shared/**/*"],
   "exclude": ["node_modules", "build", "dist", "server"]
 }

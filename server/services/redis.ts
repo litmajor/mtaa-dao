@@ -71,6 +71,7 @@ export class UnifiedRedisService {
   private subscriber: RedisClientType | null = null;
   private fallbackMode = false;
   private memoryCache = new Map<string, CacheEntry>();
+  private readonly securitySensitivePrefixes = ['token:blacklist', 'rate_limit', 'otp', 'idempotency'];
   private stats = { hits: 0, misses: 0, sets: 0, deletes: 0 };
   private hasLoggedFallback = false;
   private reconnectTimer: NodeJS.Timeout | null = null;
@@ -205,6 +206,9 @@ export class UnifiedRedisService {
     await this.ensureConnected();
     try {
       if (this.fallbackMode || !this.client) {
+        if (this.isSecuritySensitiveKey(key)) {
+          throw new Error(`[UnifiedRedis] Redis unavailable for security-sensitive key ${key}`);
+        }
         return this.getFromMemory<T>(key);
       }
 
@@ -218,6 +222,9 @@ export class UnifiedRedisService {
     } catch (error: any) {
       logger.warn(`[UnifiedRedis] GET error for ${key}:`, error.message);
       this.fallbackMode = true;
+      if (this.isSecuritySensitiveKey(key)) {
+        throw error;
+      }
       return this.getFromMemory<T>(key);
     }
   }
@@ -226,6 +233,9 @@ export class UnifiedRedisService {
     await this.ensureConnected();
     try {
       if (this.fallbackMode || !this.client) {
+        if (this.isSecuritySensitiveKey(key)) {
+          throw new Error(`[UnifiedRedis] Redis unavailable for security-sensitive key ${key}`);
+        }
         this.setInMemory(key, value, ttlSeconds ?? 300);
         return;
       }
@@ -239,6 +249,9 @@ export class UnifiedRedisService {
     } catch (error: any) {
       logger.warn(`[UnifiedRedis] SET error for ${key}:`, error.message);
       this.fallbackMode = true;
+      if (this.isSecuritySensitiveKey(key)) {
+        throw error;
+      }
       this.setInMemory(key, value, ttlSeconds ?? 300);
     }
   }
@@ -368,13 +381,37 @@ export class UnifiedRedisService {
     await this.ensureConnected();
     try {
       if (this.fallbackMode || !this.client) {
+        if (this.isSecuritySensitiveKey(key)) {
+          throw new Error(`[UnifiedRedis] Redis unavailable for security-sensitive key ${key}`);
+        }
         return this.incrFallback(key);
       }
       return Number(await this.client.incr(key));
     } catch (error: any) {
       logger.warn('[UnifiedRedis] INCR error', { key, message: error.message });
       this.fallbackMode = true;
+      if (this.isSecuritySensitiveKey(key)) {
+        throw error;
+      }
       return this.incrFallback(key);
+    }
+  }
+
+  async incrWithExpiry(key: string, seconds: number): Promise<number> {
+    await this.ensureConnected();
+    try {
+      if (this.fallbackMode || !this.client) {
+        throw new Error(`[UnifiedRedis] Redis unavailable for security-sensitive key ${key}`);
+      }
+      const result = await this.client.eval(
+        'local current = redis.call("incr", KEYS[1])\nif tonumber(current) == 1 then redis.call("expire", KEYS[1], ARGV[1]) end\nreturn current',
+        { keys: [key], arguments: [String(seconds)] }
+      );
+      return Number(result);
+    } catch (error: any) {
+      logger.warn('[UnifiedRedis] INCR+EXPIRE error', { key, seconds, message: error.message });
+      this.fallbackMode = true;
+      throw error;
     }
   }
 
@@ -616,6 +653,10 @@ export class UnifiedRedisService {
       entry.ttl = seconds;
       entry.timestamp = Date.now();
     }
+  }
+
+  private isSecuritySensitiveKey(key: string): boolean {
+    return this.securitySensitivePrefixes.some(prefix => key.startsWith(prefix));
   }
 
   private globToRegex(pattern: string): RegExp {

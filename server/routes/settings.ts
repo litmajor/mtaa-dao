@@ -25,6 +25,7 @@ import { eq, and } from 'drizzle-orm';
 import { isAuthenticated } from '../nextAuthMiddleware';
 import { logger } from '../utils/logger';
 import { AppError, ValidationError } from '../middleware/errorHandler';
+import { env, isProduction } from '../../shared/config';
 import { z } from 'zod';
 
 const router = express.Router();
@@ -32,16 +33,27 @@ const router = express.Router();
 /**
  * Encryption utilities for sensitive data (API keys, secrets)
  */
-const ENCRYPTION_KEY = process.env.ENCRYPTION_KEY || crypto.randomBytes(32).toString('hex');
+const ENCRYPTION_KEY = String(env.ENCRYPTION_KEY ?? '');
 const ENCRYPTION_ALGORITHM = 'aes-256-gcm';
-const SALT = process.env.ENCRYPTION_SALT || crypto.randomBytes(16).toString('hex');
+const SALT = String(env.ENCRYPTION_SALT ?? '');
+const ENCRYPTION_KEY_VALUE: string = ENCRYPTION_KEY;
+const ENCRYPTION_SALT_VALUE: string = SALT;
+
+if (!ENCRYPTION_KEY || !SALT) {
+  const message = 'Encryption configuration is missing. Set ENCRYPTION_KEY and ENCRYPTION_SALT before starting the server.';
+  if (isProduction) {
+    throw new Error(message);
+  }
+  logger.warn(message);
+}
 
 /**
  * Derive encryption key from master key
  */
 function deriveKey(masterKey: string): Buffer {
+  const effectiveSalt = ENCRYPTION_SALT_VALUE || 'default-salt';
   return crypto
-    .pbkdf2Sync(masterKey, SALT, 100000, 32, 'sha256');
+    .pbkdf2Sync(masterKey, effectiveSalt, 100000, 32, 'sha256');
 }
 
 /**
@@ -50,7 +62,7 @@ function deriveKey(masterKey: string): Buffer {
 function encryptData(data: string): string {
   try {
     const iv = crypto.randomBytes(12);
-    const key = deriveKey(ENCRYPTION_KEY);
+    const key = deriveKey(ENCRYPTION_KEY_VALUE);
     const cipher = crypto.createCipheriv(ENCRYPTION_ALGORITHM, key, iv);
     
     let encrypted = cipher.update(data, 'utf8', 'hex');
@@ -76,11 +88,11 @@ function decryptData(encryptedData: string): string {
       throw new Error('Invalid encrypted data format');
     }
     
-    const iv = Buffer.from(parts[0], 'hex');
-    const authTag = Buffer.from(parts[1], 'hex');
-    const encrypted = parts[2];
+    const iv = Buffer.from(parts[0] ?? '', 'hex');
+    const authTag = Buffer.from(parts[1] ?? '', 'hex');
+    const encrypted = parts[2] ?? '';
     
-    const key = deriveKey(ENCRYPTION_KEY);
+    const key = deriveKey(ENCRYPTION_KEY_VALUE);
     const decipher = crypto.createDecipheriv(ENCRYPTION_ALGORITHM, key, iv);
     decipher.setAuthTag(authTag);
     

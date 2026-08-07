@@ -1,10 +1,10 @@
 import React from 'react';
-import React from 'react';
 import styles from './StatCard.module.css';
 
 interface StatCardProps {
   icon: React.ComponentType<any>;
-  label: string;
+  label?: string;
+  title?: string;
   value: number | string;
   trend?: {
     direction: 'up' | 'down';
@@ -16,10 +16,12 @@ interface StatCardProps {
 export const StatCard: React.FC<StatCardProps> = ({
   icon: Icon,
   label,
+  title,
   value,
   trend,
   onClick,
 }) => {
+  const displayLabel = title ?? label ?? '';
   return (
     <div className={styles.card} onClick={onClick}>
       <div className={styles.header}>
@@ -32,7 +34,7 @@ export const StatCard: React.FC<StatCardProps> = ({
           </span>
         )}
       </div>
-      <h3 className={styles.label}>{label}</h3>
+      <h3 className={styles.label}>{displayLabel}</h3>
       <p className={styles.value}>{value}</p>
     </div>
   );

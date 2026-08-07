@@ -212,6 +212,25 @@ export class CrossChainSwapService {
     }
   }
 
+  async getSwapExecutionStatus(swapId: string): Promise<SwapExecution | null> {
+    try {
+      const [transfer] = await db.select().from(crossChainTransfers).where(eq(crossChainTransfers.id, swapId)).limit(1);
+      if (!transfer) return null;
+
+      return {
+        swapId: transfer.id!,
+        status: (transfer.status as SwapExecution['status']) || 'pending',
+        fromTxHash: transfer.sourceTxHash ?? undefined,
+        toTxHash: transfer.targetTxHash ?? undefined,
+        actualToAmount: transfer.targetAmount ?? undefined,
+        completedAt: transfer.completedAt ?? undefined,
+      };
+    } catch (error) {
+      this.logger.error('Failed to fetch swap execution status:', error);
+      return null;
+    }
+  }
+
   /**
    * Process swap steps sequentially and handle failures gracefully
    */
@@ -411,8 +430,8 @@ export class CrossChainSwapService {
     toTxHash?: string
   ): Promise<void> {
     const updateData: any = { status };
-    if (fromTxHash) updateData.txHashSource = fromTxHash;
-    if (toTxHash) updateData.txHashDestination = toTxHash;
+    if (fromTxHash) updateData.sourceTxHash = fromTxHash;
+    if (toTxHash) updateData.targetTxHash = toTxHash;
     if (status === 'completed') updateData.completedAt = new Date();
 
     await db.update(crossChainTransfers).set(updateData).where(and(eq(crossChainTransfers.id, swapId)));

@@ -54,8 +54,14 @@ export class WebSocketService {
   private heartbeatInterval!: NodeJS.Timeout;
   private messageBatcher: WebSocketMessageBatcher;
   
-  // Track connections for monitoring
   private connectionStartTime: Date = new Date();
+  private pingTimes: Map<WebSocket, number> = new Map();
+  private totalPings: number = 0;
+  private missedPings: number = 0;
+  private totalMessages: number = 0;
+  private errorMessages: number = 0;
+  private totalLatencyMs: number = 0;
+  private latencyMeasurements: number = 0;
 
   private constructor(server: HttpServer) {
     this.wss = new WebSocketServer({ 
@@ -113,9 +119,11 @@ export class WebSocketService {
       this.clients.set(ws, client);
       
       ws.on('message', (data: WebSocket.RawData) => {
+        this.totalMessages++;
         try {
           this.handleMessage(ws, data.toString());
         } catch (error) {
+          this.errorMessages++;
           this.handleError(ws, error as Error);
         }
       });
@@ -259,6 +267,24 @@ export class WebSocketService {
     if (client) {
       client.isAlive = true;
     }
+    const pingStart = this.pingTimes.get(ws);
+    if (pingStart) {
+      const latency = Date.now() - pingStart;
+      this.totalLatencyMs += latency;
+      this.latencyMeasurements++;
+      this.pingTimes.delete(ws);
+    }
+  }
+
+  // Latency metrics tracking (wired to actual timing)
+  private calculateAverageLatency(): number { 
+    return this.latencyMeasurements > 0 ? this.totalLatencyMs / this.latencyMeasurements : 0; 
+  }
+  private calculatePacketLoss(): number { 
+    return this.totalPings > 0 ? (this.missedPings / this.totalPings) * 100 : 0; 
+  }
+  private calculateErrorRate(): number { 
+    return this.totalMessages > 0 ? (this.errorMessages / this.totalMessages) * 100 : 0; 
   }
 
   private startHeartbeat() {
@@ -269,6 +295,7 @@ export class WebSocketService {
       this.wss.clients.forEach((ws: WebSocket) => {
         const client = this.clients.get(ws);
         if (client && !client.isAlive) {
+          this.missedPings++;
           client.ws.terminate();
           return;
         }
@@ -276,18 +303,22 @@ export class WebSocketService {
           client.isAlive = false;
           liveConnections++;
         }
+        this.totalPings++;
+        this.pingTimes.set(ws, Date.now());
         ws.ping();
       });
       
-      // Record health metrics
-      wsHealthMonitor.recordMetric('avgLatency', Math.random() * 150, 'ms'); // Placeholder
-      wsHealthMonitor.recordMetric('packetLoss', Math.random() * 0.5, '%');
-      wsHealthMonitor.recordMetric('errorRate', Math.random() * 0.1, '%');
+      // Record health metrics (wired to actual tracking or defaults if no events)
+      // Note: Latency and packet loss should be tracked via actual ping/pong timings in future updates
+      wsHealthMonitor.recordMetric('avgLatency', this.calculateAverageLatency(), 'ms'); 
+      wsHealthMonitor.recordMetric('packetLoss', this.calculatePacketLoss(), '%');
+      wsHealthMonitor.recordMetric('errorRate', this.calculateErrorRate(), '%');
       wsHealthMonitor.recordMetric('memoryUsage', freemem() / 1024 / 1024, 'MB');
     }, 30000);
     
     this.wss.on('close', () => {
       clearInterval(this.heartbeatInterval);
+
     });
   }
 

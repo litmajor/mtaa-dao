@@ -1,3 +1,4 @@
+import crypto from 'crypto';
 import { redis } from './redis';
 import { EmailService } from './emailService';
 
@@ -36,7 +37,7 @@ export type OTPDeliveryChannel = 'email' | 'sms' | 'whatsapp';
 
 class OTPServiceInternal {
   generateOTP(): string {
-    return Math.floor(100000 + Math.random() * 900000).toString();
+    return crypto.randomInt(100000, 1000000).toString();
   }
 
   /**
@@ -103,7 +104,8 @@ class OTPServiceInternal {
         return { valid: false, error: 'Too many failed attempts. Please request a new OTP.' };
       }
 
-      if (otpData.otp !== otp) {
+      const otpMatch = otpData.otp.length === otp.length && crypto.timingSafeEqual(Buffer.from(otpData.otp), Buffer.from(otp));
+      if (!otpMatch) {
         console.log('❌ Invalid OTP provided');
         otpData.attempts++;
         // Clamp to at least 1s — expiresAt - now could theoretically be
@@ -169,13 +171,15 @@ class OTPServiceInternal {
         );
       }
 
-      console.log('\n════════════════════════════════════════');
-      console.log('📱 SMS OTP (Development Mode - No Provider)');
-      console.log('════════════════════════════════════════');
-      console.log(`Phone: ${phone}`);
-      console.log(`OTP Code: ${otp}`);
-      console.log(`Expires: ${OTP_EXPIRY_MINUTES} minutes`);
-      console.log('════════════════════════════════════════\n');
+      if (process.env.NODE_ENV === 'development') {
+        console.log('\n════════════════════════════════════════');
+        console.log('📱 SMS OTP (Development Mode - No Provider)');
+        console.log('════════════════════════════════════════');
+        console.log(`Phone: ${phone}`);
+        console.log(`OTP Code: ${otp}`);
+        console.log(`Expires: ${OTP_EXPIRY_MINUTES} minutes`);
+        console.log('════════════════════════════════════════\n');
+      }
 
       if (process.env.NODE_ENV !== 'development') {
         console.warn('⚠️  No SMS provider configured in production. Add AFRICAS_TALKING or TWILIO credentials.');
@@ -192,13 +196,15 @@ class OTPServiceInternal {
       const token = process.env.WHATSAPP_ACCESS_TOKEN;
 
       if (!phoneId || !token) {
-        console.log('\n════════════════════════════════════════');
-        console.log('💬 WhatsApp OTP (Development Mode - No Provider)');
-        console.log('════════════════════════════════════════');
-        console.log(`Phone: ${phone}`);
-        console.log(`OTP Code: ${otp}`);
-        console.log(`Expires: ${OTP_EXPIRY_MINUTES} minutes`);
-        console.log('════════════════════════════════════════\n');
+        if (process.env.NODE_ENV === 'development') {
+          console.log('\n════════════════════════════════════════');
+          console.log('💬 WhatsApp OTP (Development Mode - No Provider)');
+          console.log('════════════════════════════════════════');
+          console.log(`Phone: ${phone}`);
+          console.log(`OTP Code: ${otp}`);
+          console.log(`Expires: ${OTP_EXPIRY_MINUTES} minutes`);
+          console.log('════════════════════════════════════════\n');
+        }
         return;
       }
 

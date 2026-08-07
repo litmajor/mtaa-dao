@@ -27,7 +27,7 @@ for (const [src, dest] of aliasEnvMap) {
 // __dirname is not defined in ESM; derive it from import.meta.url
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
-const projectRoot = path.resolve(__dirname, "../../");
+const projectRoot = path.resolve(__dirname, "..");
 
 const exchangesConfigPath = path.resolve(projectRoot, "server/exchanges.config.json");
 let exchangesConfig: Record<string, any> = {};
@@ -63,7 +63,9 @@ const envSchema = z.object({
   // Security
   SESSION_SECRET: z.string().min(32, "SESSION_SECRET must be at least 32 characters").default("dev-session-secret-change-in-production-min32chars"),
   JWT_SECRET: z.string().min(32, "JWT_SECRET must be at least 32 characters").default("dev-jwt-secret-change-in-production-min-32-characters"),
+  JWT_REFRESH_SECRET: z.string().min(32, "JWT_REFRESH_SECRET must be at least 32 characters").default("dev-jwt-refresh-secret-change-in-production-min-32-characters"),
   ENCRYPTION_KEY: z.string().length(32, "ENCRYPTION_KEY must be exactly 32 characters").optional(),
+  ENCRYPTION_SALT: z.string().min(16, "ENCRYPTION_SALT must be at least 16 characters").optional(),
 
   // OAuth Configuration
   OAUTH_CLIENT_ID: z.string().optional(),
@@ -171,7 +173,9 @@ const productionSecretChecks = () => {
     'DATABASE_URL',
     'SESSION_SECRET',
     'JWT_SECRET',
+    'JWT_REFRESH_SECRET',
     'ENCRYPTION_KEY',
+    'ENCRYPTION_SALT',
     'WALLET_PRIVATE_KEY',
   ] as const;
 
@@ -187,6 +191,9 @@ const productionSecretChecks = () => {
   }
   if (parsedEnv.data.JWT_SECRET?.includes('dev-jwt-secret-change-in-production')) {
     weak.push('JWT_SECRET');
+  }
+  if (parsedEnv.data.JWT_REFRESH_SECRET?.includes('dev-jwt-refresh-secret-change-in-production')) {
+    weak.push('JWT_REFRESH_SECRET');
   }
 
   if (missing.length > 0 || weak.length > 0) {

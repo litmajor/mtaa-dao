@@ -46,7 +46,8 @@ import { db } from '../db';
 import { randomUUID } from 'crypto';
 import { vaults } from '../../shared/schema';
 import { crossChainTransfers } from '../../shared/accountSchema';
-import { getBridgeIntegration, BridgeChain, BridgeProtocol } from './bridgeIntegration';
+import { getBridgeIntegration } from './bridgeIntegration';
+import type { BridgeChain, BridgeProtocol } from './bridgeIntegration';
 import { TokenRegistry } from '../../shared/tokenRegistry';
 
 type InsertCrossChainTransfer = typeof crossChainTransfers.$inferInsert;
