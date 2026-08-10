@@ -11,7 +11,7 @@ import {
   proposalTemplates
 } from '../../shared/schema';
 import { eq, and, desc, gte, lte, sql } from 'drizzle-orm';
-import { isAuthenticated } from '../nextAuthMiddleware';
+import { isAuthenticated } from '../auth';
 import { createRateLimiter } from '../middleware/rateLimiting';
 import { evaluateGovernanceRules, formatRuleRejectionMessage, logRuleEvaluation } from '../services/rules-integration';
 import { logConsolidatedAuditEvent, AuditEventType } from '../services/auditConsolidated';
@@ -1163,3 +1163,4 @@ router.get('/daos/:daoId/governance/me/rank', isAuthenticated, async (req: any, 
 // ════════════════════════════════════════════════════════════════════════════════
 
 export default router;
+

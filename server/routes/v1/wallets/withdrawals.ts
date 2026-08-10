@@ -177,6 +177,30 @@ async function require2FA(req: Request, res: Response, next: NextFunction) {
 // ════════════════════════════════════════════════════════════════════════════════
 const WITHDRAWAL_INTENT_TTL_MS = 5 * 60 * 1000;
 
+/**
+ * Validate whether a withdrawal is eligible for completion based on stored intent
+ * and verification token state. Returns an object with `valid: boolean` and
+ * optional `reason` for failure. Accepts either a parsed metadata object or
+ * a JSON string in `withdrawal.metadata`.
+ */
+export function validateWithdrawalCompletionState(withdrawal: any, token: string): { valid: boolean; reason?: string } {
+  try {
+    const metaRaw = withdrawal.metadata;
+    const meta = typeof metaRaw === 'string' ? JSON.parse(metaRaw) : (metaRaw || {});
+    const intent = meta.withdrawalIntent;
+    if (!intent) return { valid: false, reason: 'missing_withdrawal_intent' };
+    if (!intent.twoFactorVerified) return { valid: false, reason: '2fa_not_verified' };
+    if (!intent.verificationToken) return { valid: false, reason: 'missing_token' };
+    if (intent.verificationToken !== token) return { valid: false, reason: 'token_mismatch' };
+    if (!intent.verificationExpiresAt) return { valid: false, reason: 'missing_expiry' };
+    const expires = new Date(intent.verificationExpiresAt);
+    if (isNaN(expires.getTime()) || expires < new Date()) return { valid: false, reason: 'expired' };
+    return { valid: true };
+  } catch (err) {
+    return { valid: false, reason: 'invalid_metadata' };
+  }
+}
+
 // ════════════════════════════════════════════════════════════════════════════════
 // WITHDRAWAL OPERATIONS (8 endpoints)
 // ════════════════════════════════════════════════════════════════════════════════

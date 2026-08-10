@@ -16,7 +16,6 @@ import { logger } from '../utils/logger';
 import { wsConnectionManager } from './WebSocketConnectionManager';
 import { wsHealthMonitor } from './WebSocketHealthMonitor';
 import { verifyAccessToken } from '../auth';
-import type {AuthRequest} from '../auth';
 import { corsAllowedOrigins } from '../../shared/config.js';
 
 interface ClientData {

@@ -12,7 +12,7 @@ import { Router, Request, Response } from 'express';
 import { agentRegistry } from '../services/AgentRegistry';
 import { Logger } from '../utils/logger';
 import { requireRole } from '../middleware/rbac';
-import { isAuthenticated } from '../nextAuthMiddleware';
+import { isAuthenticated } from '../auth';
 import { createRateLimiter } from '../middleware/rateLimiting';
 import { ethers } from 'ethers';
 import gatewayService from '../services/gatewayService';
@@ -502,3 +502,5 @@ router.get('/metrics/governance', isAuthenticated, agentMetricsLimiter, async (r
 });
 
 export default router;
+
+

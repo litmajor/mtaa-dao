@@ -4,7 +4,7 @@
  */
 
 import express from 'express';
-import { isAuthenticated } from '../nextAuthMiddleware';
+import { isAuthenticated } from '../auth';
 import { synchronizerAgent } from '../agents/synchronizer';
 import { Logger } from '../utils/logger';
 
@@ -152,3 +152,5 @@ router.post('/rollback/:checkpointId', isAuthenticated, async (req, res) => {
 });
 
 export default router;
+
+

@@ -1,7 +1,7 @@
 import jwt from 'jsonwebtoken';
 import bcrypt from 'bcryptjs';
 import crypto from 'crypto';
-import type { Request, Response, NextFunction } from 'express';
+import type { Request, Response, NextFunction, RequestHandler } from 'express';
 import { env } from '../shared/config';
 
 /**
@@ -39,7 +39,7 @@ const ACCESS_TOKEN_EXPIRY = '15m';
 const REFRESH_TOKEN_EXPIRY = '7d';
 const JWT_ALGORITHMS: jwt.Algorithm[] = ['HS256']; 
 
-export interface TokenPayload {
+export type TokenPayload = {
   id?: string;
   sub: string;
   email?: string;
@@ -48,7 +48,7 @@ export interface TokenPayload {
   roles?: string | string[];
   daos?: string[];
   pending2FA?: boolean;
-}
+} & Record<string, unknown>;
 
 export { authUserHandler } from './api/authUser';
 export { authLoginHandler } from './api/auth_login';
@@ -56,8 +56,12 @@ export { authRegisterHandler } from './api/auth_register';
 
 export interface AuthRequest extends Request {
   user?: {
-    id: string;
-    claims: TokenPayload;
+    id?: string;
+    email?: string;
+    role?: string;
+    roles?: string | string[];
+    daos?: string[];
+    claims?: TokenPayload;
   };
 }
 
@@ -125,7 +129,9 @@ function getRemainingSeconds(token: string, fallbackSeconds: number): number {
 }
 
 // Authentication middleware
-export const authenticate = async (req: AuthRequest, res: Response, next: NextFunction) => {
+export const authenticate: RequestHandler = async (req, res, next) => {
+  const authReq = req as AuthRequest;
+
   try {
     // FIX #1: actually prefer the cookie, only falling back to a Bearer
     // header if no cookie is present — previously the ternary's operator
@@ -177,7 +183,7 @@ export const authenticate = async (req: AuthRequest, res: Response, next: NextFu
       }
     }
 
-    req.user = {
+    authReq.user = {
       id: payload.sub,
       claims: { sub: payload.sub, email: payload.email, roles: payload.roles ?? payload.role },
     };
@@ -193,13 +199,14 @@ export const authenticate = async (req: AuthRequest, res: Response, next: NextFu
 
 export const isAuthenticated = authenticate;
 
-export const authorize = (roles: string | string[]) => {
+export const authorize = (roles: string | string[]): RequestHandler => {
   const allowed = Array.isArray(roles) ? roles : [roles];
-  return (req: AuthRequest, res: Response, next: NextFunction) => {
-    if (!req.user || !req.user.claims) {
+  return (req, res, next) => {
+    const authReq = req as AuthRequest;
+    if (!authReq.user || !authReq.user.claims) {
       return res.status(401).json({ success: false, error: { message: 'Not authenticated' } });
     }
-    const currentRoles = (req.user.claims.roles ?? req.user.claims.role) as any;
+    const currentRoles = (authReq.user.claims.roles ?? authReq.user.claims.role) as any;
     const roleList = typeof currentRoles === 'string' ? currentRoles.split(',').map((r: string) => r.trim()) : Array.isArray(currentRoles) ? currentRoles : [String(currentRoles || '')];
     if (!roleList.some((r: string) => allowed.includes(r))) {
       return res.status(403).json({ success: false, error: { message: 'Forbidden: insufficient privileges' } });
@@ -207,6 +214,11 @@ export const authorize = (roles: string | string[]) => {
     next();
   };
 };
+
+export const requireRole = authorize;
+export const requireAdmin = authorize(['admin', 'super_admin']);
+export const requireModerator = authorize(['admin', 'super_admin', 'moderator']);
+export const requirePremium = authorize(['admin', 'super_admin', 'premium', 'dao_owner']);
 
 // Refresh token handler
 export const refreshTokenHandler = async (req: Request, res: Response) => {
@@ -313,7 +325,7 @@ export const refreshTokenHandler = async (req: Request, res: Response) => {
 };
 
 // Logout handler
-export const logoutHandler = async (req: AuthRequest, res: Response) => {
+export const logoutHandler = async (req: Request, res: Response) => {
   try {
     const refreshToken = req.cookies.refreshToken || req.cookies.refresh_token;
     const userId = req.user?.id;

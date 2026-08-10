@@ -1,5 +1,5 @@
 import express, { Request, Response } from 'express';
-import { isAuthenticated } from '../nextAuthMiddleware';
+import { isAuthenticated } from '../auth';
 import { db } from '../db';
 import { userFollows, users } from '../../shared/schema';
 import { eq, and } from 'drizzle-orm';
@@ -150,3 +150,5 @@ router.get('/:userId/is-following/:targetUserId', requireFollowsFeature, isAuthe
 });
 
 export default router;
+
+

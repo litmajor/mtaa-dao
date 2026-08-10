@@ -9,12 +9,12 @@
  * - GET /api/monitoring/websocket/alerts - Recent alerts
  * - GET /api/monitoring/websocket/history - Historical data
  */
-
-import { Router, Request, Response } from 'express';
+import { Router } from 'express';
+import type { Request, Response } from 'express';
 import { wsConnectionManager } from '../services/WebSocketConnectionManager';
 import { wsHealthMonitor } from '../services/WebSocketHealthMonitor';
 import { logger } from '../utils/logger';
-import { isAuthenticated, AuthRequest } from '../auth';
+import { isAuthenticated } from '../auth';
 import { requireRole } from '../middleware/rbac';
 
 const router = Router();
@@ -35,7 +35,7 @@ router.use(requireRole('super_admin'));
  * Auth: Required (admin/super_admin)
  * Response: Health status with metrics and recent alerts
  */
-router.get('/websocket/health', (req: AuthRequest, res: Response) => {
+router.get('/websocket/health', (req: Request, res: Response) => {
   try {
     const { healthy, report } = wsHealthMonitor.getHealthStatus();
     
@@ -66,7 +66,7 @@ router.get('/websocket/health', (req: AuthRequest, res: Response) => {
  * Auth: Required (admin/super_admin)
  * Response: Detailed stats broken down by user, message type, and subscription
  */
-router.get('/websocket/stats', (req: AuthRequest, res: Response) => {
+router.get('/websocket/stats', (req: Request, res: Response) => {
   try {
     const stats = wsConnectionManager.getStats();
     
@@ -117,7 +117,7 @@ router.get('/websocket/stats', (req: AuthRequest, res: Response) => {
  * Query: limit=100 (max 1000)
  * Response: Total connections with per-user breakdown
  */
-router.get('/websocket/connections', (req: AuthRequest, res: Response) => {
+router.get('/websocket/connections', (req: Request, res: Response) => {
   try {
     const stats = wsConnectionManager.getStats();
     const limit = Math.min(Number(req.query.limit) || 100, 1000);
@@ -152,7 +152,7 @@ router.get('/websocket/connections', (req: AuthRequest, res: Response) => {
  * Query: minutes=60 (max 1440 for 24 hours)
  * Response: Alerts grouped by severity with detailed metrics
  */
-router.get('/websocket/alerts', (req: AuthRequest, res: Response) => {
+router.get('/websocket/alerts', (req: Request, res: Response) => {
   try {
     const minutes = Math.min(Number(req.query.minutes) || 60, 1440); // Max 24 hours
     const alerts = wsHealthMonitor.getRecentAlerts(minutes);
@@ -196,7 +196,7 @@ router.get('/websocket/alerts', (req: AuthRequest, res: Response) => {
  * Query: minutes=60 (max 1440 for 24 hours)
  * Response: Timeline of health scores with average metrics
  */
-router.get('/websocket/history', (req: AuthRequest, res: Response) => {
+router.get('/websocket/history', (req: Request, res: Response) => {
   try {
     const minutes = Math.min(Number(req.query.minutes) || 60, 1440);
     const history = wsHealthMonitor.getHistory(minutes);
@@ -242,7 +242,7 @@ router.get('/websocket/history', (req: AuthRequest, res: Response) => {
  * Auth: Required (admin/super_admin)
  * Response: Current health status + connection counts
  */
-router.post('/websocket/test', (req: AuthRequest, res: Response) => {
+router.post('/websocket/test', (req: Request, res: Response) => {
   try {
     const health = wsHealthMonitor.isHealthy();
     const stats = wsConnectionManager.getStats();

@@ -3,7 +3,7 @@ import { z } from 'zod';
 import { tronIntegrationService, tronTestnetService } from '../../services/tronIntegrationService';
 import { tronSigningService, tronTestnetSigningService } from '../../services/tronTransactionSigningService';
 import { asyncHandler } from '../../middleware/errorHandler';
-import { isAuthenticated } from '../../nextAuthMiddleware';
+import { isAuthenticated } from '../../auth';
 import { requirePINVerification, checkAmountThreshold } from '../../middleware/pin-verification';
 import { tronAddressSchema, tronTransferSchema, amountSchema } from './validation-schemas';
 
@@ -206,7 +206,7 @@ router.post('/tron/validate-transfer', asyncHandler(async (req, res) => {
     const tronService = req.query.testnet === 'true' ? tronTestnetService : tronIntegrationService;
 
     // Check sender has sufficient balance
-    const hasSufficientBalance = await tronService.hasSufficientBalance(
+    const hasSufficientBalance = await tronService.hassufficientBalance(
       validated.fromAddress,
       validated.amount,
       validated.tokenAddress
@@ -353,7 +353,7 @@ router.post('/tron/transfer', isAuthenticated, requirePINVerification, checkAmou
     const validated = tronTransferSchema.parse(req.body);
     const signingService = req.query.testnet === 'true' ? tronTestnetSigningService : tronSigningService;
 
-    const result = await signingService.executeTrxTransfer({
+    const result = await signingService.executeTransfer({
       fromAddress: validated.fromAddress,
       toAddress: validated.toAddress,
       amount: validated.amount,

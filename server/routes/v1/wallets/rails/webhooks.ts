@@ -133,6 +133,8 @@ function verifyWebhookSignature(
   }
 }
 
+export { verifyWebhookSignature };
+
 /**
  * Flutterwave Webhook
  * POST /api/v1/wallets/rails/webhooks/flutterwave

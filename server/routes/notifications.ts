@@ -1,7 +1,7 @@
 
 import express from 'express'
 import type { Request, Response } from 'express';
-import { isAuthenticated } from '../nextAuthMiddleware';
+import { isAuthenticated } from '../auth';
 import { storage, type Notification } from '../storage';
 import { z } from 'zod';
 import { insertNotificationSchema } from '../../shared/schema';
@@ -26,11 +26,13 @@ const notificationInsertSchema = insertNotificationSchema.pick({
   metadata: true,
 });
 
+const getAuthenticatedUserId = (req: Request): string | undefined => req.user?.claims?.sub;
+
 // Get user notifications
 router.get('/', isAuthenticated, async (req: Request, res: Response) => {
   try {
     const { limit = 20, offset = 0, read, type } = req.query;
-    const userId = req.user?.claims.sub;
+    const userId = getAuthenticatedUserId(req);
     if (!userId) {
       return res.status(401).json({ error: 'Unauthorized' });
     }
@@ -62,7 +64,7 @@ router.get('/', isAuthenticated, async (req: Request, res: Response) => {
 router.patch('/:notificationId/read', isAuthenticated, async (req: Request, res: Response) => {
   try {
     const { notificationId } = req.params;
-    const userId = req.user?.claims.sub;
+    const userId = getAuthenticatedUserId(req);
     if (!userId) {
       return res.status(401).json({ error: 'Unauthorized' });
     }
@@ -85,7 +87,7 @@ router.patch('/:notificationId/read', isAuthenticated, async (req: Request, res:
 // Mark all notifications as read
 router.patch('/mark-all-read', isAuthenticated, async (req: Request, res: Response) => {
   try {
-    const userId = req.user?.claims.sub;
+    const userId = getAuthenticatedUserId(req);
     if (!userId) {
       return res.status(401).json({ error: 'Unauthorized' });
     }
@@ -105,7 +107,7 @@ router.patch('/mark-all-read', isAuthenticated, async (req: Request, res: Respon
 router.delete('/:notificationId', isAuthenticated, async (req: Request, res: Response) => {
   try {
     const { notificationId } = req.params;
-    const userId = req.user?.claims.sub;
+    const userId = getAuthenticatedUserId(req);
     if (!userId) {
       return res.status(401).json({ error: 'Unauthorized' });
     }
@@ -128,7 +130,7 @@ router.delete('/:notificationId', isAuthenticated, async (req: Request, res: Res
 // Get notification preferences
 router.get('/preferences', isAuthenticated, async (req: Request, res: Response) => {
   try {
-    const userId = req.user?.claims.sub;
+    const userId = getAuthenticatedUserId(req);
     if (!userId) {
       return res.status(401).json({ error: 'Unauthorized' });
     }
@@ -147,7 +149,7 @@ router.get('/preferences', isAuthenticated, async (req: Request, res: Response) 
 // Update notification preferences
 router.put('/preferences', isAuthenticated, async (req: Request, res: Response) => {
   try {
-    const userId = req.user?.claims.sub;
+    const userId = getAuthenticatedUserId(req);
     if (!userId) {
       return res.status(401).json({ error: 'Unauthorized' });
     }
@@ -182,7 +184,10 @@ router.put('/preferences', isAuthenticated, async (req: Request, res: Response) 
 // Link Telegram account
 router.post('/telegram/link', isAuthenticated, async (req: Request, res: Response) => {
   try {
-    const userId = (req.user as any).claims.sub;
+    const userId = getAuthenticatedUserId(req);
+    if (!userId) {
+      return res.status(401).json({ error: 'Unauthorized' });
+    }
     const { telegramId, chatId, username } = req.body;
     
     await storage.updateUserTelegramInfo(userId, { telegramId, chatId, username });
@@ -200,10 +205,11 @@ router.post('/telegram/link', isAuthenticated, async (req: Request, res: Respons
 router.get('/telegram/bot-info', async (req: Request, res: Response) => {
   try {
     const botUsername = process.env.TELEGRAM_BOT_USERNAME || 'mtaadao_bot';
+    const currentUserId = getAuthenticatedUserId(req) || 'USER_ID';
     
     res.json({ 
       botUsername,
-      linkInstructions: `To link your Telegram account, send a message to @${botUsername} with the command: /link ${(req.user as any)?.claims?.sub || 'USER_ID'}`
+      linkInstructions: `To link your Telegram account, send a message to @${botUsername} with the command: /link ${currentUserId}`
     });
   } catch (err) {
     res.status(500).json({ 
@@ -216,7 +222,7 @@ router.get('/telegram/bot-info', async (req: Request, res: Response) => {
 // Admin: Send notification to user(s)
 router.post('/send', isAuthenticated, async (req: Request, res: Response) => {
   try {
-    const senderId = req.user?.claims.sub;
+    const senderId = getAuthenticatedUserId(req);
     if (!senderId) {
       return res.status(401).json({ error: 'Unauthorized' });
     }
@@ -282,7 +288,10 @@ router.post('/send', isAuthenticated, async (req: Request, res: Response) => {
 router.get('/search', isAuthenticated, async (req: Request, res: Response) => {
   try {
     const { q, limit = 20, offset = 0 } = req.query;
-    const userId = (req.user as any).claims.sub;
+    const userId = getAuthenticatedUserId(req);
+    if (!userId) {
+      return res.status(401).json({ error: 'Unauthorized' });
+    }
     
     if (!q || typeof q !== 'string') {
       return res.status(400).json({ error: 'Search query is required' });
@@ -310,3 +319,5 @@ router.get('/search', isAuthenticated, async (req: Request, res: Response) => {
 });
 
 export default router;
+
+

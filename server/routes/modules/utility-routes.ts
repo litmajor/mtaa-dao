@@ -1,7 +1,8 @@
 import { Router } from 'express';
 import { crossChainService } from '../../services/crossChainService';
+import { ChainRegistry, SupportedChain } from '../../../shared/chainRegistry';
 import { asyncHandler } from '../../middleware/errorHandler';
-import { isAuthenticated } from '../../nextAuthMiddleware';
+import { isAuthenticated } from '../../auth';
 import { vaultSchema } from './validation-schemas';
 
 const router = Router();
@@ -52,11 +53,17 @@ router.post('/vault', isAuthenticated, asyncHandler(async (req, res) => {
       });
     }
 
-    const vaultId = await crossChainService.createCrossChainVault(
-      userId,
-      validated.chains,
-      validated.name
-    );
+    // Normalize validated.chains (string[]) to SupportedChain[] with runtime validation
+    const rawChains = validated.chains as string[];
+    const supportedChains: SupportedChain[] = rawChains.map((c) => {
+      const candidate = c.toString().toLowerCase() as SupportedChain;
+      if (!ChainRegistry.getAllChains().includes(candidate)) {
+        throw new Error(`Unsupported chain in vault definition: ${c}`);
+      }
+      return candidate;
+    });
+
+    const vaultId = await crossChainService.createCrossChainVault(userId, supportedChains, validated.name);
 
     res.json({
       success: true,

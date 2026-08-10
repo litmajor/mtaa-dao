@@ -11,7 +11,7 @@
 
 import express from 'express';
 import type { Request, Response } from 'express';
-import { isAuthenticated } from '../nextAuthMiddleware';
+import { isAuthenticated } from '../auth';
 import { requireDAORole } from '../middleware/rbac';
 import { TreasuryValidationService } from '../services/treasuryValidationService';
 import { Logger } from '../utils/logger';
@@ -421,3 +421,5 @@ router.put('/:daoId/limits', isAuthenticated, async (req: Request, res: Response
 });
 
 export default router;
+
+

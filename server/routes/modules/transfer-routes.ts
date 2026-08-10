@@ -2,7 +2,7 @@ import { Router } from 'express';
 import { z } from 'zod';
 import { crossChainService } from '../../services/crossChainService';
 import { asyncHandler } from '../../middleware/errorHandler';
-import { isAuthenticated } from '../../nextAuthMiddleware';
+import { isAuthenticated } from '../../auth';
 import { requirePINVerification, checkAmountThreshold } from '../../middleware/pin-verification';
 import { transferSchema } from './validation-schemas';
 

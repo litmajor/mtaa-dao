@@ -1,5 +1,5 @@
 import express, { Request, Response } from 'express';
-import { isAuthenticated } from '../nextAuthMiddleware';
+import { isAuthenticated } from '../auth';
 import { db } from '../db';
 import { messages, users } from '../../shared/schema';
 import { eq, and, or, desc, lt } from 'drizzle-orm';
@@ -254,3 +254,5 @@ router.delete('/:messageId', isAuthenticated, async (req: Request, res: Response
 });
 
 export default router;
+
+

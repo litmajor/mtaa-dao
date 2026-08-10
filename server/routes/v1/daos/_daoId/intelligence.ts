@@ -2,7 +2,7 @@ import { Router } from 'express';
 import { db } from '../../../../db';
 import { proposals, contributions, multisigTransactions, multisigWallets, users } from '../../../../../shared/schema';
 import { eq, and, gt, lt, sql } from 'drizzle-orm';
-import { isAuthenticated } from '../../../../nextAuthMiddleware';
+import { isAuthenticated } from '../../../../auth';
 
 const router = Router({ mergeParams: true });
 

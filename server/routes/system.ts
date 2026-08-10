@@ -15,7 +15,7 @@
  */
 
 import express, { Request, Response, NextFunction } from 'express';
-import { isAuthenticated } from '../nextAuthMiddleware';
+import { isAuthenticated } from '../auth';
 import { notificationService } from '../notificationService';
 import { authenticateToken } from '../middleware/auth';
 import initializeUserAccounts, { getAccountInitializationSummary } from '../migrations/initialize-user-accounts';
@@ -209,3 +209,5 @@ router.get('/blog/:postId', async (req: Request, res: Response) => {
 });
 
 export default router;
+
+

@@ -7,8 +7,9 @@
  * - Real-time and cached data options
  */
 
-import { Router, Request, Response, NextFunction } from 'express';
-import { authenticateToken, isSuperUser, isDaoMember, AuthRequest } from '../middleware/auth';
+import type { Request, Response, NextFunction } from 'express';
+import { Router } from 'express';
+import { authenticateToken, isSuperUser, isDaoMember } from '../middleware/auth';
 import { eldScry } from '../core/elders/scry';
 import { eldKaizen } from '../core/elders/kaizen';
 import { eldLumen } from '../core/elders/lumen';
@@ -16,12 +17,9 @@ import { eldLumen } from '../core/elders/lumen';
 const router = Router();
 
 // Wrapper middleware to handle type casting
-const auth = (req: Request, res: Response, next: NextFunction) => 
-  authenticateToken(req as AuthRequest, res, next);
-const superUser = (req: Request, res: Response, next: NextFunction) => 
-  isSuperUser(req as AuthRequest, res, next);
-const daoMember = (req: Request, res: Response, next: NextFunction) => 
-  isDaoMember(req as AuthRequest, res, next);
+const auth = (req: Request, res: Response, next: NextFunction) => authenticateToken(req, res, next);
+const superUser = (req: Request, res: Response, next: NextFunction) => isSuperUser(req, res, next);
+const daoMember = (req: Request, res: Response, next: NextFunction) => isDaoMember(req, res, next);
 
 /**
  * Data aggregation helper functions

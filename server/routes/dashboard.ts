@@ -1,5 +1,5 @@
 import { Router, Request, Response } from 'express';
-import { isAuthenticated } from '../nextAuthMiddleware';
+import { isAuthenticated } from '../auth';
 import {
   detectPersona,
   getUserDAOs,
@@ -167,3 +167,5 @@ router.get('/dashboard/:persona', isAuthenticated, async (req: Request, res: Res
 });
 
 export default router;
+
+

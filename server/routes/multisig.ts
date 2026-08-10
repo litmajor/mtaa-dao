@@ -12,7 +12,7 @@
 
 import express from 'express';
 import type { Request, Response } from 'express';
-import { isAuthenticated } from '../nextAuthMiddleware';
+import { isAuthenticated } from '../auth';
 import { requireDAORole } from '../middleware/rbac';
 import { TreasuryValidationService } from '../services/treasuryValidationService';
 import { Logger } from '../utils/logger';
@@ -546,3 +546,4 @@ router.get('/:daoId/approval/:approvalId/status', isAuthenticated, async (req: R
 });
 
 export default router;
+

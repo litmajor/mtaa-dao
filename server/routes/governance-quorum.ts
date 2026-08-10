@@ -3,7 +3,7 @@ import express from 'express';
 import { db } from '../db';
 import { daos, daoMemberships, proposals, quorumHistory } from '../../shared/schema';
 import { eq, and, desc, sql } from 'drizzle-orm';
-import { isAuthenticated } from '../nextAuthMiddleware';
+import { isAuthenticated } from '../auth';
 
 const router = express.Router();
 
@@ -377,3 +377,5 @@ router.put('/quorum/:daoId', isAuthenticated, async (req, res) => {
 });
 
 export default router;
+
+

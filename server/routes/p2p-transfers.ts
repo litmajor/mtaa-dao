@@ -15,7 +15,7 @@ const router = express.Router();
 
 type AuthRequest = Request & { user?: { id?: string; username?: string; role?: string } };
 
-import { isAuthenticated } from '../nextAuthMiddleware';
+import { isAuthenticated } from '../auth';
 import { requirePINVerification, checkAmountThreshold } from '../middleware/pin-verification';
 
 // Validation schemas
@@ -32,7 +32,7 @@ const transferSchema = z.object({
  * Initiate a P2P transfer with KYC limit checking and balance debit/credit
  * Auth: Requires upstream isAuthenticated middleware (req.user.id must be set)
  */
-router.post('/send', isAuthenticated, requirePINVerification, checkAmountThreshold(process.env.PIN_REQUIRED_THRESHOLD || 1000), async (req: AuthRequest, res: express.Response) => {
+router.post('/send', isAuthenticated, requirePINVerification, checkAmountThreshold(process.env.PIN_REQUIRED_THRESHOLD || 1000), async (req: Request, res: express.Response) => {
   try {
     // Auth is enforced by upstream middleware wrapper at mount point
     if (!req.user?.id) {
@@ -40,7 +40,7 @@ router.post('/send', isAuthenticated, requirePINVerification, checkAmountThresho
     }
 
     const senderId = req.user.id;
-    const senderUsername = req.user.username || senderId;
+    const senderUsername = ((req.user as any)?.username as string) || senderId;
     const validated = transferSchema.parse(req.body);
 
     // Idempotency check: if this request was already processed, return cached result
@@ -299,7 +299,7 @@ router.post('/send', isAuthenticated, requirePINVerification, checkAmountThresho
  * Get user's P2P transfer history (sent and received)
  * Auth: Requires upstream isAuthenticated middleware
  */
-router.get('/history', async (req: AuthRequest, res) => {
+router.get('/history', async (req: Request, res) => {
   try {
     if (!req.user?.id) {
       return res.status(401).json({ error: 'Unauthorized' });
@@ -352,7 +352,7 @@ router.get('/history', async (req: AuthRequest, res) => {
  * Get transfer details
  * Auth: Requires upstream isAuthenticated middleware
  */
-router.get('/:transferId', async (req: AuthRequest, res) => {
+router.get('/:transferId', async (req: Request, res) => {
   try {
     if (!req.user?.id) {
       return res.status(401).json({ error: 'Unauthorized' });
@@ -407,3 +407,5 @@ router.get('/:transferId', async (req: AuthRequest, res) => {
 });
 
 export default router;
+
+

@@ -14,13 +14,14 @@
  * - Bridge Monitoring (relayer status, vault status)
  */
 
-import { Router, Request, Response } from 'express';
+import { Router } from 'express';
+import type { Request, Response } from 'express';
 import { crossChainService } from '../../../services/crossChainService';
 import { crossChainGovernanceService } from '../../../services/crossChainGovernanceService';
 import { bridgeRelayerService } from '../../../services/bridgeRelayerService';
 import { crossChainSwapService } from '../../../services/crossChainSwapService';
 import { asyncHandler } from '../../../middleware/errorHandler';
-import { isAuthenticated } from '../../../nextAuthMiddleware';
+import { isAuthenticated } from '../../../auth';
 import advancedModeGuard from '../../../middleware/advancedModeGuard';
 import { requirePINVerification, checkAmountThreshold } from '../../../middleware/pin-verification';
 import { createRateLimiter } from '../../../middleware/rateLimiting';
@@ -161,11 +162,13 @@ router.get('/estimate-fees', isAuthenticated, analyticLimiter, asyncHandler(asyn
   try {
     const sourceChain = (req.query.sourceChain as string)?.toLowerCase();
     const destinationChain = (req.query.destinationChain as string)?.toLowerCase();
+    const tokenSymbol = (req.query.tokenSymbol as string)?.toUpperCase();
     const amount = req.query.amount as string;
 
     const validated = z.object({
       sourceChain: chainNameSchema,
       destinationChain: chainNameSchema,
+      tokenSymbol: z.string().trim().min(1),
       amount: amountSchema
     }).refine(
       (data) => data.sourceChain !== data.destinationChain,
@@ -173,13 +176,15 @@ router.get('/estimate-fees', isAuthenticated, analyticLimiter, asyncHandler(asyn
     ).parse({
       sourceChain,
       destinationChain,
+      tokenSymbol,
       amount
     });
     
     const fees = await crossChainService.estimateBridgeFees(
       validated.sourceChain as SupportedChain,
       validated.destinationChain as SupportedChain,
-      validated.amount
+      validated.amount,
+      validated.tokenSymbol
     );
 
     res.json({
@@ -359,7 +364,7 @@ router.post(
 router.get('/swap/:swapId', isAuthenticated, asyncHandler(async (req: Request, res: Response) => {
   const { swapId } = req.params;
 
-  const status = await crossChainSwapService.getSwapStatus(swapId);
+  const status = await crossChainSwapService.getSwapExecutionStatus(swapId);
 
   if (!status) {
     return res.status(404).json({

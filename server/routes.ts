@@ -1,7 +1,8 @@
 import express from 'express';
 import type { RequestHandler } from 'express';
 import { Server as HTTPServer } from 'http';
-import { isAuthenticated } from './nextAuthMiddleware';
+import { isAuthenticated } from './auth';
+import { logger } from './utils/logger';
 import Stripe from "stripe"; // Stripe integration
 import { validateDaoIdMiddleware, sanitizeObject } from './middleware/security';
 // Import route modules
@@ -28,6 +29,7 @@ import challengesRoutes from './routes/challenges';
 import morioRoutes from './routes/morio';
 import profileRoutes from './routes/profile';
 import accountRoutes from './routes/account';
+import settingsRouter from './routes/settings';
 import ensRoutes from './routes/ens';
 import multisigCreateRoutes from './routes/multisig_create';
 import proofOfContributionRoutes from './routes/proof-of-contribution';
@@ -346,7 +348,7 @@ export async function registerRoutes(app: express.Application, server: HTTPServe
       return res.redirect(307, newPath);
     } catch (err) {
       console.warn('[ROUTES] Deprecation redirect failed, falling back to legacy handler', err);
-      return daosRoutes(req, res, next);
+      return (daosRoutes as any)(req, res, next);
     }
   });
   // DAO treasury flows removed - functionality consolidated to V1 endpoints
@@ -437,6 +439,17 @@ export async function registerRoutes(app: express.Application, server: HTTPServe
     res.redirect(307, newPath);
   });
   
+  // Core feature routes
+  app.use('/api/challenges', isAuthenticated, challengesRoutes);
+  app.use('/api/morio', authenticateToken, morioRoutes);
+  app.use('/api/reputation', reputationRoutes);
+  app.use('/api/analytics', isAuthenticated, analyticsRoutes);
+  app.use('/api/notifications', isAuthenticated, notificationsRoutes);
+  app.use('/api/user/recovery', authenticateToken, userRecoveryRoutes);
+  app.use('/api/proposal-execution', isAuthenticated, proposalExecutionRoutes);
+  app.use('/api/admin', authenticateToken, adminAIMetricsRoutes);
+  app.use('/api/deposits-withdrawals', isAuthenticated, depositsWithdrawalsRoutes);
+
   // P2P Transfers routes with authentication wrapper
   // FIX #1: Enforce isAuthenticated middleware at mount point for all P2P operations
   app.use('/api/p2p-transfers', isAuthenticated, p2pTransfersRoutes);
@@ -610,6 +623,7 @@ export async function registerRoutes(app: express.Application, server: HTTPServe
   // ENS / address resolution (best-effort)
   app.use('/api/ens', ensRoutes);
   app.use('/api/account', accountRoutes);
+  app.use('/api/settings', settingsRouter);
   // Lightweight multisig creation enqueuer
   app.use('/api/multisig-create', multisigCreateRoutes);
   app.use('/api/admin', isAuthenticated, requireRole('super_admin', 'admin'), accountInitializationRoutes); // Account initialization endpoints

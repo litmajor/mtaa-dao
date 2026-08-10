@@ -16,7 +16,7 @@
  */
 
 import express, { Request, Response } from 'express';
-import { isAuthenticated } from '../nextAuthMiddleware';
+import { isAuthenticated } from '../auth';
 import { notificationService } from '../notificationService';
 
 const router = express.Router();
@@ -28,3 +28,5 @@ router.get('/notifications', isAuthenticated, (req: Request, res: Response) => {
 });
 
 export default router;
+
+

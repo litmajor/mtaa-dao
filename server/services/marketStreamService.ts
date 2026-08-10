@@ -35,6 +35,7 @@ import ccxtService from './ccxtService';
 import { dexscreenerClient, type DexCandleUpdate } from './dexscreenerClient';
 import { verifyAccessToken } from '../auth';
 import { MarketStreamWS } from '../websocket/websocket-events';
+import { publishMarketObservation } from './marketObservationPublisher';
 
 type MarketStreamUpdate = MarketStreamWS.MarketStreamUpdate;
 
@@ -287,6 +288,30 @@ class MarketStreamService {
           } catch (e) {
             // Ignore rate limits/errors for orderbook specifically
           }
+
+          void publishMarketObservation({
+            exchange: exchangeId,
+            market_symbol: symbol,
+            base_asset: symbol.split('/')[0] || '',
+            quote_asset: symbol.split('/')[1] || '',
+            market_type: 'spot',
+            data_type: 'ticker',
+            payload: {
+              price: parseFloat(Number(price).toFixed(2)),
+              bid: priceData?.bid ?? null,
+              ask: priceData?.ask ?? null,
+              spread: priceData?.ask && priceData?.bid ? priceData.ask - priceData.bid : null,
+              volume_24h: Number(priceData.volume || 0),
+            },
+            exchange_timestamp: priceData?.timestamp ? priceData.timestamp : Date.now(),
+            received_timestamp: Date.now(),
+            ingestion_timestamp: Date.now(),
+            source_channel: 'websocket',
+            is_stale: false,
+            is_valid: typeof price === 'number',
+            schema_version: '1.0',
+            is_mock: false,
+          }).catch(() => undefined);
 
           return {
             exchange,

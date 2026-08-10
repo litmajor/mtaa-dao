@@ -9,7 +9,7 @@
 import { Router, Request, Response } from 'express';
 import { eldKaizen } from '../core/elders/kaizen';
 import { eldLumen } from '../core/elders/lumen';
-import { isAuthenticated } from '../nextAuthMiddleware';
+import { isAuthenticated } from '../auth';
 
 const router = Router();
 
@@ -787,3 +787,5 @@ router.get('/lumen/health', (req: Request, res: Response) => {
 });
 
 export default router;
+
+

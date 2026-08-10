@@ -1,10 +1,9 @@
- import { Response } from 'express';
+ import type { Request, Response } from 'express';
 import { db } from '../storage';
 import { users } from '../../shared/schema';
 import { eq } from 'drizzle-orm';
-import { AuthRequest } from '../auth';
 
-export async function authUserHandler(req: AuthRequest, res: Response) {
+export async function authUserHandler(req: Request, res: Response) {
   try {
     if (!req.user) {
       return res.status(401).json({
@@ -13,10 +12,17 @@ export async function authUserHandler(req: AuthRequest, res: Response) {
       });
     }
 
+    const claimSub = (req.user?.claims && (req.user.claims as any).sub) ? String((req.user.claims as any).sub) : undefined;
+    const userIdToQuery = req.user?.id || claimSub;
+
+    if (!userIdToQuery) {
+      return res.status(401).json({ success: false, error: { message: 'Not authenticated' } });
+    }
+
     const [user] = await db
       .select()
       .from(users)
-      .where(eq(users.id, req.user.claims.sub))
+      .where(eq(users.id, userIdToQuery))
       .limit(1);
 
     if (!user) {

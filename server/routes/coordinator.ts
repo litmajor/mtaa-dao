@@ -9,16 +9,12 @@ import type {Request, Response, NextFunction} from 'express';
 import { elderCoordinator } from '../core/elders/coordinator';
 import { coordinatorMessageBus } from '../core/elders/coordinator/message-bus';
 import { authenticateToken, isDaoMember, isSuperUser } from '../middleware/auth';
-import type { AuthRequest } from '../middleware/auth';
 const router = Router();
 
 // Wrapper functions to handle type casting for middlewares
-const auth = (req: Request, res: Response, next: NextFunction) => 
-  authenticateToken(req as AuthRequest, res, next);
-const daoMember = (req: Request, res: Response, next: NextFunction) => 
-  isDaoMember(req as AuthRequest, res, next);
-const superUser = (req: Request, res: Response, next: NextFunction) => 
-  isSuperUser(req as AuthRequest, res, next);
+const auth = (req: Request, res: Response, next: NextFunction) => authenticateToken(req, res, next);
+const daoMember = (req: Request, res: Response, next: NextFunction) => isDaoMember(req, res, next);
+const superUser = (req: Request, res: Response, next: NextFunction) => isSuperUser(req, res, next);
 
 /**
  * GET /api/coordinator/status

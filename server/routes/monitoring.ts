@@ -2,7 +2,7 @@
 import express, { Request, Response } from 'express';
 import { metricsCollector } from '../monitoring/metricsCollector';
 import { logger } from '../utils/logger';
-import { isAuthenticated } from '../nextAuthMiddleware';
+import { isAuthenticated } from '../auth';
 // Type for metricsCollector.getMetrics() result
 type Metrics = {
   requests: import('../monitoring/metricsCollector').RequestMetrics[];
@@ -256,3 +256,5 @@ function generatePerformanceRecommendations(metrics: any): string[] {
 }
 
 export default router;
+
+

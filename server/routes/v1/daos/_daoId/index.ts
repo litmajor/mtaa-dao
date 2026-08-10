@@ -16,7 +16,7 @@
  */
 
 import express from 'express';
-import { isAuthenticated } from '../../../../nextAuthMiddleware';
+import { isAuthenticated } from '../../../../auth';
 import { validateDaoIdMiddleware } from '../../../../middleware/security';
 import treasuryRouter from './treasury';
 import investmentPoolsRouter from './investment-pools';

@@ -21,7 +21,8 @@
  *    Promise.all instead of sequentially awaiting 11 checks one at a time.
  */
 
-import { Router, Request, Response } from 'express';
+import { Router} from 'express';
+import type { Request, Response } from 'express';
 import { authenticateToken } from '../middleware/auth';
 import { rateLimitPerUser } from '../middleware/rateLimit';
 import { jobQueueService } from '../services/jobQueueService';

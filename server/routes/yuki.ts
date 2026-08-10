@@ -18,20 +18,32 @@
 
 import express from 'express';
 import type { Router, Request, Response, NextFunction } from 'express';
+import { z } from 'zod';
 import { authenticateToken } from '../middleware/auth';
-import type { AuthRequest } from '../middleware/auth';
 import { ccxtService, type CachedPrice } from '../services/ccxtService';
 import { priceOracle } from '../services/priceOracle';
+import { orderRouter } from '../services/orderRouter';
 import { SmartRouter, type OptimalRoute, type RouteCost } from '../services/smartRouter';
 import { dexService, type SwapQuote, type SwapResult } from '../services/dexRoutingService';
 import { CrossChainService, type CrossChainTransferRequest, type BridgeStatus } from '../services/crossChainService';
-import type { SupportedChain } from '../../shared/chainRegistry';
+import { ChainRegistry, type SupportedChain } from '../../shared/chainRegistry';
+import { TokenRegistry } from '../../shared/tokenRegistry';
 import { ArbitrageDetectionService } from '../services/arbitrageDetector';
 import { createApiResponse, createApiError, ApiErrorCode } from '../types/ApiResponse';
 import { logger } from '../utils/logger';
 import { yukiSwapLimiter, yukiBridgeLimiter, yukiFlashLoanLimiter, yukiBacktestLimiter } from '../middleware/rateLimiter';
 import { jobQueueService } from '../services/jobQueueService';
+import { db, pool } from '../db';
+import { ethers } from 'ethers';
 import type { Signer } from 'ethers';
+import { createWalletIfValid } from '../utils/cryptoWallet';
+import { gasPriceOracle } from '../services/gasPriceOracle';
+import { redis } from '../services/redis';
+import { CEXCredentialRepository } from '../repositories/cexCredentialRepository';
+import { wallets, walletSecuritySettings, multisigWallets, multisigSigners } from '../../shared/schema';
+import { eq, and, inArray } from 'drizzle-orm';
+import { logConsolidatedAuditEvent, AuditEventType } from '../services/auditConsolidated';
+import { strategyDashboardService } from '../services/strategyDashboardService';
 
 export type BridgeChainName = SupportedChain;
 
@@ -293,7 +305,7 @@ router.post('/execute/swap', [authenticateToken, yukiSwapLimiter], async (req: R
       amount: number;
       minOutput?: number;
     };
-    const userId = (req as AuthRequest).user?.id;
+    const userId = req.user?.id;
 
     // ⚠️ SECURITY: Validate amount parameter
     if (!amount || typeof amount !== 'number') {
@@ -362,16 +374,12 @@ router.post('/execute/bridge/preview', [authenticateToken], async (req: Request,
       toChain: BridgeChainName;
     };
 
-    // Get transfer status preview from cross-chain service
-    const sourceChain: BridgeChainName = fromChain;
-    const destChain: BridgeChainName = toChain;
-    
-    // Estimate based on chain configs
-    const preview = {
-      estimatedTime: 1800, // 30 minutes typical
-      fee: amount * 0.0005, // 0.05% bridge fee
-      provider: 'LayerZero',
-    };
+    // Resolve token symbol and bridge route metadata
+    const tokenSymbol = await resolveTokenSymbol(token);
+    const bridgeRoute = getBridgeRouteInfo(tokenSymbol, fromChain, toChain);
+
+    const fee = amount * bridgeRoute.feePercent / 100;
+    const estimatedTime = bridgeRoute.estimatedTime;
 
     res.json({
       success: true,
@@ -380,10 +388,10 @@ router.post('/execute/bridge/preview', [authenticateToken], async (req: Request,
         amount,
         fromChain,
         toChain,
-        estimatedTime: preview.estimatedTime,
-        fee: preview.fee,
-        feePercent: (preview.fee / amount * 100).toFixed(3),
-        bridgeService: preview.provider,
+        estimatedTime,
+        fee,
+        feePercent: Number((bridgeRoute.feePercent).toFixed(3)),
+        bridgeService: bridgeRoute.protocol,
       },
     });
   } catch (error) {
@@ -412,7 +420,7 @@ router.post('/execute/bridge', [authenticateToken, yukiBridgeLimiter], async (re
       recipient?: string;
       attestations?: MultisigAttestation[];
     };
-    const userId = (req as AuthRequest).user?.id || '';
+    const userId = req.user?.id || '';
 
     // 🔴 CRITICAL: Validate amount parameter
     if (!amount || typeof amount !== 'number') {
@@ -522,7 +530,10 @@ router.post('/execute/bridge', [authenticateToken, yukiBridgeLimiter], async (re
     }
 
     // 🔴 CRITICAL: Time-lock for high-value bridge transfers (>$50k or >1M tokens)
-    const estimatedUsdValue = amount * 0.001; // Simplified valuation (TODO: use price oracle)
+    const tokenSymbol = await resolveTokenSymbol(token);
+    const bridgeRoute = getBridgeRouteInfo(tokenSymbol, fromChain, toChain);
+    const priceData = await priceOracle.getPrice(tokenSymbol).catch(() => null);
+    const estimatedUsdValue = priceData?.priceUsd ? amount * priceData.priceUsd : amount * 0.001;
     const isHighValue = estimatedUsdValue > 50000 || amount > 1000000;
 
     if (isHighValue) {
@@ -531,7 +542,6 @@ router.post('/execute/bridge', [authenticateToken, yukiBridgeLimiter], async (re
       
       if (!isWhitelisted) {
         // 🔴 CRITICAL: Require 2/3 multisig approval for high-value transfers
-        const multisigRequired = true;
         const approvalsNeeded = 2;
         
         if (!attestations || !Array.isArray(attestations) || attestations.length < approvalsNeeded) {
@@ -552,7 +562,7 @@ router.post('/execute/bridge', [authenticateToken, yukiBridgeLimiter], async (re
         }
 
         // Verify multisig attestations are valid
-        const validAttestations = await verifyMultisigAttestations(userId, attestations, recipientAddr, toChain);
+        const validAttestations = await verifyMultisigAttestations(userId, attestations, recipientAddr, toChain, tokenSymbol, amount);
         if (!validAttestations) {
           return res.status(403).json({
             success: false,
@@ -565,6 +575,19 @@ router.post('/execute/bridge', [authenticateToken, yukiBridgeLimiter], async (re
         const timeLockEndTime = new Date(Date.now() + 24 * 60 * 60 * 1000);
         logger.info(`[AUDIT] High-value bridge transfer queued with 24h time-lock: ${userId} → ${recipientAddr} on ${toChain}`);
         
+        await logBridgeTransferAudit({
+          userId,
+          transferId: `pending-${Date.now()}`,
+          token: tokenSymbol,
+          amount,
+          fromChain,
+          toChain,
+          recipientAddr,
+          status: 'pending_timelock',
+          timestamp: new Date(),
+          isHighValue
+        });
+
         return res.status(202).json({
           success: true,
           status: 'PENDING_TIMELOCK',
@@ -583,19 +606,8 @@ router.post('/execute/bridge', [authenticateToken, yukiBridgeLimiter], async (re
       }
     }
 
-    // Execute cross-chain transfer via CrossChainService
-    // Resolve tokenSymbol when caller passed a token address; otherwise assume token is symbol
-    let tokenSymbol = token;
-    try {
-      const { TOKEN_REGISTRY } = await import('../../shared/tokenRegistry');
-      if (typeof token === 'string' && token.startsWith('0x')) {
-        // try to map address to symbol
-        const found = Object.values(TOKEN_REGISTRY).find(t => Object.values(t.address || {}).some((a: string) => a?.toLowerCase() === token.toLowerCase()));
-        if (found) tokenSymbol = found.symbol;
-      }
-    } catch (e) {
-      // ignore mapping failure
-    }
+    const sourceSigner = await resolveBridgeSigner(fromChain, `BRIDGE_SOURCE_PRIVATE_KEY`);
+    const destSigner = await resolveBridgeSigner(toChain, `BRIDGE_DEST_PRIVATE_KEY`);
 
     const transferRequest: CrossChainTransferRequest = {
       userId,
@@ -604,10 +616,9 @@ router.post('/execute/bridge', [authenticateToken, yukiBridgeLimiter], async (re
       tokenAddress: token,
       amount: amount.toString(),
       destinationAddress: recipientAddr,
-      tokenSymbol: tokenSymbol,
-      // Placeholders until a proper signer/key-management is wired
-      sourceSigner: {} as Signer,
-      destSigner: {} as Signer,
+      tokenSymbol,
+      sourceSigner,
+      destSigner,
     };
 
     const result: BridgeStatus = await crossChainService.initiateTransfer(transferRequest);
@@ -631,17 +642,19 @@ router.post('/execute/bridge', [authenticateToken, yukiBridgeLimiter], async (re
       // Continue with transfer but alert operations team
     }
 
+    const transferFee = bridgeRoute.feePercent ? amount * bridgeRoute.feePercent / 100 : 0;
+
     res.json({
       success: result.status !== 'failed',
       data: {
         transferId: result.transferId,
-        bridgeTxHash: '',
+        bridgeTxHash: result.sourceTxHash ?? null,
         amount,
         token,
         fromChain,
         toChain,
         estimatedArrival: new Date(Date.now() + result.estimatedTime * 1000),
-        fee: 0,
+        fee: transferFee,
         status: result.status,
       },
     });
@@ -658,10 +671,35 @@ router.post('/execute/bridge', [authenticateToken, yukiBridgeLimiter], async (re
  */
 async function checkWhitelistedBridgeRecipient(userId: string, recipientAddr: string, toChain: string): Promise<boolean> {
   try {
-    // TODO: Query database for whitelisted addresses
-    // SELECT * FROM bridge_whitelisted_addresses WHERE user_id = ? AND chain = ? AND address = ?
-    // For now, only internal withdrawals are auto-approved
-    return false; // Default: require timelock for all external transfers
+    const normalizedRecipient = recipientAddr.toLowerCase();
+
+    if (!/^0x[a-fA-F0-9]{40}$/.test(normalizedRecipient)) {
+      return false;
+    }
+
+    const userWallets = await db.select().from(wallets).where(eq(wallets.userId, userId));
+    const walletAddresses = userWallets.map(w => (w.address || '').toLowerCase());
+    if (walletAddresses.includes(normalizedRecipient)) {
+      return true; // Internal wallet transfers are trusted by default
+    }
+
+    const walletIds = userWallets.map(w => w.id).filter(Boolean) as string[];
+    if (!walletIds.length) {
+      return false;
+    }
+
+    const securityRows = await db.select().from(walletSecuritySettings).where(inArray(walletSecuritySettings.walletId, walletIds));
+    for (const row of securityRows) {
+      const whitelisted = Array.isArray(row.whitelistedAddresses)
+        ? row.whitelistedAddresses.map((a: unknown) => String(a || '').toLowerCase())
+        : [];
+      if (whitelisted.includes(normalizedRecipient)) {
+        return true;
+      }
+    }
+
+    logger.info(`[SECURITY] Bridge recipient not in user whitelist: ${recipientAddr} for user ${userId} to ${toChain}`);
+    return false;
   } catch (error) {
     logger.error(`[SECURITY] Error checking bridge whitelist for ${userId}:`, error);
     return false; // Fail closed for security
@@ -672,35 +710,146 @@ async function checkWhitelistedBridgeRecipient(userId: string, recipientAddr: st
  * Verify multisig attestations for high-value bridge transfers
  * Requires signatures from 2/3 multisig signers (e.g., security team members)
  */
-async function verifyMultisigAttestations(userId: string, attestations: MultisigAttestation[], recipientAddr: string, toChain: BridgeChainName): Promise<boolean> {
+async function verifyMultisigAttestations(
+  userId: string,
+  attestations: MultisigAttestation[],
+  recipientAddr: string,
+  toChain: BridgeChainName,
+  tokenSymbol: string,
+  amount: number
+): Promise<boolean> {
   try {
     if (!Array.isArray(attestations) || attestations.length < 2) {
       return false;
     }
 
-    // TODO: Verify each attestation signature against known multisig signers
-    // Verify that attestations are recent (< 1 hour old)
-    // Verify that attestations match the exact transfer parameters
-    
-    // Temporary validation: ensure attestations have required fields
+    const signerAddresses = new Set<string>();
+    const allowedSigners = new Set<string>();
+
+    // Prefer DAO multisig signers for the user's DAO wallets, then fall back to any active multisig signer.
+    const userWallets = await db.select().from(wallets).where(eq(wallets.userId, userId));
+    const daoIds = Array.from(new Set(userWallets.map(w => w.daoId).filter(Boolean) as string[]));
+
+    if (daoIds.length > 0) {
+      const daoMultisigWallets = await db.select().from(multisigWallets).where(inArray(multisigWallets.daoId, daoIds));
+      const multisigWalletIds = daoMultisigWallets.map(mw => mw.id);
+      if (multisigWalletIds.length > 0) {
+        const signerRows = await db.select().from(multisigSigners).where(
+          and(
+            inArray(multisigSigners.multisigWalletId, multisigWalletIds),
+            eq(multisigSigners.isActive, true)
+          )
+        );
+        signerRows.forEach(s => allowedSigners.add((s.signerAddress || '').toLowerCase()));
+      }
+    }
+
+    if (!allowedSigners.size) {
+      const fallbackSigners = await db.select().from(multisigSigners).where(eq(multisigSigners.isActive, true));
+      fallbackSigners.forEach(s => allowedSigners.add((s.signerAddress || '').toLowerCase()));
+    }
+
+    if (!allowedSigners.size) {
+      logger.warn(`[SECURITY] No configured multisig signers available for ${userId}`);
+      return false;
+    }
+
+    const now = Date.now();
     for (const attestation of attestations) {
       if (!attestation.signer || !attestation.signature || !attestation.timestamp) {
         return false;
       }
-      
-      // Check timestamp is recent (within 1 hour)
+
+      const signerAddress = String(attestation.signer).toLowerCase();
+      if (!allowedSigners.has(signerAddress)) {
+        logger.warn(`[SECURITY] Unrecognized multisig attestation signer: ${attestation.signer}`);
+        return false;
+      }
+
       const attestationTime = new Date(attestation.timestamp).getTime();
-      const now = Date.now();
+      if (Number.isNaN(attestationTime)) {
+        return false;
+      }
       if (now - attestationTime > 60 * 60 * 1000) {
         return false; // Attestation expired
       }
+      if (attestationTime - now > 5 * 60 * 1000) {
+        return false; // Timestamp cannot be far in the future
+      }
+
+      const message = [
+        'YUKI Bridge Transfer Approval',
+        `userId:${userId}`,
+        `token:${tokenSymbol}`,
+        `amount:${amount}`,
+        `recipient:${recipientAddr}`,
+        `chain:${toChain}`,
+        `timestamp:${new Date(attestation.timestamp).toISOString()}`,
+      ].join('|');
+
+      let recoveredAddress: string;
+      try {
+        recoveredAddress = ethers.verifyMessage(message, attestation.signature).toLowerCase();
+      } catch (verifyError) {
+        logger.warn('[SECURITY] Failed to verify attestation signature', { error: verifyError, signer: attestation.signer });
+        return false;
+      }
+
+      if (recoveredAddress !== signerAddress) {
+        logger.warn('[SECURITY] Attestation signer mismatch', { recoveredAddress, expectedSigner: signerAddress });
+        return false;
+      }
+
+      signerAddresses.add(signerAddress);
     }
 
-    return true; // Attestations appear valid (implement full verification in production)
+    return signerAddresses.size >= 2;
   } catch (error) {
     logger.error(`[SECURITY] Error verifying multisig attestations for ${userId}:`, error);
     return false; // Fail closed for security
   }
+}
+
+async function resolveTokenSymbol(token: string): Promise<string> {
+  if (!token || typeof token !== 'string') {
+    return token;
+  }
+
+  if (token.startsWith('0x')) {
+    const normalized = token.toLowerCase();
+    const found = Object.values(TokenRegistry.getSupportedTokens()).find((t) =>
+      Object.values(t.address || {}).some((address) => address?.toLowerCase() === normalized)
+    );
+    return found?.symbol || token;
+  }
+
+  return token;
+}
+
+function getBridgeRouteInfo(tokenSymbol: string, fromChain: BridgeChainName, toChain: BridgeChainName) {
+  const token = TokenRegistry.getToken(tokenSymbol);
+  const routeConfig = token?.chains?.[fromChain]?.bridges?.[toChain];
+
+  return {
+    protocol: routeConfig?.protocol || 'LayerZero',
+    estimatedTime: routeConfig?.estimatedTime ?? 1800,
+    feePercent: routeConfig?.feePercentage ?? 0.05,
+  };
+}
+
+async function resolveBridgeSigner(chain: BridgeChainName, envVar: string): Promise<Signer> {
+  const privateKey = process.env[envVar] || process.env.BRIDGE_PRIVATE_KEY;
+  if (!privateKey) {
+    throw new Error(`Missing bridge private key configuration: ${envVar} or BRIDGE_PRIVATE_KEY`);
+  }
+
+  const provider = ChainRegistry.getEVMProvider(chain as SupportedChain);
+  const signer = createWalletIfValid(privateKey, provider);
+  if (!signer) {
+    throw new Error(`Invalid bridge private key configured for ${chain}`);
+  }
+
+  return signer;
 }
 
 /**
@@ -709,14 +858,30 @@ async function verifyMultisigAttestations(userId: string, attestations: Multisig
  */
 async function logBridgeTransferAudit(transferRecord: BridgeTransferAuditRecord): Promise<void> {
   try {
-    // TODO: Write to immutable audit log table
-    // INSERT INTO bridge_transfer_audit_log (user_id, transfer_id, token, amount, from_chain, to_chain, recipient_addr, status, timestamp, is_high_value)
-    // VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    
+    await logConsolidatedAuditEvent({
+      actorId: transferRecord.userId,
+      actionType: AuditEventType.CROSS_CHAIN_OPERATION,
+      actionCategory: 'security',
+      targetType: 'bridge_transfer',
+      targetId: transferRecord.transferId,
+      result: transferRecord.status === 'failed' ? 'failed' : 'success',
+      resultReason: transferRecord.status,
+      metadata: {
+        token: transferRecord.token,
+        amount: transferRecord.amount,
+        fromChain: transferRecord.fromChain,
+        toChain: transferRecord.toChain,
+        recipientAddr: transferRecord.recipientAddr,
+        isHighValue: transferRecord.isHighValue,
+      },
+      severity: transferRecord.isHighValue ? 'high' : 'medium',
+      ipAddress: 'system',
+      endpoint: '/api/yuki/execute/bridge',
+    });
+
     logger.info(`[AUDIT] Bridge transfer logged: ${transferRecord.transferId} from ${transferRecord.userId} to ${transferRecord.recipientAddr} via ${transferRecord.toChain}`);
   } catch (error) {
     logger.error('[CRITICAL] Failed to log bridge transfer audit to database:', error);
-    // This should alert operations team - audit log failure is critical
     throw error;
   }
 }
@@ -836,25 +1001,32 @@ router.post('/execute/flash-loan', [authenticateToken, yukiFlashLoanLimiter], as
  */
 router.post('/strategies', [authenticateToken], async (req: Request, res: Response) => {
   try {
-    const { name, description, blocks } = req.body;
+    const { name, description, allocations, rebalanceFrequencyDays, tags, riskLevel, deploymentChain, blocks } = req.body;
     const userId = req.user?.id;
 
-    // Validates blocks structure and saves to database
-    const strategyId = 'strat_' + Math.random().toString(16).slice(2);
+    const strategyAllocations = Array.isArray(allocations)
+      ? allocations
+      : Array.isArray(blocks)
+      ? blocks
+      : [];
+
+    const strategy = await strategyDashboardService.createStrategy({
+      creatorId: userId || 'anonymous',
+      name,
+      description,
+      allocations: strategyAllocations,
+      rebalanceFrequencyDays,
+      tags,
+      riskLevel,
+      deploymentChain,
+    });
 
     res.json({
       success: true,
-      data: {
-        id: strategyId,
-        name,
-        description,
-        blocks,
-        status: 'draft',
-        createdAt: new Date().toISOString(),
-      },
+      data: strategy,
     });
   } catch (error) {
-    res.status(500).json({ success: false, error: String(error) });
+    res.status(500).json({ success: false, error: error instanceof Error ? error.message : String(error) });
   }
 });
 
@@ -866,17 +1038,7 @@ router.get('/strategies', [authenticateToken], async (req: Request, res: Respons
   try {
     const userId = req.user?.id;
 
-    // Queries database for user's strategies
-    const strategies = [
-      {
-        id: 'strat_1',
-        name: 'ETH Mean Reversion',
-        blocks: 5,
-        status: 'active',
-        pnl: 2345,
-        trades: 12,
-      },
-    ];
+    const strategies = await strategyDashboardService.getUserCreatedStrategies(userId || 'anonymous');
 
     res.json({
       success: true,
@@ -896,15 +1058,14 @@ router.get('/strategies/:id', [authenticateToken], async (req: Request, res: Res
     const { id } = req.params;
     const userId = req.user?.id;
 
-    // Queries database for strategy by ID and verifies ownership
-    const strategy = {
-      id,
-      name: 'ETH Mean Reversion',
-      description: 'Sells when RSI > 70, buys when RSI < 30',
-      blocks: [],
-      status: 'active',
-      deploymentHistory: [],
-    };
+    const strategy = await strategyDashboardService.getStrategyDetails(id);
+    if (!strategy) {
+      return res.status(404).json({ success: false, error: 'Strategy not found' });
+    }
+
+    if (strategy.creator !== userId) {
+      return res.status(403).json({ success: false, error: 'Unauthorized access to strategy' });
+    }
 
     res.json({
       success: true,
@@ -922,13 +1083,30 @@ router.get('/strategies/:id', [authenticateToken], async (req: Request, res: Res
 router.put('/strategies/:id', [authenticateToken], async (req: Request, res: Response) => {
   try {
     const { id } = req.params;
-    const { name, description, blocks } = req.body;
+    const { name, description, allocations, rebalanceFrequencyDays, tags, riskLevel, deploymentChain } = req.body;
     const userId = req.user?.id;
 
-    // Verifies ownership and updates in database
+    const strategy = await strategyDashboardService.getStrategyDetails(id);
+    if (!strategy) {
+      return res.status(404).json({ success: false, error: 'Strategy not found' });
+    }
+    if (strategy.creator !== userId) {
+      return res.status(403).json({ success: false, error: 'Unauthorized to update strategy' });
+    }
+
+    const updated = await strategyDashboardService.updateStrategy(id, {
+      name,
+      description,
+      targetAllocation: Array.isArray(allocations) ? Object.fromEntries(allocations.map((a: any) => [a.asset, a.weight])) : strategy.targetAllocation,
+      rebalanceFrequency: strategy.rebalanceFrequency,
+      riskLevel: riskLevel || strategy.riskLevel,
+      tags: tags || strategy.tags,
+      nextRebalance: strategy.nextRebalance,
+    });
+
     res.json({
       success: true,
-      data: { id, name, description, blocks },
+      data: updated,
     });
   } catch (error) {
     res.status(500).json({ success: false, error: String(error) });
@@ -944,7 +1122,15 @@ router.delete('/strategies/:id', [authenticateToken], async (req: Request, res: 
     const { id } = req.params;
     const userId = req.user?.id;
 
-    // Verifies ownership and deletes from database
+    const strategy = await strategyDashboardService.getStrategyDetails(id);
+    if (!strategy) {
+      return res.status(404).json({ success: false, error: 'Strategy not found' });
+    }
+    if (strategy.creator !== userId) {
+      return res.status(403).json({ success: false, error: 'Unauthorized to delete strategy' });
+    }
+
+    await strategyDashboardService.deactivateStrategy(id);
     res.json({
       success: true,
       message: 'Strategy deleted',
@@ -963,7 +1149,19 @@ router.post('/strategies/:id/deploy', [authenticateToken], async (req: Request, 
     const { id } = req.params;
     const userId = req.user?.id;
 
-    // Starts strategy listener/executor service
+    const strategy = await strategyDashboardService.getStrategyDetails(id);
+    if (!strategy) {
+      return res.status(404).json({ success: false, error: 'Strategy not found' });
+    }
+    if (strategy.creator !== userId) {
+      return res.status(403).json({ success: false, error: 'Unauthorized to deploy strategy' });
+    }
+
+    const deployed = await strategyDashboardService.deployStrategy(id);
+    if (!deployed) {
+      return res.status(500).json({ success: false, error: 'Failed to deploy strategy' });
+    }
+
     res.json({
       success: true,
       data: {
@@ -1002,7 +1200,7 @@ router.post('/strategies/:id/deploy', [authenticateToken], async (req: Request, 
 router.post('/strategies/:id/backtest', [authenticateToken, yukiBacktestLimiter], async (req: Request, res: Response) => {
   try {
     const { id: strategyId } = req.params;
-    const userId = (req as AuthRequest).user?.id;
+    const userId = req.user?.id;
     const {
       startDate,
       endDate,
@@ -1069,6 +1267,11 @@ router.post('/strategies/:id/backtest', [authenticateToken, yukiBacktestLimiter]
 
     const timerange = `${formatDate(start)}-${formatDate(end)}`;
 
+    const strategy = await strategyDashboardService.getStrategyDetails(strategyId);
+    if (!strategy) {
+      return res.status(404).json({ success: false, error: 'Strategy not found' });
+    }
+
     // Queue backtest job via shared job queue service
     const jobId = await jobQueueService.queueJob('strategy-backtest', {
       userId,
@@ -1119,14 +1322,18 @@ router.get('/strategies/:id/signals', [authenticateToken], async (req: Request, 
   try {
     const { id } = req.params;
 
-    // Returns live signals from strategy executor
+    const strategy = await strategyDashboardService.getStrategyDetails(id);
+    if (!strategy) {
+      return res.status(404).json({ success: false, error: 'Strategy not found' });
+    }
+
     const signals = [
       {
+        strategyId: id,
         timestamp: new Date().toISOString(),
-        blockId: 'block_1',
-        condition: 'RSI > 70',
-        triggered: true,
-        value: 72.5,
+        condition: 'strategy_heartbeat',
+        message: `Strategy ${strategy.name} is active and monitoring market conditions.`,
+        active: true,
       },
     ];
 
@@ -1143,41 +1350,154 @@ router.get('/strategies/:id/signals', [authenticateToken], async (req: Request, 
 // STRATEGY MARKETPLACE ENDPOINTS
 // ============================================================================
 
+const marketplaceListSchema = z.object({
+  category: z.string().optional(),
+  riskLevel: z.enum(['low', 'medium', 'high']).optional(),
+  sortBy: z.enum(['popularity', 'recent', 'rating', 'returns']).default('popularity'),
+  search: z.string().optional(),
+  skip: z.string().optional().default('0'),
+  limit: z.string().optional().default('20'),
+});
+
+const marketplacePublishSchema = z.object({
+  strategyId: z.string().min(1, 'Strategy ID required'),
+  title: z.string().min(5, 'Title must be at least 5 chars').max(120),
+  description: z.string().min(20, 'Description must be at least 20 chars').max(1000),
+  category: z.string().min(1, 'Category required'),
+  tags: z.array(z.string()).max(6),
+  isPublic: z.boolean().default(true),
+  pricing: z.object({
+    isFree: z.boolean().default(true),
+    monthlyUSD: z.number().min(0).optional(),
+  }).default({ isFree: true }),
+  riskLevel: z.enum(['low', 'medium', 'high']).default('medium'),
+  minCapital: z.number().positive().optional(),
+});
+
+const exchangeIdSchema = z.object({ id: z.string().min(1, 'Exchange ID required') });
+
+const routingCompareSchema = z.object({
+  symbol: z.string().min(1, 'Symbol required'),
+  amount: z.number().positive('Amount must be positive'),
+  side: z.enum(['buy', 'sell']).default('buy'),
+  exchanges: z.array(z.string()).optional(),
+  goal: z.enum(['accumulate', 'execute', 'stealth', 'cheap']).optional(),
+  urgency: z.enum(['low', 'medium', 'high']).optional(),
+});
+
+const routingExecuteSchema = z.object({
+  symbol: z.string().min(1, 'Symbol required'),
+  amount: z.number().positive('Amount must be positive'),
+  venue: z.enum(['dex', 'cex']).default('cex'),
+  side: z.enum(['buy', 'sell']).default('buy'),
+  slippage: z.number().min(0).max(100).optional(),
+  exchangeId: z.string().optional(),
+  predictBefore: z.boolean().optional().default(true),
+});
+
+async function withRetry<T>(fn: () => Promise<T>, maxRetries = 3, baseDelay = 1000): Promise<T> {
+  let lastError: Error | null = null;
+  for (let attempt = 0; attempt < maxRetries; attempt++) {
+    try {
+      return await fn();
+    } catch (error) {
+      lastError = error as Error;
+      if (attempt < maxRetries - 1) {
+        await new Promise((resolve) => setTimeout(resolve, baseDelay * Math.pow(2, attempt)));
+      }
+    }
+  }
+  throw lastError || new Error('Retry failed');
+}
+
 /**
  * GET /api/yuki/marketplace/strategies
  * Discover strategies in marketplace
  */
 router.get('/marketplace/strategies', async (req, res) => {
   try {
-    const { filter = 'all', sort = 'return', search } = req.query;
+    const query = marketplaceListSchema.parse(req.query);
+    const skip = Math.max(0, parseInt(query.skip, 10));
+    const limit = Math.min(Math.max(1, parseInt(query.limit, 10)), 100);
 
-    // Queries published strategies from database
-    const strategies = [
-      {
-        id: 'mp_eth_mr',
-        name: 'ETH Mean Reversion',
-        creator: { name: 'TraderAlpha', verified: true, badge: 'top-performer' },
-        category: 'mean-reversion',
-        metrics: {
-          return1y: 127,
-          sharpe: 1.85,
-          maxDD: 12.3,
-          winRate: 0.68,
-          trades: 234,
-        },
-        followers: 234,
-        rating: 4.8,
-        pricing: { type: 'free' },
-        imageUrl: '...',
+    let whereClause = 'WHERE is_published = true AND is_public = true';
+    const params: any[] = [];
+
+    if (query.category) {
+      whereClause += ` AND category = $${params.length + 1}`;
+      params.push(query.category);
+    }
+
+    if (query.riskLevel) {
+      whereClause += ` AND risk_level = $${params.length + 1}`;
+      params.push(query.riskLevel);
+    }
+
+    if (query.search) {
+      whereClause += ` AND (title ILIKE $${params.length + 1} OR description ILIKE $${params.length + 2})`;
+      params.push(`%${query.search}%`, `%${query.search}%`);
+    }
+
+    const sortMapping: Record<string, string> = {
+      popularity: 'copy_count DESC',
+      recent: 'published_at DESC',
+      rating: 'avg_rating DESC',
+      returns: 'avg_return DESC',
+    };
+
+    const totalResult = await pool.query(`SELECT COUNT(*) AS total FROM marketplace_strategies ${whereClause}`, params);
+    const total = parseInt(totalResult.rows[0]?.total || '0', 10);
+
+    const result = await pool.query(
+      `SELECT id, title, description, author_id, author_name, author_avatar, category, tags, risk_level, min_capital, avg_rating, copy_count, avg_return, published_at, updated_at
+       FROM marketplace_strategies
+       ${whereClause}
+       ORDER BY ${sortMapping[query.sortBy] || 'published_at DESC'}
+       LIMIT $${params.length + 1} OFFSET $${params.length + 2}`,
+      [...params, limit, skip]
+    );
+
+    const strategies = result.rows.map((row: any) => ({
+      id: row.id,
+      title: row.title,
+      description: row.description,
+      creator: {
+        id: row.author_id,
+        name: row.author_name,
+        avatar: row.author_avatar,
       },
-    ];
+      category: row.category,
+      tags: typeof row.tags === 'string' ? JSON.parse(row.tags) : row.tags || [],
+      riskLevel: row.risk_level,
+      minCapital: row.min_capital,
+      stats: {
+        rating: Number(row.avg_rating) || 0,
+        copies: Number(row.copy_count) || 0,
+        avgReturn: Number(row.avg_return) || 0,
+      },
+      publishedAt: row.published_at?.toISOString?.(),
+      updatedAt: row.updated_at?.toISOString?.(),
+    }));
 
-    res.json({
+    return res.json({
       success: true,
-      data: strategies,
+      data: {
+        strategies,
+        pagination: {
+          skip,
+          limit,
+          total,
+          pages: Math.ceil(total / limit),
+        },
+        timestamp: new Date().toISOString(),
+      },
     });
   } catch (error) {
-    res.status(500).json({ success: false, error: String(error) });
+    if (error instanceof z.ZodError) {
+      return res.status(400).json({ success: false, error: 'Invalid query parameters', details: error.errors });
+    }
+    logger.error('[YUKI-MARKETPLACE] Failed to list strategies', { error });
+    return res.status(500).json({ success: false, error: 'Failed to list marketplace strategies' });
   }
 });
 
@@ -1187,28 +1507,60 @@ router.get('/marketplace/strategies', async (req, res) => {
  */
 router.get('/marketplace/strategies/:id', async (req, res) => {
   try {
-    const { id } = req.params;
+    const { id } = z.object({ id: z.string().min(1) }).parse(req.params);
 
-    // Queries marketplace strategy with full details
+    const result = await pool.query(
+      `SELECT m.id, m.title, m.description, m.category, m.tags, m.author_id, m.author_name, m.author_avatar,
+              m.risk_level, m.min_capital, m.pricing, m.avg_rating, m.copy_count, m.avg_return, m.rating_count,
+              m.published_at, m.updated_at, s.total_trades, s.win_rate, s.max_drawdown, s.returns
+       FROM marketplace_strategies m
+       LEFT JOIN strategies s ON m.strategy_id = s.id
+       WHERE m.id = $1 AND m.is_published = true`,
+      [id]
+    );
+
+    if (result.rows.length === 0) {
+      return res.status(404).json({ success: false, error: 'Strategy not found or not published' });
+    }
+
+    const row = result.rows[0];
+    const pricing = typeof row.pricing === 'string' ? JSON.parse(row.pricing) : row.pricing;
+    const tags = typeof row.tags === 'string' ? JSON.parse(row.tags) : row.tags || [];
+
     const strategy = {
-      id,
-      name: 'ETH Mean Reversion',
-      creator: { name: 'TraderAlpha', verified: true },
-      description: 'Sells when RSI > 70, buys when RSI < 30 on 1h candles',
-      metrics: {
-        return1y: 127,
-        sharpe: 1.85,
+      id: row.id,
+      title: row.title,
+      description: row.description,
+      creator: {
+        id: row.author_id,
+        name: row.author_name,
+        avatar: row.author_avatar,
       },
-      reviews: [],
-      copiesByFollowers: 234,
+      category: row.category,
+      tags,
+      riskLevel: row.risk_level,
+      minCapital: row.min_capital,
+      pricing,
+      stats: {
+        rating: Number(row.avg_rating) || 0,
+        ratingCount: Number(row.rating_count) || 0,
+        copies: Number(row.copy_count) || 0,
+        avgReturn: Number(row.avg_return) || 0,
+        totalTrades: Number(row.total_trades) || 0,
+        winRate: Number(row.win_rate) ? Number((row.win_rate * 100).toFixed(2)) : 0,
+        maxDrawdown: Number(row.max_drawdown) ? Number((row.max_drawdown * 100).toFixed(2)) : 0,
+      },
+      publishedAt: row.published_at?.toISOString?.(),
+      updatedAt: row.updated_at?.toISOString?.(),
     };
 
-    res.json({
-      success: true,
-      data: strategy,
-    });
+    return res.json({ success: true, data: strategy });
   } catch (error) {
-    res.status(500).json({ success: false, error: String(error) });
+    if (error instanceof z.ZodError) {
+      return res.status(400).json({ success: false, error: 'Invalid strategy ID format', details: error.errors });
+    }
+    logger.error('[YUKI-MARKETPLACE] Failed to fetch strategy details', { error });
+    return res.status(500).json({ success: false, error: 'Failed to fetch strategy details' });
   }
 });
 
@@ -1218,23 +1570,69 @@ router.get('/marketplace/strategies/:id', async (req, res) => {
  */
 router.post('/marketplace/strategies/:id/copy', [authenticateToken], async (req: Request, res: Response) => {
   try {
-    const { id } = req.params;
+    const { id } = z.object({ id: z.string().min(1) }).parse(req.params);
     const userId = req.user?.id;
 
-    // Creates copy of strategy for user and tracks metrics for profit-share
-    const newStrategyId = 'strat_' + Math.random().toString(16).slice(2);
+    if (!userId) {
+      return res.status(401).json({ success: false, error: 'Authentication required' });
+    }
 
-    res.json({
+    const mktResult = await pool.query(
+      `SELECT strategy_id, title FROM marketplace_strategies WHERE id = $1 AND is_published = true`,
+      [id]
+    );
+
+    if (mktResult.rows.length === 0) {
+      return res.status(404).json({ success: false, error: 'Marketplace strategy not found' });
+    }
+
+    const marketplaceEntry = mktResult.rows[0];
+    const origResult = await pool.query(`SELECT id, name, description, target_allocations, rebalance_frequency, risk_level, tags, freqtrade_strategy_id, freqtrade_code, freqtrade_name FROM strategies WHERE id = $1`, [marketplaceEntry.strategy_id]);
+
+    if (origResult.rows.length === 0) {
+      return res.status(404).json({ success: false, error: 'Source strategy not found' });
+    }
+
+    const original = origResult.rows[0];
+    const copyId = `strat_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`;
+    const copyName = original.name ? `Copy of ${original.name}` : `Copy of ${marketplaceEntry.title}`;
+
+    await pool.query(
+      `INSERT INTO strategies (id, creator_id, name, description, target_allocations, rebalance_frequency, risk_level, tags, freqtrade_strategy_id, freqtrade_code, freqtrade_name, created_at, updated_at)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, NOW(), NOW())`,
+      [
+        copyId,
+        userId,
+        copyName,
+        original.description || '',
+        original.target_allocations || original.target_allocations || {},
+        original.rebalance_frequency || 'manual',
+        original.risk_level || 'medium',
+        original.tags || [],
+        original.freqtrade_strategy_id || null,
+        original.freqtrade_code || null,
+        original.freqtrade_name || null,
+      ]
+    );
+
+    await pool.query(`UPDATE marketplace_strategies SET copy_count = COALESCE(copy_count, 0) + 1 WHERE id = $1`, [id]);
+
+    return res.status(201).json({
       success: true,
       data: {
-        newStrategyId,
-        sourceStrategyId: id,
-        status: 'copied',
+        strategyId: copyId,
+        name: copyName,
         createdAt: new Date().toISOString(),
+        message: 'Strategy copied to personal library. Customize parameters before deployment.',
+        nextStep: `/api/yuki/strategies/${copyId}`,
       },
     });
   } catch (error) {
-    res.status(500).json({ success: false, error: String(error) });
+    if (error instanceof z.ZodError) {
+      return res.status(400).json({ success: false, error: 'Invalid request format', details: error.errors });
+    }
+    logger.error('[YUKI-MARKETPLACE] Failed to copy strategy', { error });
+    return res.status(500).json({ success: false, error: 'Failed to copy strategy' });
   }
 });
 
@@ -1244,20 +1642,72 @@ router.post('/marketplace/strategies/:id/copy', [authenticateToken], async (req:
  */
 router.post('/marketplace/strategies/publish', [authenticateToken], async (req: Request, res: Response) => {
   try {
-    const { strategyId, pricing, description, category } = req.body;
+    const params = marketplacePublishSchema.parse(req.body);
     const userId = req.user?.id;
 
-    // Verifies strategy performance and publishes to marketplace
-    res.json({
+    if (!userId) {
+      return res.status(401).json({ success: false, error: 'Authentication required' });
+    }
+
+    const stratResult = await pool.query(`SELECT id, creator_id, total_value_locked FROM strategies WHERE id = $1`, [params.strategyId]);
+    if (stratResult.rows.length === 0) {
+      return res.status(404).json({ success: false, error: 'Strategy not found' });
+    }
+
+    if (stratResult.rows[0].creator_id !== userId) {
+      return res.status(403).json({ success: false, error: 'Unauthorized: Can only publish own strategies' });
+    }
+
+    const userResult = await pool.query(`SELECT username, avatar_url FROM users WHERE id = $1`, [userId]);
+    const userInfo = userResult.rows[0] || {};
+
+    const marketplaceId = `mkt_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`;
+    const insertResult = await pool.query(
+      `INSERT INTO marketplace_strategies (
+         id, strategy_id, author_id, author_name, author_avatar,
+         title, description, category, tags, risk_level, min_capital,
+         is_public, pricing, is_published, published_at, avg_return
+       ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, true, NOW(), $14)
+       RETURNING id, published_at`,
+      [
+        marketplaceId,
+        params.strategyId,
+        userId,
+        userInfo.username || 'Anonymous',
+        userInfo.avatar_url || null,
+        params.title,
+        params.description,
+        params.category,
+        JSON.stringify(params.tags),
+        params.riskLevel,
+        params.minCapital || null,
+        params.isPublic,
+        JSON.stringify(params.pricing),
+        Number(stratResult.rows[0].total_value_locked || 0),
+      ]
+    );
+
+    try {
+      await redis.del('marketplace_strategies_list');
+    } catch (cacheErr) {
+      logger.warn('[YUKI-MARKETPLACE] Failed to invalidate cache', { error: cacheErr });
+    }
+
+    return res.status(201).json({
       success: true,
       data: {
-        strategyId,
-        status: 'published',
-        publishedAt: new Date().toISOString(),
+        marketplaceId: insertResult.rows[0].id,
+        title: params.title,
+        publishedAt: insertResult.rows[0].published_at?.toISOString?.(),
+        url: `/api/yuki/marketplace/strategies/${insertResult.rows[0].id}`,
       },
     });
   } catch (error) {
-    res.status(500).json({ success: false, error: String(error) });
+    if (error instanceof z.ZodError) {
+      return res.status(400).json({ success: false, error: 'Invalid request format', details: error.errors });
+    }
+    logger.error('[YUKI-MARKETPLACE] Failed to publish strategy', { error });
+    return res.status(500).json({ success: false, error: 'Failed to publish strategy' });
   }
 });
 
@@ -1272,25 +1722,30 @@ router.post('/marketplace/strategies/publish', [authenticateToken], async (req: 
 router.get('/exchanges', [authenticateToken], async (req: Request, res: Response) => {
   try {
     const userId = req.user?.id;
+    if (!userId) {
+      return res.status(401).json({ success: false, error: 'Authentication required' });
+    }
 
-    // Queries database for user's connected exchanges
-    const exchanges = [
-      {
-        id: 'kraken_001',
-        name: 'Kraken',
-        connected: true,
-        apiKeyStatus: 'active',
-        balance: 50000,
-        lastSync: new Date().toISOString(),
-      },
-    ];
+    const result = await pool.query(
+      `SELECT id, exchange, is_active, last_used_at, created_at
+       FROM cex_credentials WHERE user_id = $1 AND is_active = true
+       ORDER BY last_used_at DESC NULLS LAST`,
+      [userId]
+    );
 
-    res.json({
-      success: true,
-      data: exchanges,
-    });
+    const exchanges = result.rows.map((row: any) => ({
+      id: row.id,
+      name: row.exchange,
+      connected: row.is_active,
+      apiKeyStatus: row.is_active ? 'active' : 'disabled',
+      lastSync: row.last_used_at?.toISOString?.() || null,
+      connectedAt: row.created_at?.toISOString?.(),
+    }));
+
+    return res.json({ success: true, data: exchanges });
   } catch (error) {
-    res.status(500).json({ success: false, error: String(error) });
+    logger.error('[YUKI-EXCHANGES] Failed to list connected exchanges', { error, userId: req.user?.id });
+    return res.status(500).json({ success: false, error: 'Failed to list connected exchanges' });
   }
 });
 
@@ -1300,23 +1755,37 @@ router.get('/exchanges', [authenticateToken], async (req: Request, res: Response
  */
 router.post('/exchanges', [authenticateToken], async (req: Request, res: Response) => {
   try {
-    const { exchangeName, apiKey, apiSecret } = req.body;
+    const { exchangeName, apiKey, apiSecret, apiPassphrase } = req.body as {
+      exchangeName: string;
+      apiKey: string;
+      apiSecret: string;
+      apiPassphrase?: string;
+    };
     const userId = req.user?.id;
+    if (!userId) {
+      return res.status(401).json({ success: false, error: 'Authentication required' });
+    }
 
-    // Validates API key with exchange, encrypts and stores it
-    const exchangeId = exchangeName.toLowerCase() + '_' + Math.random().toString(16).slice(2);
+    const credential = await CEXCredentialRepository.storeCredentials(
+      userId,
+      exchangeName,
+      apiKey,
+      apiSecret,
+      apiPassphrase
+    );
 
-    res.json({
+    return res.status(201).json({
       success: true,
       data: {
-        id: exchangeId,
-        name: exchangeName,
-        connected: true,
-        apiKeyStatus: 'active',
+        id: credential.id,
+        name: credential.exchange,
+        connected: credential.isActive,
+        apiKeyStatus: credential.isActive ? 'active' : 'inactive',
       },
     });
   } catch (error) {
-    res.status(500).json({ success: false, error: String(error) });
+    logger.error('[YUKI-EXCHANGES] Failed to connect exchange', { error, userId: req.user?.id });
+    return res.status(500).json({ success: false, error: error instanceof Error ? error.message : 'Failed to connect exchange' });
   }
 });
 
@@ -1326,16 +1795,24 @@ router.post('/exchanges', [authenticateToken], async (req: Request, res: Respons
  */
 router.delete('/exchanges/:id', [authenticateToken], async (req: Request, res: Response) => {
   try {
-    const { id } = req.params;
+    const { id } = exchangeIdSchema.parse(req.params);
     const userId = req.user?.id;
+    if (!userId) {
+      return res.status(401).json({ success: false, error: 'Authentication required' });
+    }
 
-    // Revokes API key and deletes from database
-    res.json({
-      success: true,
-      message: 'Exchange disconnected',
-    });
+    const result = await pool.query(`UPDATE cex_credentials SET is_active = false, updated_at = NOW() WHERE id = $1 AND user_id = $2`, [id, userId]);
+    if (result.rowCount === 0) {
+      return res.status(404).json({ success: false, error: 'Exchange account not found' });
+    }
+
+    return res.json({ success: true, message: 'Exchange disconnected' });
   } catch (error) {
-    res.status(500).json({ success: false, error: String(error) });
+    if (error instanceof z.ZodError) {
+      return res.status(400).json({ success: false, error: 'Invalid request format', details: error.errors });
+    }
+    logger.error('[YUKI-EXCHANGES] Failed to disconnect exchange', { error });
+    return res.status(500).json({ success: false, error: 'Failed to disconnect exchange' });
   }
 });
 
@@ -1345,23 +1822,98 @@ router.delete('/exchanges/:id', [authenticateToken], async (req: Request, res: R
  */
 router.get('/exchanges/:id/balances', [authenticateToken], async (req: Request, res: Response) => {
   try {
-    const { id } = req.params;
+    const { id } = exchangeIdSchema.parse(req.params);
     const userId = req.user?.id;
+    if (!userId) {
+      return res.status(401).json({ success: false, error: 'Authentication required' });
+    }
 
-    // Uses CCXT to fetch balances from exchange
-    const balances = {
-      USD: 30000,
-      ETH: 5,
-      BTC: 0.25,
-      USDC: 15000,
+    const cacheKey = `balance:${userId}:${id}`;
+    try {
+      const cached = await redis.get(cacheKey);
+      if (cached) {
+        return res.json({ success: true, data: JSON.parse(cached), _cached: true });
+      }
+    } catch (cacheErr) {
+      logger.warn('[YUKI-EXCHANGES] Balance cache miss', { error: cacheErr, userId, exchangeId: id });
+    }
+
+    const credResult = await pool.query(`SELECT exchange FROM cex_credentials WHERE id = $1 AND user_id = $2 AND is_active = true`, [id, userId]);
+    if (credResult.rows.length === 0) {
+      return res.status(404).json({ success: false, error: 'Exchange account not found' });
+    }
+
+    const exchange = credResult.rows[0].exchange?.toLowerCase();
+    const rawBalances = await withRetry(async () => ccxtService.getBalances(exchange), 3, 1000);
+
+    const formattedBalances = Object.entries(rawBalances)
+      .filter(([_symbol, data]: any) => data.total > 0)
+      .map(([symbol, data]: any) => ({
+        symbol,
+        free: data.free || 0,
+        used: data.used || 0,
+        total: data.total || 0,
+      }))
+      .sort((a, b) => b.total - a.total);
+
+    const symbols = formattedBalances.map((b) => b.symbol.toUpperCase());
+    let pricesMap = new Map<string, { priceUsd?: number }>();
+    try {
+      pricesMap = await priceOracle.getPrices(symbols);
+    } catch (priceError) {
+      logger.warn('[YUKI-EXCHANGES] Price lookup failed for balances', { error: priceError });
+    }
+
+    let totalValue = 0;
+    formattedBalances.forEach((b) => {
+      const priceObj = pricesMap.get(b.symbol.toUpperCase());
+      const price = priceObj?.priceUsd || 0;
+      const valueReliable = price > 0;
+      const value = valueReliable ? b.total * price : 0;
+      (b as any).value = Number(value.toFixed(2));
+      (b as any).valueReliable = valueReliable;
+      if (valueReliable) totalValue += value;
+    });
+
+    let gasCost = 0;
+    try {
+      const gasData = await gasPriceOracle.getCurrentGasPrices(undefined as any, 'ethereum');
+      gasCost = parseFloat(gasData.standard) / 1e9;
+    } catch (gasError) {
+      logger.warn('[YUKI-EXCHANGES] Failed to fetch gas prices', { error: gasError });
+    }
+
+    await pool.query(`UPDATE cex_credentials SET last_used_at = NOW() WHERE id = $1`, [id]);
+
+    const responseData = {
+      exchangeId: id,
+      exchange,
+      balances: formattedBalances,
+      summary: {
+        totalAssets: formattedBalances.length,
+        totalFree: formattedBalances.reduce((sum, b) => sum + b.free, 0),
+        totalUsed: formattedBalances.reduce((sum, b) => sum + b.used, 0),
+        totalValue: Number(totalValue.toFixed(2)),
+        estimatedGasCost: Number(gasCost.toFixed(2)),
+        netValue: Number(Math.max(0, totalValue - gasCost).toFixed(2)),
+        currency: 'USD',
+      },
+      lastUpdated: new Date().toISOString(),
     };
 
-    res.json({
-      success: true,
-      data: balances,
-    });
+    try {
+      await redis.setex(cacheKey, 30, JSON.stringify(responseData));
+    } catch (cacheErr) {
+      logger.warn('[YUKI-EXCHANGES] Failed to cache balances', { error: cacheErr });
+    }
+
+    return res.json({ success: true, data: responseData });
   } catch (error) {
-    res.status(500).json({ success: false, error: String(error) });
+    if (error instanceof z.ZodError) {
+      return res.status(400).json({ success: false, error: 'Invalid request format', details: error.errors });
+    }
+    logger.error('[YUKI-EXCHANGES] Failed to fetch balances', { error, userId: req.user?.id });
+    return res.status(500).json({ success: false, error: 'Failed to fetch exchange balances' });
   }
 });
 
@@ -1371,28 +1923,95 @@ router.get('/exchanges/:id/balances', [authenticateToken], async (req: Request, 
  */
 router.get('/exchanges/:id/positions', [authenticateToken], async (req: Request, res: Response) => {
   try {
-    const { id } = req.params;
+    const { id } = exchangeIdSchema.parse(req.params);
     const userId = req.user?.id;
+    if (!userId) {
+      return res.status(401).json({ success: false, error: 'Authentication required' });
+    }
 
-    // Uses CCXT to fetch open positions from exchange
-    const positions = [
-      {
-        symbol: 'ETH/USD',
+    const credResult = await pool.query(`SELECT exchange FROM cex_credentials WHERE id = $1 AND user_id = $2 AND is_active = true`, [id, userId]);
+    if (credResult.rows.length === 0) {
+      return res.status(404).json({ success: false, error: 'Exchange account not found' });
+    }
+
+    const exchange = credResult.rows[0].exchange?.toLowerCase();
+    const positions = await withRetry(async () => ccxtService.fetchOpenPositions(exchange), 2, 1000);
+    const rawBalances = await withRetry(async () => ccxtService.getBalances(exchange), 2, 1000);
+
+    const spotPositions = Object.entries(rawBalances)
+      .filter(([_symbol, data]: any) => data.total > 0)
+      .map(([symbol, data]: any) => ({
+        id: `spot_${symbol}_${Date.now()}`,
+        symbol,
         side: 'long',
-        size: 5,
-        entryPrice: 2800,
-        currentPrice: 2847.5,
-        pnl: 237.5,
-        pnlPercent: 1.7,
-      },
-    ];
+        size: data.total || 0,
+        entryPrice: 0,
+        currentPrice: 0,
+        pnl: 0,
+        pnlPercent: 0,
+        leverage: 1,
+        liquidationPrice: null,
+        type: 'spot',
+        openedAt: new Date().toISOString(),
+      }));
 
-    res.json({
+    const perpetualPositions = Array.isArray(positions)
+      ? positions.map((p: any) => ({
+          id: p.id || `perp_${p.symbol}_${Date.now()}`,
+          symbol: p.symbol || 'UNKNOWN',
+          side: p.side === 'long' || (p.contracts && p.contracts > 0) ? 'long' : 'short',
+          size: p.contracts || 0,
+          entryPrice: p.entryPrice || 0,
+          currentPrice: p.markPrice || p.lastPrice || 0,
+          pnl: p.unrealizedPnl || 0,
+          pnlPercent: p.percentage || 0,
+          leverage: p.leverage || 1,
+          liquidationPrice: p.liquidationPrice || null,
+          type: 'perpetual',
+          openedAt: p.timestamp ? new Date(p.timestamp).toISOString() : new Date().toISOString(),
+        }))
+      : [];
+
+    const allPositions = [...spotPositions, ...perpetualPositions];
+
+    let executionGasCost = 0;
+    try {
+      const gasData = await gasPriceOracle.getCurrentGasPrices(undefined as any, 'ethereum');
+      executionGasCost = parseFloat(gasData.standard) / 1e9;
+    } catch (gasError) {
+      logger.warn('[YUKI-EXCHANGES] Could not fetch gas price for positions', { error: gasError });
+    }
+
+    const totalPnl = allPositions.reduce((sum, p) => sum + (p.pnl || 0), 0);
+    const totalValue = allPositions.reduce((sum, p) => sum + ((p.size || 0) * (p.currentPrice || 0)), 0);
+
+    return res.json({
       success: true,
-      data: positions,
+      data: {
+        exchangeId: id,
+        exchange,
+        positions: allPositions,
+        summary: {
+          totalPositions: allPositions.length,
+          spotPositions: spotPositions.length,
+          perpetualPositions: perpetualPositions.length,
+          totalPnl: Number(totalPnl.toFixed(2)),
+          realizedPnl: Number((totalPnl - executionGasCost).toFixed(2)),
+          estimatedClosureCost: Number(executionGasCost.toFixed(2)),
+          totalValue: Number(totalValue.toFixed(2)),
+          winRate: allPositions.length > 0
+            ? `${((allPositions.filter((p) => p.pnl > 0).length / allPositions.length) * 100).toFixed(1)}%`
+            : '0%',
+        },
+        lastUpdated: new Date().toISOString(),
+      },
     });
   } catch (error) {
-    res.status(500).json({ success: false, error: String(error) });
+    if (error instanceof z.ZodError) {
+      return res.status(400).json({ success: false, error: 'Invalid request format', details: error.errors });
+    }
+    logger.error('[YUKI-EXCHANGES] Failed to fetch exchange positions', { error, userId: req.user?.id });
+    return res.status(500).json({ success: false, error: 'Failed to fetch exchange positions' });
   }
 });
 
@@ -1406,38 +2025,78 @@ router.get('/exchanges/:id/positions', [authenticateToken], async (req: Request,
  */
 router.post('/routing/compare', [authenticateToken], async (req: Request, res: Response) => {
   try {
-    const { symbol, amount, side = 'buy' } = req.body;
+    const params = routingCompareSchema.parse(req.body);
+    const userId = req.user?.id;
 
-    // Queries DEX aggregators (1inch, 0x) and CEX APIs via CCXT
-    const routes = [
-      {
-        venue: 'Uniswap V3',
-        type: 'dex',
-        price: 2845,
-        slippage: 0.15,
-        gas: 45,
-        totalCost: 28495,
-      },
-      {
-        venue: 'Kraken',
-        type: 'cex',
-        price: 2840,
-        fee: 28.4,
-        totalCost: 28428,
-      },
-    ];
+    const intent = {
+      goal: params.goal || 'cheap',
+      urgency: params.urgency || 'medium',
+      sensitivity: 'price' as const,
+    };
 
-    res.json({
+    const routing = await orderRouter.comparePrices(
+      params.symbol,
+      params.amount,
+      params.side,
+      params.exchanges || ['binance', 'coinbase', 'kraken', 'kucoin', 'okx', 'bybit'],
+      intent
+    );
+
+    const routes = routing.recommendations.map((rec, idx) => ({
+      id: `route_${rec.venue}_${idx}`,
+      venue: rec.venue === 'dex' ? 'DEX' : rec.exchange || 'CEX',
+      type: rec.venue,
+      protocol: rec.venue === 'dex' ? 'Smart Contract' : 'API',
+      executionPrice: rec.price,
+      fee: rec.fee || rec.gasCost || 0,
+      slippage: rec.slippage || 0,
+      priceImpact: rec.slippage ? (rec.slippage / (params.amount * rec.price)) * 100 : 0,
+      totalCost: rec.totalWithCosts,
+      confidence: rec.confidence,
+      reasoning: rec.reasoning,
+      liquidity: 0,
+    }));
+
+    if (routes.length === 0) {
+      return res.status(503).json({
+        success: false,
+        error: 'No routing quotes available',
+        details: 'Unable to fetch quotes from DEX/CEX services',
+      });
+    }
+
+    try {
+      await pool.query(
+        `INSERT INTO limit_orders (user_id, symbol, side, status, created_at)
+         VALUES ($1, $2, $3, 'pending', NOW())
+         ON CONFLICT (user_id, symbol, side) DO UPDATE SET created_at = NOW()`,
+        [userId, params.symbol, params.side]
+      );
+    } catch (loggingError) {
+      logger.warn('[YUKI-ROUTING] Failed to log routing analytics', { error: loggingError });
+    }
+
+    return res.json({
       success: true,
       data: {
-        symbol,
-        amount,
+        symbol: params.symbol,
+        amount: params.amount,
+        side: params.side,
+        intent,
         routes,
-        bestRoute: routes[1], // Lowest cost
+        recommended: routes[0],
+        savings: routing.savings,
+        savingsPercent: `${routing.savingsPercent.toFixed(2)}%`,
+        timestamp: new Date().toISOString(),
       },
     });
   } catch (error) {
-    res.status(500).json({ success: false, error: String(error) });
+    if (error instanceof z.ZodError) {
+      return res.status(400).json({ success: false, error: 'Invalid request format', details: error.errors });
+    }
+
+    logger.error('[YUKI-ROUTING] Failed to compare routes', { error });
+    return res.status(500).json({ success: false, error: 'Failed to compare routes' });
   }
 });
 
@@ -1447,24 +2106,71 @@ router.post('/routing/compare', [authenticateToken], async (req: Request, res: R
  */
 router.post('/routing/execute', [authenticateToken], async (req: Request, res: Response) => {
   try {
-    const { symbol, amount, venue } = req.body;
+    const params = routingExecuteSchema.parse(req.body);
     const userId = req.user?.id;
 
-    // Executes trade on selected venue
-    const txHash = '0x' + Math.random().toString(16).slice(2);
+    if (params.venue === 'cex' && !params.exchangeId) {
+      return res.status(400).json({ success: false, error: 'Exchange ID required for CEX execution' });
+    }
 
-    res.json({
-      success: true,
-      data: {
-        txHash,
-        status: 'submitted',
-        venue,
-        symbol,
-        amount,
-      },
+    if (params.venue === 'cex') {
+      const credResult = await pool.query(
+        `SELECT exchange FROM cex_credentials WHERE id = $1 AND user_id = $2 AND is_active = true`,
+        [params.exchangeId, userId]
+      );
+
+      if (credResult.rows.length === 0) {
+        return res.status(404).json({ success: false, error: 'Exchange account not found or inactive' });
+      }
+
+      const exchange = credResult.rows[0].exchange;
+      const orderResult = await withRetry(async () => {
+        return await ccxtService.placeMarketOrder(
+          exchange,
+          params.symbol,
+          params.side,
+          params.amount
+        );
+      }, 2, 1000);
+
+      await pool.query(
+        `INSERT INTO limit_orders (user_id, exchange, symbol, side, amount, status, created_at, order_id)
+         VALUES ($1, $2, $3, $4, $5, 'filled', NOW(), $6)
+         ON CONFLICT DO NOTHING`,
+        [userId, exchange, params.symbol, params.side, params.amount, orderResult.orderId]
+      );
+
+      return res.json({
+        success: true,
+        data: {
+          executionId: `exec_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`,
+          venue: exchange,
+          type: 'cex',
+          symbol: params.symbol,
+          amount: params.amount,
+          side: params.side,
+          orderId: orderResult.orderId,
+          status: 'completed',
+          executionPrice: orderResult.average?.toFixed(8),
+          filled: orderResult.filled?.toFixed(8),
+          fee: orderResult.fee?.toFixed(8),
+          timestamp: new Date().toISOString(),
+        },
+      });
+    }
+
+    return res.status(501).json({
+      success: false,
+      error: 'DEX execution not currently available',
+      details: 'dexIntegrationService pending integration',
     });
   } catch (error) {
-    res.status(500).json({ success: false, error: String(error) });
+    if (error instanceof z.ZodError) {
+      return res.status(400).json({ success: false, error: 'Invalid request format', details: error.errors });
+    }
+
+    logger.error('[YUKI-ROUTING] Failed to execute route', { error });
+    return res.status(500).json({ success: false, error: 'Failed to execute route' });
   }
 });
 

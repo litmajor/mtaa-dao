@@ -2,7 +2,7 @@ import { Router } from 'express';
 import { z } from 'zod';
 import { crossChainGovernanceService } from '../../services/crossChainGovernanceService';
 import { asyncHandler } from '../../middleware/errorHandler';
-import { isAuthenticated } from '../../nextAuthMiddleware';
+import { isAuthenticated } from '../../auth';
 import { governanceProposalSchema, governanceVoteSchema } from './validation-schemas';
 
 const router = Router();

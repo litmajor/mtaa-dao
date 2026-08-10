@@ -1,7 +1,7 @@
 import express from 'express';
 import WalletAuditEngine from '../services/auditEngine';
 import { logger } from '../utils/logger';
-import { isAuthenticated, requireAdmin } from '../nextAuthMiddleware';
+import { isAuthenticated, requireAdmin } from '../auth';
 
 const adminRouter = express.Router();
 
@@ -29,3 +29,5 @@ adminRouter.post('/audit/global-reconciliation', isAuthenticated, requireAdmin, 
 });
 
 export default adminRouter;
+
+

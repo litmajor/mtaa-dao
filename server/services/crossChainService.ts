@@ -323,6 +323,17 @@ export class CrossChainService {
     }
   }
 
+  async retryTransfer(transferId: string, requestedBy: string): Promise<BridgeStatus | null> {
+    const transfer = await db.query.crossChainTransfers.findFirst({ where: eq(crossChainTransfers.id, transferId) });
+    if (!transfer) return null;
+
+    // Log the retry request; at present we cannot perform on-chain retries here
+    this.logger.info(`retryTransfer requested by ${requestedBy} for transfer ${transferId}`);
+
+    // Return current status so callers can handle orchestration externally
+    return this.rowToBridgeStatus(transfer);
+  }
+
   private rowToBridgeStatus(transfer: any): BridgeStatus {
     return {
       transferId: transfer.id!,
@@ -429,5 +440,4 @@ export class CrossChainService {
     }
   }
 }
-
 export const crossChainService = new CrossChainService();

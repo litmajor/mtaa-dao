@@ -4,7 +4,7 @@ import { db } from '../db';
 import { taskTemplates } from '../../shared/schema';
 import { taskTemplatesCreatedBy } from '../../shared/schema';
 import { eq, like, desc } from 'drizzle-orm';
-import { isAuthenticated } from '../nextAuthMiddleware';
+import { isAuthenticated } from '../auth';
 const router = Router();
 
 const createTaskTemplateSchema = z.object({
@@ -198,3 +198,4 @@ router.delete('/:templateId', isAuthenticated, async (req, res) => {
 });
 
 export default router;
+

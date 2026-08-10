@@ -7,7 +7,7 @@
  */
 
 import express from 'express';
-import { isAuthenticated } from '../nextAuthMiddleware';
+import { isAuthenticated } from '../auth';
 import { analyzerAgent } from '../agents/analyzer';
 import { storage } from '../storage';
 import { Logger } from '../utils/logger';
@@ -445,3 +445,4 @@ router.post('/rotation/cycle/:daoId', isAuthenticated, analyzerLimiter, async (r
 });
 
 export default router;
+

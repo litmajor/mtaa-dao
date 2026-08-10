@@ -6,17 +6,6 @@ import type { Request, Response, NextFunction } from 'express';
 import jwt from 'jsonwebtoken';
 import { verifyAccessToken, type TokenPayload } from '../auth';
 
-export interface AuthRequest extends Request {
-  user?: {
-    id: string;
-    email?: string;
-    // roles can be a single string or comma-separated string or array
-    role?: string;
-    roles?: string | string[];
-    daos?: string[];
-  };
-}
-
 
 /**
  * Authenticate JWT token
@@ -64,7 +53,7 @@ export const authenticateToken = (req: Request, res: Response, next: NextFunctio
  * Check if user is superuser
  */
 // still named isSuperUser for backwards compatibility but checks for super_admin
-export const isSuperUser = (req: AuthRequest, res: Response, next: NextFunction) => {
+export const isSuperUser = (req: Request, res: Response, next: NextFunction) => {
   const roles = Array.isArray(req.user?.roles) ? req.user!.roles : (typeof req.user?.roles === 'string' ? (req.user!.roles as string).split(',').map(r => r.trim()) : req.user?.role ? [req.user.role] : []);
   if (!roles.includes('super_admin')) {
     return res.status(403).json({
@@ -78,7 +67,7 @@ export const isSuperUser = (req: AuthRequest, res: Response, next: NextFunction)
 /**
  * Check if user is DAO member
  */
-export const isDaoMember = (req: AuthRequest, res: Response, next: NextFunction) => {
+export const isDaoMember = (req: Request, res: Response, next: NextFunction) => {
   if (!req.user || !(req.user.daos && req.user.daos.length > 0)) {
     return res.status(403).json({
       success: false,
@@ -91,7 +80,7 @@ export const isDaoMember = (req: AuthRequest, res: Response, next: NextFunction)
 /**
  * Check if user is DAO admin
  */
-export const isDaoAdmin = (req: AuthRequest, res: Response, next: NextFunction) => {
+export const isDaoAdmin = (req: Request, res: Response, next: NextFunction) => {
   const roles = Array.isArray(req.user?.roles) ? req.user!.roles : (typeof req.user?.roles === 'string' ? (req.user!.roles as string).split(',').map(r => r.trim()) : req.user?.role ? [req.user.role] : []);
   if (!roles.includes('super_admin') && !roles.includes('dao-admin')) {
     return res.status(403).json({

@@ -3,7 +3,7 @@ import express, { Request, Response } from 'express';
 import { db } from '../db';
 import { users, walletTransactions } from '../../shared/schema';
 import { eq, and, sql } from 'drizzle-orm';
-import { isAuthenticated } from '../nextAuthMiddleware';
+import { isAuthenticated } from '../auth';
 
 const router = express.Router();
 
@@ -160,3 +160,5 @@ router.post('/ping-inactive', isAuthenticated, async (req: Request, res: Respons
 });
 
 export default router;
+
+

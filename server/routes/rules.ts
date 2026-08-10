@@ -1,6 +1,6 @@
 import { Router } from "express";
 import type { Request, Response } from "express";
-import { isAuthenticated } from "../nextAuthMiddleware";
+import { isAuthenticated } from "../auth";
 import { ruleEngine } from "../services/rule-engine";
 import { db } from "../db";
 
@@ -382,3 +382,4 @@ router.post("/daos/:daoId/rules/evaluate/:eventType", isAuthenticated, async (re
 });
 
 export default router;
+

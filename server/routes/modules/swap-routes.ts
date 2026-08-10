@@ -4,7 +4,7 @@ import type { SwapQuote } from '../../services/crossChainSwapService';
 import { crossChainSwapService } from '../../services/crossChainSwapService';
 import { SupportedChain } from '../../../shared/chainRegistry';
 import { asyncHandler } from '../../middleware/errorHandler';
-import { isAuthenticated } from '../../nextAuthMiddleware';
+import { isAuthenticated } from '../../auth';
 import { requirePINVerification, checkAmountThreshold } from '../../middleware/pin-verification';
 import { swapQuoteSchema, swapExecuteSchema } from './validation-schemas';
 

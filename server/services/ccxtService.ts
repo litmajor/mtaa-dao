@@ -33,6 +33,7 @@ import { logger } from '../utils/logger';
 import { assetOverrides } from '../../shared/config';
 import { externalAPITracker } from './externalAPITracker';
 import { unifiedCache } from './unifiedCacheService';
+import { publishMarketObservation } from './marketObservationPublisher';
 
 /**
  * Type Definitions
@@ -456,6 +457,29 @@ export class CCXTAggregator {
               timestamp: ticker['timestamp'] || Date.now(),
             };
 
+            void publishMarketObservation({
+              exchange: exchangeName,
+              market_symbol: formattedSymbol,
+              base_asset: symbol.split('/')[0] || '',
+              quote_asset: symbol.split('/')[1] || '',
+              market_type: 'spot',
+              data_type: 'ticker',
+              payload: {
+                price: typeof ticker['last'] === 'number' ? ticker['last'] : null,
+                bid: typeof ticker['bid'] === 'number' ? ticker['bid'] : null,
+                ask: typeof ticker['ask'] === 'number' ? ticker['ask'] : null,
+                spread: typeof ticker['bid'] === 'number' && typeof ticker['ask'] === 'number' ? ticker['ask'] - ticker['bid'] : null,
+                volume_24h: typeof volume === 'number' ? volume : null,
+              },
+              exchange_timestamp: typeof ticker['timestamp'] === 'number' ? ticker['timestamp'] : Date.now(),
+              received_timestamp: Date.now(),
+              ingestion_timestamp: Date.now(),
+              source_channel: 'rest',
+              is_stale: false,
+              is_valid: typeof ticker['last'] === 'number' && typeof ticker['bid'] === 'number' && typeof ticker['ask'] === 'number',
+              schema_version: '1.0',
+            }).catch(() => undefined);
+
             return price;
           } catch (error: any) {
             const duration = Date.now() - startTime;
@@ -628,6 +652,31 @@ export class CCXTAggregator {
               dataSize: ohlcv ? ohlcv.length * 100 : 0,
             });
 
+            void publishMarketObservation({
+              exchange: exchangeName,
+              market_symbol: formattedSymbol,
+              base_asset: symbol.split('/')[0] || '',
+              quote_asset: symbol.split('/')[1] || '',
+              market_type: 'spot',
+              data_type: 'ohlcv',
+              payload: {
+                timeframe,
+                open: Array.isArray(ohlcv) && ohlcv[0] ? Number(ohlcv[0][1]) : 0,
+                high: Array.isArray(ohlcv) && ohlcv[0] ? Number(ohlcv[0][2]) : 0,
+                low: Array.isArray(ohlcv) && ohlcv[0] ? Number(ohlcv[0][3]) : 0,
+                close: Array.isArray(ohlcv) && ohlcv[0] ? Number(ohlcv[0][4]) : 0,
+                volume: Array.isArray(ohlcv) && ohlcv[0] ? Number(ohlcv[0][5]) : 0,
+                candle_timestamp: Array.isArray(ohlcv) && ohlcv[0] ? Number(ohlcv[0][0]) : Date.now(),
+              },
+              exchange_timestamp: Date.now(),
+              received_timestamp: Date.now(),
+              ingestion_timestamp: Date.now(),
+              source_channel: 'rest',
+              is_stale: false,
+              is_valid: Array.isArray(ohlcv) && ohlcv.length > 0,
+              schema_version: '1.0',
+            }).catch(() => undefined);
+
             return ohlcv;
           } catch (error: any) {
             externalAPITracker.recordCall({
@@ -703,6 +752,27 @@ export class CCXTAggregator {
           duration,
           dataSize: orderBook ? (orderBook.bids.length + orderBook.asks.length) * 50 : 0,
         });
+
+        void publishMarketObservation({
+          exchange: exchangeName,
+          market_symbol: formattedSymbol,
+          base_asset: symbol.split('/')[0] || '',
+          quote_asset: symbol.split('/')[1] || '',
+          market_type: 'spot',
+          data_type: 'orderbook',
+          payload: {
+            bids: Array.isArray(orderBook?.bids) ? orderBook.bids.slice(0, limit) : [],
+            asks: Array.isArray(orderBook?.asks) ? orderBook.asks.slice(0, limit) : [],
+            depth_levels: Array.isArray(orderBook?.bids) && Array.isArray(orderBook?.asks) ? Math.min(orderBook.bids.length, orderBook.asks.length) : 0,
+          },
+          exchange_timestamp: Date.now(),
+          received_timestamp: Date.now(),
+          ingestion_timestamp: Date.now(),
+          source_channel: 'rest',
+          is_stale: false,
+          is_valid: Array.isArray(orderBook?.bids) || Array.isArray(orderBook?.asks),
+          schema_version: '1.0',
+        }).catch(() => undefined);
 
         this.ohlcvCache.set(cacheKey, orderBook, 5);
         return orderBook;

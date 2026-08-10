@@ -17,7 +17,7 @@
 
 import express, { Request, Response } from 'express';
 import { ethers } from 'ethers';
-import { isAuthenticated } from '../nextAuthMiddleware';
+import { isAuthenticated } from '../auth';
 import { logger } from '../utils/logger';
 import { db } from '../db';
 import { daoMemberships } from '../../shared/schema';
@@ -612,3 +612,5 @@ router.get('/health/:daoId', isAuthenticated, async (req: any, res: Response) =>
 });
 
 export default router;
+
+

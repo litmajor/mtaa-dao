@@ -33,16 +33,11 @@ import withdrawalsRouter from './withdrawals';
 
 const router = express.Router({ mergeParams: true });
 
-interface VaultAuthRequest extends Request {
-  user?: {
-    id?: string | null;
-  };
-  userRole?: string;
+type VaultAuthRequestWithBody<TBody> = Request & {
+  body: TBody;
   daoMultisigThreshold?: number;
-  daoSigners?: Array<{ userId?: string; userRole?: string }>;
-}
-
-type VaultAuthRequestWithBody<TBody> = Request & VaultAuthRequest & { body: TBody };
+  daoSigners?: Array<{ userId?: string; userRole?: 'member' | 'elder' | 'admin' }>;
+};
 
 interface CreateVaultBody {
   name?: string;
@@ -150,7 +145,7 @@ router.post(
   authenticate,
   treasuryAdminGuard,
   rateLimitPerUser('treasury-vaults-create', 10, '10min'),
-  async (req: VaultAuthRequestWithBody<CreateVaultBody>, res: Response) => {
+  async (req: Request & { body: CreateVaultBody }, res: Response) => {
     try {
       const { daoId } = req.params;
       const userId = req.user?.id;
@@ -293,7 +288,7 @@ router.put(
   authenticate,
   treasuryAdminGuard,
   rateLimitPerUser('treasury-vaults-update', 10, '10min'),
-  async (req: VaultAuthRequestWithBody<UpdateVaultBody>, res: Response) => {
+  async (req: Request & { body: UpdateVaultBody }, res: Response) => {
     try {
       const { daoId, vaultId } = req.params;
       const userId = req.user?.id;
@@ -347,7 +342,7 @@ router.post(
   authenticate,
   treasuryAdminGuard,
   rateLimitPerUser('treasury-vaults-allocate', 20, '10min'),
-  async (req: VaultAuthRequestWithBody<AllocateVaultBody>, res: Response) => {
+  async (req: Request & { body: AllocateVaultBody }, res: Response) => {
     try {
       const { daoId, vaultId } = req.params;
       const userId = req.user?.id;
@@ -519,9 +514,9 @@ router.post(
         // Create withdrawal approval request (pending multisig)
         // Default to 2-of-N multisig - can be customized per DAO
         const requiredSignatures = req.daoMultisigThreshold ?? 2;
-        const daoSigners: Array<{ userId: string; userRole: 'member' | 'elder' | 'admin' }> = (req.daoSigners ?? []).map((signer): { userId: string; userRole: 'member' | 'elder' | 'admin' } => ({
+        const daoSigners: Array<{ userId: string; userRole: 'member' | 'elder' | 'admin' }> = (req.daoSigners ?? []).map((signer: { userId?: string; userRole?: string }): { userId: string; userRole: 'member' | 'elder' | 'admin' } => ({
           userId: signer.userId ?? 'system',
-          userRole: (signer.userRole === 'elder' || signer.userRole === 'admin' ? signer.userRole : 'member') as 'member' | 'elder' | 'admin',
+          userRole: signer.userRole === 'elder' || signer.userRole === 'admin' ? signer.userRole : 'member',
         })); // Should be populated by middleware with DAO elders/admins
         
         // Create approval request in withdrawal_approvals table
@@ -810,7 +805,7 @@ router.post(
   authenticate,
   treasuryAdminGuard,
   rateLimitPerUser('treasury-vaults-rebalance', 5, '1hour'),
-  async (req: VaultAuthRequestWithBody<RebalanceVaultBody>, res: Response) => {
+  async (req: Request & { body: RebalanceVaultBody }, res: Response) => {
     try {
       const { daoId, vaultId } = req.params;
       const userId = req.user?.id;

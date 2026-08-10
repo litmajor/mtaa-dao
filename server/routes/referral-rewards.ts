@@ -2,11 +2,12 @@ import { Router } from "express";
 import { db } from "../db";
 import { eq, desc, gte, lte, and, sql } from "drizzle-orm";
 import { referralPayouts } from "../../shared/financialEnhancedSchema";
-import { authenticate, type AuthRequest } from "../auth";
+import { authenticate } from "../auth";
 import { randomUUID } from 'crypto';
-import { requireAdmin } from "../nextAuthMiddleware";
+import { requireAdmin } from "../auth";
 import { logger } from "../utils/logger";
-import cron, { ScheduledTask } from "node-cron";
+import cron from "node-cron";
+import type { ScheduledTask } from "node-cron";
 import { detectReferrerAnomalies } from "../services/sybil-defense";
 
 const router = Router();
@@ -92,7 +93,7 @@ async function distributeWeekRewards(weekEndDate: Date) {
     
     // CRITICAL: Check for anomalies before awarding to prevent sybil attacks
     try {
-      const anomalyAssessment = await detectReferrerAnomalies(user.id, 168); // 7 days lookback
+      const anomalyAssessment = await detectReferrerAnomalies(user.id, 168) as { riskLevel: string; riskScore?: number; flags?: any }; // 7 days lookback
       
       if (anomalyAssessment.riskLevel === 'critical') {
         logger.warn('SYBIL ATTACK DETECTED: Suspending referrer from rewards', {
@@ -112,7 +113,7 @@ async function distributeWeekRewards(weekEndDate: Date) {
             })
           }).catch(() => {});
         } catch (e) {
-          logger.debug('Admin alert send failed', e);
+          logger.debug('Admin alert send failed', { error: String(e) });
         }
         continue; // Skip to next referrer
       }
@@ -605,4 +606,5 @@ function stopWeeklyDistributionJob() {
 
 export { stopWeeklyDistributionJob };
 export default router;
+
 

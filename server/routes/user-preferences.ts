@@ -1,6 +1,6 @@
 
 import express from 'express';
-import { isAuthenticated } from '../nextAuthMiddleware';
+import { isAuthenticated } from '../auth';
 import { db } from '../db';
 import { users } from '../../shared/schema';
 import { eq } from 'drizzle-orm';
@@ -120,3 +120,5 @@ router.get('/currencies/supported', (req, res) => {
 });
 
 export default router;
+
+

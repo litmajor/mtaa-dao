@@ -1,10 +1,9 @@
-import type { AuthRequest } from '../auth';
-import { Response } from 'express';
+import type { Request, Response } from 'express';
 import { db } from '../db';
 import { users } from '../../shared/schema';
 import { eq } from 'drizzle-orm';
 
-export async function accountDeleteHandler(req: AuthRequest, res: Response) {
+export async function accountDeleteHandler(req: Request, res: Response) {
   try {
     const userId = req.user?.claims?.id;
     if (!userId) {

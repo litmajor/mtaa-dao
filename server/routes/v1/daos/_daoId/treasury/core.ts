@@ -9,7 +9,6 @@
 
 import express from 'express';
 import type { Request, Response } from 'express';
-import type { AuthRequest } from '../../../../../auth';
 import { db } from '../../../../../storage';
 import { eq, desc, and, sql } from 'drizzle-orm';
 import { authenticate } from '../../../../../auth';
@@ -94,7 +93,7 @@ interface TreasuryRebalanceBody {
 
 const router = express.Router({ mergeParams: true });
 
-type TreasuryRequest<P extends Record<string, string> = { daoId: string }, B = unknown, Q = Record<string, unknown>> = AuthRequest & Request<P, any, B, Q>;
+type TreasuryRequest<P extends Record<string, string> = { daoId: string }, B = unknown, Q = Record<string, unknown>> = Request<P, any, B, Q>;
 
 // ════════════════════════════════════════════════════════════════════════════════
 // CORE TREASURY OPERATIONS

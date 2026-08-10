@@ -2,7 +2,7 @@ import express from 'express';
 import { db } from '../storage';
 import { proposals, votes, daoMemberships } from '../../shared/schema';
 import { eq, and, desc, sql } from 'drizzle-orm';
-import { isAuthenticated } from '../nextAuthMiddleware';
+import { isAuthenticated } from '../auth';
 import { createRateLimiter } from '../middleware/rateLimiting';
 import { z } from 'zod';
 
@@ -340,3 +340,4 @@ router.post('/:proposalId/emoji-vote', isAuthenticated, proposalVoteLimiter, asy
   }
 });
 export default router;
+
