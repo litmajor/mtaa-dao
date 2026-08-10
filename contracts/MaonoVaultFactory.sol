@@ -32,6 +32,24 @@ interface IMaonoVaultInitializable {
     ) external;
 }
 
+// ---------------------------------------------------------------------------
+// PLATFORM-ADMINISTERED VAULT CONFIGURATION  (Phase 2 / P2-1)
+// ---------------------------------------------------------------------------
+// A vault records the address that initialized it as its `platformAdmin` and
+// accepts fee-schedule changes from nobody else. Because this factory is that
+// initializer, the schedule is administered here — under the factory owner
+// (platform multi-sig) — and is out of reach of the vault owner, who is the
+// account the upkeep fee is charged to.
+// ---------------------------------------------------------------------------
+interface IMaonoVaultPlatformConfig {
+    function setUpkeepCostAt(uint256 index, uint256 newValue) external;
+    function setBurnPercentageAt(uint256 index, uint256 newValue) external;
+    function setDaoTreasury(address newTreasury) external;
+    function setPriceOracle(address newOracle) external;
+    function setOracleBounds(uint256 minUsdCents, uint256 maxUsdCents) external;
+    function setOracleCircuitEnabled(bool enabled) external;
+}
+
 /**
  * @title  MaonoVaultFactory (Phase 1B — Production Upgrades)
  * @notice EIP-1167 clone factory with registry verification, treasury rotation,
@@ -178,6 +196,7 @@ contract MaonoVaultFactory_Phase1B is Ownable2Step {   // UPGRADE #4
     error AssetNotSupported();
     error VaultNotRegistered();
     error InitializationFailed();
+    error AssetIsMtaaToken();
 
     // ======================================================================
     // CONSTRUCTOR
@@ -238,6 +257,7 @@ contract MaonoVaultFactory_Phase1B is Ownable2Step {   // UPGRADE #4
 
         // ── Validation ──────────────────────────────────────────────────────
         if (!supportedAssets[asset])                          revert UnsupportedAsset();
+        if (asset == mtaaToken)                               revert AssetIsMtaaToken();
         if (vaultType > 4)                                    revert InvalidVaultType();
         if (userVaultCount[msg.sender] >= MAX_VAULTS_PER_USER) revert MaxVaultsPerUserExceeded();
 
@@ -327,10 +347,64 @@ contract MaonoVaultFactory_Phase1B is Ownable2Step {   // UPGRADE #4
     }
 
     // ======================================================================
+    // PHASE 2 / P2-1 — PLATFORM-ADMINISTERED VAULT ECONOMICS
+    // ======================================================================
+    /**
+     * @notice Reprice the monthly upkeep of a factory-deployed vault.
+     * @dev    The vault rejects this call from anyone but the factory, so the fee
+     *         schedule is authoritative outside the payer's control. Only vaults in
+     *         this factory's registry can be reconfigured.
+     */
+    function setVaultUpkeepCost(address vault, uint256 index, uint256 newValue) external onlyOwner {
+        if (!isLegitimateVault[vault]) revert VaultNotRegistered();
+        IMaonoVaultPlatformConfig(vault).setUpkeepCostAt(index, newValue);
+    }
+
+    function setVaultBurnPercentage(address vault, uint256 index, uint256 newValue) external onlyOwner {
+        if (!isLegitimateVault[vault]) revert VaultNotRegistered();
+        IMaonoVaultPlatformConfig(vault).setBurnPercentageAt(index, newValue);
+    }
+
+    /**
+     * @notice Point a deployed vault's upkeep proceeds at the current platform treasury.
+     * @dev    `setPlatformTreasury` only affects future deployments; existing vaults are
+     *         migrated with this call.
+     */
+    function syncVaultTreasury(address vault) external onlyOwner {
+        if (!isLegitimateVault[vault]) revert VaultNotRegistered();
+        IMaonoVaultPlatformConfig(vault).setDaoTreasury(platformTreasury);
+    }
+
+    function syncVaultPriceOracle(address vault) external onlyOwner {
+        if (!isLegitimateVault[vault]) revert VaultNotRegistered();
+        IMaonoVaultPlatformConfig(vault).setPriceOracle(priceOracle);
+    }
+
+    function setVaultOracleBounds(address vault, uint256 minUsdCents, uint256 maxUsdCents) external onlyOwner {
+        if (!isLegitimateVault[vault]) revert VaultNotRegistered();
+        IMaonoVaultPlatformConfig(vault).setOracleBounds(minUsdCents, maxUsdCents);
+    }
+
+    function setVaultOracleCircuitEnabled(address vault, bool enabled) external onlyOwner {
+        if (!isLegitimateVault[vault]) revert VaultNotRegistered();
+        IMaonoVaultPlatformConfig(vault).setOracleCircuitEnabled(enabled);
+    }
+
+    // ======================================================================
     // ASSET MANAGEMENT
     // ======================================================================
+    /**
+     * @notice Allowlist an asset that vaults may denominate in.
+     * @dev    M-2 (asset model): MaonoVault_Phase1B reports `totalAssets()` as its own
+     *         ERC20 balance, which is only sound for plain-transfer, non-rebasing,
+     *         non-fee-on-transfer tokens. This allowlist is the enforcement point:
+     *         vaults can only ever be deployed over assets added here, so incompatible
+     *         tokens must not be added. Deploying over MTAA is rejected outright
+     *         because staked MTAA is custodied by the vault.
+     */
     function addSupportedAsset(address asset, string memory symbol) external onlyOwner {
         if (asset == address(0))      revert InvalidAddress();
+        if (asset == mtaaToken)       revert AssetIsMtaaToken();
         if (supportedAssets[asset])   revert AssetAlreadySupported();
         supportedAssets[asset] = true;
         supportedAssetsList.push(asset);

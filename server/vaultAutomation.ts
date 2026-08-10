@@ -1,15 +1,20 @@
 import { MaonoVaultService } from "./blockchain";
 import { vaultService } from "./services/vaultService";
 import { db } from "./db";
-import { vaults, vaultPerformance, vaultTransactions } from "../shared/schema";
+import { vaults } from "../shared/schema";
 import { eq } from "drizzle-orm";
 import { ethers } from "ethers";
 import { Logger } from "./utils/logger";
 import { AppError } from "./utils/appError";
 
+/** `VaultStatus.HIBERNATING` in contracts/MaonoVault.sol */
+const VAULT_STATUS_HIBERNATING = 1;
+/** Start warning about the monthly upkeep three days before it falls due. */
+const UPKEEP_WARNING_WINDOW_MS = 3 * 24 * 60 * 60 * 1000;
+
 interface AutomationTask {
   id: string;
-  type: 'nav_update' | 'performance_fee' | 'rebalance' | 'risk_assessment';
+  type: 'upkeep' | 'rebalance' | 'risk_assessment';
   priority: 'high' | 'medium' | 'low';
   scheduledAt: Date;
   retryCount: number;
@@ -95,19 +100,19 @@ class VaultAutomationService {
 
   // Schedule regular automation tasks
   private scheduleRegularTasks() {
-    // Only schedule NAV updates if contract is configured
+    // Only schedule upkeep monitoring if contract is configured
     if (MaonoVaultService.isConfigured()) {
-      // Schedule NAV updates every hour
+      // Check the upkeep clock every hour
       this.addTask({
-        id: `nav_update_${Date.now()}`,
-        type: 'nav_update',
+        id: `upkeep_${Date.now()}`,
+        type: 'upkeep',
         priority: 'high',
         scheduledAt: new Date(Date.now() + 60 * 60 * 1000), // 1 hour
         retryCount: 0,
       maxRetries: 3
     });
     } else {
-      this.logger.warn('⚠️  NAV update automation skipped: MaonoVault contract not configured');
+      this.logger.warn('⚠️  Upkeep automation skipped: MaonoVault contract not configured');
       this.logger.info('   Deploy MaonoVault contract and set MAONO_CONTRACT_ADDRESS in .env to enable automation');
     }
 
@@ -205,12 +210,8 @@ class VaultAutomationService {
   // Execute a specific automation task
   private async executeTask(task: AutomationTask) {
     switch (task.type) {
-      case 'nav_update':
-        await this.executeNAVUpdate(task);
-        break;
-
-      case 'performance_fee':
-        await this.executePerformanceFeeDistribution(task);
+      case 'upkeep':
+        await this.executeUpkeepCheck(task);
         break;
 
       case 'rebalance':
@@ -226,56 +227,60 @@ class VaultAutomationService {
     }
   }
 
-  // Execute NAV update
-  private async executeNAVUpdate(task: AutomationTask) {
+  /**
+   * Monitor the vault's ERC-4626 valuation and its upkeep clock.
+   *
+   * MaonoVault_Phase1B has no NAV to push and no performance fee to distribute:
+   * `totalAssets()` is the vault's own balance and the only recurring on-chain
+   * obligation is the monthly upkeep, which is owner-signed and burns MTAA.
+   * Paying it is therefore opt-in (MAONO_AUTO_UPKEEP), and hibernation is
+   * reported rather than resolved because reactivation is a funding decision.
+   */
+  private async executeUpkeepCheck(task: AutomationTask) {
     try {
-      // Check if contract is configured
       if (!MaonoVaultService.isConfigured()) {
-        this.logger.warn('⚠️  NAV update skipped: MaonoVault contract not configured');
-        this.logger.info('   Deploy MaonoVault contract and set MAONO_CONTRACT_ADDRESS in .env to enable NAV updates');
+        this.logger.warn('⚠️  Upkeep check skipped: MaonoVault contract not configured');
+        this.logger.info('   Deploy MaonoVault contract and set MAONO_CONTRACT_ADDRESS in .env to enable automation');
         // Don't retry this task
         task.retryCount = task.maxRetries;
         return;
       }
-      
-      // Get current on-chain NAV
-      const [currentNAV, lastUpdate] = await MaonoVaultService.getNAV();
 
-      // Calculate new NAV based on vault performance
-      const activeVaults = await db.query.vaults.findMany({
-        where: eq(vaults.isActive, true)
+      const [valuation, lifecycle] = await Promise.all([
+        MaonoVaultService.getVaultValuation(),
+        MaonoVaultService.getVaultLifecycle(),
+      ]);
+
+      this.logger.info('📊 Vault valuation', {
+        totalAssets: ethers.formatEther(valuation.totalAssets),
+        totalSupply: ethers.formatEther(valuation.totalSupply),
+        sharePrice: ethers.formatEther(valuation.sharePrice),
       });
 
-      let totalValue = 0n;
-      let totalShares = 0n;
-
-      for (const vault of activeVaults) {
-        const vaultPortfolio = await vaultService.getVaultPortfolio(vault.id);
-        const vaultValueWei = ethers.parseUnits(vaultPortfolio.totalValueUSD.toString(), 18);
-        totalValue += vaultValueWei;
-        totalShares += BigInt(1000); // Simplified share calculation
-      }
-
-      const newNAV = totalShares > 0n ? totalValue / totalShares : 0n;
-
-      // Update NAV on-chain if significant change
-      const navChange = currentNAV > 0n ? (newNAV - currentNAV) * 100n / currentNAV : 100n;
-
-      if (navChange > 1n || navChange < -1n) { // More than 1% change
-        console.log(`📈 Updating NAV: ${ethers.formatEther(currentNAV)} → ${ethers.formatEther(newNAV)}`);
-
-        const tx = await MaonoVaultService.updateNAV(newNAV);
-        await tx.wait();
-
-        console.log(`✅ NAV updated on-chain: ${tx.hash}`);
+      if (lifecycle.status === VAULT_STATUS_HIBERNATING) {
+        this.logger.warn('🛑 Vault is hibernating: deposits are closed until the owner reactivates it', {
+          nextUpkeepDue: lifecycle.nextUpkeepDue.toString(),
+        });
       } else {
-        console.log('📊 NAV change too small, skipping update');
+        const dueInMs = Number(lifecycle.nextUpkeepDue) * 1000 - Date.now();
+        if (dueInMs <= UPKEEP_WARNING_WINDOW_MS) {
+          this.logger.warn('⏳ Monthly upkeep is due', {
+            dueInHours: Math.round(dueInMs / 3_600_000),
+            costMtaa: ethers.formatEther(lifecycle.monthlyUpkeepCost),
+          });
+
+          if (dueInMs <= 0 && process.env.MAONO_AUTO_UPKEEP === 'true') {
+            const tx = await MaonoVaultService.collectMonthlyUpkeep();
+            await tx.wait();
+            this.logger.info(`✅ Monthly upkeep paid on-chain: ${tx.hash}`);
+          }
+        }
       }
 
-      // Schedule next NAV update
+      // Schedule the next check
       this.addTask({
-        id: `nav_update_${Date.now()}`,
-        type: 'nav_update',
+        id: `upkeep_${Date.now()}`,
+        type: 'upkeep',
         priority: 'high',
         scheduledAt: new Date(Date.now() + 60 * 60 * 1000), // 1 hour
         retryCount: 0,
@@ -283,42 +288,7 @@ class VaultAutomationService {
       });
 
     } catch (error) {
-      console.error('NAV update automation failed:', error);
-      throw error;
-    }
-  }
-
-  // Execute performance fee distribution
-  private async executePerformanceFeeDistribution(task: AutomationTask) {
-    try {
-      // Get recent performance data
-      const recentPerformance = await db.query.vaultPerformance.findMany({
-        where: eq(vaultPerformance.period, 'daily'),
-        limit: 30 // Last 30 days
-      });
-
-      let totalProfit = 0n;
-
-      for (const performance of recentPerformance) {
-        const yield_ = parseFloat(performance.yield || '0');
-        if (yield_ > 0) {
-          totalProfit += ethers.parseUnits(yield_.toString(), 18);
-        }
-      }
-
-      if (totalProfit > ethers.parseUnits('100', 18)) { // Minimum $100 profit
-        console.log(`💰 Distributing performance fees on profit: ${ethers.formatEther(totalProfit)} USD`);
-
-        const tx = await MaonoVaultService.distributePerformanceFee(totalProfit);
-        await tx.wait();
-
-        console.log(`✅ Performance fees distributed: ${tx.hash}`);
-      } else {
-        console.log('💰 Insufficient profit for fee distribution');
-      }
-
-    } catch (error) {
-      console.error('Performance fee distribution failed:', error);
+      this.logger.error('Upkeep automation failed', error);
       throw error;
     }
   }
@@ -411,28 +381,15 @@ class VaultAutomationService {
 // Create singleton instance
 export const vaultAutomationService = new VaultAutomationService();
 
-// Legacy functions for backward compatibility
-export async function automateNAVUpdate(newNav: bigint) {
+export async function automateMonthlyUpkeep() {
   try {
-    const tx = await MaonoVaultService.updateNAV(newNav);
-    console.log("NAV update tx sent:", tx.hash);
+    const tx = await MaonoVaultService.collectMonthlyUpkeep();
+    console.log("Upkeep tx sent:", tx.hash);
     await tx.wait();
-    console.log("NAV updated on-chain.");
+    console.log("Monthly upkeep paid on-chain.");
   } catch (err) {
-    console.error("NAV update failed:", err);
-    throw new Error("Failed to update NAV: " + (err as Error).message);
-  }
-}
-
-export async function automatePerformanceFeeDistribution(profit: bigint) {
-  try {
-    const tx = await MaonoVaultService.distributePerformanceFee(profit);
-    console.log("Performance fee tx sent:", tx.hash);
-    await tx.wait();
-    console.log("Performance fee distributed.");
-  } catch (err) {
-    console.error("Performance fee distribution failed:", err);
-    throw new Error("Failed to distribute performance fee: " + (err as Error).message);
+    console.error("Monthly upkeep failed:", err);
+    throw new Error("Failed to pay monthly upkeep: " + (err as Error).message);
   }
 }
 
