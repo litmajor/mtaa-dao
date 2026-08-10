@@ -1,0 +1,227 @@
+{
+  "audit": {
+    "target": "architectbelmont/mtaa-dao",
+    "branch": "devin/security-suite",
+    "scope": [
+      "contracts/MaonoVault.sol (MaonoVault_Phase1B)",
+      "contracts/MaonoVault.json (deployed MaonoVault artifact, bytecode only)",
+      "contracts/MaonoVaultFactory.sol (MaonoVaultFactory_Phase1B)"
+    ],
+    "method": "local deterministic Foundry harness; no live deployment, RPC, fork or real funds",
+    "toolchain": {
+      "forge": "1.7.1",
+      "solc": "0.8.24",
+      "evm_version": "cancun",
+      "openzeppelin": "5.4.0"
+    },
+    "commands": [
+      "bash test/security/setup.sh",
+      "forge test -vv"
+    ],
+    "tests": {
+      "total": 95,
+      "passing": 95,
+      "failing": 0,
+      "suites": 12,
+      "fuzz_runs_per_test": 512,
+      "invariant_runs": 128,
+      "invariant_depth": 32
+    }
+  },
+  "findings": [
+    {
+      "id": "H-1",
+      "severity": "high",
+      "title": "emergencyWithdraw sends 100% of depositor assets to the owner EOA while shares remain outstanding",
+      "component": "contracts/MaonoVault.json",
+      "status": "confirmed",
+      "unprivileged": false,
+      "actor": "owner (== manager, the key used by server/blockchain.ts)",
+      "violated_invariant": "totalAssets() backs the outstanding shares",
+      "root_cause": "emergencyWithdraw(uint256) is onlyOwner and transfers assets to owner(); no share burn, no treasury destination, no timelock, no cap",
+      "economics": {
+        "attacker_starting_capital": "0",
+        "assets_deposited": "0",
+        "assets_withdrawn": "10000e18 (100% of TVL)",
+        "shares_outstanding_after": "10000e18",
+        "depositor_preview_redeem_after": "0",
+        "attacker_profit": "100% of TVL",
+        "protocol_user_loss": "100% of TVL"
+      },
+      "reproduction": "forge test --match-test test_EmergencyWithdrawDrainsToTreasuryWhileSharesRemain -vv",
+      "test": "test/security/artifact/DeployedArtifactVault.t.sol",
+      "mitigation": "route emergency funds to daoTreasury, gate behind timelock+multisig, separate the automation key from the owner key, cap per-period withdrawals"
+    },
+    {
+      "id": "M-1",
+      "severity": "medium",
+      "title": "MTAA upkeep discount is an instantaneous balance snapshot and is flash-loanable",
+      "component": "contracts/MaonoVault.sol :: getDiscountedFeePct / collectMonthlyUpkeep",
+      "status": "confirmed",
+      "unprivileged": false,
+      "actor": "vault owner (no capital required)",
+      "violated_invariant": "fee charged equals advertised fee; discounts reflect sustained MTAA holding",
+      "root_cause": "discount = min(50, sqrt(balanceOf(msg.sender)/1e18)*2.5) read inside the fee-charging call; no time-weighting, lock or snapshot; curve saturates at 400 MTAA",
+      "economics": {
+        "attacker_starting_capital": "15 MTAA",
+        "borrowed_within_transaction": "400 MTAA",
+        "capital_at_risk": "0",
+        "nominal_fee": "15 MTAA",
+        "fee_paid": "7.5 MTAA",
+        "protocol_revenue_loss": "7.5 MTAA per vault per month (50%)"
+      },
+      "related": "the nominal price is unreachable even for an honest owner: holding the 15 MTAA needed to pay already grants a 7% discount (13.95 MTAA charged)",
+      "reproduction": "forge test --match-test test_FeeDiscountIsFlashLoanable -vv",
+      "test": "test/security/fees/UpkeepFees.t.sol",
+      "mitigation": "time-weighted or staked balance with a minimum lock, or snapshot balances at period start; exclude same-block acquisitions"
+    },
+    {
+      "id": "M-2",
+      "severity": "medium",
+      "title": "Shares are minted from the requested amount rather than the amount actually received",
+      "component": "contracts/MaonoVault.sol (inherited ERC4626._deposit)",
+      "status": "confirmed",
+      "unprivileged": false,
+      "actor": "any depositor, conditional on the listed asset",
+      "violated_invariant": "sum of depositor claims <= totalAssets()",
+      "root_cause": "no balanceBefore/balanceAfter measurement; fee-on-transfer and rebasing assets credit more than the vault receives",
+      "economics": {
+        "assets_requested": "1000e18",
+        "assets_received": "990e18",
+        "first_depositor_exit_value": "985.025e18",
+        "second_depositor_claim": "994.975e18",
+        "attacker_profit": "0 (loss is socialised, not extracted)",
+        "protocol_user_loss": "1% of every deposit, compounding across depositors"
+      },
+      "reproduction": "forge test --match-test test_FeeOnTransferToken_BreaksShareAccounting -vv",
+      "test": "test/security/tokens/MaliciousToken.t.sol",
+      "mitigation": "mint from the measured balance delta; explicitly reject fee-on-transfer/rebasing assets in the factory allowlist"
+    },
+    {
+      "id": "M-3",
+      "severity": "medium",
+      "title": "pause() and hibernation freeze depositor exits indefinitely at zero cost to the owner",
+      "component": "contracts/MaonoVault.sol :: pause / onlyActive",
+      "status": "confirmed",
+      "unprivileged": false,
+      "actor": "vault owner (hibernation also reachable through mere delinquency)",
+      "violated_invariant": "depositors can always exit a solvent vault",
+      "root_cause": "all four ERC-4626 entry points carry whenNotPaused and onlyActive; no pause time limit, no guardian, and only the owner can leave hibernation",
+      "economics": {
+        "depositor_capital_frozen": "100000e18 (entire TVL)",
+        "cost_to_owner": "0",
+        "duration": "unbounded (verified 10 years later)"
+      },
+      "reproduction": "forge test --match-path 'test/security/emergency/*' -vv",
+      "test": "test/security/emergency/PauseAndHibernation.t.sol",
+      "mitigation": "keep withdraw/redeem available while paused, bound the pause duration, and let anyone pay the reactivation fee"
+    },
+    {
+      "id": "M-4",
+      "severity": "medium",
+      "title": "Large withdrawals return a non-zero value while transferring nothing; queued requests are unvalidated and can be permanently unfulfillable",
+      "component": "contracts/MaonoVault.json :: withdraw / fulfillWithdrawal",
+      "status": "confirmed",
+      "unprivileged": true,
+      "violated_invariant": "a successful withdraw() transfers assets (EIP-4626)",
+      "root_cause": "above largeWithdrawalThreshold, withdraw() records a request without burning shares or validating the amount; fulfilment requires previewWithdraw(amount) shares, which rounds up",
+      "economics": {
+        "attacker_profit": "0 (double-spend blocked in all three variants)",
+        "impact": "stuck requests, false success reported by server/blockchain.ts; funds still redeemable through sub-threshold redeem()"
+      },
+      "reproduction": "forge test --match-path 'test/security/artifact/WithdrawalQueue.t.sol' -vv && forge test --match-test test_FullPositionRequestIsUnfulfillableByOneWei -vv",
+      "test": "test/security/artifact/WithdrawalQueue.t.sol, test/security/artifact/DeployedArtifactVault.t.sol",
+      "mitigation": "revert or emit a distinct pending event instead of returning a non-zero value; escrow shares at request time and settle against the escrow"
+    },
+    {
+      "id": "M-5",
+      "severity": "medium",
+      "title": "previewNAV() reports an unbacked manager-controlled number",
+      "component": "contracts/MaonoVault.json :: updateNAV / previewNAV",
+      "status": "confirmed",
+      "unprivileged": false,
+      "actor": "manager",
+      "violated_invariant": "reported NAV is backed by assets",
+      "root_cause": "previewNAV() returns lastNAV verbatim; server/vaultAutomation.ts surfaces it to users",
+      "economics": {
+        "on_chain_extraction": "none - share redemption is unaffected",
+        "off_chain_impact": "arbitrary reported performance (10000e18 real vs 1000000e18 reported in the test)"
+      },
+      "reproduction": "forge test --match-test test_PreviewNavReportsManagerControlledNumber -vv",
+      "test": "test/security/artifact/DeployedArtifactVault.t.sol",
+      "mitigation": "report totalAssets() for on-chain value, bound per-update deltas, display real and reported values separately"
+    },
+    {
+      "id": "M-6",
+      "severity": "medium",
+      "title": "server/vaultAutomation.ts calls distributePerformanceFee, which does not exist on the deployed contract",
+      "component": "server/vaultAutomation.ts + contracts/MaonoVault.json",
+      "status": "confirmed",
+      "unprivileged": null,
+      "violated_invariant": "the backend's contract API matches the deployed ABI",
+      "economics": {
+        "impact": "every performance-fee distribution reverts; the configured 15% performance fee is never collected"
+      },
+      "reproduction": "forge test --match-test test_DistributePerformanceFeeDoesNotExist -vv",
+      "test": "test/security/artifact/BackendIntegration.t.sol",
+      "mitigation": "add the function or remove the call path; add an ABI-conformance check in CI"
+    },
+    {
+      "id": "L-1",
+      "severity": "low",
+      "title": "Donation griefing can round a victim deposit to zero shares",
+      "component": "contracts/MaonoVault.sol",
+      "status": "confirmed",
+      "unprivileged": true,
+      "violated_invariant": "a non-zero deposit mints non-zero shares",
+      "economics": {
+        "victim_deposit": "10000e6",
+        "donation_required": "20000000e6 (2000x)",
+        "attacker_loss": "9995000e6",
+        "attacker_profit": "negative in every observed case"
+      },
+      "reproduction": "forge test --match-test test_FirstDepositorInflation_6dec_CostToRoundVictimToZero -vv",
+      "test": "test/security/erc4626/InflationAttack.t.sol",
+      "mitigation": "revert on zero-share deposits; seed dead shares at vault creation"
+    },
+    {
+      "id": "L-2",
+      "severity": "low",
+      "title": "An uninitialized clone can be seized by the first initialize() caller",
+      "component": "contracts/MaonoVault.sol :: initialize",
+      "status": "confirmed-but-currently-unreachable",
+      "unprivileged": true,
+      "root_cause": "initialize() has no access control; MaonoVaultFactory_Phase1B clones and initializes atomically, so the window does not exist today",
+      "reproduction": "forge test --match-test test_UninitializedCloneCanBeSeizedByAnyone -vv",
+      "test": "test/security/access/AccessControl.t.sol",
+      "mitigation": "restrict initialize() to the factory address"
+    },
+    {
+      "id": "I-1",
+      "severity": "informational",
+      "title": "Two divergent MaonoVault contracts; the deployed one has no source in the repository",
+      "component": "contracts/MaonoVault.sol vs contracts/MaonoVault.json",
+      "status": "confirmed",
+      "reproduction": "forge test --match-test test_TheTwoVaultsShareNoAdminSurface -vv",
+      "test": "test/security/artifact/BackendIntegration.t.sol",
+      "mitigation": "commit the deployed contract's source, verify bytecode, and converge on one vault model"
+    }
+  ],
+  "negative_results": [
+    {"attack": "ERC-4626 inflation / first-depositor theft", "result": "blocked", "reason": "_decimalsOffset()=3 virtual shares; attacker cost exceeded victim loss by ~1098x (18-dec case) and in all 512 fuzz cases", "test": "test/security/erc4626/InflationAttack.t.sol"},
+    {"attack": "Donation sandwich", "result": "blocked", "reason": "donation accrues pro-rata to all holders including the victim; attacker exited 1 wei below capital", "test": "test/security/erc4626/InflationAttack.t.sol"},
+    {"attack": "Rounding / dust farming", "result": "blocked", "reason": "rounding always favours the vault across 200 repeated round trips and 512 fuzz cases", "test": "test/security/erc4626/Rounding.t.sol"},
+    {"attack": "Reentrancy via ERC-777-style callback", "result": "blocked", "reason": "nonReentrant on all four ERC-4626 entry points and both upkeep functions", "test": "test/security/tokens/MaliciousToken.t.sol"},
+    {"attack": "Forced underlying transfer", "result": "blocked", "reason": "totalAssets() is the raw balance; donations only reprice shares upward", "test": "test/security/tokens/MaliciousToken.t.sol"},
+    {"attack": "Silent-failure ERC-20", "result": "blocked", "reason": "rejected by SafeERC20", "test": "test/security/tokens/MaliciousToken.t.sol"},
+    {"attack": "Access-control bypass (both vaults)", "result": "blocked", "reason": "all setters revert for unprivileged callers; Ownable2Step handover cannot be hijacked", "test": "test/security/access/AccessControl.t.sol, test/security/artifact/DeployedArtifactVault.t.sol"},
+    {"attack": "Clone re-initialization / implementation initialization", "result": "blocked", "reason": "initializer modifier and _disableInitializers()", "test": "test/security/access/AccessControl.t.sol"},
+    {"attack": "Oracle-driven share repricing", "result": "blocked", "reason": "the oracle only feeds getSpawnCostInMTAA(); bounded and try/catch-wrapped", "test": "test/security/access/AccessControl.t.sol"},
+    {"attack": "Manager NAV repricing shares (artifact)", "result": "blocked", "reason": "totalAssets() ignores lastNAV", "test": "test/security/artifact/DeployedArtifactVault.t.sol"},
+    {"attack": "Queued-withdrawal double spend (artifact)", "result": "blocked", "reason": "shares checked and burned at fulfilment; redeem-first, transfer-first and stacked-request variants all ended at exactly the starting capital", "test": "test/security/artifact/WithdrawalQueue.t.sol"},
+    {"attack": "Management-fee farming (artifact)", "result": "blocked", "reason": "fees accrue pro-rata over time; an immediate second call collects 0", "test": "test/security/artifact/DeployedArtifactVault.t.sol"},
+    {"attack": "Unbounded fee parameters (artifact)", "result": "blocked", "reason": "setPerformanceFee/setManagementFee are capped", "test": "test/security/artifact/DeployedArtifactVault.t.sol"},
+    {"attack": "Outsider-induced hibernation", "result": "blocked", "reason": "collectMonthlyUpkeep() is onlyOwner", "test": "test/security/emergency/PauseAndHibernation.t.sol"},
+    {"attack": "Reaching the CLOSED vault status", "result": "blocked", "reason": "no code path sets it (dead state)", "test": "test/security/emergency/PauseAndHibernation.t.sol"}
+  ]
+}
