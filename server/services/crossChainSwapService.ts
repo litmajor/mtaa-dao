@@ -294,7 +294,6 @@ export class CrossChainSwapService {
   private async bridgeTokens(quote: SwapQuote, userAddress: string): Promise<string> {
     const fromConfig = ChainRegistry.getChainConfig(quote.fromChain);
     if (!fromConfig) throw new Error(`Target system configuration footprint missing for chain: ${quote.fromChain}`);
-
     const providerUrls = resolveProviderUrls();
     const resilientProvider = this.createResilientProvider(providerUrls.rpcUrl || fromConfig.rpcUrl);
     const signer = await resilientProvider.call(async (provider) => {

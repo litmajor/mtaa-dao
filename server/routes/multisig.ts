@@ -48,6 +48,10 @@ router.get('/:daoId/pending', isAuthenticated, async (req: Request, res: Respons
     const { daoId } = req.params;
     const userId = req.user?.id;
 
+    if (!userId) {
+      return res.status(401).json({ success: false, message: 'Authentication required', code: 'UNAUTHENTICATED' });
+    }
+
     // Verify user is DAO member
     const membership = await db.select()
       .from(daoMemberships)
@@ -130,6 +134,10 @@ router.get('/:daoId/approval/:approvalId', isAuthenticated, async (req: Request,
   try {
     const { daoId, approvalId } = req.params;
     const userId = req.user?.id;
+
+    if (!userId) {
+      return res.status(401).json({ success: false, message: 'Authentication required', code: 'UNAUTHENTICATED' });
+    }
 
     // Verify user is DAO member
     const membership = await db.select()
@@ -226,6 +234,10 @@ router.post('/:daoId/approval/:approvalId/sign', isAuthenticated, async (req: Re
     const { daoId, approvalId } = req.params;
     const { signature } = req.body;
     const userId = req.user?.id;
+
+    if (!userId) {
+      return res.status(401).json({ success: false, message: 'Authentication required', code: 'UNAUTHENTICATED' });
+    }
 
     if (!signature) {
       return res.status(400).json({
@@ -376,6 +388,10 @@ router.post('/:daoId/approval/:approvalId/reject', isAuthenticated, async (req: 
     const { reason } = req.body;
     const userId = req.user?.id;
 
+    if (!userId) {
+      return res.status(401).json({ success: false, message: 'Authentication required', code: 'UNAUTHENTICATED' });
+    }
+
     if (!reason) {
       return res.status(400).json({
         success: false,
@@ -475,6 +491,10 @@ router.get('/:daoId/approval/:approvalId/status', isAuthenticated, async (req: R
     const { daoId, approvalId } = req.params;
     const userId = req.user?.id;
 
+    if (!userId) {
+      return res.status(401).json({ success: false, message: 'Authentication required', code: 'UNAUTHENTICATED' });
+    }
+
     // Verify user is DAO member
     const membership = await db.select()
       .from(daoMemberships)
@@ -546,4 +566,3 @@ router.get('/:daoId/approval/:approvalId/status', isAuthenticated, async (req: R
 });
 
 export default router;
-
