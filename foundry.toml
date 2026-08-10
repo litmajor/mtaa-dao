@@ -1,0 +1,35 @@
+# Foundry configuration for the local-only Mtaa security research suite.
+# Scope is intentionally narrow: only the security harness contracts and the
+# Mtaa contracts they import are compiled, so the suite runs without the full
+# Hardhat/npm toolchain of the main application.
+#
+# Setup:  bash test/security/setup.sh
+# Run:    forge test -vv
+[profile.default]
+src = "test/security/harness"
+test = "test/security"
+script = "test/security/script"
+out = "out-security"
+cache_path = "cache-security"
+libs = ["lib", "node_modules"]
+solc = "0.8.24"
+evm_version = "cancun"
+optimizer = true
+optimizer_runs = 200
+remappings = [
+    "forge-std/=lib/forge-std/src/",
+    "@openzeppelin/contracts/=node_modules/@openzeppelin/contracts/",
+    "@openzeppelin/contracts-upgradeable/=node_modules/@openzeppelin/contracts-upgradeable/",
+]
+
+# The suite deploys the committed Hardhat artifact `contracts/MaonoVault.json`
+# (the bytecode the backend integrates with) via vm.getCode.
+fs_permissions = [{ access = "read", path = "./contracts" }]
+
+[fuzz]
+runs = 512
+
+[invariant]
+runs = 128
+depth = 32
+fail_on_revert = false
