@@ -6,8 +6,10 @@ import "./DeployedArtifactVault.t.sol";
 
 /// @title  Backend <-> contract integration mismatches
 /// @notice `server/blockchain.ts` binds `contracts/MaonoVault.json` to
-///         `MAONO_CONTRACT_ADDRESS`. These tests check that every call the
-///         backend makes actually exists on the code it may be pointed at.
+///         `MAONO_CONTRACT_ADDRESS`. That artifact is now regenerated from
+///         `contracts/MaonoVault.sol`, so the calls the backend makes are
+///         checked against both the canonical vault and the archived legacy
+///         bytecode the backend was originally written for.
 contract BackendIntegrationTest is MaonoVaultBaseTest {
     IMaonoVaultDeployed internal artifactVault;
     MockERC20 internal artifactAsset;
@@ -18,7 +20,8 @@ contract BackendIntegrationTest is MaonoVaultBaseTest {
         super.setUp();
         artifactAsset = new MockERC20("cUSD", "cUSD", 18);
         bytes memory initCode = abi.encodePacked(
-            vm.getCode("contracts/MaonoVault.json"), abi.encode(address(artifactAsset), treasury, manager)
+            vm.getCode("test/security/artifact/legacy/MaonoVault.legacy.json"),
+            abi.encode(address(artifactAsset), treasury, manager)
         );
         address d;
         assembly {
@@ -37,9 +40,10 @@ contract BackendIntegrationTest is MaonoVaultBaseTest {
         assertFalse(ok, "backend calls a function the contract does not have");
     }
 
-    /// @notice The two MaonoVaults in this repository are not interchangeable:
-    ///         pointing the backend at a Phase 1B vault breaks NAV automation,
-    ///         and the artifact has none of the Phase 1B upkeep surface.
+    /// @notice The canonical vault and the legacy artifact are not
+    ///         interchangeable: pointing the backend at a Phase 1B vault breaks
+    ///         NAV automation, and the legacy bytecode has none of the Phase 1B
+    ///         upkeep surface.
     function test_TheTwoVaultsShareNoAdminSurface() public {
         string[4] memory artifactOnly =
             ["updateNAV(uint256)", "previewNAV()", "emergencyWithdraw(uint256)", "collectManagementFees()"];

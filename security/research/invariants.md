@@ -1,7 +1,8 @@
 # Invariants tested
 
-95 tests across 12 suites. Fuzz tests run 512 cases each; the stateful
-invariant suite runs 128 runs x 32 depth (4096 calls per invariant).
+159 tests across 19 suites (Phase 1 baseline: 95 across 12; Phase 2 added the
+seven suites under `test/security/phase2/`). Fuzz tests run 512 cases each; each
+stateful invariant suite runs 128 runs x 32 depth (4096 calls per invariant).
 
 Run everything:
 
@@ -65,13 +66,66 @@ every sequence.
 Boundary values covered in `Rounding.test_BoundaryValues`: 0, 1 wei, 1 share,
 `type(uint128).max`, and 6-decimal assets (`test_SixDecimalAssetConversionsAreConsistent`).
 
+## Phase 2 economic invariants (`test/security/phase2/VaultInvariants.t.sol`)
+
+Stateful handler over four unprivileged actors plus the owner: deposit, mint,
+withdraw, redeem, share transfer, donation, upkeep at random intervals with
+random MTAA solvency, reactivation, and pause toggling, in arbitrary order.
+An independent off-chain ledger of every asset in and out is reconciled against
+the vault after every call.
+
+| | Invariant | Result |
+|---|---|---|
+| I1 | `totalAssets() == asset.balanceOf(vault)` | holds |
+| I2 | `sum(previewRedeem(balanceOf(actor))) <= totalAssets()` | holds |
+| I3 | `totalAssets() == totalIn - totalOut` (external ledger) | holds |
+| I4 | `totalOut <= totalIn` — users never extract more than they contributed | holds |
+| I5 | `sum(balanceOf(actors)) == totalSupply()`; the vault never self-holds | holds |
+| I6 | treasury and owner never receive the underlying asset | holds |
+| I7 | assets that back no share are never paid out to anyone | holds |
+| I8 | `status <= HIBERNATING` (CLOSED is unreachable) | holds |
+
+I7 replaces the naive "an empty vault holds only dust": donations to a
+share-less or near-empty vault, and deposits that round down to zero shares,
+leave assets that back no share (P2-5, P2-3). They are unattributable, not lost
+to an accounting error, and nobody ever receives them.
+
+## Phase 2 harness invariant (`test/security/phase2/Phase2Base.sol`)
+
+Asserted after every step of every hand-built sequence:
+
+```text
+totalAssets()
+  == asset.balanceOf(vault)
+  == initialAssets + deposits + donations + yield - withdrawals - assetFees
+convertToAssets(totalSupply()) <= totalAssets()
+```
+
+## Phase 2 state and price invariants
+
+| Invariant | Where | Result |
+|---|---|---|
+| Only donations move the price; deposit, withdraw, transfer, upkeep, pause and hibernation are price-neutral | `SharePriceTransitions.test_PriceMovesOnlyOnDonations` | holds |
+| Price per share never decreases under user operations | `testFuzz_PriceNeverDecreasesUnderUserOperations` | holds |
+| `previewMint(previewDeposit(a)) <= a` and `previewRedeem(previewDeposit(a)) <= a` at any donated price | `testFuzz_PreviewsAreCoherentAtAnyPrice` | holds |
+| deposit/redeem and mint/redeem round trips never profit at any price | `testFuzz_RoundTripsAreNeverProfitable` | holds |
+| Share accounting is entirely time-independent | `TemporalAssumptions.test_SharePriceIsTimeIndependent` | holds |
+| Pause and hibernation are independent locks; share transfers survive both | `StateMachine.*` | holds |
+| MTAA upkeep is conserved: `paid == burned + toTreasury`, and never touches the asset | `EconomicComposition.test_ScenarioB_*` | holds |
+| The build artifact's runtime code equals the compiled source (metadata-stripped) | `ArtifactParity.*` | holds after the phase 2 correction |
+
 ## Invariants that do NOT hold
 
-| Broken invariant | Finding |
-|---|---|
-| `shares minted == f(assets actually received)` | M-2 (fee-on-transfer / rebasing assets) |
-| `fee charged == advertised fee` | M-1 (flash-loanable MTAA discount) |
-| depositors can always exit a solvent vault | M-3 (pause / hibernation freeze) |
-| `totalAssets` backs the outstanding shares | H-1 (artifact `emergencyWithdraw`) |
-| a successful `withdraw()` transfers assets | M-4 (artifact large-withdrawal queue) |
-| reported NAV is backed by assets | M-5 (artifact `previewNAV`) |
+| Broken invariant | Finding | Applies to |
+|---|---|---|
+| the protocol collects the fee it advertises | P2-1 (unenforceable, self-priced upkeep) | canonical source |
+| delinquency costs more than compliance | P2-2 (hibernation is the cheap path) | canonical source |
+| a successful `deposit()` gives the depositor a claim | P2-3 (zero-share deposits, supersedes L-1) | canonical source |
+| paying the fee restores service | P2-4 (upkeep charged while hibernating) | canonical source |
+| `fee charged == advertised fee` | M-1 (flash-loanable MTAA discount) | canonical source |
+| depositors can always exit a solvent vault | M-3 + P2-2 (pause / hibernation freeze) | canonical source |
+| the integration layer's API matches the canonical ABI | P2-7 (supersedes M-6, I-1) | deploy scripts + backend |
+| `shares minted == f(assets actually received)` | M-2 | only if a fee-on-transfer/rebasing asset is listed |
+| `totalAssets` backs the outstanding shares | H-1 (`emergencyWithdraw`) | legacy artifact only |
+| a successful `withdraw()` transfers assets | M-4 (large-withdrawal queue) | legacy artifact only |
+| reported NAV is backed by assets | M-5 (`previewNAV`) | legacy artifact only |

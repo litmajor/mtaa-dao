@@ -22,7 +22,7 @@ contract WithdrawalQueueTest is Test {
     function setUp() public {
         asset = new MockERC20("cUSD", "cUSD", 18);
         bytes memory initCode =
-            abi.encodePacked(vm.getCode("contracts/MaonoVault.json"), abi.encode(address(asset), treasury, manager));
+            abi.encodePacked(vm.getCode("test/security/artifact/legacy/MaonoVault.legacy.json"), abi.encode(address(asset), treasury, manager));
         address d;
         assembly {
             d := create(0, add(initCode, 0x20), mload(initCode))

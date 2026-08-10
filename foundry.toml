@@ -22,9 +22,13 @@ remappings = [
     "@openzeppelin/contracts-upgradeable/=node_modules/@openzeppelin/contracts-upgradeable/",
 ]
 
-# The suite deploys the committed Hardhat artifact `contracts/MaonoVault.json`
-# (the bytecode the backend integrates with) via vm.getCode.
-fs_permissions = [{ access = "read", path = "./contracts" }]
+# The suite reads the committed artifact `contracts/MaonoVault.json` (regenerated
+# from the Solidity source by scripts/build-maono-artifact.mjs) and deploys the
+# archived pre-Phase-1B bytecode under test/security/artifact/legacy via vm.getCode.
+fs_permissions = [
+    { access = "read", path = "./contracts" },
+    { access = "read", path = "./test/security/artifact/legacy" },
+]
 
 [fuzz]
 runs = 512
