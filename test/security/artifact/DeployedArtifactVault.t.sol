@@ -4,11 +4,14 @@ pragma solidity ^0.8.20;
 import "forge-std/Test.sol";
 import "../harness/Mocks.sol";
 
-/// @notice ABI of the *compiled artifact* `contracts/MaonoVault.json`. This is
-///         the contract `server/blockchain.ts` actually talks to (deposit,
-///         withdraw, updateNAV, distributePerformanceFee). Its Solidity source
-///         is not present in the repository, so it is tested black-box by
-///         deploying the artifact bytecode on a local chain.
+/// @notice ABI of the *legacy artifact*
+///         `test/security/artifact/legacy/MaonoVault.legacy.json`. Until Phase 2
+///         this bytecode sat at `contracts/MaonoVault.json` even though the
+///         Solidity source had been replaced by the Phase 1B vault, so
+///         `server/blockchain.ts` (updateNAV, previewNAV, emergencyWithdraw)
+///         is still written against it. Its Solidity source is not in the
+///         repository, so it is tested black-box by deploying the archived
+///         bytecode on a local chain.
 interface IMaonoVaultDeployed {
     function asset() external view returns (address);
     function manager() external view returns (address);
@@ -66,10 +69,11 @@ interface IMaonoVaultDeployed {
 }
 
 /// @title  The MaonoVault the backend actually integrates with
-/// @dev    `contracts/MaonoVault.sol` (Phase 1B: upkeep, hibernation, clone) and
-///         `contracts/MaonoVault.json` (NAV, manager, performance/management
-///         fees, delayed large withdrawals) are two *different* contracts. The
-///         server only ever loads the artifact, so it is audited here as well.
+/// @dev    There is a single canonical vault source, `contracts/MaonoVault.sol`
+///         (Phase 1B: upkeep, hibernation, clone). The legacy artifact (NAV,
+///         manager, performance/management fees, delayed large withdrawals) is
+///         a *different, source-less* contract that the backend is still coded
+///         against, so it is kept here as integration-risk evidence.
 contract DeployedArtifactVaultTest is Test {
     IMaonoVaultDeployed internal vault;
     MockERC20 internal asset;
@@ -85,7 +89,7 @@ contract DeployedArtifactVaultTest is Test {
 
     function setUp() public {
         asset = new MockERC20("Celo Dollar", "cUSD", 18);
-        bytes memory creation = vm.getCode("contracts/MaonoVault.json");
+        bytes memory creation = vm.getCode("test/security/artifact/legacy/MaonoVault.legacy.json");
         bytes memory initCode = abi.encodePacked(creation, abi.encode(address(asset), treasury, manager));
         address deployed;
         vm.prank(deployer);
