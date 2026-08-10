@@ -41,6 +41,14 @@ contract RoundingTest is MaonoVaultBaseTest {
 
         _fund(attacker, amount);
         uint256 before = asset.balanceOf(attacker);
+        if (vault.previewDeposit(amount) == 0) {
+            // P2-3: a deposit that would mint nothing is rejected outright.
+            vm.prank(attacker);
+            vm.expectRevert(MaonoVault_Phase1B.ZeroShares.selector);
+            vault.deposit(amount, attacker);
+            assertEq(asset.balanceOf(attacker), before, "rejected deposit keeps the assets with the depositor");
+            return;
+        }
         _deposit(attacker, amount);
         _redeemAll(attacker);
         assertLe(asset.balanceOf(attacker), before, "round trip must not create value");
@@ -94,7 +102,8 @@ contract RoundingTest is MaonoVaultBaseTest {
     }
 
     // ------------------------------------------------------------------
-    // Deposits that round to zero shares must not silently burn assets.
+    // P2-3 regression: deposits that round to zero shares used to be accepted,
+    // taking the assets and minting nothing. They must now revert.
     // ------------------------------------------------------------------
     function test_ZeroShareDepositBurnsAssets() public {
         _fund(attacker, 1);
@@ -104,15 +113,49 @@ contract RoundingTest is MaonoVaultBaseTest {
         _donate(bob, 1_000_000e18);
 
         _fund(victim, 1e6);
-        uint256 shares = _deposit(victim, 1e6);
-        console2.log("  victim shares for 1e6 assets:", shares);
-        if (shares == 0) {
-            // The vault accepts the assets and mints nothing: a real (if
-            // uneconomic to induce) loss for the depositor. No `minShares`
-            // parameter and no revert-on-zero-shares guard exists.
-            assertEq(asset.balanceOf(victim), 0, "assets were taken");
-            assertEq(vault.balanceOf(victim), 0, "no shares minted");
+        assertEq(vault.previewDeposit(1e6), 0, "scenario must round to zero shares");
+
+        uint256 victimAssetsBefore = asset.balanceOf(victim);
+        uint256 vaultAssetsBefore = vault.totalAssets();
+
+        vm.prank(victim);
+        vm.expectRevert(MaonoVault_Phase1B.ZeroShares.selector);
+        vault.deposit(1e6, victim);
+
+        assertEq(asset.balanceOf(victim), victimAssetsBefore, "no assets taken");
+        assertEq(vault.balanceOf(victim), 0, "no shares minted");
+        assertEq(vault.totalAssets(), vaultAssetsBefore, "vault gained nothing");
+    }
+
+    /// @notice P2-3: mint(0) is likewise rejected instead of being a free no-op.
+    function test_ZeroShareMintReverts() public {
+        _fund(bob, 1_000e18);
+        _deposit(bob, 1_000e18);
+
+        _fund(attacker, 1e18);
+        vm.prank(attacker);
+        vm.expectRevert(MaonoVault_Phase1B.ZeroShares.selector);
+        vault.mint(0, attacker);
+    }
+
+    /// @notice P2-3: the smallest deposit that does mint a share still works, so the
+    ///         guard rejects only economically empty deposits.
+    function test_SmallestNonZeroShareDepositSucceeds() public {
+        _fund(attacker, 1);
+        _deposit(attacker, 1);
+        _fund(bob, 1_000_000e18);
+        _donate(bob, 1_000_000e18);
+
+        uint256 amount = 1e6;
+        while (vault.previewDeposit(amount) == 0) {
+            amount *= 2;
         }
+
+        _fund(victim, amount);
+        uint256 preview = vault.previewDeposit(amount);
+        uint256 shares = _deposit(victim, amount);
+        assertEq(shares, preview, "preview and execution agree at the boundary");
+        assertGt(shares, 0, "one-share deposit is still allowed");
     }
 
     // ------------------------------------------------------------------
@@ -121,8 +164,10 @@ contract RoundingTest is MaonoVaultBaseTest {
     function test_BoundaryValues() public {
         _fund(attacker, type(uint128).max);
 
+        // P2-3: a zero deposit mints nothing, so it is rejected rather than accepted.
         vm.prank(attacker);
-        vault.deposit(0, attacker); // zero deposit must be a no-op, not a revert
+        vm.expectRevert(MaonoVault_Phase1B.ZeroShares.selector);
+        vault.deposit(0, attacker);
         assertEq(vault.balanceOf(attacker), 0);
 
         // Extremely large deposit: no overflow, conversions stay consistent.

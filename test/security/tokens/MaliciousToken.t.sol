@@ -51,48 +51,35 @@ contract ReentrantDepositor is IReentrancyHook {
 ///         what such a misconfiguration would cost depositors.
 contract MaliciousTokenTest is MaonoVaultBaseTest {
     // ------------------------------------------------------------------
-    // Fee-on-transfer asset: the vault credits `assets` requested, not
-    // `assets` received.
+    // M-2 regression (was: test_FeeOnTransferToken_BreaksShareAccounting).
+    // The vault used to credit `assets` requested rather than `assets`
+    // received, minting shares against value that never arrived and
+    // socialising the shortfall. Deposits of such an asset now revert.
     // ------------------------------------------------------------------
-    function test_FeeOnTransferToken_BreaksShareAccounting() public {
+    function test_FeeOnTransferToken_DepositIsRejected() public {
         FeeOnTransferERC20 fot = new FeeOnTransferERC20(100); // 1%
         _deployVaultWithAsset(address(fot), 0);
 
         fot.mint(victim, 1_000e18);
+        uint256 shares = vault.previewDeposit(1_000e18);
         vm.startPrank(victim);
         fot.approve(address(vault), type(uint256).max);
-        uint256 shares = vault.deposit(1_000e18, victim);
+        vm.expectRevert(MaonoVault_Phase1B.AssetTransferMismatch.selector);
+        vault.deposit(1_000e18, victim);
+        // `mint` funnels through the same accounting check.
+        vm.expectRevert(MaonoVault_Phase1B.AssetTransferMismatch.selector);
+        vault.mint(shares, victim);
         vm.stopPrank();
 
-        uint256 received = fot.balanceOf(address(vault));
-        console2.log("  assets requested :", uint256(1_000e18));
-        console2.log("  assets received  :", received);
-        console2.log("  shares minted    :", shares);
-        console2.log("  redeemable       :", vault.previewRedeem(shares));
-
-        // Accounting != economic reality: shares were minted for value the
-        // vault never received.
-        assertEq(received, 990e18);
-        assertGt(vault.convertToAssets(shares) + 1, received, "shares over-issued vs assets held");
-
-        // Second depositor now subsidises the first one's shortfall.
-        fot.mint(bob, 1_000e18);
-        vm.startPrank(bob);
-        fot.approve(address(vault), type(uint256).max);
-        vault.deposit(1_000e18, bob);
-        vm.stopPrank();
-
-        uint256 victimShares = vault.balanceOf(victim);
-        vm.prank(victim);
-        uint256 out = vault.redeem(victimShares, victim, victim);
-        console2.log("  first depositor exit value:", out);
-        uint256 bobClaim = vault.previewRedeem(vault.balanceOf(bob));
-        console2.log("  second depositor claim    :", bobClaim);
-        // Neither depositor can be made whole: every participant silently pays
-        // the transfer fee twice (in and out) and the shortfall is socialised.
-        assertLt(out, 1_000e18, "first depositor exits below principal");
-        assertLt(bobClaim, 1_000e18, "second depositor claim below principal");
+        assertEq(fot.balanceOf(victim), 1_000e18, "depositor keeps its capital");
+        assertEq(vault.totalSupply(), 0, "no shares were issued against absent assets");
         assertEq(vault.totalAssets(), fot.balanceOf(address(vault)));
+
+        // The misconfiguration is therefore inert: nobody can be the first
+        // depositor, so nobody can be the second one subsidising a shortfall.
+        console2.log("  assets requested :", uint256(1_000e18));
+        console2.log("  assets received  :", uint256(0));
+        console2.log("  shares minted    :", uint256(0));
     }
 
     // ------------------------------------------------------------------

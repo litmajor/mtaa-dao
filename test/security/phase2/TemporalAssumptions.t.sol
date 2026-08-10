@@ -93,12 +93,12 @@ contract TemporalAssumptionsTest is Phase2Base {
         console2.log("  collections in one year:", collections);
     }
 
-    /// @notice FINDING (L, owner self-harm): `collectMonthlyUpkeep()` has no
-    ///         `onlyActive` guard, so it still charges while the vault is
-    ///         HIBERNATING — and paying it does not lift hibernation. The owner
-    ///         pays the monthly fee, depositors stay frozen, and reactivation
-    ///         still costs the full 1.5x on top.
-    function test_UpkeepPaidWhileHibernatingDoesNotReactivate() public {
+    /// @notice P2-4 regression (was: test_UpkeepPaidWhileHibernatingDoesNotReactivate).
+    ///         `collectMonthlyUpkeep()` had no `onlyActive` guard, so it charged while
+    ///         the vault was HIBERNATING without lifting hibernation: the owner paid,
+    ///         depositors stayed frozen and reactivation was still owed on top. The
+    ///         call now reverts, leaving reactivation as the single paid way out.
+    function test_UpkeepIsRejectedWhileHibernating() public {
         _depositTracked(bob, 10_000e18);
 
         // Hibernate with an empty MTAA balance.
@@ -108,31 +108,44 @@ contract TemporalAssumptionsTest is Phase2Base {
         _hibernate();
         assertEq(_status(), 1, "HIBERNATING");
 
-        // The owner tops up and pays the ordinary monthly upkeep.
+        // The owner tops up and tries to pay the ordinary monthly upkeep.
         _fundOwnerWithMtaa(1_000e18);
         uint256 before = mtaa.balanceOf(vaultOwner);
         vm.warp(block.timestamp + 31 days);
         vm.prank(vaultOwner);
-        vault.collectMonthlyUpkeep();
-        uint256 monthlyPaid = before - mtaa.balanceOf(vaultOwner);
-
-        assertGt(monthlyPaid, 0, "the fee was charged");
-        assertEq(_status(), 1, "still HIBERNATING after paying");
-        uint256 bobShares = vault.balanceOf(bob);
-        vm.prank(bob);
         vm.expectRevert(MaonoVault_Phase1B.VaultIsHibernating.selector);
-        vault.redeem(bobShares, bob, bob);
+        vault.collectMonthlyUpkeep();
 
-        // Reactivation is still owed in full.
-        uint256 beforeReactivation = mtaa.balanceOf(vaultOwner);
+        // Repeating it, including twice in the same block, changes nothing.
+        vm.startPrank(vaultOwner);
+        for (uint256 i = 0; i < 3; ++i) {
+            vm.expectRevert(MaonoVault_Phase1B.VaultIsHibernating.selector);
+            vault.collectMonthlyUpkeep();
+        }
+        vm.stopPrank();
+
+        assertEq(mtaa.balanceOf(vaultOwner), before, "no MTAA taken while hibernating");
+        assertEq(_status(), 1, "still HIBERNATING");
+        (,, uint256 paidWhileFrozen,,) = vault.getVaultMetrics();
+        assertEq(paidWhileFrozen, 0, "nothing booked as paid");
+
+        // Reactivation is the only paid transition, and it does transition.
+        uint256 expected = vault.getReactivationCost();
         vm.prank(vaultOwner);
         vault.reactivateFromHibernation();
-        uint256 reactivationPaid = beforeReactivation - mtaa.balanceOf(vaultOwner);
-        assertEq(reactivationPaid, (vault.getMonthlyUpkeepCost() * 150) / 100);
+        uint256 reactivationPaid = before - mtaa.balanceOf(vaultOwner);
+        assertEq(reactivationPaid, expected);
+        assertEq(_status(), 0, "ACTIVE again");
 
-        console2.log("---- economics: paying upkeep while hibernating");
-        console2.log("  monthly fee wasted   :", monthlyPaid);
-        console2.log("  reactivation still due:", reactivationPaid);
+        // ...and ordinary upkeep works again once ACTIVE.
+        vm.warp(block.timestamp + 31 days);
+        vm.prank(vaultOwner);
+        vault.collectMonthlyUpkeep();
+        assertEq(_status(), 0);
+
+        console2.log("---- economics: upkeep while hibernating");
+        console2.log("  monthly fee taken while frozen:", uint256(0));
+        console2.log("  reactivation charged          :", reactivationPaid);
     }
 
     // ------------------------------------------------------------------

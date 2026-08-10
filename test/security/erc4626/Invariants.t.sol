@@ -182,6 +182,14 @@ contract VaultInvariantTest is MaonoVaultBaseTest {
         _fund(attacker, uint256(amount) * 4);
 
         uint256 pd = vault.previewDeposit(amount);
+        if (pd == 0) {
+            // P2-3: preview and execution stay coherent — a zero-share preview means
+            // the deposit is rejected, not silently absorbed.
+            vm.prank(attacker);
+            vm.expectRevert(MaonoVault_Phase1B.ZeroShares.selector);
+            vault.deposit(amount, attacker);
+            return;
+        }
         vm.prank(attacker);
         assertEq(vault.deposit(amount, attacker), pd, "previewDeposit != deposit");
 
