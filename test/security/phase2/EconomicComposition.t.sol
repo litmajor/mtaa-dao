@@ -68,7 +68,16 @@ contract EconomicCompositionTest is Phase2Base {
 
         _depositTracked(attacker, a);
         _donateTracked(attacker, d);
-        _depositTracked(victim, v);
+        if (vault.previewDeposit(v) == 0) {
+            // P2-3: the victim is refused instead of being absorbed, so the donation
+            // attack has no target at all.
+            vm.prank(victim);
+            vm.expectRevert(MaonoVault_Phase1B.ZeroShares.selector);
+            vault.deposit(v, victim);
+            assertEq(asset.balanceOf(victim), victimStart, "victim keeps its capital");
+        } else {
+            _depositTracked(victim, v);
+        }
         _redeemAllTracked(attacker);
         _redeemAllTracked(victim);
 
@@ -147,10 +156,11 @@ contract EconomicCompositionTest is Phase2Base {
     // ==================================================================
     // Scenario E — hibernation: can a depositor be permanently trapped?
     // ==================================================================
-    /// @notice Depositors are trapped for exactly as long as the owner chooses:
-    ///         reactivation is `onlyOwner` and requires MTAA the depositors
-    ///         cannot supply on the owner's behalf. There is no self-service
-    ///         exit, no timeout and no guardian.
+    /// @notice P2-2 regression. Depositors used to be trapped for exactly as long as
+    ///         the owner chose: reactivation is `onlyOwner` and needs MTAA depositors
+    ///         cannot supply, with no self-service exit, no timeout and no guardian.
+    ///         The trap is now bounded by EXIT_GRACE_PERIOD, after which redemptions
+    ///         work regardless of the owner. Reactivation stays owner-only.
     function test_ScenarioE_HibernationTrapIsOwnerReleasedOnly() public {
         _depositTracked(bob, 50_000e18);
         _hibernate();
@@ -163,21 +173,26 @@ contract EconomicCompositionTest is Phase2Base {
         vm.expectRevert(abi.encodeWithSignature("OwnableUnauthorizedAccount(address)", bob));
         vault.reactivateFromHibernation();
 
-        vm.warp(block.timestamp + 3650 days);
+        // The freeze bites immediately...
         uint256 bobShares = vault.balanceOf(bob);
         vm.prank(bob);
         vm.expectRevert(MaonoVault_Phase1B.VaultIsHibernating.selector);
         vault.redeem(bobShares, bob, bob);
+        assertEq(vault.maxRedeem(bob), 0, "max* agrees while the freeze holds");
+
+        // ...but P2-2: it expires. After EXIT_GRACE_PERIOD the depositor leaves
+        // without needing the owner's cooperation at all.
+        vm.warp(block.timestamp + vault.EXIT_GRACE_PERIOD());
+        assertTrue(vault.exitsOpen(), "exits reopen once the freeze has run its course");
+        assertEq(vault.maxRedeem(bob), bobShares);
 
         console2.log("  frozen assets      :", vault.totalAssets());
         console2.log("  months hibernating :", vault.getMonthsSinceHibernation());
 
         // Value is preserved throughout: this is a liveness failure, not theft.
         _assertConservation("E: frozen");
-        _fundOwnerWithMtaa(1_000e18);
-        vm.prank(vaultOwner);
-        vault.reactivateFromHibernation();
-        assertApproxEqAbs(_redeemAllTracked(bob), 50_000e18, 1, "principal intact after a decade of freeze");
+        assertApproxEqAbs(_redeemAllTracked(bob), 50_000e18, 1, "principal intact and self-recoverable");
+        assertEq(_status(), 1, "the vault is still hibernating; only the exit reopened");
     }
 
     // ==================================================================
@@ -333,36 +348,40 @@ contract EconomicCompositionTest is Phase2Base {
     ///         the threshold, it does not remove it. The attacker cannot profit
     ///         (seeding the price costs more than the theft), so this is a loss
     ///         users inflict on themselves in a high-priced vault.
-    function test_ZeroShareDepositIsSilentlyAbsorbed() public {
+    /// @notice P2-3 regression (was: test_ZeroShareDepositIsSilentlyAbsorbed).
+    ///         A deposit that mints nothing used to succeed, handing the assets to the
+    ///         incumbent holders. It reverts now, and nothing moves.
+    function test_ZeroShareDepositIsRejected() public {
         _depositTracked(bob, 1e18);
         _donateTracked(bob, 900_000e18); // share price now ~900 wei of asset per share
 
         uint256 victimStart = asset.balanceOf(victim);
+        uint256 assetsBefore = vault.totalAssets();
+
         vm.prank(victim);
-        uint256 shares = vault.deposit(500, victim);
-        ledger.deposited += 500;
+        vm.expectRevert(MaonoVault_Phase1B.ZeroShares.selector);
+        vault.deposit(500, victim);
 
-        assertEq(shares, 0, "expected a zero-share deposit");
-        assertEq(vault.previewRedeem(vault.balanceOf(victim)), 0);
-        assertEq(victimStart - asset.balanceOf(victim), 500, "assets kept by the vault");
+        assertEq(asset.balanceOf(victim), victimStart, "no assets taken");
+        assertEq(vault.balanceOf(victim), 0, "no shares minted");
+        assertEq(vault.totalAssets(), assetsBefore, "incumbents gained nothing");
+        _assertConservation("zero-share deposit rejected");
 
-        // ...and the assets land with the existing holder, not the depositor.
         uint256 bobOut = _redeemAllTracked(bob);
-        assertGe(bobOut, 900_000e18, "absorbed deposit accrues to incumbents");
-        _assertConservation("zero-share deposit");
-
-        // Economics: seeding the price cost 900_000e18; the take is 500 wei.
-        console2.log("  attacker cost to raise the price :", uint256(900_000e18));
-        console2.log("  value absorbed from the victim   :", uint256(500));
+        assertApproxEqAbs(bobOut, assetsBefore, 1e6, "incumbent redeems only its own deposit and donation");
     }
 
-    /// @notice `previewDeposit` tells the truth about it, so an integrating
-    ///         frontend can refuse the deposit — the contract itself will not.
+    /// @notice `previewDeposit` and `deposit` agree: what the preview says is worthless
+    ///         the vault refuses to accept.
     function test_ZeroShareDepositIsPredictableOffChain() public {
         _depositTracked(bob, 1e18);
         _donateTracked(bob, 900_000e18);
         assertEq(vault.previewDeposit(500), 0, "preview warns before the loss");
-        assertGt(vault.maxDeposit(victim), 0, "maxDeposit still advertises the vault as open");
+        assertGt(vault.maxDeposit(victim), 0, "the vault is open for economically real deposits");
+
+        vm.prank(victim);
+        vm.expectRevert(MaonoVault_Phase1B.ZeroShares.selector);
+        vault.deposit(500, victim);
     }
 
     /// @notice Dust deposits cannot be laundered into value by repeating them.

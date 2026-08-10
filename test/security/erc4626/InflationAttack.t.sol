@@ -100,7 +100,18 @@ contract InflationAttackTest is MaonoVaultBaseTest {
         console2.log("  attacker capital multiple            :", requiredDonation / victimDeposit);
 
         _donate(attacker, requiredDonation);
-        uint256 victimShares = _deposit(victim, victimDeposit);
+
+        // P2-3: the round-to-zero outcome is now a revert, so the victim keeps its
+        // capital instead of donating it to the attacker's share price.
+        uint256 victimShares = vault.previewDeposit(victimDeposit);
+        if (victimShares == 0) {
+            vm.prank(victim);
+            vm.expectRevert(MaonoVault_Phase1B.ZeroShares.selector);
+            vault.deposit(victimDeposit, victim);
+            assertEq(asset.balanceOf(victim), victimDeposit, "victim capital untouched");
+        } else {
+            victimShares = _deposit(victim, victimDeposit);
+        }
 
         uint256 out = _redeemAll(attacker);
         uint256 ending = asset.balanceOf(attacker);
@@ -184,6 +195,15 @@ contract InflationAttackTest is MaonoVaultBaseTest {
 
         _deposit(attacker, seed);
         if (donation > 0) _donate(attacker, donation);
+        if (vault.previewDeposit(victimDeposit) == 0) {
+            // P2-3: a victim who would be rounded to zero shares is refused, so the
+            // donation cannot take anything from it at all.
+            vm.prank(victim);
+            vm.expectRevert(MaonoVault_Phase1B.ZeroShares.selector);
+            vault.deposit(victimDeposit, victim);
+            assertEq(asset.balanceOf(victim), victimDeposit, "victim principal untouched");
+            return;
+        }
         uint256 victimShares = _deposit(victim, victimDeposit);
 
         uint256 redeemable = vault.previewRedeem(victimShares);

@@ -15,18 +15,25 @@ contract AccessControlTest is MaonoVaultBaseTest {
     function test_AllAdminSettersAreOwnerGated() public {
         vm.startPrank(attacker);
 
-        _expectUnauthorized(attacker);
+        // P2-1: the fee/oracle economics are platform-gated, not owner-gated.
+        vm.expectRevert(MaonoVault_Phase1B.NotPlatformAdmin.selector);
         vault.setPriceOracle(attacker);
-        _expectUnauthorized(attacker);
+        vm.expectRevert(MaonoVault_Phase1B.NotPlatformAdmin.selector);
         vault.setDaoTreasury(attacker);
-        _expectUnauthorized(attacker);
+        vm.expectRevert(MaonoVault_Phase1B.NotPlatformAdmin.selector);
         vault.setOracleCircuitEnabled(false);
-        _expectUnauthorized(attacker);
+        vm.expectRevert(MaonoVault_Phase1B.NotPlatformAdmin.selector);
         vault.setOracleBounds(1, 2);
-        _expectUnauthorized(attacker);
+        vm.expectRevert(MaonoVault_Phase1B.NotPlatformAdmin.selector);
         vault.setUpkeepCostAt(0, 0);
-        _expectUnauthorized(attacker);
+        vm.expectRevert(MaonoVault_Phase1B.NotPlatformAdmin.selector);
         vault.setBurnPercentageAt(0, 0);
+
+        // Vault-operational entrypoints remain owner-gated.
+        _expectUnauthorized(attacker);
+        vault.stakeMtaaForDiscount(1);
+        _expectUnauthorized(attacker);
+        vault.unstakeMtaa(1);
         _expectUnauthorized(attacker);
         vault.pause();
         _expectUnauthorized(attacker);

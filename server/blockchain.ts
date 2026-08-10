@@ -25,6 +25,24 @@ interface VaultEvent {
   [key: string]: unknown;
 }
 
+/** ERC-4626 valuation of the canonical MaonoVault_Phase1B vault. */
+export interface VaultValuation {
+  totalAssets: bigint;
+  totalSupply: bigint;
+  /** Assets redeemable for one whole share. */
+  sharePrice: bigint;
+}
+
+/** Upkeep / hibernation state. `status`: 0 ACTIVE, 1 HIBERNATING, 2 CLOSED. */
+export interface VaultLifecycle {
+  status: number;
+  nextUpkeepDue: bigint;
+  totalUpkeepPaid: bigint;
+  totalBurned: bigint;
+  totalToTreasury: bigint;
+  monthlyUpkeepCost: bigint;
+}
+
 export async function sendToken(
   symbol: string,
   to: string,
@@ -90,14 +108,25 @@ export const MaonoVaultService = {
   signer,
   isConfigured: isContractConfigured,
 
-  async getNAV() {
+  /**
+   * Vault valuation. MaonoVault_Phase1B is a plain ERC-4626 vault: its value is
+   * its own asset balance and there is no off-chain NAV to push on-chain, so
+   * `totalAssets()` and the share price are read rather than written.
+   */
+  async getVaultValuation(): Promise<VaultValuation> {
     const code = await resilientRpcProvider.call((activeProvider) => activeProvider.getCode(MAONO_CONTRACT_ADDRESS));
     if (code === "0x") {
       throw new Error(`No contract deployed at address ${MAONO_CONTRACT_ADDRESS}`);
     }
-    return resilientRpcProvider.call((activeProvider) =>
-      getMaonoVaultContract(activeProvider).previewNAV()
-    );
+    return resilientRpcProvider.call(async (activeProvider) => {
+      const contract = getMaonoVaultContract(activeProvider);
+      const [totalAssets, totalSupply, sharePrice] = await Promise.all([
+        contract.totalAssets() as Promise<bigint>,
+        contract.totalSupply() as Promise<bigint>,
+        contract.convertToAssets(ethers.parseUnits("1", 18)) as Promise<bigint>,
+      ]);
+      return { totalAssets, totalSupply, sharePrice };
+    });
   },
 
   async deposit(amount: bigint, userAddress: string) {
@@ -108,17 +137,40 @@ export const MaonoVaultService = {
     return getMaonoVaultContract().withdraw(amount, userAddress, userAddress);
   },
 
-  async updateNAV(newNav: bigint) {
-    if (!signer) throw new Error("No manager signer configured");
+  /**
+   * Lifecycle state the backend can act on: upkeep is the only recurring
+   * on-chain obligation, and it is owner-signed.
+   */
+  async getVaultLifecycle(): Promise<VaultLifecycle> {
+    return resilientRpcProvider.call(async (activeProvider) => {
+      const contract = getMaonoVaultContract(activeProvider);
+      const [metrics, upkeepCost] = await Promise.all([
+        contract.getVaultMetrics() as Promise<[bigint, bigint, bigint, bigint, bigint]>,
+        contract.getMonthlyUpkeepCost() as Promise<bigint>,
+      ]);
+      const [status, nextUpkeepDue, totalUpkeepPaid, totalBurned, totalToTreasury] = metrics;
+      return {
+        status: Number(status),
+        nextUpkeepDue,
+        totalUpkeepPaid,
+        totalBurned,
+        totalToTreasury,
+        monthlyUpkeepCost: upkeepCost,
+      };
+    });
+  },
+
+  async collectMonthlyUpkeep() {
+    if (!signer) throw new Error("No vault owner signer configured");
     return resilientRpcProvider.callWithSigner(signer, (activeSigner) =>
-      getMaonoVaultContract(activeSigner).updateNAV(newNav)
+      getMaonoVaultContract(activeSigner).collectMonthlyUpkeep()
     );
   },
 
-  async distributePerformanceFee(profit: bigint) {
-    if (!signer) throw new Error("No manager signer configured");
+  async reactivateFromHibernation() {
+    if (!signer) throw new Error("No vault owner signer configured");
     return resilientRpcProvider.callWithSigner(signer, (activeSigner) =>
-      getMaonoVaultContract(activeSigner).distributePerformanceFee(profit)
+      getMaonoVaultContract(activeSigner).reactivateFromHibernation()
     );
   },
 

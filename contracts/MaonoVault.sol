@@ -63,6 +63,35 @@ interface IPriceOracle {
  *           without pause or active-status checks.
  *           FIX: All four ERC4626 entrypoints are overridden with onlyActive + whenNotPaused.
  * ──────────────────────────────────────────────────────────────────────────────
+ *
+ * ─── FIXES FROM PHASE 2 ───────────────────────────────────────────────────────
+ *  P2-1  The payer administered its own invoice: upkeep cost, burn split and the
+ *        treasury destination were all onlyOwner, so the vault owner could price
+ *        the fee at zero and/or route it back to itself immediately before paying.
+ *        FIX: those parameters are `onlyPlatform` — the address that deployed and
+ *        initialized the clone (MaonoVaultFactory_Phase1B, owned by the platform
+ *        multi-sig). The vault owner keeps pause/upkeep/reactivation only.
+ *
+ *  P2-2  Hibernation was an unbounded, flat-priced freeze of depositor capital.
+ *        FIX: (a) exits reopen permissionlessly once a freeze — hibernation *or*
+ *        pause — has lasted EXIT_GRACE_PERIOD, so depositors can always leave;
+ *        (b) reactivation is charged per hibernated month (capped) instead of a
+ *        flat 1.5 months, so waiting is no longer cheaper than complying.
+ *
+ *  P2-3  A deposit could mint zero shares and keep the assets.
+ *        FIX: deposit()/mint() revert with ZeroShares().
+ *
+ *  P2-4  collectMonthlyUpkeep() was callable while HIBERNATING, taking payment
+ *        without restoring the vault.
+ *        FIX: upkeep reverts while hibernating; reactivateFromHibernation() is
+ *        the only paid transition out of that state.
+ *
+ *  M-1   The MTAA fee discount read an instantaneous balance and was therefore
+ *        flash-loanable.
+ *        FIX: the discount is computed from MTAA staked in the vault and held
+ *        continuously for DISCOUNT_MIN_STAKE_DURATION; any increase restarts the
+ *        clock, so borrowed MTAA earns nothing.
+ * ──────────────────────────────────────────────────────────────────────────────
  */
 contract MaonoVault_Phase1B is
     ERC4626Upgradeable,
@@ -117,6 +146,28 @@ contract MaonoVault_Phase1B is
     uint256 public totalBurnedGlobally;
     uint256 public totalToTreasuryGlobally;
 
+    /// @notice P2-1: platform-level administrator of the fee schedule, recorded as the
+    ///         address that initialized this clone (the factory in production).
+    ///         Deliberately immutable after initialization: the payer must never be
+    ///         able to acquire pricing rights over its own invoice.
+    address public platformAdmin;
+
+    /// @notice P2-2: when the current pause started (0 while unpaused).
+    uint256 public pauseStartTime;
+
+    /// @notice M-1: MTAA staked by the owner to earn the upkeep discount, and the
+    ///         timestamp of the last stake *increase* (any top-up restarts the clock).
+    uint256 public mtaaStaked;
+    uint256 public mtaaStakeSince;
+
+    // Remediation constants
+    /// @notice P2-2: how long a freeze (hibernation or pause) may block exits.
+    uint256 public constant EXIT_GRACE_PERIOD = 90 days;
+    /// @notice M-1: how long MTAA must sit staked before it counts towards the discount.
+    uint256 public constant DISCOUNT_MIN_STAKE_DURATION = 30 days;
+    /// @notice P2-2: upper bound on the reactivation catch-up, so the vault can always be revived.
+    uint256 public constant MAX_CATCHUP_MONTHS = 12;
+
     // ======================================================================
     // EVENTS
     // ======================================================================
@@ -131,6 +182,8 @@ contract MaonoVault_Phase1B is
     event OracleBoundsUpdated(uint256 minUsdCents, uint256 maxUsdCents, uint256 timestamp);
     event UpkeepCostUpdated(uint256 index, uint256 newValue, uint256 timestamp);
     event BurnPercentageUpdated(uint256 index, uint256 newValue, uint256 timestamp);
+    event MtaaStaked(uint256 amount, uint256 totalStaked, uint256 stakedSince);
+    event MtaaUnstaked(uint256 amount, uint256 totalStaked);
 
     // ======================================================================
     // ERRORS
@@ -143,6 +196,11 @@ contract MaonoVault_Phase1B is
     error UpkeepNotDue();
     error BurnFailed();
     error OracleMalfunction();
+    error NotPlatformAdmin();
+    error ZeroShares();
+    error AssetTransferMismatch();
+    error MtaaCannotBeTheAsset();
+    error InsufficientStake();
 
     // ======================================================================
     // MODIFIERS
@@ -150,6 +208,28 @@ contract MaonoVault_Phase1B is
     /// @notice FIX: Checks vault-level status, no address parameter. No default-to-ACTIVE bypass.
     modifier onlyActive() {
         if (vaultState.status == VaultStatus.HIBERNATING) revert VaultIsHibernating();
+        _;
+    }
+
+    /// @notice P2-1: fee economics are administered by the platform, never by the payer.
+    modifier onlyPlatform() {
+        if (msg.sender != platformAdmin) revert NotPlatformAdmin();
+        _;
+    }
+
+    /// @notice P2-2: exits are blocked by hibernation and by pause, but only for as
+    ///         long as EXIT_GRACE_PERIOD. After that the freeze expires for
+    ///         withdrawals and redemptions, so depositor capital can never be held
+    ///         indefinitely. Deposits stay blocked — a frozen vault takes no new money.
+    modifier whenExitsOpen() {
+        VaultStatus status = vaultState.status;
+        if (status == VaultStatus.HIBERNATING && block.timestamp < vaultState.hibernationStartTime + EXIT_GRACE_PERIOD)
+        {
+            revert VaultIsHibernating();
+        }
+        if (paused() && block.timestamp < pauseStartTime + EXIT_GRACE_PERIOD) {
+            revert EnforcedPause();
+        }
         _;
     }
 
@@ -195,6 +275,9 @@ contract MaonoVault_Phase1B is
     ) external initializer {
         if (_daoTreasury == address(0) || _mtaaToken == address(0)) revert ZeroAddress();
         if (_vaultType > 4) revert InvalidVaultType();
+        // M-1: staked MTAA is custodied by the vault, so it must not be the ERC4626
+        // underlying — otherwise a stake would inflate totalAssets().
+        if (_mtaaToken == _asset) revert MtaaCannotBeTheAsset();
 
         // Init OZ upgradeable base contracts
         __ERC20_init(_name, _symbol);
@@ -202,6 +285,9 @@ contract MaonoVault_Phase1B is
         __Ownable_init(_vaultOwner);
         __ReentrancyGuard_init();
         __Pausable_init();
+
+        // P2-1: the deployer of the clone (the factory) administers fee economics.
+        platformAdmin = msg.sender;
 
         // Vault config
         vaultType   = VaultType(_vaultType);
@@ -238,46 +324,54 @@ contract MaonoVault_Phase1B is
     // ======================================================================
     // ADMIN SETTERS
     // ======================================================================
-    function setPriceOracle(address _newOracle) external onlyOwner {
+    function setPriceOracle(address _newOracle) external onlyPlatform {
         if (_newOracle == address(0)) revert ZeroAddress();
         priceOracle = _newOracle;
         emit PriceOracleUpdated(_newOracle, block.timestamp);
     }
 
-    function setDaoTreasury(address _newTreasury) external onlyOwner {
+    function setDaoTreasury(address _newTreasury) external onlyPlatform {
         if (_newTreasury == address(0)) revert ZeroAddress();
         address old = daoTreasury;
         daoTreasury = _newTreasury;
         emit DaoTreasuryUpdated(old, _newTreasury, block.timestamp);
     }
 
-    function setOracleCircuitEnabled(bool enabled) external onlyOwner {
+    function setOracleCircuitEnabled(bool enabled) external onlyPlatform {
         oracleCircuitEnabled = enabled;
         emit OracleCircuitToggled(enabled, block.timestamp);
     }
 
-    function setOracleBounds(uint256 minUsdCents, uint256 maxUsdCents) external onlyOwner {
+    function setOracleBounds(uint256 minUsdCents, uint256 maxUsdCents) external onlyPlatform {
         if (minUsdCents == 0 || maxUsdCents == 0 || minUsdCents > maxUsdCents) revert InvalidAmount();
         minAllowedUsdCents = minUsdCents;
         maxAllowedUsdCents = maxUsdCents;
         emit OracleBoundsUpdated(minUsdCents, maxUsdCents, block.timestamp);
     }
 
-    function setUpkeepCostAt(uint256 index, uint256 newValue) external onlyOwner {
+    function setUpkeepCostAt(uint256 index, uint256 newValue) external onlyPlatform {
         if (index > 4) revert InvalidVaultType();
         UPKEEP_COSTS_MONTHLY[index] = newValue;
         emit UpkeepCostUpdated(index, newValue, block.timestamp);
     }
 
-    function setBurnPercentageAt(uint256 index, uint256 newValue) external onlyOwner {
+    function setBurnPercentageAt(uint256 index, uint256 newValue) external onlyPlatform {
         if (index > 4) revert InvalidVaultType();
         if (newValue > 10000) revert InvalidAmount();
         BURN_PERCENTAGES[index] = newValue;
         emit BurnPercentageUpdated(index, newValue, block.timestamp);
     }
 
-    function pause()   external onlyOwner { _pause(); }
-    function unpause() external onlyOwner { _unpause(); }
+    /// @dev P2-2: the pause clock is what makes the freeze bounded (see whenExitsOpen).
+    function pause() external onlyOwner {
+        _pause();
+        pauseStartTime = block.timestamp;
+    }
+
+    function unpause() external onlyOwner {
+        _unpause();
+        pauseStartTime = 0;
+    }
 
     // ======================================================================
     // INTERNAL — BURN
@@ -296,19 +390,62 @@ contract MaonoVault_Phase1B is
         }
     }
 
+    // ======================================================================
+    // MTAA STAKING — the basis of the upkeep discount (M-1)
+    // ======================================================================
     /**
-     * @notice Calculate the MTAA-based discount for fees (0 to 50)
+     * @notice Stake MTAA to earn the upkeep discount.
+     * @dev    M-1: the discount used to read `balanceOf(payer)` inside the fee call,
+     *         so it could be bought with MTAA borrowed for a single transaction.
+     *         It is now earned by MTAA that has sat in the vault for at least
+     *         DISCOUNT_MIN_STAKE_DURATION; every top-up restarts that clock, so no
+     *         amount of last-minute acquisition moves the price of the next payment.
+     */
+    function stakeMtaaForDiscount(uint256 amount) external onlyOwner nonReentrant {
+        if (amount == 0) revert InvalidAmount();
+        mtaaStaked     += amount;
+        mtaaStakeSince = block.timestamp;
+        IERC20(mtaaToken).safeTransferFrom(msg.sender, address(this), amount);
+        emit MtaaStaked(amount, mtaaStaked, mtaaStakeSince);
+    }
+
+    /// @notice Withdraw staked MTAA. Lowering the stake lowers the discount but never
+    ///         restarts the holding clock — the remainder has been held at least as long.
+    function unstakeMtaa(uint256 amount) external onlyOwner nonReentrant {
+        if (amount == 0) revert InvalidAmount();
+        if (amount > mtaaStaked) revert InsufficientStake();
+        mtaaStaked -= amount;
+        IERC20(mtaaToken).safeTransfer(msg.sender, amount);
+        emit MtaaUnstaked(amount, mtaaStaked);
+    }
+
+    /// @notice MTAA that has been staked long enough to count towards the discount.
+    function eligibleStakedMtaa() public view returns (uint256) {
+        if (mtaaStaked == 0) return 0;
+        if (block.timestamp < mtaaStakeSince + DISCOUNT_MIN_STAKE_DURATION) return 0;
+        return mtaaStaked;
+    }
+
+    /**
+     * @notice The MTAA-based discount applied to upkeep, 0 to 50 percent.
+     * @dev    min(50, floor(sqrt(eligibleStake / 1e18)) * 2.5).
+     */
+    function getUpkeepDiscountPct() public view returns (uint256) {
+        if (mtaaToken == address(0)) return 0;
+        uint256 n = eligibleStakedMtaa() / 1e18;
+        uint256 discountPct = (Math.sqrt(n) * 25) / 10; // root * 2.5
+        if (discountPct > 50) discountPct = 50;
+        return discountPct;
+    }
+
+    /**
+     * @notice Discount that `user` would receive on this vault's upkeep.
+     * @dev    Kept for ABI compatibility. The discount is a property of the vault's
+     *         sustained stake, not of any address's spot balance, so it is non-zero
+     *         only for the owner — the account the fee is charged to.
      */
     function getDiscountedFeePct(address user) public view returns (uint256) {
-        if (address(mtaaToken) == address(0)) return 0;
-        
-        uint256 mtaaBalance = IERC20(mtaaToken).balanceOf(user);
-        uint256 n = mtaaBalance / 1e18;
-        uint256 root = Math.sqrt(n);
-        uint256 discountPct = (root * 25) / 10; // root * 2.5
-        if (discountPct > 50) discountPct = 50;
-        
-        return discountPct;
+        return user == owner() ? getUpkeepDiscountPct() : 0;
     }
 
     // ======================================================================
@@ -324,10 +461,13 @@ contract MaonoVault_Phase1B is
     function collectMonthlyUpkeep() external onlyOwner nonReentrant {
         VaultState storage state = vaultState;
 
+        // P2-4: paying while hibernating had no state effect, so the owner could keep
+        // the vault frozen while looking current. Reactivation is the only way out.
+        if (state.status == VaultStatus.HIBERNATING) revert VaultIsHibernating();
         if (block.timestamp < state.lastUpkeepPayment + 30 days) revert UpkeepNotDue();
 
         uint256 baseUpkeepCost = UPKEEP_COSTS_MONTHLY[uint256(vaultType)];
-        uint256 discountPct = getDiscountedFeePct(msg.sender);
+        uint256 discountPct = getUpkeepDiscountPct();
         uint256 upkeepCost = (baseUpkeepCost * (100 - discountPct)) / 100;
 
         // Auto-hibernate if balance insufficient (check, don't revert — retention design)
@@ -365,18 +505,23 @@ contract MaonoVault_Phase1B is
     // HIBERNATION RECOVERY
     // ======================================================================
     /**
-     * @notice Reactivate hibernated vault — pay 1.5× one month (no backpay)
+     * @notice Reactivate a hibernated vault — pay 1.5× one month per hibernated month
      * @dev FIX: onlyOwner.
      *      FIX: CEI — state.status = ACTIVE written BEFORE transferFrom.
      *           Without this fix, a malicious owner contract could re-enter
      *           reactivateFromHibernation() and pay the fee multiple times.
+     *      P2-2: the fee used to be a flat 1.5 months however long the vault stayed
+     *            frozen, which made hibernating strictly cheaper than complying while
+     *            depositors carried the liveness cost. It now scales with the number
+     *            of hibernated months, capped at MAX_CATCHUP_MONTHS so that the vault
+     *            always remains revivable.
      */
     function reactivateFromHibernation() external onlyOwner nonReentrant {
         VaultState storage state = vaultState;
         if (state.status != VaultStatus.HIBERNATING) revert VaultNotHibernating();
 
         uint256 monthlyUpkeep   = UPKEEP_COSTS_MONTHLY[uint256(vaultType)];
-        uint256 reactivationFee = (monthlyUpkeep * 150) / 100;  // 1.5×
+        uint256 reactivationFee = (monthlyUpkeep * 150) / 100 * hibernationMonthsCharged();  // 1.5× per month
 
         uint256 burnPercentage  = BURN_PERCENTAGES[uint256(vaultType)];
         uint256 burnAmount      = (reactivationFee * burnPercentage) / 10000;
@@ -443,32 +588,74 @@ contract MaonoVault_Phase1B is
     // FIX #2: All four are guarded by whenNotPaused (previously missing on mint/redeem)
     // FIX #3: All four carry nonReentrant (ERC4626 base does not add this)
 
+    // FIX #4 (P2-3): a deposit that rounds down to zero shares used to succeed and
+    //                keep the assets, donating them to the existing shareholders.
+    // FIX #5 (P2-2): exits are subject to a *bounded* freeze, not an indefinite one.
+
     function deposit(uint256 assets, address receiver)
         public override onlyActive whenNotPaused nonReentrant
         returns (uint256)
     {
-        return super.deposit(assets, receiver);
+        uint256 shares = super.deposit(assets, receiver);
+        if (shares == 0) revert ZeroShares();
+        return shares;
     }
 
     function mint(uint256 shares, address receiver)
         public override onlyActive whenNotPaused nonReentrant
         returns (uint256)
     {
+        if (shares == 0) revert ZeroShares();
         return super.mint(shares, receiver);
     }
 
     function withdraw(uint256 assets, address receiver, address shareOwner)
-        public override onlyActive whenNotPaused nonReentrant
+        public override whenExitsOpen nonReentrant
         returns (uint256)
     {
         return super.withdraw(assets, receiver, shareOwner);
     }
 
     function redeem(uint256 shares, address receiver, address shareOwner)
-        public override onlyActive whenNotPaused nonReentrant
+        public override whenExitsOpen nonReentrant
         returns (uint256)
     {
         return super.redeem(shares, receiver, shareOwner);
+    }
+
+    // FIX #6 (M-2): `totalAssets()` is the vault's own balance, so a share issued
+    //               against assets that never arrived is unbacked. Any asset whose
+    //               transfer credits less than it debits (fee-on-transfer, and any
+    //               rebase landing inside the call) is rejected here rather than
+    //               silently diluting every holder. Rebasing assets are excluded at
+    //               the factory allowlist, which is the only way a vault is created.
+    function _deposit(address caller, address receiver, uint256 assets, uint256 shares) internal override {
+        IERC20 underlying = IERC20(asset());
+        uint256 balanceBefore = underlying.balanceOf(address(this));
+        super._deposit(caller, receiver, assets, shares);
+        if (underlying.balanceOf(address(this)) - balanceBefore != assets) revert AssetTransferMismatch();
+    }
+
+    // ERC-4626 conformance: the max* views report what the guards above allow, so
+    // integrators never quote an amount the vault would reject.
+    function maxDeposit(address receiver) public view override returns (uint256) {
+        if (vaultState.status == VaultStatus.HIBERNATING || paused()) return 0;
+        return super.maxDeposit(receiver);
+    }
+
+    function maxMint(address receiver) public view override returns (uint256) {
+        if (vaultState.status == VaultStatus.HIBERNATING || paused()) return 0;
+        return super.maxMint(receiver);
+    }
+
+    function maxWithdraw(address shareOwner) public view override returns (uint256) {
+        if (!exitsOpen()) return 0;
+        return super.maxWithdraw(shareOwner);
+    }
+
+    function maxRedeem(address shareOwner) public view override returns (uint256) {
+        if (!exitsOpen()) return 0;
+        return super.maxRedeem(shareOwner);
     }
 
     // ======================================================================
@@ -485,6 +672,32 @@ contract MaonoVault_Phase1B is
     function getMonthsSinceHibernation() external view returns (uint256) {
         if (vaultState.status != VaultStatus.HIBERNATING) return 0;
         return (block.timestamp - vaultState.hibernationStartTime) / 30 days;
+    }
+
+    /// @notice Hibernated months the reactivation fee is charged for: at least one,
+    ///         at most MAX_CATCHUP_MONTHS, rounded up.
+    function hibernationMonthsCharged() public view returns (uint256) {
+        if (vaultState.status != VaultStatus.HIBERNATING) return 0;
+        uint256 elapsed = block.timestamp - vaultState.hibernationStartTime;
+        uint256 months  = (elapsed + 30 days - 1) / 30 days;
+        if (months == 0) months = 1;
+        if (months > MAX_CATCHUP_MONTHS) months = MAX_CATCHUP_MONTHS;
+        return months;
+    }
+
+    /// @notice The cost of the next reactivation at current parameters (0 while ACTIVE).
+    function getReactivationCost() external view returns (uint256) {
+        return UPKEEP_COSTS_MONTHLY[uint256(vaultType)] * 150 / 100 * hibernationMonthsCharged();
+    }
+
+    /// @notice P2-2: whether withdrawals and redemptions are currently possible.
+    function exitsOpen() public view returns (bool) {
+        if (
+            vaultState.status == VaultStatus.HIBERNATING
+                && block.timestamp < vaultState.hibernationStartTime + EXIT_GRACE_PERIOD
+        ) return false;
+        if (paused() && block.timestamp < pauseStartTime + EXIT_GRACE_PERIOD) return false;
+        return true;
     }
 
     function getVaultMetrics()

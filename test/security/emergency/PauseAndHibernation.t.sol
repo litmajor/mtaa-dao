@@ -15,9 +15,12 @@ contract PauseAndHibernationTest is MaonoVaultBaseTest {
     }
 
     // ------------------------------------------------------------------
-    // FINDING: pause() freezes withdrawals indefinitely.
+    // P2-2 regression (was: test_PauseFreezesWithdrawalsIndefinitely).
+    // pause() used to freeze withdrawals with no time limit, no guardian and
+    // no unpause path that did not require the owner. The freeze is now
+    // bounded by EXIT_GRACE_PERIOD.
     // ------------------------------------------------------------------
-    function test_PauseFreezesWithdrawalsIndefinitely() public {
+    function test_PauseFreezesWithdrawalsOnlyForTheGracePeriod() public {
         _fund(bob, 1_000e18);
         uint256 shares = _deposit(bob, 1_000e18);
 
@@ -32,21 +35,58 @@ contract PauseAndHibernationTest is MaonoVaultBaseTest {
         vm.expectRevert(abi.encodeWithSignature("EnforcedPause()"));
         vault.withdraw(1e18, bob, bob);
 
-        // There is no time limit, no guardian, and no unpause path that does
-        // not require the owner.
-        vm.warp(block.timestamp + 3650 days);
+        // One second before the grace period expires the pause still holds.
+        vm.warp(block.timestamp + vault.EXIT_GRACE_PERIOD() - 1);
+        assertFalse(vault.exitsOpen());
+        assertEq(vault.maxRedeem(bob), 0, "max* agrees with the guard");
         vm.prank(bob);
         vm.expectRevert(abi.encodeWithSignature("EnforcedPause()"));
         vault.redeem(shares, bob, bob);
 
-        console2.log("  depositor assets frozen (10 years later):", vault.previewRedeem(shares));
-        assertEq(vault.totalAssets(), 1_000e18);
+        // After it, the depositor exits without the owner's cooperation, and the
+        // vault is still paused for everything else.
+        vm.warp(block.timestamp + 1);
+        assertTrue(vault.exitsOpen());
+        assertEq(vault.maxRedeem(bob), shares);
+        assertEq(_redeemAll(bob), 1_000e18, "principal recovered in full");
+        assertTrue(vault.paused(), "still paused: only the exit reopened");
+        assertEq(vault.maxDeposit(bob), 0, "no new money enters a paused vault");
 
         // Shares remain transferable while paused: the ERC20 layer is not
-        // pausable, so secondary-market exit at a discount is still possible.
+        // pausable, so secondary-market exit at a discount is also possible.
+        _fund(victim, 1_000e18);
+        vm.prank(vaultOwner);
+        vault.unpause();
+        uint256 victimShares = _deposit(victim, 1_000e18);
+        vm.prank(vaultOwner);
+        vault.pause();
+        vm.prank(victim);
+        vault.transfer(attacker, victimShares);
+        assertEq(vault.balanceOf(attacker), victimShares);
+    }
+
+    /// @notice P2-2: a paused *and* hibernating vault still lets depositors out once
+    ///         both clocks have run, and an owner cannot restart the clock by
+    ///         unpausing and re-pausing faster than depositors can act.
+    function test_PauseAndHibernationCannotBeCycledToTrapDepositors() public {
+        _fund(bob, 1_000e18);
+        uint256 shares = _deposit(bob, 1_000e18);
+
+        // Hibernate first, then pause on top of it.
+        vm.warp(block.timestamp + 31 days);
+        vm.prank(vaultOwner);
+        vault.collectMonthlyUpkeep(); // no MTAA -> HIBERNATING
+        vm.prank(vaultOwner);
+        vault.pause();
+
+        vm.warp(block.timestamp + vault.EXIT_GRACE_PERIOD());
+        assertTrue(vault.exitsOpen(), "both freezes have expired");
+
+        // Re-pausing restarts only the pause clock, and the owner must front-run
+        // every single depositor to benefit; the exit is open in the same block.
         vm.prank(bob);
-        vault.transfer(attacker, shares);
-        assertEq(vault.balanceOf(attacker), shares);
+        uint256 out = vault.redeem(shares, bob, bob);
+        assertEq(out, 1_000e18);
     }
 
     // ------------------------------------------------------------------
