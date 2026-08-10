@@ -30,6 +30,22 @@ fs_permissions = [
     { access = "read", path = "./test/security/artifact/legacy" },
 ]
 
+# `MultiAssetVault.acquireAssetViaSwap` exceeds the stack limit under the legacy
+# pipeline, so the Phase 3 swap suite compiles that file (and the tests that
+# instantiate it) through the IR pipeline. Scoped to these paths to keep the rest
+# of the suite on the fast pipeline.
+[[profile.default.additional_compiler_profiles]]
+name = "via-ir"
+via_ir = true
+
+[[profile.default.compilation_restrictions]]
+paths = "contracts/MultiAssetVault.sol"
+via_ir = true
+
+[[profile.default.compilation_restrictions]]
+paths = "test/security/phase3/**"
+via_ir = true
+
 [fuzz]
 runs = 512
 
