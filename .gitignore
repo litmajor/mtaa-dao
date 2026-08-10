@@ -76,3 +76,8 @@ cache/solidity-files-cache.json
 # Ignore saved deployment state (sensitive addresses). Keep if you want to track deployments manually.
 /deployments/
 .env
+
+# Foundry security suite (test/security)
+out-security/
+cache-security/
+lib/forge-std/
