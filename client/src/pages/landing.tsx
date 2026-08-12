@@ -4,6 +4,7 @@ import { ArrowRight, Wallet, Vote, TrendingUp, ShieldCheck, Smartphone, Users } 
 import { useState, useEffect } from "react";
 import { Logo } from "@/components/ui/logo";
 import { Link } from "react-router-dom";
+import { Helmet } from "react-helmet-async";
 import DaoOfTheWeekBanner from "@/components/DaoOfTheWeekBanner";
 
 function AnimatedBackground({ scrollY }: { scrollY: number }) {
@@ -87,16 +88,19 @@ function WhatYouGetSection() {
       icon: TrendingUp,
       title: "A path into DeFi and trading",
       body: "Groups and individuals who want to go further can put treasury funds to work through on-chain markets, at whatever pace your group decides.",
+      alt: "Trending growth icon",
     },
     {
       icon: Smartphone,
       title: "WhatsApp & SMS notifications",
       body: "Get secure OTP verification tokens and critical group notifications delivered straight to WhatsApp or SMS, built for volatile mobile networks.",
+      alt: "Smartphone notifications icon",
     },
     {
       icon: ShieldCheck,
       title: "VASP-compliant infrastructure",
       body: "True non-custodial ownership that satisfies strict virtual asset regulations. Your secret keys stay encrypted client-side via your master passphrase.",
+      alt: "Security shield icon",
     },
   ];
 
@@ -107,10 +111,10 @@ function WhatYouGetSection() {
         title="One platform for how your group actually saves and grows money"
       />
       <div className="max-w-5xl mx-auto grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-        {items.map(({ icon: Icon, title, body }) => (
+        {items.map(({ icon: Icon, title, body, alt }) => (
           <Card key={title} className="bg-white/5 border-white/10">
             <CardContent className="p-6">
-              <Icon className="w-8 h-8 text-purple-300 mb-4" />
+              <Icon className="w-8 h-8 text-purple-300 mb-4" aria-label={alt || title} role="img" />
               <h3 className="text-white font-bold text-lg mb-2">{title}</h3>
               <p className="text-gray-300 text-sm leading-relaxed">{body}</p>
             </CardContent>
@@ -203,7 +207,23 @@ export default function MtaaDAOLanding() {
   }, []);
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-900 via-purple-900 to-slate-900 overflow-hidden relative flex flex-col">
+    <>
+      <Helmet>
+        <title>MtaaDAO - Chama Treasury Management Made Simple | From Mtaa, For Mtaa</title>
+        <meta name="description" content="MtaaDAO brings chama groups onto blockchain. Contribute via M-Pesa, vote on spending, track finances transparently. Non-custodial treasury for East African communities." />
+        <meta property="og:title" content="MtaaDAO - Secure Chama Treasury Management" />
+        <meta property="og:description" content="Contribute via M-Pesa. Vote on spending. Track every shilling on-chain. No single person controls your group's money." />
+        <meta property="og:image" content="/mtaa_dao_logos/full_logo_light_banner.png" />
+        <meta property="og:url" content="https://mtaadao.com" />
+        <meta property="og:type" content="website" />
+        <meta name="twitter:card" content="summary_large_image" />
+        <meta name="twitter:title" content="MtaaDAO - Chama Treasury Management" />
+        <meta name="twitter:description" content="Secure, transparent, group-controlled treasury. From Mtaa, For Mtaa." />
+        <meta name="twitter:image" content="/mtaa_dao_logos/full_logo_light_banner.png" />
+        <meta name="keywords" content="chama, DAO, treasury management, M-Pesa, blockchain, East Africa, Kenya, group savings" />
+        <link rel="canonical" href="https://mtaadao.com" />
+      </Helmet>
+      <div className="min-h-screen bg-gradient-to-br from-slate-900 via-purple-900 to-slate-900 overflow-hidden relative flex flex-col">
       <AnimatedBackground scrollY={scrollY} />
 
       <header className="w-full py-4 px-6 flex items-center justify-between bg-gradient-to-r from-purple-900/80 to-slate-900/80 backdrop-blur-md border-b border-white/10 z-40 sticky top-0">
@@ -298,6 +318,7 @@ export default function MtaaDAOLanding() {
           </p>
         </div>
       </footer>
-    </div>
+      </div>
+    </>
   );
 }

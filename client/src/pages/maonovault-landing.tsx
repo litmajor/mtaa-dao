@@ -3,6 +3,7 @@ import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Link } from 'wouter';
+import { Helmet } from 'react-helmet-async';
 
 export default function MaanoVaultLanding() {
   const features = [
@@ -10,37 +11,43 @@ export default function MaanoVaultLanding() {
       icon: TrendingUp,
       title: "Earn 8-15% APY",
       description: "Professional DeFi yield strategies managed by our expert team. Your money works harder.",
-      gradient: "from-green-400 to-emerald-500"
+      gradient: "from-green-400 to-emerald-500",
+      alt: "Trending growth representing APY earnings"
     },
     {
       icon: Lock,
       title: "Smart Locking",
       description: "Lock your funds for bonus interest. Build discipline while earning more.",
-      gradient: "from-blue-400 to-cyan-500"
+      gradient: "from-blue-400 to-cyan-500",
+      alt: "Lock icon for secure locking features"
     },
     {
       icon: ChartColumn,
       title: "Real-Time Analytics",
       description: "Track every deposit, return, and transaction. Transparency you can trust.",
-      gradient: "from-purple-400 to-pink-500"
+      gradient: "from-purple-400 to-pink-500",
+      alt: "Chart columns representing analytics data"
     },
     {
       icon: Users,
       title: "Community Pools",
       description: "Pool funds with your group to unlock higher yields and shared benefits.",
-      gradient: "from-orange-400 to-red-500"
+      gradient: "from-orange-400 to-red-500",
+      alt: "Multiple users icon for community pools"
     },
     {
       icon: Shield,
       title: "Multi-Sig Security",
       description: "Your funds protected by multi-signature wallets. Enterprise-grade security.",
-      gradient: "from-indigo-400 to-blue-500"
+      gradient: "from-indigo-400 to-blue-500",
+      alt: "Shield icon representing security"
     },
     {
       icon: Zap,
       title: "Instant Access",
       description: "Withdraw anytime (except during lock periods). Your money, your control.",
-      gradient: "from-yellow-400 to-orange-500"
+      gradient: "from-yellow-400 to-orange-500",
+      alt: "Lightning bolt representing instant access"
     }
   ];
 
@@ -56,7 +63,23 @@ export default function MaanoVaultLanding() {
   ];
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-900 via-purple-900 to-slate-900 overflow-hidden">
+    <>
+      <Helmet>
+        <title>MaanoVault - DeFi Yield Farming for Kenyans | 8-15% APY</title>
+        <meta name="description" content="Earn 8-15% APY with MaanoVault. Professional DeFi yield strategies designed for East Africa. Start with KES 100. Transparent fees. Multi-chain support." />
+        <meta property="og:title" content="MaanoVault - Professional DeFi Yields for Africa" />
+        <meta property="og:description" content="Grow your crypto with smart yield strategies. 8-15% APY. Multi-sig security. Available on Ethereum, Polygon, Celo." />
+        <meta property="og:image" content="/mtaa_dao_logos/full_logo_light_banner.png" />
+        <meta property="og:url" content="https://mtaadao.com/maonovault" />
+        <meta property="og:type" content="website" />
+        <meta name="twitter:card" content="summary_large_image" />
+        <meta name="twitter:title" content="MaanoVault - Earn Yield on Your Crypto" />
+        <meta name="twitter:description" content="8-15% APY yield farming. Smart locking. Real-time analytics. For Kenyans and East Africa." />
+        <meta name="twitter:image" content="/mtaa_dao_logos/full_logo_light_banner.png" />
+        <meta name="keywords" content="DeFi, yield farming, Kenya, APY, crypto savings, vault, blockchain" />
+        <link rel="canonical" href="https://mtaadao.com/maonovault" />
+      </Helmet>
+      <div className="min-h-screen bg-gradient-to-br from-slate-900 via-purple-900 to-slate-900 overflow-hidden\">
       {/* Background Effects */}
       <div className="absolute inset-0 overflow-hidden pointer-events-none">
         <div className="absolute w-96 h-96 bg-gradient-to-br from-purple-500/20 to-pink-500/20 rounded-full blur-3xl top-10 left-10" />
@@ -68,7 +91,7 @@ export default function MaanoVaultLanding() {
         <Link href="/maonovault">
           <div className="flex items-center gap-2 cursor-pointer hover:opacity-80 transition">
             <div className="w-8 h-8 bg-gradient-to-br from-orange-500 to-pink-500 rounded-lg flex items-center justify-center">
-              <TrendingUp className="w-5 h-5 text-white" />
+              <TrendingUp className="w-5 h-5 text-white" aria-label="MaanoVault yield growth icon" />
             </div>
             <span className="font-black text-lg text-white">MaanoVault</span>
           </div>
@@ -131,7 +154,7 @@ export default function MaanoVaultLanding() {
             return (
               <Card key={idx} className="group bg-white/10 backdrop-blur-sm border-white/20 hover:border-white/40 hover:scale-105 transition-all duration-300 p-6">
                 <div className={`w-12 h-12 bg-gradient-to-br ${feature.gradient} rounded-lg flex items-center justify-center mb-4 group-hover:scale-110 transition-transform`}>
-                  <Icon className="w-6 h-6 text-white" />
+                  <Icon className="w-6 h-6 text-white" aria-label={feature.alt} role="img" />
                 </div>
                 <h3 className="text-lg font-bold text-white mb-2">{feature.title}</h3>
                 <p className="text-purple-200 text-sm">{feature.description}</p>
@@ -233,6 +256,7 @@ export default function MaanoVaultLanding() {
           <p className="text-sm">© 2025 Mtaa DAO • MaanoVault is part of the Mtaa ecosystem</p>
         </div>
       </footer>
-    </div>
+      </div>
+    </>
   );
 }
