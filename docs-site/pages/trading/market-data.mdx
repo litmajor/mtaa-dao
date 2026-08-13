@@ -1,0 +1,162 @@
+---
+title: Market data & price oracle
+description: How MtaaDAO sources, caches and degrades prices, order books and liquidity.
+audience: developers
+status: IMPLEMENTED
+last_verified: 2026-08-13
+---
+
+import { Callout } from 'nextra/components'
+
+# Market data & price oracle
+
+Derived from `server/services/priceOracle.ts`, `ccxtService.ts`, `gatewayAggregator.ts`,
+`marketDataClient.ts`, `dexscreenerClient.ts`, `server/exchanges.config.json` and the
+mounted market routes.
+
+## Two different prices
+
+The platform draws a hard line between the two, and so should any integration:
+
+| | Oracle price | Execution price |
+| --- | --- | --- |
+| Produced by | `priceOracle.getPrice(symbol)` | `gatewayAggregator.getPrice(tokenIn, tokenOut, amountIn)` |
+| Keyed on | A symbol (`CELO`, `cUSD`) | On-chain token addresses plus an amount |
+| Meaning | Indicative USD valuation | A quote for a specific trade size, with price impact |
+| Suitable for | Balances, dashboards, reporting, risk inputs | Executing or simulating a swap |
+
+Never settle a trade against an oracle price: it carries no size, no slippage and no venue.
+
+## Oracle source cascade
+
+`priceOracle._fetchPrice` tries sources in a fixed order, moving on when a source fails or
+is in cooldown:
+
+1. **Gateway** — `requestPricesFromGateway([symbol], 2000)`, a 2s-budget request into the
+   gateway agent service.
+2. **CoinGecko** — `https://api.coingecko.com/api/v3/simple/price`, only if the symbol
+   resolves to a CoinGecko id.
+3. **CCXT** — a ticker from a configured exchange.
+4. **DexScreener** — token pairs on the token's chain, using `tokenRegistry` metadata.
+
+Unknown symbols are queued for **discovery**: CoinGecko `/search` first, then a locally
+cached `/coins/list`, in debounced batches (500 ms debounce, 1.5 s between batches, max 20
+symbols per batch). Symbols that fail discovery are not retried for an hour. Discovered ids
+are written back to `tokenRegistry`, so the mapping is self-healing.
+
+## Caching, deduplication and staleness
+
+| Behaviour | Value | Source |
+| --- | --- | --- |
+| Fresh cache window | 60 s | `CACHE_DURATION` |
+| Stale-fallback window | 5 min | `LONG_CACHE_DURATION` |
+| Max in-memory entries | 1000 | `MAX_CACHE_SIZE` |
+| Per-source failure cooldown | 5 s | `FAILURE_COOLDOWN_MS` |
+| Cross-process fetch lock | Redis `SETNX price:fetch:<symbol>`, 15 s (extended to 30 s while fetching) | `DEDUP_PREFIX`, `DEDUP_TTL` |
+| In-process dedup | `pendingRequests` / `pendingBatchRequests` maps | — |
+| CoinGecko self-throttle | 10 requests / 60 s, exponential backoff up to ×32 | `RATE_LIMIT_THRESHOLD` |
+
+<Callout type="warning">
+  **Stale data is returned silently.** When every source is in cooldown, `getPrice` falls
+  back to a cache entry up to five minutes old and returns it with no staleness marker —
+  `PriceData.lastUpdated` reflects when it was cached, so consumers must check that field
+  themselves. If no such entry exists, `getPrice` returns `null` rather than throwing.
+</Callout>
+
+<Callout type="info">
+  If another process holds the Redis fetch lock, the caller sleeps 800 ms and then retries
+  the fresh cache, then the stale cache. A `429` from CoinGecko marks the symbol failed for
+  that source and engages backoff rather than surfacing an error.
+</Callout>
+
+## CCXT exchanges
+
+Configured in `server/exchanges.config.json`, merged in `shared/config.ts`:
+
+| Exchange | Credentials |
+| --- | --- |
+| `binance`, `coinbase`, `kraken`, `bybit`, `kucoin`, `okx` | `apiKey` / `apiSecret` blank in the committed file; `ccxtService` falls back to `<NAME>_API_KEY` / `<NAME>_API_SECRET` (and `<NAME>_PASSPHRASE`) from the environment |
+
+Without credentials, only public endpoints (tickers, order books, OHLCV) work; private
+endpoints and order placement do not. `enableRateLimit: true` is set on every client, so
+CCXT throttles per exchange. `loadMarkets()` is guarded by a per-exchange promise lock and
+cached, with `binance` and `kraken` warmed eagerly and a concurrency limit of 2 for market
+loading. Health checks use a per-exchange high-liquidity symbol rather than one hardcoded
+pair.
+
+## DEX aggregation (gateway)
+
+`gatewayAggregator` targets **Celo mainnet (chainId 42220)** only. Adapters, in the priority
+order the cascade uses:
+
+| # | Adapter | Role |
+| --- | --- | --- |
+| 1 | Uniswap V3 on Celo | Concentrated liquidity, non-stable pairs |
+| 2 | Mento Protocol | Stable ↔ stable (cUSD, cEUR, cKES, cREAL) |
+| 3 | Ubeswap (V2 fork) | Highest-volume Celo pairs |
+| 4 | Moola Market (Aave V3 fork) | Collateral and lending-rate pricing |
+| 5 | SushiSwap (Ethereum) | Cross-chain **reference only** — returns stale/placeholder quotes in live mode |
+| 6 | PancakeSwap (BSC) | Cross-chain **reference only** — same |
+
+Adapters 5 and 6 never execute. The cascade queries adapters in parallel with a 5 s
+per-adapter timeout, sorts by `valid > priority > priceImpact`, caches quotes for 30 s, and
+falls through to the next adapter if a swap fails. If all fail it returns an error with
+diagnostics. An empty pool yields a zero-output quote, which is not treated as an error.
+
+`GATEWAY_MODE=stub` disables all live adapters. **Any other value — including unset or a
+typo — selects live mode**; see [Environment variables](/reference/environment).
+
+### CEX-incompatible tokens
+
+`CEX_INCOMPATIBLE` sets in `marketUniverseBuilder.ts` and `opportunityEngine.ts` exclude
+Celo-local stablecoins (cKES, cEUR, cUSD and similar) from CEX discovery, because centralised
+venues do not list them. Requests for these return invalid before any adapter is queried.
+
+## Fallbacks in `marketDataClient`
+
+`marketDataClient` is the thin facade most callers use. Its degradation behaviour matters:
+
+| Method | Primary | Fallback when the gateway lacks the capability or throws |
+| --- | --- | --- |
+| `getPrice` / `getPrices` | `priceOracle` | — |
+| `getLiquidity` | `gateway.getLiquidityInfo` | Returns `{ liquidity: '0', depth: {}, fee: 0, source: 'fallback' }` |
+| `getGasPrices` | `gateway.getGasPrices` | `gasPriceOracle` invoked with a zeroed fee-data stub |
+
+<Callout type="warning">
+  The liquidity fallback returns a **structurally valid zero** rather than an error. Callers
+  must check `source === 'fallback'` before treating `liquidity: '0'` as "no liquidity"
+  rather than "no data".
+</Callout>
+
+## Mounted market-data endpoints
+
+| Endpoint | Auth |
+| --- | --- |
+| `GET /api/v1/market/orderbook/:symbol` | public |
+| `GET /api/v1/market/optimal-routes/:symbol` | authenticated |
+| `GET /api/v1/market/liquidity-depth/:symbol` | public |
+| `GET /api/v1/market/spread-analysis/:symbol` | public |
+| `/api/v1/analytics/*` | see [API endpoints](/reference/api) |
+
+<Callout type="warning">
+  `server/routes/cexPrices.ts`, `cexOrders.ts`, `trading-signals.ts`, `ohlcvApiRoute.ts`,
+  `smartRouter.ts` and `strategiesConsolidated.ts` define routers that **nothing imports**.
+  Their handlers are not reachable at runtime — see the
+  [documentation audit](/reference/documentation-audit) for the full unmounted list. Do not
+  build against them.
+</Callout>
+
+## Order routing and risk
+
+- `orderRouter` compares DEX and CEX venues for a symbol, computing slippage, fees and gas,
+  producing a ranked `RoutingResult` with a `recommended` venue and the savings versus the
+  alternative, plus optional order splitting across venues. Results are cached in
+  `NodeCache` and execution events are published via `publishExecutionEvent`.
+- `swapRiskGate.assessSwapRisk(fromAsset, toAsset, exchange = 'binance')` blocks a swap when
+  order-book toxicity ≥ 75, short-term price impact &gt; 5%, or resilience &lt; 40. Its inputs
+  come from `advancedMicrostructureIndicators`, which reads CEX order books — so for a
+  Celo-only token with no CEX listing the gate is operating on a proxy venue, not the
+  execution venue.
+
+See [API endpoints](/reference/api) for the full trading surface and
+[WebSocket events](/reference/websocket-events) for the price and opportunity streams.

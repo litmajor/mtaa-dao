@@ -1,3 +1,5 @@
+import { Card, Cards } from '../../components/Card'
+
 # Governance Overview
 
 ## Democracy on the Blockchain
@@ -162,7 +164,7 @@ VotePower = (ContributionWeight × 0.5) + (DurationWeight × 0.3) + (BaseVote ×
 Use when: Complex communities need nuance
 ```
 
-[Learn more about voting →](/governance/voting)
+[Learn more about voting →](/governance/voting-system)
 
 ---
 
@@ -215,7 +217,7 @@ function calculateQuorum(proposal) {
 }
 ```
 
-[Learn about quorum →](/governance/quorum)
+[Learn about quorum →](/governance/voting-system)
 
 ---
 
@@ -261,7 +263,7 @@ function calculateQuorum(proposal) {
 - Medium decisions → Delegate to council
 ```
 
-[Learn about delegation →](/governance/delegation)
+[Learn about delegation →](/governance/voting-system)
 
 ---
 
@@ -285,7 +287,7 @@ reputationScore = {
 **Voting Participation:**
 - Voted on 90%+ proposals: +50 points
 - Voted on 50-89%: +25 points
-- Voted on <50%: 0 points
+- Voted on &lt;50%: 0 points
 - Never votes: -25 points
 
 **Proposal Quality:**
@@ -307,7 +309,7 @@ reputationScore = {
 - Reports issues responsibly: +10 points
 
 **Tenure Bonus:**
-- < 6 months: 0 points
+- &lt; 6 months: 0 points
 - 6-12 months: +10 points
 - 1-2 years: +25 points
 - 2+ years: +50 points
@@ -323,10 +325,10 @@ reputationScore = {
 | 200-299 | **Trusted** | Fast-track proposal approval, can delegate to others, eligible for leadership roles |
 | 100-199 | **Member** | Standard rights, can vote and propose |
 | 50-99 | **New** | Can vote only, proposals require sponsor |
-| < 50 | **Probation** | Limited rights, mentor required |
-| < 0 | **Suspended** | No rights until restored |
+| &lt; 50 | **Probation** | Limited rights, mentor required |
+| &lt; 0 | **Suspended** | No rights until restored |
 
-[Learn more about trust & reputation →](/governance/trust-reputation)
+[Learn more about trust & reputation →](/features/reputation-system)
 
 ---
 

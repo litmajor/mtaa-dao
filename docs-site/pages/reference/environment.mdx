@@ -1,0 +1,133 @@
+---
+title: Environment variables
+description: The validated runtime configuration surface, from shared/config.ts.
+audience: developers, operators
+status: IMPLEMENTED
+last_verified: 2026-08-13
+---
+
+import { Callout } from 'nextra/components'
+
+# Environment variables
+
+Source of truth: `shared/config.ts`. It loads `.env` with `dotenv`, validates
+`process.env` against a Zod schema, and **exits the process with code 1** if validation
+fails. There is no silent fallback to defaults for invalid values.
+
+<Callout type="error">
+  Never commit real values. This page lists variable *names*, types and defaults only.
+</Callout>
+
+## Validation behaviour
+
+1. `envSchema.safeParse(process.env)` runs at import time. On failure the formatted Zod
+   error is printed and the process exits.
+2. When `NODE_ENV === 'production'`, an additional `productionSecretChecks()` pass runs and
+   exits if any of these are missing **or** still set to their development default:
+   `DATABASE_URL`, `SESSION_SECRET`, `JWT_SECRET`, `JWT_REFRESH_SECRET`,
+   `ENCRYPTION_KEY`, `ENCRYPTION_SALT`, `WALLET_PRIVATE_KEY`.
+3. Dev defaults for the three secrets contain the literal strings
+   `dev-session-secret-change-in-production`, `dev-jwt-secret-change-in-production`
+   and `dev-jwt-refresh-secret-change-in-production`; production refuses to start with
+   any of them.
+
+## Core
+
+| Variable | Type / constraint | Default |
+| --- | --- | --- |
+| `NODE_ENV` | `development` \| `production` \| `test` | `development` |
+| `PORT` | string | `5000` |
+| `HOST` | string | `localhost` |
+| `DATABASE_URL` | URL, **required** | — |
+| `TEST_DATABASE_URL` | URL | — |
+| `DB_POOL_MIN` / `DB_POOL_MAX` | string, parsed as int | `2` / `10` |
+| `REDIS_URL` | URL | — |
+
+## Secrets and crypto
+
+| Variable | Constraint | Notes |
+| --- | --- | --- |
+| `SESSION_SECRET` | min 32 chars | Required in production |
+| `JWT_SECRET` | min 32 chars | Signs 15-minute access tokens (HS256) |
+| `JWT_REFRESH_SECRET` | min 32 chars | Signs 7-day refresh tokens |
+| `ENCRYPTION_KEY` | exactly 32 chars | Required in production |
+| `ENCRYPTION_SALT` | min 16 chars | Required in production |
+| `WALLET_PRIVATE_KEY` | string | Required in production |
+
+## OAuth
+
+`OAUTH_CLIENT_ID`, `OAUTH_CLIENT_SECRET`, `OAUTH_REDIRECT_URI` (URL),
+`GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET` — all optional. Google is the only OAuth
+provider with routes in the code (`GET /api/auth/oauth/google` and its callback).
+
+## Email
+
+`SMTP_HOST`, `SMTP_PORT`, `SMTP_SECURE`, `SMTP_USER`, `SMTP_PASS`, `SMTP_FROM`,
+`SMTP_FROM_NAME`, `EMAIL_FROM` (email), `EMAIL_FROM_NAME` — all optional.
+
+## Payments
+
+| Provider | Variables |
+| --- | --- |
+| Stripe | `STRIPE_SECRET_KEY`, `STRIPE_PUBLIC_KEY`, `STRIPE_WEBHOOK_SECRET` |
+| KotaniPay | `KOTANIPAY_API_KEY`, `KOTANIPAY_SECRET_KEY`, `KOTANIPAY_WEBHOOK_SECRET` |
+| M-Pesa (Daraja) | `MPESA_CONSUMER_KEY`, `MPESA_CONSUMER_SECRET`, `MPESA_PASSKEY`, `MPESA_SHORTCODE` |
+
+All optional at the schema level: the platform boots without them, and the corresponding
+provider is simply unusable.
+
+## Blockchain
+
+`CELO_RPC_URL`, `CELO_ALFAJORES_RPC_URL`, `ETHEREUM_RPC_URL`, `POLYGON_RPC_URL`,
+`ARBITRUM_RPC_URL`, `OPTIMISM_RPC_URL`, `BASE_RPC_URL`, `BSC_RPC_URL` (all URLs, optional),
+plus `CUSD_CONTRACT_ADDRESS` and `WALLET_PRIVATE_KEY`.
+
+## Treasury reconciliation
+
+`TREASURY_RECONCILIATION_ENABLED`, `TREASURY_RECONCILIATION_INTERVAL_MS`,
+`TREASURY_CRITICAL_DISCREPANCY_THRESHOLD`, `TREASURY_WARNING_DISCREPANCY_THRESHOLD`.
+
+## HTTP, CORS and rate limiting
+
+| Variable | Default / effect |
+| --- | --- |
+| `RATE_LIMIT_WINDOW_MS` | `900000` (15 min) |
+| `RATE_LIMIT_MAX_REQUESTS` | `100` |
+| `ALLOWED_ORIGINS` | comma-separated; merged into the CORS allow-list |
+| `SOCKET_IO_CORS_ORIGIN` | comma-separated; also merged into the same allow-list |
+| `FRONTEND_URL` | `http://localhost:5000` |
+| `BACKEND_URL` | `http://localhost:5000` |
+| `API_BASE_URL` | `http://localhost:5000/api` |
+
+In development the allow-list also always includes `FRONTEND_URL`,
+`http://localhost:5173` and `http://localhost:8080`. In production, if neither
+`ALLOWED_ORIGINS` nor `SOCKET_IO_CORS_ORIGIN` is set, it falls back to `FRONTEND_URL`
+alone. `credentials: true` is always set, which matters because access tokens are read
+from the `access_token` cookie.
+
+## Observability, uploads, TLS, misc
+
+`SENTRY_DSN` (URL), `ANALYTICS_API_KEY`, `LOG_LEVEL` (`error|warn|info|debug`, default
+`info`), `DEBUG`, `ENABLE_REQUEST_LOGGING`, `MAX_FILE_SIZE`, `UPLOAD_DIR` (default
+`uploads`), `SSL_CERT_PATH`, `SSL_KEY_PATH`, `WEBHOOK_BASE_URL` (URL),
+`FIREBASE_ADMIN_SDK_PATH`, `FIREBASE_PROJECT_ID`.
+
+## Variables read outside the schema
+
+Some subsystems read `process.env` directly rather than through `shared/config.ts`; the
+most operationally significant is `GATEWAY_MODE`, read in
+`server/services/gatewayAggregator.ts`:
+
+```ts
+private mode: 'live' | 'stub' = process.env.GATEWAY_MODE === 'stub' ? 'stub' : 'live';
+```
+
+Only the exact string `stub` selects stub mode. Anything else — including *unset* and
+including a typo such as `stubb` — selects **live** execution against Celo adapters.
+
+<Callout type="warning">
+  **Security Gap / Recommended Control** — `GATEWAY_MODE` is not part of `envSchema`, so it
+  is neither validated nor fail-fast, and it defaults to `live`. Fold it (and peer
+  directly-read switches) into `envSchema` with an explicit enum so a misconfigured
+  execution-critical switch fails at startup instead of silently enabling live execution.
+</Callout>

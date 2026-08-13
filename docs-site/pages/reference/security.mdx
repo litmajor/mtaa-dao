@@ -1,0 +1,144 @@
+---
+title: Security posture
+description: The security controls that exist in the code, and the gaps that do not.
+audience: developers, operators
+status: PARTIALLY IMPLEMENTED
+last_verified: 2026-08-13
+---
+
+import { Callout } from 'nextra/components'
+
+# Security posture
+
+Derived from `server/index.ts` (middleware stack), `server/auth.ts`,
+`server/middleware/rbac.ts`, `server/utils/encryption.ts`, `server/security/**` and
+`shared/config.ts`. Findings that are not controls are labelled
+**Security Gap / Recommended Control** — they describe what is missing, not a promise that
+it will be added.
+
+<Callout type="warning">
+  This page is a description of implemented behaviour, not a security assurance. No
+  penetration test, audit report or compliance certification exists in this repository, and
+  none is claimed.
+</Callout>
+
+## Request middleware chain
+
+In the order `server/index.ts` mounts it:
+
+| Layer | Configuration |
+| --- | --- |
+| `trust proxy` | Set to `1` |
+| `compression` | Level 6, threshold 1 KB, skipped for images/video/zip/pdf |
+| `cors` | Allow-list from `corsConfig.origin`, `credentials: true`, methods `GET/POST/PUT/DELETE/PATCH/OPTIONS`, headers `Content-Type`, `Authorization`, `X-CSRF-Token`, `maxAge` 86400 |
+| `express.json` / `urlencoded` | 10 MB limit each |
+| `cookie-parser` | Required for the cookie-based auth and CSRF scheme |
+| `helmet` | CSP with `default-src 'self'`, `script-src 'self'`, `style-src 'self' 'unsafe-inline'`, `img-src 'self' data: https:`, `connect-src 'self'`, `object-src 'none'`, `upgrade-insecure-requests`. `crossOriginEmbedderPolicy: false` |
+| `sanitizeInput`, `preventXSS` | `server/security/inputSanitizer.ts` |
+| `auditMiddleware`, operational audit logging, request-lifecycle and request loggers | — |
+| Metrics and performance instrumentation | `performanceMonitor(1000)`, metrics collectors |
+| `activityTracker`, route-usage logger | Route usage written to `visibility/route-usage.csv` |
+| `circuitBreakerMiddleware` | Mounted on `/api` only |
+
+### CORS origin matching
+
+`isOriginAllowed` accepts a request when: there is no `Origin` header (non-browser or
+same-origin); the allow-list contains `*` or `all`; the normalised origin is in the list;
+the hostname matches an allow-listed hostname on any port; or the origin is the
+`localhost` ↔ `127.0.0.1` counterpart of an allow-listed entry.
+
+<Callout type="warning">
+  **Security Gap / Recommended Control.** Two behaviours widen this beyond an exact
+  allow-list: a missing `Origin` header is always allowed, and **port is ignored** in the
+  hostname-match fallback, so any port on an allow-listed host is accepted. Combined with
+  `credentials: true`, deploy only with a precise `FRONTEND_URL`/origin list and never with
+  `*`.
+</Callout>
+
+## Authentication
+
+Full detail in [Authentication](/developer/authentication). Summary: JWT in an httpOnly
+`access_token` cookie (15 min) with a `refresh_token` (7 days) and a JS-readable
+`csrf_token` (15 min), all `sameSite: 'strict'` and `secure` in production. A `Bearer`
+header is accepted as a fallback. Non-safe methods require a double-submit CSRF match.
+Tokens are checked against a blacklist and a per-user global revocation marker.
+
+Two distinct `authenticateToken` implementations exist (`server/auth.ts` and
+`server/middleware/auth.ts`) with different error shapes and pending-2FA handling; which one
+a route uses affects the response a client sees on failure.
+
+## Authorization
+
+`server/middleware/rbac.ts` provides `requireRole`, `requireDAORole`, `requirePermission`
+and `getUserPermissions`.
+
+Global roles and their `UserPermissions`:
+
+| Permission | `super_admin` | `admin` | `moderator` | `user` |
+| --- | --- | --- | --- | --- |
+| `canCreateDAO` | ✔ | ✔ | ✔ | ✘ |
+| `canManageUsers` | ✔ | ✔ | ✘ | ✘ |
+| `canAccessAnalytics` | ✔ | ✔ | ✔ | ✘ |
+| `canManageBilling` | ✔ | ✘ | ✘ | ✘ |
+| `canExecuteProposals` | ✔ | ✔ | ✘ | ✘ |
+| `canManageVaults` | ✔ | ✔ | ✘ | ✘ |
+
+Unknown global roles fall back to `user`. DAO-scoped checks read
+`daoMemberships.role`, default a null role to `member`, and fall back to the `member`
+permission set for any role not present in `DAO_ROLE_PERMISSIONS` — logging a warning rather
+than denying.
+
+<Callout type="info">
+  Fail-safe direction differs by layer: unknown *roles* degrade to the least-privileged set
+  (safe), while Redis failures in rate limiting allow the request (unsafe). See
+  [Rate limits](/developer/rate-limits).
+</Callout>
+
+## Encryption at rest
+
+`server/utils/encryption.ts` is the shared primitive for credential encryption:
+
+| Parameter | Value |
+| --- | --- |
+| Algorithm | `aes-256-gcm` (authenticated) |
+| IV | 16 bytes, random per encryption |
+| Salt | 32 bytes, random per encryption |
+| Auth tag | 16 bytes |
+| Key derivation | PBKDF2-SHA256, 100,000 iterations, 32-byte key |
+
+The same algorithm is used by `services/admin-totp-service.ts`,
+`services/keyManagementService.ts`, `routes/settings.ts` and `utils/cryptoWallet.ts`.
+`keyManagementService` records a key version and hash, so rotation is representable in the
+schema.
+
+Master material comes from `ENCRYPTION_KEY` (exactly 32 characters) and `ENCRYPTION_SALT`
+(≥16 characters). Both are optional in development and hard-required in production.
+
+## Transport and network
+
+- Nginx is the only service publishing ports; see [Operations](/operations) — including the
+  caveat that the committed `nginx.conf` cannot start as written.
+- Redis has no password in the committed config.
+- `/metrics` is protected by `metricsAuth`, which fails closed when no token is configured
+  but trusts `X-Forwarded-For` for its IP allow-list.
+
+## Known gaps
+
+Each of these is recorded with evidence in the
+[documentation audit](/reference/documentation-audit):
+
+| Gap | Impact |
+| --- | --- |
+| Rate limiting is opt-in per route; the global limiter is never mounted and Redis errors fail open | Unthrottled paths under Redis failure |
+| `GATEWAY_MODE` defaults to live and is not schema-validated | A typo enables live execution adapters |
+| Platform API-key tables exist with no authenticating middleware | Documented key-based access does not work; storage exists without an enforcement path |
+| 174 endpoints have no auth middleware detectable by static analysis | Review list — some authenticate inside the handler |
+| No agent-specific audit trail or global agent kill switch | Limited incident response against automation |
+| No backup, restore or key-rotation runbook is committed | Recovery depends on undocumented external process |
+| CORS ignores port in its hostname fallback and allows origin-less requests | Wider-than-intended browser access |
+
+<Callout type="warning">
+  **Reporting.** The repository contains no `SECURITY.md` and no disclosure address, so
+  there is no documented channel for reporting a vulnerability. Adding one is a
+  **Recommended Control**; this page will not invent an email address.
+</Callout>
