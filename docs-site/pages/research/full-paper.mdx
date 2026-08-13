@@ -424,7 +424,7 @@ Core principles, never change without full community consensus.
 
 **Scenario**: Treasury has accumulated 50 ETH and needs rebalancing.
 
-**Autonomous Path** (if <5% of total):
+**Autonomous Path** (if &lt;5% of total):
 ```
 ELD-KAIZEN detects: 50 ETH = 2% of treasury
 → Analyzes: Best conversion rate is USDC (0.3% fee)
@@ -523,7 +523,7 @@ async function executeAutonomousAction(action) {
 |-----------|-------|-----------|
 | Transfer Limit | 5% of treasury | Prevent major moves without voting |
 | Daily Action Count | 10 actions | Prevent spam automation |
-| Asset Swap Slippage | <1% | Protect against oracle manipulation |
+| Asset Swap Slippage | &lt;1% | Protect against oracle manipulation |
 | Member Incentive Change | ±20% monthly | Prevent extreme incentive swings |
 | Parameter Change | Quorum approval required | Some changes need voting |
 
@@ -1108,7 +1108,7 @@ Decisions should be made at the lowest appropriate level.
 Agents have authority proportional to impact:
 - High impact (>5% treasury) → Requires voting
 - Medium impact (1-5%) → Agent recommended, human approved
-- Low impact (<1%) → Agent autonomous, logged
+- Low impact (&lt;1%) → Agent autonomous, logged
 
 ### 9.2 Member Engagement Insights
 
