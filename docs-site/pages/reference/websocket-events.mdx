@@ -1,0 +1,117 @@
+---
+title: WebSocket events
+description: Transports, rooms and event names from the central WebSocket registry.
+audience: developers, builders
+status: PARTIALLY IMPLEMENTED
+last_verified: 2026-08-13
+---
+
+import { Callout } from 'nextra/components'
+
+# WebSocket events
+
+Source of truth: `server/websocket/websocket-events.ts`, the central registry that all
+WebSocket surfaces are meant to import from. Implementations live alongside it in
+`server/websocket/`.
+
+## Transports
+
+Six distinct surfaces are declared in `WS_PATHS`:
+
+| Constant | Path | Server | Technology |
+| --- | --- | --- | --- |
+| `ADMIN` | `/ws/admin` | `websocket.ts` (`WebSocketManager`) | Socket.IO |
+| `GATEWAY` | `/ws/gateway` | `gateway-websocket.ts` | Socket.IO |
+| `COORDINATOR` | `/ws/coordinator` | `coordinator-websocket.ts` | Socket.IO |
+| `MORIO` | `/ws/morio` | `morio-websocket.ts` | Socket.IO |
+| `NOTIFICATIONS` | `/ws/notifications` | the `io` instance created in `server/index.ts` | Socket.IO |
+| `PRICE_STREAM` | `/ws/prices` | `priceStream.ts` | raw `ws` |
+
+<Callout type="warning">
+  **Known drift, documented in the registry itself.** `WebSocketManager`,
+  `GatewayWebSocketServer` and `CoordinatorWebSocketHandler` each construct
+  `new SocketIOServer(httpServer, {...})` **without** setting `path`. If more than one
+  attaches to the same HTTP server they collide on Socket.IO's default `/socket.io/`
+  path. The `WS_PATHS` constants exist to fix this but the servers must actually pass
+  them. Treat the paths above as the intended contract, not as verified runtime routing.
+</Callout>
+
+## Admin surface (`/ws/admin`)
+
+**Rooms** are built through `AdminWS.Rooms` builders, never inline strings:
+`user:{userId}`, `alerts`, `alerts:critical`, `alerts:{entityType}:{entityId}`,
+`analytics`, `config:{entityType}:{entityId}`, `activity:{entityType}:{entityId}`,
+`activity:feed`, `presence:{section}`, `search:results`,
+`status:{entityType}:{entityId}`, `approval:{entityType}:{entityId}`,
+`scheduled:changes`, `system:updates`, `dashboard:updates`, `dashboard:metrics`,
+`dashboard:analytics`.
+
+**Join permissions** (`AdminWS.ROOM_PERMISSIONS`): `alerts` and `alerts:critical` require
+`view:alerts`; `analytics` requires `view:analytics`; `activity:feed` requires
+`view:activity`; the dashboard, scheduled, system and search rooms are open to any
+authenticated socket. Per-entity `config:*`, `activity:*`, `status:*`, `approval:*` and
+`alerts:*` rooms are prefix-matched inside `hasRoomPermission` rather than keyed exactly.
+
+| Direction | Events |
+| --- | --- |
+| Client → Server | `subscribe:room`, `unsubscribe:room`, `config:changed`, `activity:log`, `alert:triggered`, `presence:update`, `search:result`, `analytics:updated` |
+| Server → Client | `room:user-joined`, `room:user-left`, `config:changed`, `activity:logged`, `alert:new`, `alert:entity`, `alert:critical`, `presence:updated`, `search:result-ready`, `analytics:updated`, `system:user-count`, `dashboard:update`, `metrics:updated`, `status:changed`, `approval:changed`, `scheduled:updated`, `bulk:update`, `system:event`, `execution:log`, `error:permission` |
+
+`execution:log` is republished from Redis pub/sub rather than emitted directly by
+application code.
+
+## Gateway surface (`/ws/gateway`)
+
+| Direction | Events |
+| --- | --- |
+| Client → Server | `gateway:subscribe_prices`, `gateway:subscribe_liquidity`, `gateway:subscribe_apy`, `gateway:subscribe_risk`, `gateway:unsubscribe`, `gateway:get_subscriptions`, `gateway:request_data`, `gateway:get_status`, `gateway:health_check` |
+| Server → Client | `gateway:connected`, `gateway:subscribed`, `gateway:unsubscribed`, `gateway:prices_update`, `gateway:liquidity_update`, `gateway:apy_update`, `gateway:risk_update`, `gateway:error` |
+
+## Price stream (`/ws/prices`)
+
+Raw `ws`, not Socket.IO — messages are JSON frames, not Socket.IO events.
+
+| Direction | Messages |
+| --- | --- |
+| Client → Server | `subscribe`, `unsubscribe` |
+| Server → Client | `price`, `order`, `arbitrage`, `subscribed`, `unsubscribed`, `error` |
+
+## Coordinator surface (`/ws/coordinator`)
+
+| Direction | Events |
+| --- | --- |
+| Client → Server | `coordinator:subscribe`, `coordinator:unsubscribe`, `coordinator:request-consensus`, `coordinator:ping` |
+| Server → Client | `coordinator:connected`, `coordinator:status`, `coordinator:subscribed`, `coordinator:unsubscribed`, `coordinator:consensus-response`, `coordinator:error`, `coordinator:pong`, `coordinator:consensus`, `coordinator:scry-alert`, `coordinator:kaizen-recommendation`, `coordinator:lumen-review`, `message-bus:message-published`, `message-bus:error` |
+
+Internal message-bus topics bridged onto this surface: `consensus`, `scry-alert`,
+`kaizen-recommendation`, `lumen-review`, `message-bus:message-published`,
+`message-bus:error`. The registry notes that the consensus request path is not fully
+wired on the server side, so treat `coordinator:request-consensus` as
+**PARTIALLY IMPLEMENTED**.
+
+## Morio surface (`/ws/morio`)
+
+Sections: `dashboard`, `alerts`, `performance`.
+
+| Direction | Events |
+| --- | --- |
+| Client → Server | `subscribe:dashboard`, `subscribe:alerts`, `subscribe:performance`, `subscribe:section`, `unsubscribe:dashboard`, `unsubscribe:alerts` |
+| Server → Client | `data:system-status`, `data:alerts`, `data:performance`, `update:{section}`, `new:alert`, `error:permission` |
+
+## Notifications surface (`/ws/notifications`)
+
+Server → client: `new_notification`.
+
+## Opportunity and market streams
+
+`OpportunityWS` — client: `subscribe`, `unsubscribe`, `set-filter`, `get-status`, `ping`;
+server: `connected`, `opportunities`, `subscribed`, `unsubscribed`, `filter-updated`,
+`status`, `pong`, `error`.
+
+`MarketStreamWS` — client: `subscribe`, `ping`; server: `subscribed`, `pong`,
+`dex_candle`, `error`.
+
+## Monitoring
+
+HTTP endpoints under `/api/websocket-monitoring` expose connection state; see the
+[Platform & Operations endpoints](/reference/api/platform).

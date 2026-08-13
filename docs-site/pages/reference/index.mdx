@@ -1,0 +1,55 @@
+---
+title: Reference
+description: Implementation-derived reference material for MtaaDAO.
+audience: developers, builders
+status: IMPLEMENTED
+last_verified: 2026-08-13
+---
+
+import { Callout } from 'nextra/components'
+
+# Reference
+
+Everything in this section is derived from the code in this repository, not from
+product descriptions. Where a page is machine-generated it says so at the top and
+names the generator.
+
+<Callout type="warning">
+  Pages outside this section (marketing, concepts, user stories) have **not** all been
+  verified against the implementation. See the
+  [Documentation Audit](/reference/documentation-audit) for the per-section status.
+</Callout>
+
+## What is here
+
+| Page | Contents | Derivation |
+| --- | --- | --- |
+| [API Endpoints](/reference/api) | Every HTTP endpoint resolvable from the Express route graph, with the auth middleware on its chain | Generated |
+| [Database Schema](/reference/database) | Every Drizzle `pgTable` in `shared/`, with column counts, primary keys and FK counts | Generated |
+| [Smart Contracts](/reference/contracts) | Every Solidity file in `contracts/`, with functions, events and role constants | Generated |
+| [Agent Runtime](/reference/agents) | Which agents start at boot, their lifecycle, and where AI is and is not involved | Hand-written from source |
+| [Security Posture](/reference/security) | Implemented controls — middleware, CORS, RBAC, encryption — and the gaps | Hand-written from source |
+| [Environment Variables](/reference/environment) | The validated environment surface from `shared/config.ts` | Hand-written from source |
+| [WebSocket Events](/reference/websocket-events) | Transports, rooms and event names from the central registry | Hand-written from source |
+| [Deprecated & Removed APIs](/reference/deprecated) | Legacy routes that redirect or return `410 Gone` | Hand-written from source |
+| [Documentation Audit](/reference/documentation-audit) | What in the existing docs is accurate, stale, duplicated or missing | Analysis |
+
+## Regenerating
+
+```bash
+node docs-site/scripts/generate-reference.mjs
+```
+
+The generator walks `server/index.ts` and `server/routes.ts`, follows every
+`app.use`/`router.use` mount, then scans `shared/*.ts` for Drizzle tables and
+`contracts/**/*.sol` for Solidity declarations.
+
+## Status labels used across the docs
+
+| Label | Meaning |
+| --- | --- |
+| `IMPLEMENTED` | Present in the current code and traceable to a source file |
+| `PARTIALLY IMPLEMENTED` | Present but gated, stubbed, or only partly wired |
+| `DEPRECATED` | Still present but redirecting, sunset-flagged, or returning `410` |
+| `PLANNED` | Described in the repository but with no implementation found |
+| `UNVERIFIED` | Documented previously; not confirmed against the code in this pass |

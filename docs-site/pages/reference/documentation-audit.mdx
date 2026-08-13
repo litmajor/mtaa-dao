@@ -1,0 +1,163 @@
+---
+title: Documentation audit
+description: What the existing documentation gets right, what is stale, and what is missing.
+audience: maintainers
+status: IMPLEMENTED
+last_verified: 2026-08-13
+---
+
+import { Callout } from 'nextra/components'
+
+# Documentation audit
+
+This is the reconciliation record for the documentation rebuild: what exists, what
+survived contact with the code, and what did not. It covers two corpora:
+
+- `docs/` — the historical engineering corpus, **1,504 Markdown files** (1,490 of them in
+  the flat top-level directory), 1,522 files in total across 7 directories, ~23 MB.
+- `docs-site/` — the published Nextra site, **91 MDX pages** before this pass.
+
+## Method
+
+Claims were checked against source, not against other documents. The primary evidence is:
+
+| Question | Evidence |
+| --- | --- |
+| Which endpoints exist? | Walking `server/index.ts` + `server/routes.ts` and every `use()` mount |
+| What is the schema? | `pgTable` declarations in `shared/*.ts` |
+| Which contracts exist? | `contracts/**/*.sol` |
+| What configuration exists? | `shared/config.ts` (Zod schema) |
+| How is it deployed? | `docker-compose.yml`, `nginx.conf`, `.github/workflows/` |
+| What is installed? | `package.json` |
+
+`node docs-site/scripts/generate-reference.mjs` reproduces the machine-derived parts.
+
+## Headline corrections
+
+| Previous claim | Where it appeared | Finding |
+| --- | --- | --- |
+| "364+ API endpoints" | root `README.md` | **Understated.** 1,206 statically resolvable endpoints under `/api`, `/walletapi`, `/health`, `/metrics`. |
+| "`/api/dao`, `/api/vaults`, `/api/proposals` are the core endpoints" | root `README.md` API overview | **Stale.** `/api/vaults` and `/api/tokens` return `410 Gone`; DAO traffic belongs on `/api/v1/daos`. See [Deprecated APIs](/reference/deprecated). |
+| `https://api.mtaadao.com/v1` base URL | 4 docs-site developer pages, 5 `docs/` files | **Unverified.** No such host, domain or public base URL appears anywhere in the code or infrastructure config. The server binds `PORT` (default 5000) behind Nginx. |
+| `sk_live_...` API keys via `Authorization: Bearer` | 4 docs-site developer pages | **Contradicted.** The implemented scheme is a JWT `access_token` cookie (fallback: `Bearer` JWT) plus a CSRF double-submit header. An `api_keys` table exists but no request-authenticating middleware reads it. |
+| `@mtaadao/sdk` npm package (JS + Python) | 4 docs-site developer pages | **Unverified.** No SDK source, build target, or publish workflow exists in this repository. |
+| OAuth 2.0 authorization-code flow at `auth.mtaadao.com` | `developer/authentication.mdx` | **Contradicted.** Only Google OAuth login exists, at `GET /api/auth/oauth/google` and its callback. There is no first-party OAuth provider. |
+| Rate-limit tiers "Free 100/min, Pro $99/mo 1,000/min" | `developer/rate-limits.mdx` | **Unverified.** The implemented limits are per-operation (e.g. withdrawals 10/hour, deposits 20/hour, order execution 100/min) plus a global `RATE_LIMIT_MAX_REQUESTS` default of 100 per 15-minute window. No tiered commercial plan is enforced in code. |
+| Vault documentation describing `/api/vaults` | 48 files in `docs/` | **Stale**, path removed. |
+| Yuki documentation describing `/api/yuki` | 64 files in `docs/` | **Stale**, path now `307`-redirects to `/api/v1/yuki`. |
+
+## `docs/` corpus: composition
+
+Classified by filename convention (each file counted once, first match wins):
+
+| Class | Files | Disposition |
+| --- | --- | --- |
+| Status / phase / completion reports | 690 | **Historical.** Point-in-time engineering records. Keep as history; not user-facing documentation. |
+| Uncategorised | 381 | Mixed; triage individually. |
+| Guides and quick-starts | 132 | Best migration candidates; each needs claim-by-claim verification. |
+| Changelogs, fixes, migrations | 49 | Historical. |
+| Indexes | 46 | Superseded by the docs-site navigation. |
+| Plans and roadmaps | 39 | **Planned/aspirational**, must never be read as implemented. |
+| Checklists | 38 | Historical. |
+| Audits | 33 | Historical, but useful for finding known defects. |
+| API documents | 27 | Superseded by the [generated API reference](/reference/api). |
+| Architecture documents | 26 | Partly reusable; superseded where they conflict with source. |
+| Testing | 11 | Partly reusable. |
+| Operations / deployment | 10 | Partly reusable. |
+| Security | 8 | Partly reusable. |
+
+### Duplication
+
+52 filename families contain more than one document (113 files total), typically the
+`X`, `X_COMPLETE`, `X_SUMMARY`, `X_INDEX` pattern — for example three separate
+`ADMIN_SYSTEM_PHASE_3_*` documents and three `MORIO_DATA_HUB_*` documents. These are
+sequential drafts of the same work, not complementary documents.
+
+### Staleness
+
+**158 files** in `docs/` reference at least one endpoint path that has since been removed
+or relocated:
+
+| Stale path | Files referencing it | Current status |
+| --- | --- | --- |
+| `/api/yuki` | 64 | `307` → `/api/v1/yuki` |
+| `/api/vaults` | 48 | `410 Gone` |
+| `/api/daos` | 39 | `307` → `/api/v1/daos` |
+| `/api/dao-treasury` | 8 | `307` → `/api/dao/:daoId/treasury` |
+| `/api/bounty-escrow` | 7 | `410 Gone` |
+| `api.mtaadao.com` | 5 | No such host in code or infra |
+| `/api/tokens` | 1 | `410 Gone` |
+
+<Callout type="info">
+  Nothing in `docs/` was deleted in this pass. The corpus is the project's engineering
+  history and includes defect analyses that are still useful. It is simply not the
+  documentation product, and the docs-site does not link into it.
+</Callout>
+
+## `docs-site/`: per-section status
+
+| Section | Pages | Status | Notes |
+| --- | --- | --- | --- |
+| `reference/` | new | `IMPLEMENTED` | Generated from source; the authoritative section |
+| `developer/` | 12 | mixed | `api-reference`, `authentication`, `rate-limits`, `code-examples`, `index` rewritten or corrected; the AI/agent guides remain `UNVERIFIED` |
+| `operations/` | new | `IMPLEMENTED` | Derived from `docker-compose.yml`, `nginx.conf`, `config/redis.conf`, `monitoring/`, workflows |
+| `trading/` | 4 | mixed | The new `market-data` page is source-derived; `index`, `dexscreener`, `strategies`, `bots-agents` remain `UNVERIFIED` |
+| `ai-layer/` | 5 | `UNVERIFIED` | Describes Morio/NURU/KWETU with latency and accuracy figures ("90% intent classification", "&lt;50ms") that have no measurement source in the repo. See [Agent runtime](/reference/agents) for what is actually in the code |
+| `getting-started/`, `core-concepts/`, `dao-types/`, `governance/`, `features/`, `use-cases/`, `education/`, `defi/`, `integrations/` | ~50 | `UNVERIFIED` | Product and concept narrative. Not contradicted by code where checked, but not verified end-to-end against running flows either |
+| `research/`, `about/`, `tokenomics/`, `pricing/`, `valuation/`, `impact/` | ~15 | `PLANNED` / positioning | Vision and research material; explicitly not implementation documentation |
+
+## Undocumented systems found in the code
+
+These had no coherent documentation before this pass:
+
+| System | Evidence | Now documented at |
+| --- | --- | --- |
+| The real API surface (1,206 endpoints, seven grouped surfaces) | Route graph | [API reference](/reference/api) |
+| 316 database tables across 20+ schema files in `shared/` | `pgTable` declarations | [Database schema](/reference/database) |
+| 52 Solidity files / 44 contracts | `contracts/` | [Smart contracts](/reference/contracts) |
+| Six WebSocket transports and their room-permission model | `server/websocket/websocket-events.ts` | [WebSocket events](/reference/websocket-events) |
+| The deprecation and tombstone layer | `server/routes.ts` | [Deprecated APIs](/reference/deprecated) |
+| The validated environment surface and its production fail-fast checks | `shared/config.ts` | [Environment variables](/reference/environment) |
+| Gateway execution modes (`GATEWAY_MODE`), adapters, and which are signal-only | `server/services/gatewayAggregator.ts` | [Market data & price oracle](/trading/market-data) |
+| Price-oracle source selection, caching and fallback | `server/services/priceOracle.ts`, `marketDataClient.ts` | [Market data & price discovery](/trading/market-data) |
+| Deployment topology (Nginx → frontend/api, Postgres 16, Redis) | `docker-compose.yml` | [Operations](/operations) |
+
+## Migration map
+
+Where a `docs/` family has a canonical successor:
+
+| `docs/` family | Canonical location |
+| --- | --- |
+| `*_API_*`, `ADMIN_API_ENDPOINTS_*`, `*_ENDPOINTS_*` | [/reference/api](/reference/api) |
+| `*_SCHEMA_*`, `DATABASE_*` | [/reference/database](/reference/database) |
+| `*_CONTRACT_*`, `VAULT_*` (on-chain parts) | [/reference/contracts](/reference/contracts) |
+| `WEBSOCKET_*`, `server/websocket/WEBSOCKET_EVENTS.md` | [/reference/websocket-events](/reference/websocket-events) |
+| `DEPLOYMENT_*`, `DOCKER_*`, `PRODUCTION_*` | [/operations](/operations) |
+| `*_SECURITY_*`, `*_AUTH_*` | [/reference/security](/reference/security), [/developer/authentication](/developer/authentication) |
+| `YUKI_*`, `CEX_*`, `TRADING_*`, `MARKET_*` | [/trading/market-data](/trading/market-data), [/reference/api](/reference/api) |
+| `MORIO_*`, `NURU_*`, `KWETU_*`, `ELDER*`, `AGENT_*` | [/reference/agents](/reference/agents) |
+| `*_PHASE_*`, `*_COMPLETE`, `*_SUMMARY`, `*_CHECKLIST`, `*_PROGRESS` | No successor — historical records, left in place |
+| `ROADMAP*`, `*_PLAN*`, `vault-roadmap.md` | No successor — plans, not documentation of the implementation |
+
+## Defects found while auditing
+
+Documented, not fixed — this pass changed no application behaviour.
+
+| # | Finding | Evidence | Severity |
+| --- | --- | --- | --- |
+| 1 | `GATEWAY_MODE` defaults to `live`; any value other than the exact string `stub` enables live Celo execution, and it is not part of the validated env schema | `server/services/gatewayAggregator.ts:1477` | High |
+| 2 | Three Socket.IO servers construct without a `path`, so they collide on the default `/socket.io/` if attached to the same HTTP server. The `WS_PATHS` constants exist but are not applied | `server/websocket/websocket-events.ts` header comment | Medium |
+| 3 | The Docker healthcheck targets `/health`, which `301`-redirects to `/api/health`; `curl -f` does not follow it, so the check passes on a redirect rather than a health response | `docker-compose.yml`, `server/routes.ts` | Medium |
+| 4 | Every `Sunset` header is `Date.now() + 90d` evaluated per request, so no deprecation ever actually sunsets | `server/routes.ts` (all tombstones) | Low |
+| 5 | `api_keys` / `api_quotas` tables exist with hashing, prefixes, IP allow-lists and per-key rate limits, but no middleware authenticates a request from them — the documented API-key auth flow has storage but no enforcement path. (`/api/settings/api-keys` manages *exchange* credentials in `exchange_api_keys`, a different table.) | `shared/securityEnhancedSchema.ts:177` vs `server/middleware/*` | Medium |
+| 5b | `createApiKey` in `server/storage/storage-low-priority.ts` inserts columns that do not exist on `api_keys` (`keyName`, `allowedIps`, `allowedOrigins`, `rateLimitRequests`, `rateLimitWindow`, `description`, `metadata`, `usageCount`); the table defines `name`, `ipWhitelist`, `rateLimit`. The helper cannot succeed as written | `server/storage/storage-low-priority.ts:337-375` | Medium |
+| 5c | `/api/proposal-execution` is registered three times — a live router, a `307` rewrite, and a `410 Gone` — so its behaviour depends on boot-time mount order | `server/routes.ts:449,511`, `server/index.ts:1525` | Low |
+| 5d | Rate limiting is opt-in per route: `globalRateLimiter` is never mounted, `RATE_LIMIT_WINDOW_MS`/`RATE_LIMIT_MAX_REQUESTS` are parsed but never consumed, `capitalFlowMiddleware.ts` is imported by no route, and the entire `server/routes/yuki.ts` router (with its swap/bridge/flash-loan limiters) is unmounted. `checkRateLimit` also fails open when Redis errors | `server/middleware/*`, `shared/config.ts:226` | High |
+| 5da | 27 routers under `server/routes/` are imported by nothing and therefore never mounted: `accounts`, `achievements-v2`, `adminAuditRouter`, `advanced-features`, `auth-session`, `bill-split`, `bounty-escrow`, `cex`, `cexOrders`, `cexPrices`, `dao-abuse-prevention`, `dao-chat`, `daoInvites`, `elder-user-analysis`, `elders`, `enhanced-sessions`, `governance-activity`, `messages`, `meta-daos`, `ohlcvApiRoute`, `payment-features`, `phone-payments`, `pool-share-marketplace`, `recurring-payments`, `strategiesConsolidated`, `tasks-v2`, `trading-signals`. Most are superseded duplicates whose functionality is served by mounted `server/routes/v1/**` routers (for example bill splitting and recurring payments live under `/api/v1/wallets`, tasks under `/api/v1/daos/:daoId/tasks`), but the dead files remain and are easy to mistake for the live surface. Verify against [API endpoints](/reference/api) before documenting or integrating with any path | `server/routes/*` vs import graph | Medium |
+| 5e | `nginx.conf` contains two concatenated configurations (two `events` + `http` blocks). Nginx rejects a duplicate `events` directive, so the container cannot start. The second block also points `upstream api` at `api:4000` while the API listens on `5000` | `nginx.conf:54` | High |
+| 5f | `monitoring/prometheus.yml` scrapes `api:4000`; the API listens on `5000`, so the API is never scraped | `monitoring/prometheus.yml` | Medium |
+| 5g | `ci-cd.yml` runs `npm run db:migrate`, `type-check`, `test:unit`, `test:integration`, `test:e2e` — none of which exist in `package.json` | `.github/workflows/ci-cd.yml` | Medium |
+| 5h | `config/redis.conf` binds `0.0.0.0` with no `requirepass`; `maxmemory-policy allkeys-lru` can also evict rate-limit counters | `config/redis.conf` | Medium |
+| 5i | `metricsAuth` trusts `X-Forwarded-For` for its IP allow-list, so a client reaching the API directly can spoof an allow-listed address and skip the token | `server/middleware/metricsAuth.ts` | Medium |
+| 6 | 174 statically resolved endpoints have no auth middleware on their chain. Some authenticate inside the handler, which static analysis cannot see, so this is a review list rather than a defect count | [/reference/api](/reference/api) | Needs review |
+| 7 | The docs-site build was broken before this pass: a missing `framer-motion` dependency, an ES5 TypeScript target, unescaped `<` in MDX, and four pages using components they never imported | `docs-site/` build output | Fixed in this pass (docs-site only) |

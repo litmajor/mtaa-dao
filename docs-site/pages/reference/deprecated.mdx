@@ -1,0 +1,108 @@
+---
+title: Deprecated & removed APIs
+description: Legacy HTTP routes that redirect, warn, or return 410 Gone.
+audience: developers, builders
+status: DEPRECATED
+last_verified: 2026-08-13
+---
+
+import { Callout } from 'nextra/components'
+
+# Deprecated & removed APIs
+
+Source of truth: the tombstone and redirect handlers in `server/routes.ts`.
+
+<Callout type="warning">
+  Every `Sunset` header in the codebase is computed as **now + 90 days at request time**
+  (`new Date(Date.now() + 90 * 24 * 60 * 60 * 1000)`). It is therefore a rolling value that
+  never actually arrives, not a fixed removal date. Do not treat it as a commitment either
+  way — plan your migration on the canonical paths below.
+</Callout>
+
+## Removed — `410 Gone`
+
+These return a JSON error body describing the replacement. They no longer serve data.
+
+| Legacy path | Replacement |
+| --- | --- |
+| `/api/vaults/*` | `/api/v1/wallets/vaults` (personal), `/api/v1/daos/:daoId/treasury/vaults` (DAO) |
+| `/api/tokens/*` | `/api/v1/tokens`, `/api/v1/tokens/:tokenAddress/price` |
+| `/api/bounty-escrow/*` | `/api/dao/:daoId/bounty-escrow` |
+
+Response headers: `Deprecation: true`, `Sunset: <rolling>`, plus `X-API-Warn` on
+`/api/bounty-escrow`.
+
+## Redirected — `307 Temporary Redirect`
+
+The request method and body are preserved, so callers that follow redirects keep working.
+
+| Legacy path | Redirects to |
+| --- | --- |
+| `/api/daos/*` | `/api/v1/daos/*` |
+| `/api/yuki*` | `/api/v1/yuki*` |
+| `/api/deposits/*`, `/api/withdrawals/*`, `/api/transactions/*` | `/api/v1/wallets/*` |
+| `/api/governance/:daoId/*` | `/api/dao/:daoId/governance/*` |
+| `/api/dao-treasury/:daoId/*` | `/api/dao/:daoId/treasury/*` |
+| `/api/disbursements/:daoId/*` | `/api/dao/:daoId/disbursements/*` |
+| `/api/feature-analytics/*` | `/api/features/*` |
+| `/api/graph-propagation/*` | `/api/propagation/*` |
+| `/api/dex-screener/*` | `/api/dex/*` |
+| `/api/api-registry/*` | `/api/docs/*` |
+| `/api/proposal-execution/:daoId/*` | `/api/v1/daos/:daoId/proposals/*` (see mapping below) |
+
+`/api/yuki*` is unusual: it sets status `307` and `Location`, **and** writes a JSON body
+describing the move.
+
+### Proposal execution path mapping
+
+| Legacy | Canonical |
+| --- | --- |
+| `/api/proposal-execution/:daoId/queue` | `/api/v1/daos/:daoId/proposals/execution/queue` |
+| `/api/proposal-execution/:daoId/execute/:proposalId` | `/api/v1/daos/:daoId/proposals/:proposalId/execute` |
+| `/api/proposal-execution/:daoId/cancel/:executionId` | `DELETE /api/v1/daos/:daoId/proposals/execution/:executionId` |
+
+The cancel case cannot be expressed as a redirect because the method changes; the server
+sets `X-Legacy-Method-Hint: Use DELETE method for cancel operations` and redirects anyway.
+Clients must switch to `DELETE` explicitly.
+
+## Redirected — `301 Moved Permanently`
+
+| Legacy path | Redirects to |
+| --- | --- |
+| `/health` | `/api/health` |
+| `/api-health` | `/api/health` |
+| `/public/impact-stats` | `/api/public/impact-stats` |
+| `/api/morio/health` | `/api/health/morio` |
+| `/api/dex/health` | `/api/health/dex` |
+| `/api/propagation/health` | `/api/health/propagation` |
+| `/api/admin/operational/health` | `/api/health/operational` |
+
+<Callout type="warning">
+  `docker-compose.yml` healthchecks the API container with
+  `curl -f http://localhost:5000/health`, which is one of these `301` redirects. `curl -f`
+  does **not** follow redirects by default, but it also does not treat `3xx` as an error, so
+  the healthcheck passes on the redirect rather than on a real health response. Prefer
+  `/api/health/live` (liveness) or `/api/health/ready` (readiness) for orchestration.
+</Callout>
+
+## Pass-through with a deprecation header
+
+These still serve the legacy handler directly while advertising the new location via
+`X-Deprecated: true` and `X-Redirect-To`:
+
+| Legacy path | Canonical |
+| --- | --- |
+| `/api/stripe-status/*` | `/api/payments/stripe/*` |
+| `/api/kotanipay-status/*` | `/api/payments/kotanipay/*` |
+| `/api/mpesa-status/*` | `/api/payments/mpesa/*` |
+
+## Header vocabulary
+
+| Header | Meaning in this codebase |
+| --- | --- |
+| `Deprecation: true` | RFC-8594-style marker; used by the `410` tombstones and most `307`s |
+| `X-Deprecated: true` | Non-standard equivalent, used by the DAO/health/payment-status handlers |
+| `X-Redirect-To` | Canonical path for the caller to adopt |
+| `Sunset` | Rolling now+90d timestamp (see the warning above) |
+| `X-API-Warn` | Human-readable migration hint |
+| `X-Legacy-Method-Hint` | Emitted only on the proposal-execution cancel mapping |

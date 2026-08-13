@@ -1,0 +1,10 @@
+{
+  "index": "Index",
+  "identity": "Identity & Accounts",
+  "dao": "DAO & Governance",
+  "treasury": "Treasury & Payments",
+  "trading": "Trading & Market Data",
+  "agents": "Agents & Automation",
+  "platform": "Platform & Operations",
+  "other": "Other Surfaces"
+}
