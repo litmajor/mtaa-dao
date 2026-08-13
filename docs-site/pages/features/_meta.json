@@ -1,7 +1,17 @@
 {
-  "investment-pools-complete": "Investment Pools (Complete)",
+  "index": "Features & Tracker",
   "vault-management": "Vault Management",
-  "reputation-system": "Reputation System",
+  "wallets-vs-vaults": "Wallets vs Vaults",
+  "investment-pools": "Investment Pools",
+  "investment-pools-complete": "Investment Pools - Complete Guide",
+  "investment-pools-governance": "Investment Pool Governance",
+  "task-marketplace": "Task Marketplace",
+  "bill-splitting": "Bill Splitting",
+  "recurring-payments": "Recurring Payments",
+  "phone-payments": "Phone Payments",
   "mobile-money": "Mobile Money Integration",
+  "defi-integration": "DeFi Integration",
+  "bot-integrations": "Bot Integrations",
+  "reputation-system": "Reputation System",
   "cross-chain-expansion": "Cross-Chain Expansion (TRX/TON)"
 }

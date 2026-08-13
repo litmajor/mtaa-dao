@@ -1,8 +1,7 @@
 {
   "index": "Trading Overview",
+  "market-data": "Market Data & Price Oracle",
   "strategies": "Strategy Development",
-  "dex-integration": "DEX Integration",
   "dexscreener": "DexScreener Integration",
-  "bots-agents": "Trading Bots & Agents",
-  "backtesting": "Backtesting & Simulation"
+  "bots-agents": "Trading Bots & Agents"
 }
