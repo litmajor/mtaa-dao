@@ -1,8 +1,9 @@
-
 {
   "index": "Overview",
+  "community-vs-user": "Community vs User DAOs",
   "short-term": "Short-Term DAOs",
   "collective": "Collective DAOs",
-  "lifecycle": "DAO Lifecycle",
-  "metadaos": "MetaDAOs"
+  "free-tier": "Free Tier DAOs",
+  "metadao": "MetaDAOs",
+  "lifecycle": "DAO Lifecycle"
 }

@@ -1,0 +1,137 @@
+---
+title: Local development setup
+description: Getting the MtaaDAO monorepo running from a clean checkout.
+audience: developers
+status: IMPLEMENTED
+last_verified: 2026-08-13
+---
+
+import { Callout } from 'nextra/components'
+
+# Local development setup
+
+Verified against `package.json`, `vite.config.ts`, `drizzle.config.ts`, `shared/config.ts`
+and `docker-compose.yml` at the commit this page was written.
+
+## Prerequisites
+
+| Requirement | Evidence |
+| --- | --- |
+| Node.js 20 | `.github/workflows/ci.yml` uses `node-version: '20'`; both Dockerfiles use `node:20-bullseye-slim`. `package.json` declares no `engines` field |
+| PostgreSQL 16 | `postgres:16` in `docker-compose.yml` |
+| Redis 7 | `redis:7-alpine` in `docker-compose.yml` |
+| npm | The repository commits `package-lock.json`; CI runs `npm ci` |
+
+Docker is optional for app development but is the easiest way to get Postgres and Redis.
+
+## Install
+
+```bash
+git clone https://github.com/shogunlarcadebrent/mtaa-dao.git
+cd mtaa-dao
+npm ci
+```
+
+## Environment
+
+<Callout type="warning">
+  There is no `.env.example` in the repository. The authoritative list of variables is the
+  Zod schema in `shared/config.ts` — see [Environment variables](/reference/environment) for
+  the extracted table, including which are required, which have defaults, and which are read
+  directly from `process.env` without validation.
+</Callout>
+
+In development most variables fall back to defaults, but the schema still needs
+`DATABASE_URL` to reach a real database. A minimal `.env`:
+
+```bash
+DATABASE_URL=postgresql://postgres:postgres@localhost:5432/mtaadao
+REDIS_URL=redis://localhost:6379
+NODE_ENV=development
+PORT=5000
+```
+
+`NODE_ENV=production` additionally hard-requires `SESSION_SECRET`, `JWT_SECRET`,
+`JWT_REFRESH_SECRET`, `ENCRYPTION_KEY`, `ENCRYPTION_SALT` and `WALLET_PRIVATE_KEY`; the
+process exits if any is missing or left at a development default.
+
+## Database
+
+```bash
+npm run db:push     # drizzle-kit push against DATABASE_URL
+```
+
+<Callout type="warning">
+  `npm run migrate` is an alias for the same `drizzle-kit push`. The SQL files in
+  `migrations/` are **not** replayed by any script, and there is no seed command.
+</Callout>
+
+## Run
+
+```bash
+npm run dev          # concurrently: vite client + tsx watch server
+npm run dev:client   # vite only
+npm run dev:backend  # tsx watch server/index.ts only
+```
+
+The API listens on `PORT` (default `5000`). Vite serves the client and proxies API calls;
+see `vite.config.ts` for the proxy target.
+
+## Checks
+
+```bash
+npm run lint     # eslint . --ext .ts,.tsx
+npm run check    # tsc
+npm test         # vitest run
+npm run format   # prettier --write .
+```
+
+Narrower test entry points exist: `test:server`, `test:shared-schema`, `test:coverage`,
+`test:watch`, and `test:swap-fork` (which expects an Anvil fork started via
+`npm run anvil:fork`).
+
+<Callout type="info">
+  There is no `.pre-commit-config.yaml` and no Husky directory — hooks are not configured,
+  so run the checks above manually before pushing. CI (`ci.yml`) runs lint, `check`, test
+  and build on every PR to `main`.
+</Callout>
+
+## Contracts
+
+```bash
+npm run contracts:compile          # hardhat compile
+npm run contracts:deploy           # hardhat run scripts/deploy.ts --network localhost
+```
+
+See [Smart contracts](/reference/contracts) for the generated inventory. Deployment
+addresses are **not** documented anywhere in this site, because the repository contains no
+verifiable address registry.
+
+## Build
+
+```bash
+npm run build            # vite build, then tsup bundle of the server
+npm run start:prod       # run the built server
+```
+
+## Documentation site
+
+This site is a separate Nextra app with its own dependency tree:
+
+```bash
+cd docs-site
+npm install
+npm run dev      # http://localhost:4001
+npm run build
+```
+
+The source-derived reference pages are regenerated with:
+
+```bash
+node docs-site/scripts/generate-reference.mjs
+```
+
+That script walks `server/routes/**`, `shared/*.ts` and `contracts/**` and rewrites
+[API endpoints](/reference/api), [Database schema](/reference/database) and
+[Smart contracts](/reference/contracts). Re-run it after changing routes or schema rather
+than hand-editing those pages.

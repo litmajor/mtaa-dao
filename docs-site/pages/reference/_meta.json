@@ -1,0 +1,12 @@
+{
+  "index": "Overview",
+  "api": "API Endpoints",
+  "database": "Database Schema",
+  "contracts": "Smart Contracts",
+  "agents": "Agent Runtime",
+  "security": "Security Posture",
+  "environment": "Environment Variables",
+  "websocket-events": "WebSocket Events",
+  "deprecated": "Deprecated & Removed APIs",
+  "documentation-audit": "Documentation Audit"
+}

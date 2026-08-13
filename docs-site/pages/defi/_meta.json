@@ -1,8 +1,3 @@
 {
-  "index": "Overview",
-  "lending": "Lending & Borrowing",
-  "yield": "Yield Farming",
-  "swaps": "Token Swaps",
-  "bridges": "Cross-Chain Bridges",
-  "risks": "Risk Management"
+  "index": "Overview"
 }

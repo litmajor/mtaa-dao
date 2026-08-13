@@ -303,12 +303,10 @@ const riskLimits = {
 
 Protocols ranked by safety:
 
-| Protocol | Audit Status | TVL | Risk Rating |
-|----------|-------------|-----|-------------|
-| **Mento** | ✅ Audited | $50M+ | Low |
-| **Ubeswap** | ✅ Audited | $30M+ | Low-Medium |
-| **Moola** | ✅ Audited | $20M+ | Medium |
-| **Beefy** | ✅ Audited | $10M+ | Medium |
+The audit status and TVL of third-party protocols are **not tracked by this codebase** — the
+figures previously listed here were `UNVERIFIED`. Adapters exist for Uniswap V3, Mento,
+Ubeswap and Moola (see [Market data](/trading/market-data)); assess each protocol's audits and
+TVL at the source before allocating funds.
 
 ### **Impermanent Loss Protection**
 
@@ -441,7 +439,7 @@ await borrow({
 ```
 
 **Loan-to-Value (LTV):**
-- Safe: <40%
+- Safe: &lt;40%
 - Moderate: 40-60%
 - Risky: >60%
 - Liquidation: ~75%

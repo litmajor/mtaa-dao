@@ -1,0 +1,152 @@
+---
+title: Agent runtime
+description: Which agents actually start, what they do, and where AI is and is not involved.
+audience: developers
+status: PARTIALLY IMPLEMENTED
+last_verified: 2026-08-13
+---
+
+import { Callout } from 'nextra/components'
+
+# Agent runtime
+
+Source of truth: the startup sequence in `server/index.ts`, `server/services/AgentRegistry.ts`,
+`server/agents/**`, `server/core/agents/**`, `server/core/elders/**` and
+`server/core/agent-framework/**`.
+
+<Callout type="warning">
+  "Agent" in this codebase mostly means **a long-lived deterministic service object with a
+  lifecycle**, not an LLM. Only Morio has an LLM path. Everything else — trading, anomaly
+  detection, compliance, governance analytics, the Elder Council, the gateway — is ordinary
+  TypeScript business logic. Read the *Reasoning* column below before assuming any behaviour
+  is model-driven.
+</Callout>
+
+## What starts at boot
+
+Every block below is wrapped in `try`/`catch` and logs-and-continues on failure, so a
+degraded server can serve traffic with agents missing. Check the startup logs, or
+`GET /api/health/subsystems`, to know what is actually running.
+
+| Agent / subsystem | Started by | Reasoning | Financial actions |
+| --- | --- | --- | --- |
+| `trading` | `agentRegistry.createAgent('trading')` | Deterministic | See caveat below — the registry-created instance cannot execute |
+| `anomaly_detection` | `agentRegistry.createAgent(...)` | Deterministic | None |
+| `compliance` | `agentRegistry.createAgent(...)` | Deterministic | None |
+| `governance_analytics` | `agentRegistry.createAgent(...)` | Deterministic | None |
+| `PerformanceOptimizerAgent` | `isolatedWorkerManager.start(...)` | Deterministic | None |
+| `HealthMonitorAgent` | `isolatedWorkerManager.start(...)` | Deterministic | None |
+| ELD-SCRY, ELD-KAIZEN, ELD-LUMEN, ARCH-MALTA coordinator | Direct `.start()` calls | Deterministic | None |
+| Gateway Agent | `initializeGatewayAgent(...)` | Deterministic | Quotes and swap execution |
+| Morio | Constructed per session, not at boot | **LLM optional** | None directly |
+| `synchronizer` | Defined in `AgentRegistry` but **not** in the boot list | Deterministic | None |
+
+`AgentRegistry` is a singleton keyed by `AgentType`
+(`synchronizer`, `trading`, `anomaly_detection`, `compliance`, `governance_analytics`). Each
+agent extends `BaseAgent`, which fixes the lifecycle contract:
+
+```ts
+abstract initialize(): Promise<void>;
+abstract process(data: unknown): Promise<unknown>;
+```
+
+Status moves through `initializing → active → paused | error | shutdown`, and every agent
+tracks `tasksProcessed`, `averageProcessingTime`, `errorRate` and `lastActive`. The registry
+exposes `getAgent`, `getAgentsByType`, `getActiveAgents`, `pauseAgent`, `shutdownAgent` and
+`getStatusSummary`.
+
+<Callout type="warning">
+  **The boot-time trading agent cannot trade.** `AgentRegistry.createAgent('trading')`
+  injects a "minimal default executor" whose `execute` returns
+  `{ txHash: '', actualOutput: '0', actualSlippage: 0, gasCost: '0' }` without touching a
+  chain. A real `IRouteExecutor` must be supplied by the caller constructing
+  `TradingAgentBase` directly. Treat the registry instance as analysis-only.
+</Callout>
+
+## Elder Council
+
+Four cooperating deterministic components under `server/core/elders/`:
+
+| Elder | File | Responsibility |
+| --- | --- | --- |
+| ELD-SCRY | `scry/` | Surveillance: activity monitoring, pattern detection with `low` / `medium` / `high` / `critical` severity, health forecasting. The surveillance-engine types are annotated as mocks in source |
+| ELD-KAIZEN | `kaizen/` | Performance tracking and optimisation recommendations per DAO, reading `daos` from the database. Config includes `autoApplyOptimizations` and a `focusArea` of `treasury`, `governance`, `community`, `system` or `all` |
+| ELD-LUMEN | `lumen/` | Ethics evaluation against eight principles (minimise harm, respect autonomy, ensure justice, beneficence, transparency, proportionality, fairness, accountability) applied to agent messages |
+| ARCH-MALTA | `coordinator/` | EventEmitter hub that collects `ElderInput` (with a confidence score) from the three elders and synthesises a `CoordinatedDecision` |
+
+None of these calls an LLM. "Ethics evaluation" is rule-based scoring over message content,
+not a model judgement.
+
+## Morio — the only LLM path
+
+`server/agents/morio/` is the conversational layer. `MorioAgent` composes a
+`SessionManager`, `ResponseGenerator`, `UserGenerator` and an `AgentCommunicator` on the
+`MORIO` channel, with defaults `personality: 'friendly'`, `language: 'en'`,
+`maxHistoryLength: 20`, `responseTimeout: 30000`.
+
+`createLLMProvider(config)` in `api/llm_provider.ts` resolves:
+
+| `config.provider` | Result |
+| --- | --- |
+| `openai` | `OpenAIProvider` |
+| `mock` | `MockLLMProvider` |
+| anything else (including `local`) | Logs a warning and returns `MockLLMProvider` |
+
+<Callout type="warning">
+  `config/morio-llm.json` declares `"type": "local"`, `"provider": "ollama"`,
+  `"model": "llama2"` at `http://localhost:11434`. **`createLLMProvider` has no `ollama` or
+  `local` branch**, so that configuration falls through to the mock provider. As committed,
+  Morio produces mock LLM responses unless it is constructed with
+  `provider: 'openai'` and an API key. The `local_model` block referencing
+  `./models/llama-2-7b-chat.Q2_K.gguf` points at a file that is not in the repository.
+</Callout>
+
+Morio never moves funds. It communicates over the in-process message bus; see
+[WebSocket events](/reference/websocket-events) for the `/ws/morio` transport.
+
+## Gateway Agent
+
+Initialised late in startup with the coordinator passed in, then its routes are mounted
+**at runtime** onto `/api/v1/market` and `/api/gateway`. Supporting modules under
+`server/core/agents/gateway/` include a circuit breaker, cache manager, normaliser, message
+bus, and a security wrapper/middleware pair.
+
+<Callout type="info">
+  Because gateway routes are mounted inside the async startup path, they do not exist until
+  initialisation succeeds. A failure logs `Gateway features will be unavailable` and leaves
+  those paths returning 404 while the rest of the API serves normally — clients should treat
+  gateway endpoints as optionally present.
+</Callout>
+
+Adapter behaviour, price cascade and `GATEWAY_MODE` semantics are documented in
+[Market data & price oracle](/trading/market-data).
+
+## Inter-agent communication
+
+`server/core/agent-framework/` provides `message-bus.ts` (typed `MessageType`, `AgentMessage`)
+and `agent-communicator.ts`, which agents instantiate with their own channel name
+(`new AgentCommunicator('MORIO')`). This is an **in-process** bus — it is not durable, not
+cross-instance, and messages are lost on restart. Do not rely on it for anything that must
+survive a deploy.
+
+## Human approval
+
+There is no generic agent-approval queue. Financial actions that agents can influence still
+go through the ordinary authenticated API surface and its per-route rate limits and risk
+gates (`swapRiskGate`, order routing checks). Where a DAO requires multi-signature or
+proposal approval, that is enforced by governance and treasury code, not by the agent
+framework.
+
+<Callout type="warning">
+  **Security Gap / Recommended Control.** No component records an audit trail specifically
+  for agent-initiated actions distinct from user-initiated ones, and there is no kill switch
+  that pauses all agents at once — `pauseAgent` is per-agent and in-memory only, so a restart
+  resumes everything. Operators wanting a global halt must currently stop the process.
+</Callout>
+
+## Monitoring
+
+- `GET /api/health/subsystems`, `/api/health/registry`, `/api/health/morio` (all
+  `super_admin`) report agent-side status.
+- `agentRegistry.getStatusSummary()` is logged at startup.
+- Per-agent metrics live in memory on each `BaseAgent`; they are not persisted.

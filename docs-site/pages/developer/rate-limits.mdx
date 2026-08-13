@@ -1,145 +1,156 @@
-# Rate Limits & Quotas
+---
+title: Rate limits
+description: The rate limits actually enforced by the server, and where they are not.
+audience: developers
+status: PARTIALLY IMPLEMENTED
+last_verified: 2026-08-13
+---
 
-MtaaDAO uses token-bucket rate limiting to ensure fair API usage for all users.
+import { Callout } from 'nextra/components'
 
-## Rate Limit Tiers
+# Rate limits
 
-### Free Tier
-- **100 requests** per minute
-- **10 concurrent** requests
-- **1,000 requests** per day
-- **10 GB** monthly bandwidth
+Source of truth: `server/middleware/rateLimiter.ts`, `rateLimitConfig.ts`,
+`rateLimiting.ts`, `capitalFlowRateLimits.ts`, `phase2RateLimits.ts`.
 
-### Pro Tier ($99/month)
-- **1,000 requests** per minute
-- **100 concurrent** requests
-- **50,000 requests** per day
-- **100 GB** monthly bandwidth
+<Callout type="warning">
+  **This page replaced an earlier version** claiming commercial tiers ("Free 100/min, Pro
+  $99/mo 1,000/min, Enterprise custom") and burst/SLA guarantees. No tiered plan is
+  enforced anywhere in the code. Limits are per-operation and per-route.
+</Callout>
 
-### Enterprise
-- **Custom limits**
-- **Dedicated support**
-- **SLA guarantees**
-- Contact: enterprise@mtaadao.com
+## Response contract
 
-## How Rate Limiting Works
+Limiters built on `rateLimitMiddleware` (`rateLimitConfig.ts`) set:
 
-Each request costs tokens. When you exceed your limit, you receive a `429 Too Many Requests` response.
+| Header | Meaning |
+| --- | --- |
+| `X-RateLimit-Limit` | Configured maximum for the window |
+| `X-RateLimit-Remaining` | Remaining requests in the current window |
+| `Retry-After` | Seconds to wait — only on a `429` |
 
-```
-X-RateLimit-Limit: 100        # Your limit
-X-RateLimit-Remaining: 45     # Requests left
-X-RateLimit-Reset: 1612345678 # Unix timestamp when limit resets
-```
+Exceeding a limit returns `429` with
+`{ "error": "Too many requests", "retryAfter": <seconds>, "message": "..." }`.
 
-## Endpoint-Specific Limits
+Windows are **fixed**, not sliding: the Redis key is
+`rl:<key>:<floor(now / windowSeconds)>`, so the counter resets on a wall-clock boundary and
+a client can spend a full window's budget on each side of that boundary.
 
-Some endpoints have lower limits:
+<Callout type="warning">
+  **Security Gap / Recommended Control.** `checkRateLimit` **fails open**: if Redis is
+  unavailable or errors, the request is allowed and only a log line is emitted. A Redis
+  outage silently removes rate limiting from withdrawals, deposits, order execution and
+  proposal operations. Consider failing closed for financial operations.
+</Callout>
 
-| Endpoint | Free | Pro |
-|----------|------|-----|
-| List DAOs | 100/min | 1000/min |
-| Create DAO | 10/min | 100/min |
-| Vote on proposal | 50/min | 500/min |
-| Execute transfer | 20/min | 200/min |
-| Execute trade | 10/min | 100/min |
-| Create agent | 5/min | 50/min |
+## Authentication limits
 
-## Handling Rate Limits
+Per IP, from `server/middleware/rateLimiter.ts`, applied at the route definitions in
+`server/routes.ts`.
 
-### Exponential Backoff
+| Operation | Limit | Window |
+| --- | --- | --- |
+| `POST /api/auth/register` | 5 | 15 min |
+| `POST /api/auth/login` | 10 | 15 min |
+| `POST /api/auth/verify-otp` | 10 | 15 min |
+| OTP resend | 3 | 5 min |
 
-```javascript
-async function apiCall(url, options, maxRetries = 3) {
-  for (let i = 0; i < maxRetries; i++) {
-    const response = await fetch(url, options)
-    
-    if (response.status === 429) {
-      const resetTime = parseInt(response.headers.get('X-RateLimit-Reset'))
-      const waitTime = resetTime * 1000 - Date.now()
-      console.log(`Rate limited. Retrying in ${waitTime}ms`)
-      await new Promise(r => setTimeout(r, waitTime + 1000))
-      continue
-    }
-    
-    return response
-  }
-}
-```
+## Capital flow
 
-### Batch Requests
+`rateLimitConfig.ts` limits are the ones actually wired into the gateway rails
+(`server/routes/v1/wallets/rails/gateway.ts`):
 
-Combine multiple operations into a single request when possible:
+| Operation | Limit | Window | Scope |
+| --- | --- | --- | --- |
+| `POST /api/v1/wallets/rails/gateway/deposit` | 20 | 1 hour | user |
+| `POST /api/v1/wallets/rails/gateway/withdraw` | 10 | 1 hour | user |
+| Withdrawals over $10,000 (`applyAdaptiveRateLimit`) | 3 | 24 hours | user |
 
-```javascript
-// ❌ Bad: 3 separate requests
-await dao.daos.get('dao_1')
-await dao.daos.get('dao_2')
-await dao.daos.get('dao_3')
+<Callout type="info">
+  Two further configurations exist but are **not enforced**: `capitalFlowRateLimits`
+  (deposits 50/day, 20/hour, 5/10min; withdrawals 5/day, 3/hour, 1/10min) is consumed only
+  by `capitalFlowMiddleware.ts`, which no route imports, and `phase2RateLimits` is a
+  configuration object with a commented-out usage example. Treat their numbers as
+  **PLANNED**, not as the limits you will hit. The enforced withdrawal limit is 10/hour.
+</Callout>
 
-// ✓ Good: 1 batch request
-const daos = await dao.daos.batch(['dao_1', 'dao_2', 'dao_3'])
-```
+## Governance
 
-### Caching
+| Operation | Limit | Window | Scope |
+| --- | --- | --- | --- |
+| Proposal execution (`POST /api/proposal-execution/:daoId/execute/:proposalId`) | 100 | 24 hours | user |
+| Proposal creation (`proposalCreationLimits`, via `applyAdaptiveRateLimit`) | 20 | 24 hours | user |
 
-Cache frequently accessed data locally:
+<Callout type="info">
+  `/api/proposal-execution` is registered three times: as a real router
+  (`server/routes.ts:449`), as a `307` rewrite to `/api/v1/daos/...` (`server/routes.ts:511`),
+  and as a `410 Gone` in `server/index.ts`. Express matches in registration order, so which
+  one answers depends on mount order at boot. Use the canonical
+  `/api/v1/daos/:daoId/proposals/*` paths instead.
+</Callout>
 
-```javascript
-const cache = new Map()
-const CACHE_TTL = 60000 // 1 minute
+## Treasury multisig
 
-async function getDAOWithCache(daoId) {
-  const cached = cache.get(daoId)
-  if (cached && Date.now() - cached.timestamp < CACHE_TTL) {
-    return cached.data
-  }
-  
-  const data = await dao.daos.get(daoId)
-  cache.set(daoId, { data, timestamp: Date.now() })
-  return data
-}
-```
+From `rateLimiter.ts`, applied in `routes/v1/daos/_daoId/treasury/multisig-unified.ts`:
 
-## Quota Management
+| Operation | Limit | Window | Scope |
+| --- | --- | --- | --- |
+| Create multisig | 5 | 1 hour | DAO |
+| Propose withdrawal | 10 | 1 hour | user |
+| Submit signature | 20 | 5 min | user |
+| Execute | 10 | 1 hour | DAO |
+| Read configuration | 50 | 1 min | — |
 
-Monitor your usage in the Dashboard:
+## Trading (Yuki v1)
 
-**Dashboard** → **API** → **Usage Analytics**
+The mounted trading surface is `/api/v1/yuki` (`server/routes/v1/yuki/`). Limits are
+defined per sub-router:
 
-See:
-- Requests this month
-- Peak usage times
-- Errors and failed requests
-- Cost estimates
+| Operation | Limit | Window | Where |
+| --- | --- | --- | --- |
+| Algo order writes (`POST /algo/twap`, `PATCH`/`DELETE /algo/orders/:id`) | 20 | 1 min | `algo.ts` |
+| Algo order reads (`GET /algo/orders`) | 100 | 1 min | `algo.ts` |
+| Bridge transfer | 5 | 1 min | `bridge.ts`, keyed per user |
+| Bridge swap | 10 | 1 min | `bridge.ts` |
+| Bridge governance ops | 20 | 1 min | `bridge.ts` |
+| Bridge quote | 30 | 1 min | `bridge.ts` |
+| Bridge analytics | 50 | 1 min | `bridge.ts` |
 
-## Upgrade Your Plan
+<Callout type="info">
+  `server/routes/yuki.ts` — the legacy trading router carrying `yukiSwapLimiter` (20/min),
+  `yukiBridgeLimiter` (10/min), `yukiFlashLoanLimiter` (5/min) and `yukiBacktestLimiter`
+  (3/min) — is **not mounted** by `server/routes.ts` or `server/index.ts`, so those limits
+  are not in force. `orderExecutionLimits` (100/min) and `agentLimiter` (10/min) are
+  likewise defined but not attached to any mounted route.
+</Callout>
 
-Need higher limits? Upgrade from Free to Pro or contact sales for Enterprise:
+## Heavy compute
 
-```
-Free → Pro: Instant upgrade in Dashboard
-Pro → Enterprise: Contact enterprise@mtaadao.com
-```
+| Operation | Limit | Window | Where |
+| --- | --- | --- | --- |
+| Analyzer run (`POST /api/analyzer/analyze/*`) | 1 | 1 min | `routes/analyzer.ts` — guards LLM cost |
+| Analytics queries (`/metrics`, `/historical`, `/live`, `/export/csv`, `/dao/:daoId/summary`) | 10 | 1 min | `routes/analytics.ts` |
+| PDF export (`GET /api/analytics/export/pdf`) | 1 | 1 hour | guards disk exhaustion |
 
-## Rate Limit Best Practices
+## Global limits
 
-✓ **Check headers** - Always read rate limit headers
-✓ **Implement backoff** - Exponential backoff for retries
-✓ **Batch requests** - Combine operations
-✓ **Cache data** - Reduce redundant calls
-✓ **Monitor usage** - Track quota regularly
-✓ **Plan ahead** - Upgrade before hitting limits
+| Configuration | Value | Status |
+| --- | --- | --- |
+| `riskAssessmentLimits` | 50 / hour, key `risk_assessment_global` | Available |
+| `marketDataLimits` | 1,000 / min, key `market_data_global` | Available |
+| `globalRateLimiter` (`rateLimiting.ts`) | 100 / window (5,000 in development), with a long static-asset exemption list | **Defined but not mounted** — referenced only by tests |
+| `RATE_LIMIT_WINDOW_MS` / `RATE_LIMIT_MAX_REQUESTS` env (default 900,000 ms / 100) | Parsed into `rateLimitConfig` in `shared/config.ts` | **Not consumed by any middleware** |
 
-## Common Mistakes
+<Callout type="warning">
+  **Security Gap / Recommended Control.** There is no application-wide default rate limit
+  in force. Protection is opt-in per route, so any endpoint whose author did not attach a
+  limiter is unlimited. The two mechanisms intended to provide a floor — `globalRateLimiter`
+  and the `RATE_LIMIT_*` environment settings — are both dead code paths. Mounting one of
+  them would give every endpoint a baseline.
+</Callout>
 
-❌ **Polling instead of webhooks** - Use webhooks for real-time data
-❌ **No caching** - Cache frequently accessed data
-❌ **Synchronous loops** - Parallelize requests with `Promise.all()`
-❌ **Ignoring headers** - Always check `X-RateLimit-*` headers
+## See also
 
-## Support
-
-- **Rate limit questions**: support@mtaadao.com
-- **Usage spikes**: Contact sales to discuss limits
-- **Enterprise limits**: enterprise@mtaadao.com
+- [Authentication](/developer/authentication)
+- [API reference](/reference/api)
+- [Documentation audit](/reference/documentation-audit) — full defect list
