@@ -10,6 +10,8 @@
   "integrations": "Integrations",
   "features": "Features & Tracker",
   "developer": "Developer Hub",
+  "reference": "Reference",
+  "operations": "Operations",
   "use-cases": "Use Cases",
   "governance": "Governance",
   "ai-layer": "AI Layer",
@@ -17,5 +19,8 @@
   "about": "About",
   "pricing": "Pricing",
   "research": "Research",
-  "faq": "FAQ & Support"
+  "faq": "FAQ & Support",
+  "getting-started": "Getting Started",
+  "impact": "Impact",
+  "valuation": "Valuation"
 }

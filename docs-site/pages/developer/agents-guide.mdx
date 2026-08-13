@@ -1,375 +1,123 @@
-# Building Agents
+---
+title: Working with agents
+description: What the agent runtime lets you do over the API today, and what it does not.
+audience: developers, builders
+status: PARTIALLY IMPLEMENTED
+last_verified: 2026-08-13
+---
 
-Create autonomous agents that execute strategies automatically.
+import { Callout } from 'nextra/components'
 
-## What are Agents?
+# Working with agents
 
-Agents are automated programs that run on the MtaaDAO network and perform tasks without human intervention:
+MtaaDAO runs a small in-process agent registry (`server/agents/**`) plus the Morio
+conversational layer. This page covers the developer-facing surface. For what each agent
+actually does internally, its lifecycle and its known gaps, read
+[Agent runtime](/reference/agents).
 
-- **Trading Agents**: Automatically trade based on market conditions
-- **Yield Agents**: Move funds between pools to maximize returns
-- **Risk Agents**: Monitor treasury health and trigger alerts
-- **Governance Agents**: Auto-vote based on pre-set rules
-- **Rebalancing Agents**: Maintain target asset allocation
+<Callout type="error">
+  **You cannot define a custom agent over the API.** Agent *types* are a closed enum compiled
+  into the server — `trading`, `anomaly_detection`, `compliance`, `governance_analytics`.
+  `POST /api/agents` instantiates one of those types; it does not accept a strategy, a
+  trigger schedule, spending limits or user-supplied code. Earlier documentation showed a
+  `dao.agents.create({ strategy, trigger, limits })` SDK call — no such SDK, endpoint or
+  fields exist. Adding a new agent means writing a class in `server/agents/` and deploying it.
+</Callout>
 
-## Agent Architecture
+## Capability matrix
 
-```
-┌─────────────────────┐
-│  Trigger (Timer)    │
-└──────────┬──────────┘
-           │
-           ↓
-┌─────────────────────┐
-│  Read State         │
-│  (DAOs, Pools, etc) │
-└──────────┬──────────┘
-           │
-           ↓
-┌─────────────────────┐
-│  Analyze & Decide   │
-│  (Strategy logic)   │
-└──────────┬──────────┘
-           │
-           ↓
-┌─────────────────────┐
-│  Execute Action     │
-│  (Trade, transfer)  │
-└──────────┬──────────┘
-           │
-           ↓
-┌─────────────────────┐
-│  Log & Notify       │
-│  (Webhooks)         │
-└─────────────────────┘
-```
+| Capability | Status | Evidence |
+| --- | --- | --- |
+| List, inspect and monitor running agents | `SUPPORTED` | `GET /api/agents`, `/api/agents/:agentId`, `/api/agents/status/summary` |
+| Instantiate one of the four built-in agent types | `SUPPORTED` (admin only) | `POST /api/agents`, `requireAdmin` |
+| Pause / resume / shut down an agent | `SUPPORTED` (admin only) | `POST /api/agents/:agentId/{pause,resume,shutdown}` |
+| Read per-domain agent metrics | `SUPPORTED` | `/api/agents/metrics/{trading,anomalies,governance}` |
+| Conversational analysis via Morio | `PARTIALLY IMPLEMENTED` | `/api/morio/*`; the committed config falls back to a mock LLM |
+| User-defined strategies, triggers or spending limits | `PLANNED` | No route, no schema, no executor |
+| Autonomous on-chain execution by the registry trading agent | `PLANNED` | Its route executor is a no-op returning an empty tx hash |
+| Outbound webhooks on agent events | `PLANNED` | No subscription API |
 
-## Example 1: Dollar Cost Averaging (DCA) Agent
+## Inspect what is running
 
-Buy the same amount of an asset every day:
-
-```javascript
-import { MtaaDAO } from '@mtaadao/sdk'
-
-const dao = new MtaaDAO({ apiKey: 'sk_live_xxx' })
-
-const agent = await dao.agents.create({
-  name: 'MTAA Daily DCA',
-  description: 'Buy 1000 USDC of MTAA every day',
-  type: 'trading',
-  trigger: {
-    type: 'interval',
-    value: 24 * 60 * 60 * 1000 // Every 24 hours
-  },
-  strategy: {
-    name: 'dca',
-    params: {
-      asset: 'MTAA',
-      amount: 1000,
-      currency: 'USDC'
-    }
-  },
-  execution: {
-    daoId: 'dao_123',
-    approval: 'automatic' // Execute without vote
-  }
-})
-
-console.log(`Agent created: ${agent.id}`)
-console.log(`Running: ${agent.isActive}`)
+```bash
+curl -s "$BASE/agents" -b cookies.txt
+curl -s "$BASE/agents/status/summary" -b cookies.txt
+curl -s "$BASE/agents/type/trading" -b cookies.txt
+curl -s "$BASE/agents/metrics/trading" -b cookies.txt
 ```
 
-## Example 2: Yield Optimization Agent
+All require `isAuthenticated`. `GET /api/agents/:agentId` returns the registry record plus
+`instance.getMetrics()`, `createdAt` and `lastActive`.
 
-Move funds to the highest-yield pool automatically:
+## Create an agent (admin)
 
-```javascript
-const agent = await dao.agents.create({
-  name: 'Yield Optimizer',
-  description: 'Automatically move treasury to highest-yield pool',
-  type: 'defi',
-  trigger: {
-    type: 'interval',
-    value: 6 * 60 * 60 * 1000 // Every 6 hours
-  },
-  strategy: {
-    name: 'yield_optimization',
-    params: {
-      minAPY: 8,
-      maxSlippage: 0.5, // 0.5%
-      assets: ['USDC', 'MTAA'],
-      excludePools: ['unstable_pool']
-    }
-  },
-  limits: {
-    maxPerTransaction: 100000,
-    maxDaily: 500000,
-    requiresApproval: false
-  },
-  execution: {
-    daoId: 'dao_123',
-    approval: 'automatic'
-  }
-})
+`POST /api/agents` — `requireAdmin`, plus an agent-mutation rate limiter.
+
+```bash
+curl -s -X POST "$BASE/agents" \
+  -b cookies.txt -H "X-CSRF-Token: $CSRF" \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "type": "trading",
+    "agentId": "trading-primary",
+    "registerOnChain": false
+  }'
 ```
 
-### How It Works
+Body fields the handler reads:
 
-1. **Every 6 hours**, check all available pools
-2. **Compare APY** across all protocols
-3. **Calculate optimal** allocation
-4. **Execute swaps** if APY increase > 2%
-5. **Log results** to dashboard
-6. **Alert members** via webhook
+| Field | Default | Meaning |
+| --- | --- | --- |
+| `type` | required | One of `trading`, `anomaly_detection`, `compliance`, `governance_analytics` |
+| `agentId` | generated | Canonical id |
+| `registerOnChain` | `false` | Attempt on-chain registration and payment configuration |
+| `agentAddress` | — | On-chain address used when `registerOnChain` is true |
+| `agentName`, `description`, `category`, `autonomyLevel`, `paymentConfig` | `''`/`0`/`{}` | Registration metadata |
 
-## Example 3: Risk Management Agent
+`400` if `type` is missing or not in the enum. The error message enumerates the valid types.
 
-Trigger alerts if treasury drops below threshold:
+## Lifecycle control
 
-```javascript
-const agent = await dao.agents.create({
-  name: 'Treasury Guardian',
-  description: 'Monitor treasury health and alert if risks detected',
-  type: 'monitoring',
-  trigger: {
-    type: 'interval',
-    value: 60 * 60 * 1000 // Every hour
-  },
-  strategy: {
-    name: 'risk_monitoring',
-    checks: [
-      {
-        name: 'low_balance',
-        condition: 'balance < 10000',
-        action: 'alert'
-      },
-      {
-        name: 'high_outflow',
-        condition: 'daily_outflow > inflow * 1.5',
-        action: 'alert'
-      },
-      {
-        name: 'defi_risk',
-        condition: 'positions_at_risk > 0',
-        action: 'alert_and_rebalance'
-      }
-    ]
-  },
-  notifications: {
-    channels: ['email', 'telegram', 'discord'],
-    recipients: ['admin@dao.com'],
-    severity: 'high'
-  }
-})
+```bash
+curl -s -X POST "$BASE/agents/$AGENT_ID/pause"    -b cookies.txt -H "X-CSRF-Token: $CSRF"
+curl -s -X POST "$BASE/agents/$AGENT_ID/resume"   -b cookies.txt -H "X-CSRF-Token: $CSRF"
+curl -s -X POST "$BASE/agents/$AGENT_ID/shutdown" -b cookies.txt -H "X-CSRF-Token: $CSRF"
 ```
 
-## Example 4: Auto-Voting Agent
+All three are `requireAdmin`. State lives in the process registry, so it does not survive a
+restart — the boot sequence re-instantiates the standard agent set.
 
-Vote on proposals based on pre-set rules:
+## Morio
 
-```javascript
-const agent = await dao.agents.create({
-  name: 'Smart Voter',
-  description: 'Auto-vote based on governance rules',
-  type: 'governance',
-  trigger: {
-    type: 'event',
-    events: ['proposal.created']
-  },
-  strategy: {
-    name: 'governance_voting',
-    rules: [
-      {
-        condition: 'proposalType == "spending" && amount <= 50000',
-        action: 'vote_yes'
-      },
-      {
-        condition: 'proposalType == "spending" && amount > 500000',
-        action: 'vote_no'
-      },
-      {
-        condition: 'proposalType == "governance" && supportsChange',
-        action: 'vote_yes'
-      }
-    ]
-  }
-})
+`/api/morio/chat`, `/analyze`, `/assess-risk`, `/confirm-action`, `/user-context`,
+`/session/:userId`, `/stream/:jobId` — all behind `isAuthenticated` and `authenticateToken`.
+`/api/morio/health` is unauthenticated.
+
+<Callout type="warning">
+  The committed `config/morio-llm.json` selects `provider: "ollama"`. The provider factory
+  only recognises `openai` and `mock`, and logs a warning before returning the **mock**
+  provider for anything else. Unless you construct Morio with `provider: "openai"` and a key,
+  responses come from the mock. Treat Morio output as non-authoritative.
+</Callout>
+
+`POST /api/morio/confirm-action` exists because Morio does not execute financial actions on
+its own — a proposed action is returned to the user and must be confirmed.
+
+## Real-time agent events
+
+Two transports are relevant: `/ws/coordinator` and `/ws/morio`. Event names and payloads are
+in [WebSocket events](/reference/websocket-events).
+
+## Writing a new agent type
+
+There is no plugin boundary. A new agent is a class extending the abstract base in
+`server/agents/`:
+
+```ts
+abstract initialize(): Promise<void>;
+abstract process(data: unknown): Promise<unknown>;
 ```
 
-## Example 5: Flash Loan Arbitrage Agent
-
-Execute arbitrage using flash loans:
-
-```javascript
-const agent = await dao.agents.create({
-  name: 'Arbitrage Bot',
-  description: 'Execute flash loan arbitrage across DEXes',
-  type: 'trading',
-  trigger: {
-    type: 'interval',
-    value: 5 * 60 * 1000 // Every 5 minutes
-  },
-  strategy: {
-    name: 'flash_loan_arb',
-    params: {
-      token: 'MTAA',
-      minProfit: 100, // 100 USDC minimum
-      maxLoanAmount: 1000000,
-      exchanges: ['UniswapV3', 'CurveFinance', 'Balancer']
-    }
-  },
-  execution: {
-    type: 'atomic_transaction',
-    daoId: 'dao_123',
-    requiresApproval: false
-  }
-})
-```
-
-### How Flash Loans Work
-
-```
-1. Borrow 1,000,000 MTAA (no collateral required)
-2. Sell on Exchange A at 1.0 USDC/MTAA
-3. Buy on Exchange B at 0.99 USDC/MTAA
-4. Profit: 10,000 USDC
-5. Repay loan + 0.09% fee
-6. Net profit: ~10,000 - 900 = 9,100 USDC
-7. Deposit profit back to treasury
-```
-
-## Agent Management
-
-### List All Agents
-```javascript
-const agents = await dao.agents.list('dao_123')
-agents.forEach(a => {
-  console.log(`${a.name}: ${a.isActive ? '✓' : '✗'} Active`)
-})
-```
-
-### Monitor Agent Performance
-```javascript
-const agent = await dao.agents.get('dao_123', 'agent_456')
-console.log(`Executions: ${agent.stats.totalExecutions}`)
-console.log(`Success rate: ${agent.stats.successRate}%`)
-console.log(`Total profit: ${agent.stats.totalProfit}`)
-console.log(`Last run: ${agent.stats.lastRun}`)
-```
-
-### Update Agent Settings
-```javascript
-await dao.agents.update('dao_123', 'agent_456', {
-  isActive: false,
-  limits: {
-    maxPerTransaction: 200000
-  }
-})
-```
-
-### Delete Agent
-```javascript
-await dao.agents.delete('dao_123', 'agent_456')
-```
-
-## Best Practices
-
-✓ **Start small** - Test with low limits first
-✓ **Monitor actively** - Check agent performance daily
-✓ **Use approvals** - Require voting for major actions
-✓ **Set limits** - Cap per-transaction and daily amounts
-✓ **Log everything** - Keep detailed execution records
-✓ **Test on mainnet** - Use testnet before production
-✓ **Have safeguards** - Include kill switches and thresholds
-
-## Common Agent Strategies
-
-| Strategy | Use Case | Risk | Return |
-|----------|----------|------|--------|
-| DCA | Regular investing | Low | Moderate |
-| Yield Optimization | Maximize returns | Moderate | High |
-| Risk Management | Protect treasury | Low | Low |
-| Auto-Voting | Governance | Low | Low |
-| Flash Loan Arb | Generate alpha | High | Very High |
-| Market Making | Provide liquidity | High | Moderate |
-
-## Webhooks for Agents
-
-Get real-time notifications of agent execution:
-
-```javascript
-// Setup webhook
-await dao.webhooks.create({
-  url: 'https://your-app.com/webhooks/agents',
-  events: [
-    'agent.executed',
-    'agent.failed',
-    'agent.limit_reached'
-  ]
-})
-
-// Your endpoint receives:
-{
-  event: 'agent.executed',
-  agentId: 'agent_456',
-  agentName: 'Yield Optimizer',
-  result: {
-    action: 'rebalanced',
-    fromPool: 'MTAA/USDC',
-    toPool: 'MTAA/USDT',
-    amount: 50000,
-    aprChange: '+2.1%'
-  },
-  timestamp: '2026-02-04T10:30:00Z'
-}
-```
-
-## Advanced: Custom Agent Logic
-
-For complex strategies, use our Python SDK:
-
-```python
-from mtaadao import Agent, Strategy
-
-class CustomStrategy(Strategy):
-    def analyze(self):
-        """Custom analysis logic"""
-        # Your logic here
-        return decision
-
-    def execute(self):
-        """Execute the decision"""
-        # Your execution here
-        pass
-
-agent = Agent(
-    name='Custom Strategy',
-    strategy=CustomStrategy(),
-    dao_id='dao_123'
-)
-
-agent.deploy()
-```
-
-## Troubleshooting
-
-**Agent not executing?**
-- Check trigger conditions
-- Verify API key permissions
-- Check execution logs
-
-**Unexpected results?**
-- Review strategy parameters
-- Check market conditions at execution time
-- Test on testnet first
-
-**High gas fees?**
-- Batch operations together
-- Reduce execution frequency
-- Optimize smart contract calls
-
-## Next Steps
-
-- [DeFi Strategies](/developer/strategies) - Advanced techniques
-- [API Reference](/developer/api-reference) - Full API docs
-- [Community Forum](https://forum.mtaadao.com) - Get help
+You then add its literal to the `AgentType` union, register it in the factory and, if it
+should start with the server, add it to the boot list. That is a code change to the server,
+reviewed and deployed like any other — not a runtime registration.

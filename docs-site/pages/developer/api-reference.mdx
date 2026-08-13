@@ -1,116 +1,130 @@
+---
+title: API reference
+description: How the MtaaDAO HTTP API is shaped — base URLs, envelopes, errors — and where the full endpoint list lives.
+audience: developers, builders
+status: IMPLEMENTED
+last_verified: 2026-08-13
+---
+
+import { Callout } from 'nextra/components'
 import { APIExplorer } from '../../components/APIExplorer'
 
-# API Reference
+# API reference
 
-Complete documentation of all MtaaDAO API endpoints. Use the interactive explorer below to browse, understand, and test endpoints.
+This page describes the conventions every endpoint shares. The endpoint list itself is
+**generated from the Express route graph** — see [API endpoints](/reference/api), which
+covers all 1,206 statically resolvable routes across seven surfaces.
 
-## Interactive API Explorer
+<Callout type="warning">
+  The interactive explorer below is a curated illustration, not the endpoint inventory. Where
+  it disagrees with [/reference/api](/reference/api), the generated reference is correct.
+</Callout>
 
-<APIExplorer />
+## Base URL
 
-## REST API Basics
+From `server/config/swagger.ts`, the servers the API declares for itself:
 
-### Base URL
-```
-https://api.mtaadao.com/v1
-```
+| Environment | Base URL |
+| --- | --- |
+| Development | `http://localhost:5000/api` |
+| Staging | `https://staging-api.mtaadao.com/api` |
+| Production | `https://api.mtaadao.com/api` |
 
-### Response Format
-All responses are JSON:
-```json
-{
-  "success": true,
-  "data": { /* ... */ },
-  "error": null,
-  "meta": {
-    "timestamp": "2026-02-04T10:30:00Z",
-    "request_id": "req_abc123"
-  }
-}
-```
+Everything is mounted under the `/api` prefix (plus `/walletapi`, `/health` and `/metrics`
+outside it). There is **no `/v1` root**: versioning appears one level down, as
+`/api/v1/...`, and unversioned `/api/...` routes coexist with it. Behind Docker, Nginx
+proxies `/api/` to the API container — see [Operations](/operations).
 
-## API Categories
-
-### DAOs (`/daos`)
-- **GET** `/daos` - List all DAOs
-- **POST** `/daos` - Create a DAO
-- **GET** `/daos/:id` - Get DAO details
-- **PUT** `/daos/:id` - Update DAO settings
-- **DELETE** `/daos/:id` - Archive DAO
-
-### Governance (`/daos/:id/proposals`)
-- **GET** `/daos/:id/proposals` - List proposals
-- **POST** `/daos/:id/proposals` - Create proposal
-- **GET** `/daos/:id/proposals/:propId` - Get proposal details
-- **POST** `/daos/:id/proposals/:propId/vote` - Cast a vote
-- **POST** `/daos/:id/proposals/:propId/execute` - Execute proposal
-
-### Treasury (`/daos/:id/treasury`)
-- **GET** `/daos/:id/treasury` - Get treasury balance
-- **GET** `/daos/:id/treasury/transactions` - Get transaction history
-- **POST** `/daos/:id/treasury/transfer` - Execute transfer
-- **GET** `/daos/:id/treasury/analytics` - Treasury analytics
-
-### Members (`/daos/:id/members`)
-- **GET** `/daos/:id/members` - List members
-- **POST** `/daos/:id/members/invite` - Invite member
-- **GET** `/daos/:id/members/:memberId` - Get member details
-- **PUT** `/daos/:id/members/:memberId/role` - Update member role
-- **DELETE** `/daos/:id/members/:memberId` - Remove member
-
-### DeFi (`/defi`)
-- **GET** `/defi/yields` - List yield opportunities
-- **GET** `/defi/yields/:poolId` - Get pool details
-- **POST** `/defi/yields/deposit` - Deposit into pool
-- **POST** `/defi/yields/withdraw` - Withdraw from pool
-- **GET** `/defi/swaps/quote` - Get swap quote
-- **POST** `/defi/swaps/execute` - Execute swap
-
-### Agents (`/agents`)
-- **GET** `/agents` - List agents
-- **POST** `/agents` - Create agent
-- **GET** `/agents/:agentId` - Get agent details
-- **PUT** `/agents/:agentId` - Update agent
-- **POST** `/agents/:agentId/execute` - Manually trigger agent
-- **DELETE** `/agents/:agentId` - Delete agent
+Swagger UI is served at `/api-docs` when the app boots successfully.
 
 ## Authentication
 
-All endpoints require authentication. See [Authentication Guide](/developer/authentication).
+Cookie-based JWT by default (`access_token`), with `Authorization: Bearer <jwt>` accepted as
+a fallback and a double-submit `X-CSRF-Token` required on non-safe methods. The Swagger
+document also declares an `X-API-Key` scheme.
 
-## Rate Limiting
+<Callout type="error">
+  **`X-API-Key` is not enforced.** API-key tables exist in the schema, but no mounted
+  middleware authenticates a request by API key. Only the JWT paths work today. Full detail
+  in [Authentication](/developer/authentication).
+</Callout>
 
-See [Rate Limits](/developer/rate-limits) for detailed information.
+## Response envelopes
 
-## Error Handling
+Success shapes are **not uniform** across the codebase — many handlers return a bare object
+or array, others wrap in `{ success: true, data }`. Check the specific endpoint rather than
+assuming an envelope.
 
-Errors are returned with appropriate HTTP status codes:
+Errors that reach the central handler (`server/middleware/errorHandler.ts`) are uniform:
 
 ```json
 {
   "success": false,
   "error": {
-    "code": "INSUFFICIENT_BALANCE",
     "message": "Treasury balance is too low",
-    "details": { "required": 10000, "available": 5000 }
+    "timestamp": "2026-08-13T10:24:00.000Z",
+    "path": "/api/v1/daos/abc/treasury/transfer",
+    "method": "POST",
+    "code": "APP_ERROR",
+    "statusCode": 400
   }
 }
 ```
 
-## Common Error Codes
+`error.stack` is added in development only. Zod validation failures add `error.details` with
+the raw issue list:
 
-| Code | Status | Meaning |
-|------|--------|---------|
-| `AUTH_REQUIRED` | 401 | Missing or invalid API key |
-| `FORBIDDEN` | 403 | Not authorized for this operation |
-| `NOT_FOUND` | 404 | Resource doesn't exist |
-| `INVALID_PARAMS` | 400 | Invalid request parameters |
-| `RATE_LIMITED` | 429 | Too many requests |
-| `SERVER_ERROR` | 500 | Internal server error |
+```json
+{
+  "success": false,
+  "error": {
+    "message": "Validation failed",
+    "code": "VALIDATION_ERROR",
+    "statusCode": 400,
+    "timestamp": "2026-08-13T10:24:00.000Z",
+    "path": "/api/v1/daos",
+    "method": "POST",
+    "details": [{ "path": ["name"], "message": "Required", "code": "invalid_type" }]
+  }
+}
+```
 
-## Next Steps
+## Error codes
 
-- [Authentication](/developer/authentication) - Set up API keys
-- [Code Examples](/developer/code-examples) - Real-world examples
-- [Webhooks](/developer/webhooks) - Real-time events
-- [Rate Limits](/developer/rate-limits) - Understand limits
+Codes emitted by the `AppError` subclasses in `server/middleware/errorHandler.ts`:
+
+| Code | Status | Raised when |
+| --- | --- | --- |
+| `VALIDATION_ERROR` | 400 | A Zod schema rejects the request |
+| `INVALID_ID` | 400 | `CastError` — malformed identifier |
+| `RATE_LIMIT_EXCEEDED` | 429 | A mounted limiter rejects the request |
+| `DATABASE_ERROR` | 500 | Database operation failed |
+| `EXTERNAL_SERVICE_ERROR` | 502 | An upstream service failed; message is prefixed with the service name |
+| `APP_ERROR` | varies | An `AppError` thrown without an explicit code |
+| `INTERNAL_ERROR` | 500 | Unclassified error |
+
+Auth failures are returned directly by the auth middleware rather than the error handler, so
+they carry `{ success: false, error: { message } }` without a `code` — see
+[Authentication](/developer/authentication).
+
+## Rate limiting
+
+Rate limiting is **opt-in per route**, not global. Limits, headers and the Redis fail-open
+behaviour are documented in [Rate limits](/developer/rate-limits).
+
+## Deprecated routes
+
+Some legacy paths redirect or return `410 Gone` with `Sunset` headers. See
+[Deprecated & removed APIs](/reference/deprecated).
+
+## Interactive explorer
+
+<APIExplorer />
+
+## Next steps
+
+- [API endpoints](/reference/api) — the generated inventory
+- [Authentication](/developer/authentication)
+- [Rate limits](/developer/rate-limits)
+- [Code examples](/developer/code-examples)
+- [WebSocket events](/reference/websocket-events) — the real-time surface
