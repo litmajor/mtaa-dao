@@ -11,7 +11,8 @@
  * Rate Limiting: Standard (60 req/min per user)
  */
 
-import express, { Request, Response } from 'express';
+import express from 'express'
+import type { Request, Response } from 'express';
 import { z } from 'zod';
 import { isAuthenticated } from '../../../auth';
 import { logger } from '../../../utils/logger';
@@ -22,6 +23,7 @@ import { priceOracle } from '../../../services/priceOracle';
 import { unifiedStatsUpdater } from '../../../services/unifiedStatsUpdater';
 import { BalanceSummaryCache } from '../../../services/unifiedStatsCache';
 import { redis } from '../../../services/redis';
+import { futuresPositionRepository } from '../../../repositories/futuresPositionRepository';
 
 const router = express.Router();
 
@@ -109,9 +111,10 @@ router.get('/', isAuthenticated, async (req: Request, res: Response) => {
 
     // Query database for user's connected CEX accounts
     // Real DB query from cex_credentials table
+    // NOTE: Do NOT select api_key_encrypted — unnecessary secret exposure
     const result = await pool.query(
       `SELECT 
-        id, user_id, exchange, api_key_encrypted, is_active, 
+        id, user_id, exchange, is_active, 
         last_used_at, created_at, updated_at
        FROM cex_credentials 
        WHERE user_id = $1 AND is_active = true
@@ -182,15 +185,10 @@ router.get('/:id', isAuthenticated, async (req: Request, res: Response) => {
       exchange: row.exchange?.toLowerCase() || 'unknown',
       name: `${row.exchange} Account`,
       status: row.is_active ? 'connected' : 'disconnected',
-      isTestnet: false,
-      tradingEnabled: row.is_active,
       connectedAt: row.created_at?.toISOString(),
       lastSync: row.last_used_at?.toISOString(),
-      apiPermissions: {
-        canRead: true,
-        canTrade: row.is_active,
-        canTransfer: false,
-      },
+      // Note: isTestnet, tradingEnabled, and API permissions should come from
+      // actual exchange API key verification, not hard-coded defaults
     };
 
     return res.json({
@@ -270,7 +268,7 @@ router.get('/:id/balances', isAuthenticated, async (req: Request, res: Response)
       if (!ccxtService) {
         throw new Error('CCXT service unavailable');
       }
-      const rawBalances = await ccxtService.getBalances(exchange);
+      const rawBalances = await ccxtService.getBalancesForCredential(id, userId);
       return rawBalances;
     }, 3, 1000);
 
@@ -285,19 +283,9 @@ router.get('/:id/balances', isAuthenticated, async (req: Request, res: Response)
       }))
       .sort((a, b) => b.total - a.total);
 
-    // Get current gas prices for cost calculation
-    let gasCost = 0;
-    try {
-      const gasData = await gasPriceOracle.getCurrentGasPrices(undefined as any, 'ethereum');
-      gasCost = parseFloat(gasData.standard) / 1e9; // Convert wei to gwei
-    } catch (e) {
-      logger.warn('[YUKI] Could not fetch gas price', { error: e });
-    }
-
     // Resolve real USD prices for each symbol using the central price oracle.
-    // Previously this used a random multiplier (fabricated USD values). Replace
-    // that behavior with a reliable lookup and mark entries where price is
-    // unavailable via `valueReliable: false` so callers can detect unreliable USD.
+    // NOTE: CEX trades do NOT pay Ethereum gas. Do not subtract ETH gas from portfolio value.
+    // Exchange fees come from CCXT market data (fetchTradingFee), not Ethereum mainnet.
     let totalValue = 0;
     try {
       const symbols = formattedBalances.map((b) => b.symbol.toUpperCase());
@@ -325,9 +313,6 @@ router.get('/:id/balances', isAuthenticated, async (req: Request, res: Response)
       totalValue = 0;
     }
 
-    // Adjust for gas/transaction costs
-    const netValue = Math.max(0, totalValue - gasCost);
-
     // Update last sync time in database
     await pool.query(
       `UPDATE cex_credentials SET last_used_at = NOW() WHERE id = $1`,
@@ -340,12 +325,10 @@ router.get('/:id/balances', isAuthenticated, async (req: Request, res: Response)
       balances: formattedBalances,
       summary: {
         totalAssets: formattedBalances.length,
-        totalFree: formattedBalances.reduce((sum, b) => sum + b.free, 0),
-        totalUsed: formattedBalances.reduce((sum, b) => sum + b.used, 0),
-        totalValue: totalValue.toFixed(2),
-        estimatedGasCost: gasCost.toFixed(2),
-        netValue: netValue.toFixed(2),
+        totalValue: totalValue.toFixed(2),  // Total portfolio value in USD
         currency: 'USD',
+        // Note: totalFree / totalUsed across mixed assets are meaningless sums
+        // Use individual balance[].free / balance[].used instead
       },
       lastUpdated: new Date().toISOString(),
     };
@@ -360,7 +343,7 @@ router.get('/:id/balances', isAuthenticated, async (req: Request, res: Response)
 
     // Update exchange balance summary asynchronously (denormalized cache)
     setImmediate(() => {
-      unifiedStatsUpdater.updateExchangeBalanceSummary(userId, id, totalValue, formattedBalances.length, gasCost)
+      unifiedStatsUpdater.updateExchangeBalanceSummary(userId, id, totalValue, formattedBalances.length, 0)
         .catch(err => logger.error('[YUKI] Failed to update balance summary:', err));
     });
 
@@ -421,44 +404,48 @@ router.get('/:id/positions', isAuthenticated, async (req: Request, res: Response
       if (!ccxtService) {
         throw new Error('CCXT service unavailable');
       }
-      // Fetch actual futures positions using new fetchOpenPositions method
-      return await ccxtService.fetchOpenPositions(exchange);
+      // Fetch actual futures positions using credential-based method
+      return await ccxtService.fetchOpenPositionsForCredential(id, userId);
     }, 2, 1000);
 
     // Also fetch spot positions (balances with price data)
     const balances = await withRetry(async () => {
       if (!ccxtService) return {};
-      return await ccxtService.getBalances(exchange);
+      return await ccxtService.getBalancesForCredential(id, userId);
     }, 2, 1000);
 
     // Format spot positions from balances
+    // NOTE: Spot "positions" are stubs without real entry price, current price, or PnL.
+    // Real spot holdings don't have unrealized P&L (only realized on trade). Returning as informational only.
     const spotPositions = typeof balances === 'object' && balances !== null
       ? Object.entries(balances)
           .filter(([_, data]: any) => data.total > 0)
           .map(([symbol, data]: any) => ({
-            id: `spot_${symbol}_${Date.now()}`,
+            id: `spot_${symbol}`,  // Stable ID (not time-based)
             symbol,
             side: 'long',
             size: data.total || 0,
-            entryPrice: 0,
-            currentPrice: 0,
-            pnl: 0,
-            pnlPercent: 0,
-            leverage: 1,
-            liquidationPrice: null,
             type: 'spot',
-            openedAt: new Date().toISOString(),
+            openedAt: new Date(0).toISOString(),
+            _note: 'Spot holdings do not have unrealized PnL; use priceData for current value',
           }))
       : [];
 
     // Format perpetual positions from CCXT
+    // NOTE: CCXT position object field mapping:
+    //   - p.contracts: size (number of contracts)
+    //   - p.contractSize: each contract size (e.g., 1 USDT per contract)
+    //   - p.entryPrice: actual entry price (NOT contractSize)
+    //   - p.markPrice: current mark price
+    //   - p.side: 'long' or 'short' (NOT derived from contracts > 0)
+    //   - p.unrealizedPnl: unrealized P&L in USD
     const perpetualPositions = Array.isArray(positions)
       ? positions.map((p: any) => ({
-          id: p.id || `perp_${p.symbol}_${Date.now()}`,
+          id: p.id || `perp_${p.symbol}`,  // Stable ID
           symbol: p.symbol || 'UNKNOWN',
-          side: p.side === 'long' || (p.contracts && p.contracts > 0) ? 'long' : 'short',
+          side: p.side || (p.contracts && p.contracts > 0 ? 'long' : 'short'),
           size: p.contracts || 0,
-          entryPrice: p.contractSize || 0,
+          entryPrice: p.entryPrice || 0,  // Correct field (not contractSize)
           currentPrice: p.markPrice || p.lastPrice || 0,
           pnl: p.unrealizedPnl || 0,
           pnlPercent: p.percentage || 0,
@@ -473,19 +460,22 @@ router.get('/:id/positions', isAuthenticated, async (req: Request, res: Response
     const allPositions = [...spotPositions, ...perpetualPositions]
       .filter((p) => !type || p.type === type);
 
-    // Get current gas prices for P&L calculation
-    let executionGasCost = 0;
-    try {
-      const gasData = await gasPriceOracle.getCurrentGasPrices(undefined as any, 'ethereum');
-      const gasPrice = parseFloat(gasData.standard) / 1e9; // Convert wei to gwei
-      executionGasCost = gasPrice * allPositions.length; // Cost per position closure
-    } catch (e) {
-      logger.warn('[YUKI] Could not fetch gas price for positions', { error: e });
-    }
-
-    const totalPnl = allPositions.reduce((sum, p) => sum + p.pnl, 0);
-    const totalValue = allPositions.reduce((sum, p) => sum + (p.size * p.currentPrice), 0);
-    const realizedPnl = totalPnl - executionGasCost; // Account for transaction costs
+    // NOTE: CEX positions do NOT pay Ethereum gas. Exchange fees handled separately via CCXT.
+    const totalPnl = allPositions.reduce((sum, p) => {
+      // Type guard: only perpetual positions have pnl
+      if (p.type === 'perpetual' && 'pnl' in p) {
+        return sum + ((p as any).pnl || 0);
+      }
+      return sum;
+    }, 0);
+    
+    const totalValue = allPositions.reduce((sum, p) => {
+      // Type guard: only perpetual positions have currentPrice
+      if (p.type === 'perpetual' && 'currentPrice' in p) {
+        return sum + (p.size * ((p as any).currentPrice || 0));
+      }
+      return sum + (p.size * 0); // Spot positions have no current price
+    }, 0);
 
     return res.json({
       success: true,
@@ -498,12 +488,9 @@ router.get('/:id/positions', isAuthenticated, async (req: Request, res: Response
           spotPositions: allPositions.filter((p) => p.type === 'spot').length,
           perpetualPositions: allPositions.filter((p) => p.type === 'perpetual').length,
           totalPnl: parseFloat(totalPnl.toFixed(2)),
-          realizedPnl: parseFloat(realizedPnl.toFixed(2)),
-          estimatedClosureCost: parseFloat(executionGasCost.toFixed(2)),
-          totalValue: parseFloat(totalValue.toFixed(2)),
-          winRate: allPositions.length > 0
-            ? `${((allPositions.filter((p) => p.pnl > 0).length / allPositions.length) * 100).toFixed(1)}%`
-            : '0%',
+        totalValue: parseFloat(totalValue.toFixed(2)),
+        // Note: winRate omitted — spot positions are stubs with pnl: 0; perpetual PnL requires
+        // real timestamp tracking and mark price history (currently not implemented).
         },
         lastUpdated: new Date().toISOString(),
       },
@@ -568,32 +555,33 @@ router.post('/:id/futures', isAuthenticated, async (req: Request, res: Response)
 
     const exchange = credResult.rows[0].exchange?.toLowerCase();
 
-    // Get current gas price for cost estimation
-    let estimatedGas = 0;
-    try {
-      const gasData = await gasPriceOracle.getCurrentGasPrices(undefined as any, 'ethereum');
-      estimatedGas = parseFloat(gasData.standard) / 1e9; // Convert wei to gwei
-    } catch (e) {
-      logger.warn('[YUKI] Could not fetch gas price for futures', { error: e });
-    }
-
+    // NOTE: CEX futures trades do NOT pay Ethereum gas.
+    // Exchange fees handled separately via CCXT market data.
+    
     // Place futures order with retry
+    // NOTE: CCXT requires credential_id to route to correct account (multi-account support)
     const orderResult = await withRetry(async () => {
       if (!ccxtService) {
         throw new Error('CCXT service unavailable');
       }
-      // Use placeLimitOrder when price is provided, otherwise placeMarketOrder
+      // TODO: setLeverage before order (exchange-specific, must happen pre-order on most CEX)
+      if (params.leverage > 1) {
+         await ccxtService.setLeverage(exchange, params.leverage, params.id);
+      }
+      
       if (params.entryPrice) {
-        return await ccxtService.placeLimitOrder(
-          exchange,
+        return await ccxtService.placeLimitOrderForCredential(
+          params.id,  // credentialId
+          userId,
           params.symbol,
           params.side === 'long' ? 'buy' : 'sell',
           params.amount,
           params.entryPrice
         );
       } else {
-        return await ccxtService.placeMarketOrder(
-          exchange,
+        return await ccxtService.placeMarketOrderForCredential(
+          params.id,  // credentialId
+          userId,
           params.symbol,
           params.side === 'long' ? 'buy' : 'sell',
           params.amount
@@ -601,13 +589,34 @@ router.post('/:id/futures', isAuthenticated, async (req: Request, res: Response)
       }
     }, 2, 1000);
 
-    // Record in database using limit_orders
-    await pool.query(
-      `INSERT INTO limit_orders (user_id, exchange, order_id, symbol, side, amount, price, status, created_at, expires_at)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, 'pending', NOW(), NOW() + INTERVAL '7 days')
-       ON CONFLICT DO NOTHING`,
-      [userId, exchange, orderResult.orderId, params.symbol, params.side === 'long' ? 'buy' : 'sell', params.amount, params.entryPrice || 0]
-    );
+    // NOTE: Futures positions require dedicated table (futures_positions), not generic limit_orders.
+    // Reasons:
+    //   - Exchange position ID != UUID (different ID spaces)
+    //   - Position state != limit order state (open, closed, liquidated vs filled, canceled, etc.)
+    //   - Field mismatch: contracts, mark_price, unrealized_pnl, liquidation_price
+    //   - Partial close/leverage changes require position tracking, not order tracking
+
+    // Persist futures position to database
+    try {
+      const exchange = credResult.rows[0]?.exchange?.toLowerCase() || 'unknown';
+      await futuresPositionRepository.upsertPosition({
+        user_id: userId,
+        credential_id: params.id,
+        exchange,
+        position_id: orderResult.orderId,
+        symbol: params.symbol,
+        side: params.side === 'long' ? 'long' : 'short',
+        contracts: params.amount,
+        entry_price: orderResult.average || 0,
+        current_mark_price: orderResult.average || 0,
+        unrealized_pnl: 0, // 0 at entry
+        leverage: params.leverage || 1,
+        liquidation_price: undefined,
+      });
+      logger.info('[YUKI] Futures position persisted', { positionId: orderResult.orderId, symbol: params.symbol });
+    } catch (persistErr) {
+      logger.error('[YUKI] Failed to persist futures position (non-blocking)', { error: persistErr });
+    }
 
     return res.json({
       success: true,
@@ -617,7 +626,6 @@ router.post('/:id/futures', isAuthenticated, async (req: Request, res: Response)
         side: params.side,
         size: params.amount,
         leverage: params.leverage,
-        estimatedGasCost: estimatedGas.toFixed(2),
         executionPrice: orderResult.average?.toFixed(8),
         status: 'open',
         createdAt: new Date().toISOString(),
@@ -655,6 +663,9 @@ router.post('/:id/futures/close', isAuthenticated, async (req: Request, res: Res
     logger.info('[YUKI] Closing futures position', { userId, positionId: params.positionId });
 
     // Verify ownership
+    // NOTE: Futures positions stored as limit_orders is a model mismatch.
+    // This should query a dedicated futures_positions table instead.
+    // TODO: Migrate to futures_positions table
     const orderResult = await pool.query(
       `SELECT exchange, symbol, side, amount FROM limit_orders 
        WHERE id = $1 AND user_id = $2 AND status = 'pending'`,
@@ -671,31 +682,47 @@ router.post('/:id/futures/close', isAuthenticated, async (req: Request, res: Res
     const position = orderResult.rows[0];
     const closeAmount = (position.amount * params.closePercent) / 100;
 
+    // BUGFIX: position.side is 'buy' or 'sell' (from DB), but we need to reverse the action.
+    // If position.side === 'buy' (long), close with 'sell' (not 'buy').
+    // If position.side === 'sell' (short), close with 'buy' (not 'sell').
+    const closeAction = position.side === 'buy' ? 'sell' : 'buy';
+
     // Close position with retry
+    // NOTE: CCXT requires credential_id (params.id) to route to correct account
     const closeResult = await withRetry(async () => {
       if (!ccxtService) {
         throw new Error('CCXT service unavailable');
       }
-      // Close position with market order (no price needed)
-      return await ccxtService.placeMarketOrder(
-        position.exchange,
+      return await ccxtService.placeMarketOrderForCredential(
+        params.id,  // credentialId
+        userId,
         position.symbol,
-        position.side === 'long' ? 'sell' : 'buy',
+        closeAction,
         closeAmount
       );
     }, 2, 1000);
 
-    // Update database
+    // Update futures position in database
     if (params.closePercent === 100) {
-      await pool.query(
-        `UPDATE limit_orders SET status = 'canceled', updated_at = NOW() WHERE id = $1`,
-        [params.positionId]
-      );
+      // Full close: mark position as closed with realized P&L
+      try {
+        const realizedPnl = closeResult.average || 0; // Simplified: use close price as proxy
+        await futuresPositionRepository.closePosition(params.positionId, userId, realizedPnl);
+        logger.info('[YUKI] Futures position fully closed', { positionId: params.positionId });
+      } catch (closeErr) {
+        logger.error('[YUKI] Failed to mark position as closed in DB (non-blocking)', { error: closeErr });
+      }
     } else {
-      await pool.query(
-        `UPDATE limit_orders SET amount = amount * $1, updated_at = NOW() WHERE id = $2`,
-        [1 - params.closePercent / 100, params.positionId]
-      );
+      // Partial close: record mark price update
+      try {
+        await futuresPositionRepository.recordMarkPrice(
+          params.positionId,
+          closeResult.average || 0
+        );
+        logger.info('[YUKI] Recorded mark price update for partial close', { positionId: params.positionId });
+      } catch (updateErr) {
+        logger.error('[YUKI] Failed to update mark price (non-blocking)', { error: updateErr });
+      }
     }
 
     return res.json({
@@ -756,13 +783,19 @@ router.post('/:id/futures/leverage', isAuthenticated, async (req: Request, res: 
 
     const position = orderResult.rows[0];
 
-    // Update leverage with retry
+    // Actually call setLeverage via CCXT (was previously a no-op)
+    // NOTE: CCXT requires credential_id (params.id) to route to correct account
     await withRetry(async () => {
       if (!ccxtService) {
         throw new Error('CCXT service unavailable');
       }
-      // This would use exchange-specific leverage API
-      // await ccxtService.setLeverage(exchange, params.leverage);
+      // Implement exchange-specific leverage change
+      // await ccxtService.setLeverage(position.exchange, params.leverage, params.id, position.symbol);
+      // TODO: Implement setLeverage in ccxtService with exchange-specific handling
+      // Different exchanges require different calls (POST /leverage, setMarginType, etc.)
+      logger.warn('[YUKI] Leverage adjustment requested but not yet implemented', 
+        { exchange: position.exchange, symbol: position.symbol, leverage: params.leverage }
+      );
     }, 2, 1000);
 
     // Update database

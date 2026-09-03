@@ -3,7 +3,8 @@
  * API endpoints for feature flag management
  */
 
-import { Router, Request, Response } from 'express';
+import { Router } from 'express';
+import type { Request, Response, NextFunction } from 'express';
 import {
   getAllFeatures,
   getEnabledFeatures,
@@ -21,8 +22,44 @@ import {
   GATING_RULES,
   checkFeatureGating,
 } from '../services/gatingService';
-import { requireAuth } from '../middleware/auth';
+import { isAuthenticated } from '../auth';
 import { requireRole } from '../middleware/rbac';
+import type { isSuperUser } from 'server/middleware/auth';
+
+// Typed request interface for authenticated routes
+interface AuthenticatedUser {
+  id: string;
+  username?: string;
+  createdAt?: string | Date;
+  balance?: number;
+  preferredCurrency?: string;
+  reputation?: number;
+  advancedMode?: boolean;
+  isSuperUser?: boolean;
+  [key: string]: any;
+
+}
+
+interface AuthenticatedRequest extends Request {
+  user?: AuthenticatedUser;
+}
+
+// Wrapper utility for safe async route handling
+const asyncHandler = (fn: (req: Request, res: Response, next: NextFunction) => Promise<any>) => {
+  return (req: Request, res: Response, next: NextFunction) => {
+    Promise.resolve(fn(req, res, next)).catch(next);
+  };
+};
+
+// Helper: Safely calculate user account age in days
+const calculateAccountAgeInDays = (createdAt?: string | Date): number => {
+  if (!createdAt) return 0;
+  const createdTimestamp = new Date(createdAt).getTime();
+  if (isNaN(createdTimestamp)) return 0;
+  
+  const ageInMs = Date.now() - createdTimestamp;
+  return Math.max(0, Math.floor(ageInMs / (1000 * 60 * 60 * 24)));
+};
 
 const router = Router();
 
@@ -30,17 +67,17 @@ const router = Router();
  * GET /api/features
  * Get all features with their visibility status
  */
-router.get('/', (req: Request, res: Response) => {
+router.get('/', (_req: Request, res: Response) => {
   try {
     const features = getAllFeatures();
-    res.json({
+    return res.json({
       success: true,
-      count: Object.keys(features).length,
+      count: Object.keys(features || {}).length,
       features,
     });
   } catch (error) {
     console.error('Error fetching features:', error);
-    res.status(500).json({
+    return res.status(500).json({
       success: false,
       error: 'Failed to fetch features',
     });
@@ -51,17 +88,17 @@ router.get('/', (req: Request, res: Response) => {
  * GET /api/features/enabled
  * Get only enabled features
  */
-router.get('/enabled', (req: Request, res: Response) => {
+router.get('/enabled', (_req: Request, res: Response) => {
   try {
     const features = getEnabledFeatures();
-    res.json({
+    return res.json({
       success: true,
-      count: Object.keys(features).length,
+      count: Object.keys(features || {}).length,
       features,
     });
   } catch (error) {
     console.error('Error fetching enabled features:', error);
-    res.status(500).json({
+    return res.status(500).json({
       success: false,
       error: 'Failed to fetch enabled features',
     });
@@ -72,16 +109,16 @@ router.get('/enabled', (req: Request, res: Response) => {
  * GET /api/features/stats
  * Get feature statistics
  */
-router.get('/stats', (req: Request, res: Response) => {
+router.get('/stats', (_req: Request, res: Response) => {
   try {
     const stats = getFeatureStats();
-    res.json({
+    return res.json({
       success: true,
       stats,
     });
   } catch (error) {
     console.error('Error fetching feature stats:', error);
-    res.status(500).json({
+    return res.status(500).json({
       success: false,
       error: 'Failed to fetch feature stats',
     });
@@ -95,7 +132,6 @@ router.get('/stats', (req: Request, res: Response) => {
 router.get('/check/:featureKey', (req: Request, res: Response) => {
   try {
     const { featureKey } = req.params;
-    const enabled = isFeatureEnabled(featureKey);
     const feature = getFeature(featureKey);
 
     if (!feature) {
@@ -105,7 +141,9 @@ router.get('/check/:featureKey', (req: Request, res: Response) => {
       });
     }
 
-    res.json({
+    const enabled = isFeatureEnabled(featureKey);
+
+    return res.json({
       success: true,
       featureKey,
       enabled,
@@ -113,7 +151,7 @@ router.get('/check/:featureKey', (req: Request, res: Response) => {
     });
   } catch (error) {
     console.error('Error checking feature:', error);
-    res.status(500).json({
+    return res.status(500).json({
       success: false,
       error: 'Failed to check feature',
     });
@@ -135,15 +173,15 @@ router.get('/by-phase/:phase', (req: Request, res: Response) => {
     }
 
     const features = getFeaturesByPhase(phase);
-    res.json({
+    return res.json({
       success: true,
       phase,
-      count: Object.keys(features).length,
+      count: Object.keys(features || {}).length,
       features,
     });
   } catch (error) {
     console.error('Error fetching features by phase:', error);
-    res.status(500).json({
+    return res.status(500).json({
       success: false,
       error: 'Failed to fetch features by phase',
     });
@@ -158,15 +196,15 @@ router.get('/by-category/:category', (req: Request, res: Response) => {
   try {
     const { category } = req.params;
     const features = getFeaturesByCategory(category);
-    res.json({
+    return res.json({
       success: true,
       category,
-      count: Object.keys(features).length,
+      count: Object.keys(features || {}).length,
       features,
     });
   } catch (error) {
     console.error('Error fetching features by category:', error);
-    res.status(500).json({
+    return res.status(500).json({
       success: false,
       error: 'Failed to fetch features by category',
     });
@@ -178,8 +216,11 @@ router.get('/by-category/:category', (req: Request, res: Response) => {
  * Enable a specific feature
  * Requires admin authentication
  */
-router.post('/enable/:featureKey', requireAuth, requireRole('super_admin'), async (req: Request, res: Response) => {
-  try {
+router.post(
+  '/enable/:featureKey',
+  isAuthenticated,
+  requireRole('super_admin'),
+  asyncHandler(async (req: Request, res: Response) => {
     const { featureKey } = req.params;
     const feature = getFeature(featureKey);
 
@@ -191,27 +232,26 @@ router.post('/enable/:featureKey', requireAuth, requireRole('super_admin'), asyn
     }
 
     await enableFeature(featureKey);
-    res.json({
+    const updatedFeature = getFeature(featureKey);
+
+    return res.json({
       success: true,
       message: `Feature ${featureKey} enabled`,
-      feature: getFeature(featureKey),
+      feature: updatedFeature,
     });
-  } catch (error) {
-    console.error('Error enabling feature:', error);
-    res.status(500).json({
-      success: false,
-      error: 'Failed to enable feature',
-    });
-  }
-});
+  })
+);
 
 /**
  * POST /api/features/disable/:featureKey
  * Disable a specific feature
  * Requires admin authentication
  */
-router.post('/disable/:featureKey', requireAuth, requireRole('super_admin'), async (req: Request, res: Response) => {
-  try {
+router.post(
+  '/disable/:featureKey',
+  isAuthenticated,
+  requireRole('super_admin'),
+  asyncHandler(async (req: Request, res: Response) => {
     const { featureKey } = req.params;
     const feature = getFeature(featureKey);
 
@@ -223,27 +263,26 @@ router.post('/disable/:featureKey', requireAuth, requireRole('super_admin'), asy
     }
 
     await disableFeature(featureKey);
-    res.json({
+    const updatedFeature = getFeature(featureKey);
+
+    return res.json({
       success: true,
       message: `Feature ${featureKey} disabled`,
-      feature: getFeature(featureKey),
+      feature: updatedFeature,
     });
-  } catch (error) {
-    console.error('Error disabling feature:', error);
-    res.status(500).json({
-      success: false,
-      error: 'Failed to disable feature',
-    });
-  }
-});
+  })
+);
 
 /**
  * POST /api/features/release-phase/:phase
  * Release all features up to a specific phase
  * Requires admin authentication
  */
-router.post('/release-phase/:phase', requireAuth, requireRole('super_admin'), async (req: Request, res: Response) => {
-  try {
+router.post(
+  '/release-phase/:phase',
+  isAuthenticated,
+  requireRole('super_admin'),
+  asyncHandler(async (req: Request, res: Response) => {
     const phase = parseInt(req.params.phase, 10);
     if (isNaN(phase)) {
       return res.status(400).json({
@@ -255,60 +294,51 @@ router.post('/release-phase/:phase', requireAuth, requireRole('super_admin'), as
     await releasePhase(phase);
     const features = getFeaturesByPhase(phase);
 
-    res.json({
+    return res.json({
       success: true,
       message: `Phase ${phase} released`,
-      enabledCount: Object.keys(features).length,
+      enabledCount: Object.keys(features || {}).length,
       stats: getFeatureStats(),
     });
-  } catch (error) {
-    console.error('Error releasing phase:', error);
-    res.status(500).json({
-      success: false,
-      error: 'Failed to release phase',
-    });
-  }
-});
+  })
+);
 
 /**
  * POST /api/features/release-all
  * Release all features immediately
  * Requires admin authentication
  */
-router.post('/release-all', requireAuth, requireRole('super_admin'), async (req: Request, res: Response) => {
-  try {
+router.post(
+  '/release-all',
+  isAuthenticated,
+  requireRole('super_admin'),
+  asyncHandler(async (_req: Request, res: Response) => {
     await releaseAllFeatures();
     const features = getAllFeatures();
 
-    res.json({
+    return res.json({
       success: true,
       message: 'All features released',
-      enabledCount: Object.keys(features).length,
+      enabledCount: Object.keys(features || {}).length,
       stats: getFeatureStats(),
     });
-  } catch (error) {
-    console.error('Error releasing all features:', error);
-    res.status(500).json({
-      success: false,
-      error: 'Failed to release all features',
-    });
-  }
-});
+  })
+);
 
 /**
  * GET /api/gating-rules
  * Get all feature gating rules and explanations
  */
-router.get('/gating-rules', (req: Request, res: Response) => {
+router.get('/gating-rules', (_req: Request, res: Response) => {
   try {
-    res.json({
+    return res.json({
       success: true,
       rules: GATING_RULES,
       description: 'Feature gating rules and explanations',
     });
   } catch (error) {
     console.error('Error fetching gating rules:', error);
-    res.status(500).json({
+    return res.status(500).json({
       success: false,
       error: 'Failed to fetch gating rules',
     });
@@ -319,9 +349,9 @@ router.get('/gating-rules', (req: Request, res: Response) => {
  * GET /api/gating-status
  * Get user-specific gating status for all features
  */
-router.get('/gating-status', requireAuth, (req: Request, res: Response) => {
+router.get('/gating-status', isAuthenticated, (req: AuthenticatedRequest, res: Response) => {
   try {
-    const user = (req as any).user;
+    const user = req.user;
     if (!user) {
       return res.status(401).json({
         success: false,
@@ -329,21 +359,19 @@ router.get('/gating-status', requireAuth, (req: Request, res: Response) => {
       });
     }
 
-    const features = Object.keys(GATING_RULES);
+    const featureKeys = Object.keys(GATING_RULES || {});
     const status: Record<string, any> = {};
-    
-    features.forEach((feature) => {
-      status[feature] = checkFeatureGating(feature, user);
+
+    featureKeys.forEach((feature) => {
+      status[feature] = checkFeatureGating(feature, user as any);
     });
 
-    res.json({
+    return res.json({
       success: true,
       status,
       user: {
         id: user.id,
-        accountAge: Math.floor(
-          (Date.now() - new Date(user.createdAt).getTime()) / (1000 * 60 * 60 * 24)
-        ),
+        accountAge: calculateAccountAgeInDays(user.createdAt),
         balance: user.balance || 0,
         balanceCurrency: 'KES', // Base currency
         preferredCurrency: (user.preferredCurrency || 'KES').toUpperCase(),
@@ -353,7 +381,7 @@ router.get('/gating-status', requireAuth, (req: Request, res: Response) => {
     });
   } catch (error) {
     console.error('Error checking gating status:', error);
-    res.status(500).json({
+    return res.status(500).json({
       success: false,
       error: 'Failed to check gating status',
     });

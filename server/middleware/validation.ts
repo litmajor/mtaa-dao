@@ -1,5 +1,5 @@
 
-import { Request, Response, NextFunction } from 'express';
+import type { Request, Response, NextFunction } from 'express';
 import { z, ZodSchema, ZodError } from 'zod';
 import { AppError, ValidationError } from './errorHandler';
 import { Logger } from '../utils/logger';
@@ -7,16 +7,36 @@ import { Logger } from '../utils/logger';
 const logger = new Logger('validation-middleware');
 
 // Common validation schemas
+const BASE58_REGEX = /^[1-9A-HJ-NP-Za-km-z]+$/;
+
 export const commonSchemas = {
   id: z.string().min(1, 'ID is required'),
   email: z.string().email('Invalid email format'),
   amount: z.string().refine((val) => {
-    const num = parseFloat(val);
-    return !isNaN(num) && num > 0;
+    if (typeof val !== 'string' || val.trim() === '') {
+      return false;
+    }
+
+    const trimmed = val.trim();
+    if (!/^\d+(?:\.\d+)?$/.test(trimmed) && !/^\.\d+$/.test(trimmed)) {
+      return false;
+    }
+
+    const num = Number(trimmed);
+    return Number.isFinite(num) && num > 0;
   }, 'Amount must be a positive number'),
   pagination: z.object({
-    page: z.string().optional().transform((val) => val ? parseInt(val, 10) : 1),
-    limit: z.string().optional().transform((val) => val ? Math.min(100, parseInt(val, 10)) : 20),
+    page: z.string().optional().transform((val) => {
+      if (!val || val.trim() === '') return 1;
+      const parsed = Number.parseInt(val, 10);
+      return Number.isFinite(parsed) && parsed > 0 ? parsed : 1;
+    }),
+    limit: z.string().optional().transform((val) => {
+      if (!val || val.trim() === '') return 20;
+      const parsed = Number.parseInt(val, 10);
+      const safeLimit = Number.isFinite(parsed) && parsed > 0 ? parsed : 20;
+      return Math.min(100, safeLimit);
+    }),
   }),
   vaultId: z.string().min(1, 'Vault ID is required'),
   userId: z.string().min(1, 'User ID is required'),
@@ -38,24 +58,22 @@ export const validate = (schema: {
     });
 
     try {
-      // Validate request body
-      if (schema.body && req.body) {
-        const validatedBody = schema.body.parse(req.body);
+      if (schema.body) {
+        const bodyToValidate = req.body ?? {};
+        const validatedBody = schema.body.parse(bodyToValidate);
         req.body = validatedBody;
         requestLogger.debug('Request body validated successfully');
       }
 
-      // Validate query parameters
-      if (schema.query && req.query) {
-        const validatedQuery = schema.query.parse(req.query);
-        req.query = validatedQuery;
+      if (schema.query) {
+        const validatedQuery = schema.query.parse(req.query ?? {});
+        req.query = validatedQuery as typeof req.query;
         requestLogger.debug('Query parameters validated successfully');
       }
 
-      // Validate route parameters
-      if (schema.params && req.params) {
-        const validatedParams = schema.params.parse(req.params);
-        req.params = validatedParams;
+      if (schema.params) {
+        const validatedParams = schema.params.parse(req.params ?? {});
+        req.params = validatedParams as typeof req.params;
         requestLogger.debug('Route parameters validated successfully');
       }
 
@@ -154,7 +172,7 @@ export const walletValidation = {
       chainId: z.number().positive('Chain ID must be positive'),
       walletAddress: z.union([
         z.string().regex(/^0x[a-fA-F0-9]{40}$/, 'Invalid Ethereum address'),
-        z.string().min(34).max(44), // Solana
+        z.string().min(32).max(44).regex(BASE58_REGEX, 'Invalid Solana wallet address'),
       ]),
       walletLabel: z.string().optional(),
     }),
@@ -222,7 +240,7 @@ export const validateResponse = (schema: ZodSchema) => {
   return (req: Request, res: Response, next: NextFunction) => {
     const originalSend = res.send;
     
-    res.send = function(body: any) {
+    res.send = function(this: Response, body: any) {
       const requestIdHeader = req.headers['x-request-id'];
       const requestId = Array.isArray(requestIdHeader) ? requestIdHeader[0] : requestIdHeader;
       const requestLogger = logger.child({
@@ -232,8 +250,20 @@ export const validateResponse = (schema: ZodSchema) => {
       });
 
       try {
-        if (body && typeof body === 'object') {
-          const parsedBody = typeof body === 'string' ? JSON.parse(body) : body;
+        if (body === undefined || body === null) {
+          return originalSend.call(this, body);
+        }
+
+        let parsedBody: unknown = body;
+        if (typeof body === 'string') {
+          try {
+            parsedBody = JSON.parse(body);
+          } catch {
+            return originalSend.call(this, body);
+          }
+        }
+
+        if (parsedBody && typeof parsedBody === 'object') {
           schema.parse(parsedBody);
           requestLogger.debug('Response validated successfully');
         }
@@ -244,7 +274,7 @@ export const validateResponse = (schema: ZodSchema) => {
           requestLogger.error('Response validation error', error);
         }
       }
-      
+
       return originalSend.call(this, body);
     };
     

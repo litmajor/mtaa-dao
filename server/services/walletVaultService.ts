@@ -17,7 +17,33 @@ import { v4 as uuid } from 'uuid';
 import { db } from '../db';
 import { wallets } from '@shared/schema';
 import { walletVaultBackups, walletVaultAccessLogs } from '@shared/walletVaultSchema';
-import { eq, and } from 'drizzle-orm';
+import { and, desc, eq } from 'drizzle-orm';
+
+export interface WalletBackupBlob {
+  version: 1;
+  kdf: 'PBKDF2-SHA256';
+  iterations: number;
+  salt: string;
+  iv: string;
+  ciphertext: string;
+  [key: string]: unknown;
+}
+
+export function isValidWalletBackupBlob(blob: unknown): blob is WalletBackupBlob {
+  if (typeof blob !== 'object' || blob === null) return false;
+  const value = blob as Record<string, unknown>;
+  return value.version === 1
+    && value.kdf === 'PBKDF2-SHA256'
+    && typeof value.iterations === 'number'
+    && Number.isInteger(value.iterations)
+    && value.iterations >= 600000
+    && typeof value.salt === 'string'
+    && value.salt.length > 0
+    && typeof value.iv === 'string'
+    && value.iv.length > 0
+    && typeof value.ciphertext === 'string'
+    && value.ciphertext.length > 0;
+}
 
 /**
  * Structural validation of a Web3 Secret Storage JSON keystore (EIP-2335 /
@@ -168,7 +194,7 @@ export async function getVaultBackup(
 async function logVaultAccess(
   walletId: string,
   userId: string,
-  action: 'backup_created' | 'backup_retrieved' | 'backup_retrieval_denied',
+  action: 'backup_created' | 'backup_retrieved' | 'backup_retrieval_denied' | 'backup_deleted',
   context: { ipAddress?: string; userAgent?: string }
 ): Promise<void> {
   try {
@@ -186,4 +212,95 @@ async function logVaultAccess(
     // be silent either — a gap in this audit trail is itself worth knowing about.
     console.error('[walletVaultService] Failed to write access log', err);
   }
+}
+
+export async function saveUserBackup(
+  userId: string,
+  blob: unknown,
+  context: { ipAddress?: string; userAgent?: string }
+): Promise<{ success: true; updatedAt: Date }> {
+  if (!isValidWalletBackupBlob(blob)) {
+    throw new Error('Invalid wallet backup blob');
+  }
+
+  const [wallet] = await db
+    .select()
+    .from(wallets)
+    .where(eq(wallets.userId, userId))
+    .orderBy(desc(wallets.updatedAt))
+    .limit(1);
+
+  if (!wallet) {
+    throw new Error('Wallet not found');
+  }
+
+  const existing = await db
+    .select()
+    .from(walletVaultBackups)
+    .where(and(eq(walletVaultBackups.userId, userId), eq(walletVaultBackups.walletId, wallet.id)))
+    .limit(1);
+
+  const now = new Date();
+  const encryptedBlob = JSON.stringify(blob);
+
+  if (existing[0]) {
+    await db
+      .update(walletVaultBackups)
+      .set({ encryptedBlob, keystoreVersion: 1, address: wallet.address, updatedAt: now })
+      .where(eq(walletVaultBackups.id, existing[0].id));
+  } else {
+    await db.insert(walletVaultBackups).values({
+      id: uuid(),
+      walletId: wallet.id,
+      userId,
+      encryptedBlob,
+      keystoreVersion: 1,
+      address: wallet.address,
+      createdAt: now,
+      updatedAt: now,
+    });
+  }
+
+  await logVaultAccess(wallet.id, userId, 'backup_created', context);
+  return { success: true, updatedAt: now };
+}
+
+export async function getUserBackup(
+  userId: string,
+  context: { ipAddress?: string; userAgent?: string }
+): Promise<{ backupExists: true; blob: WalletBackupBlob; updatedAt: Date } | null> {
+  const [backup] = await db
+    .select()
+    .from(walletVaultBackups)
+    .where(eq(walletVaultBackups.userId, userId))
+    .orderBy(desc(walletVaultBackups.updatedAt))
+    .limit(1);
+
+  if (!backup) return null;
+
+  await logVaultAccess(backup.walletId, userId, 'backup_retrieved', context);
+  const blob = JSON.parse(backup.encryptedBlob);
+  if (!isValidWalletBackupBlob(blob)) {
+    throw new Error('Stored wallet backup is invalid');
+  }
+
+  return { backupExists: true, blob, updatedAt: backup.updatedAt };
+}
+
+export async function deleteUserBackup(
+  userId: string,
+  context: { ipAddress?: string; userAgent?: string }
+): Promise<boolean> {
+  const backups = await db
+    .select({ id: walletVaultBackups.id, walletId: walletVaultBackups.walletId })
+    .from(walletVaultBackups)
+    .where(eq(walletVaultBackups.userId, userId));
+
+  if (backups.length === 0) return false;
+
+  await db.delete(walletVaultBackups).where(eq(walletVaultBackups.userId, userId));
+  for (const backup of backups) {
+    await logVaultAccess(backup.walletId, userId, 'backup_deleted', context);
+  }
+  return true;
 }

@@ -1,0 +1,9 @@
+User-agent: *
+Allow: /
+Disallow: /dashboard
+Disallow: /wallet
+Disallow: /treasury
+Disallow: /admin
+Disallow: /strategies
+Disallow: /api/
+Sitemap: https://mtaadao.com/sitemap.xml

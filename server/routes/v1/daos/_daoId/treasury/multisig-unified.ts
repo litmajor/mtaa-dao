@@ -365,6 +365,8 @@ router.post(
           return res.status(400).json({ success: false, error: 'Invalid amount' });
         }
 
+        const tx = await treasuryMultisigService.proposeWithdrawal(daoId, userId, amountNum, recipient, purpose);
+
         await logConsolidatedAuditEvent({
           dao_id: daoId,
           user_id: userId,
@@ -372,8 +374,6 @@ router.post(
           severity: 'high',
           details: { recipient, amount: amountNum, purpose }
         } as any);
-
-        const tx = await treasuryMultisigService.proposeWithdrawal(daoId, userId, amountNum, recipient, purpose);
 
         res.status(201).json({ success: true, transaction: tx });
       } catch (err: any) {

@@ -5,7 +5,7 @@
 
 The MtaaDAO API provides comprehensive endpoints for managing decentralized autonomous organization (DAO) operations, including wallet management, governance, reputation systems, and more.
 
-**Base URL:** `https://your-repl-url.replit.app/api`
+**Base URL:** api.mtaadao.com
 
 ## Authentication
 

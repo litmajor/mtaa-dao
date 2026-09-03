@@ -6,10 +6,13 @@
  * - DAO member endpoints: Access to their own DAO data
  */
 
-import { Router, Request, Response } from 'express';
+import { Router } from 'express';
+import type { Request, Response } from 'express';
 import { eldKaizen } from '../core/elders/kaizen';
 import { eldLumen } from '../core/elders/lumen';
+import { eldScry } from '../core/elders/scry';
 import { isAuthenticated } from '../auth';
+import { isSuperUser } from '../middleware/auth';
 
 const router = Router();
 
@@ -21,7 +24,7 @@ const router = Router();
  * GET /api/elders/kaizen/dashboard
  * Get superuser dashboard with all DAOs
  */
-router.get('/kaizen/dashboard', isAuthenticated, (req: Request, res: Response) => {
+router.get('/kaizen/dashboard', isAuthenticated, isSuperUser, (req: Request, res: Response) => {
   try {
     const status = eldKaizen.getStatus();
     
@@ -53,7 +56,7 @@ router.get('/kaizen/dashboard', isAuthenticated, (req: Request, res: Response) =
  * GET /api/elders/kaizen/all-metrics
  * Get all performance metrics across all DAOs
  */
-router.get('/kaizen/all-metrics', isAuthenticated, (req: Request, res: Response) => {
+router.get('/kaizen/all-metrics', isAuthenticated, isSuperUser, (req: Request, res: Response) => {
   try {
     const status = eldKaizen.getStatus();
     const metrics = Array.from(status.daoMetrics.entries()).map(([daoId, m]) => ({
@@ -95,7 +98,7 @@ router.get('/kaizen/all-metrics', isAuthenticated, (req: Request, res: Response)
  * GET /api/elders/kaizen/all-recommendations
  * Get all optimization recommendations across all DAOs
  */
-router.get('/kaizen/all-recommendations', isAuthenticated, (req: Request, res: Response) => {
+router.get('/kaizen/all-recommendations', isAuthenticated, isSuperUser, (req: Request, res: Response) => {
   try {
     const status = eldKaizen.getStatus();
     const recommendations = Array.from(status.recommendations.entries()).map(([daoId, rec]) => ({
@@ -127,7 +130,7 @@ router.get('/kaizen/all-recommendations', isAuthenticated, (req: Request, res: R
  * GET /api/elders/kaizen/trends/:metric
  * Get metric trends over time (superuser - all DAOs)
  */
-router.get('/kaizen/trends/:metric', isAuthenticated, (req: Request, res: Response) => {
+router.get('/kaizen/trends/:metric', isAuthenticated, isSuperUser, (req: Request, res: Response) => {
   try {
     const { metric } = req.params;
     const { hours = 24 } = req.query;
@@ -153,7 +156,7 @@ router.get('/kaizen/trends/:metric', isAuthenticated, (req: Request, res: Respon
  * GET /api/elders/kaizen/anomalies/:metric
  * Get anomalies in a metric (superuser - all DAOs)
  */
-router.get('/kaizen/anomalies/:metric', isAuthenticated, (req: Request, res: Response) => {
+router.get('/kaizen/anomalies/:metric', isAuthenticated, isSuperUser, (req: Request, res: Response) => {
   try {
     const { metric } = req.params;
     const { threshold = 20 } = req.query;
@@ -189,9 +192,10 @@ router.get('/kaizen/dao/:daoId/metrics', isAuthenticated, (req: Request, res: Re
   try {
     const { daoId } = req.params;
     const userId = (req as any).user.id;
+    const userDaos = (req as any).user?.daos ?? [];
 
     // Check if user is member of this DAO
-    if (!(req as any).user.daos.includes(daoId)) {
+    if (!userDaos.includes(daoId)) {
       return res.status(403).json({
         success: false,
         error: 'Access denied: Not a member of this DAO'
@@ -249,9 +253,10 @@ router.get('/kaizen/dao/:daoId/metrics', isAuthenticated, (req: Request, res: Re
 router.get('/kaizen/dao/:daoId/recommendations', isAuthenticated, (req: Request, res: Response) => {
   try {
     const { daoId } = req.params;
+    const userDaos = (req as any).user?.daos ?? [];
 
     // Check if user is member of this DAO
-    if (!(req as any).user.daos.includes(daoId)) {
+    if (!userDaos.includes(daoId)) {
       return res.status(403).json({
         success: false,
         error: 'Access denied: Not a member of this DAO'
@@ -300,7 +305,7 @@ router.get(
       const { daoId, category } = req.params;
 
       // Check if user is member of this DAO
-      if (!(req as any).user?.daos?.includes(daoId)) {
+      if (!req.user?.daos?.includes(daoId)) {
         return res.status(403).json({
           success: false,
           error: 'Access denied: Not a member of this DAO'
@@ -343,9 +348,10 @@ router.get(
 router.get('/kaizen/dao/:daoId/status', isAuthenticated, (req: Request, res: Response) => {
   try {
     const { daoId } = req.params;
+    const userDaos = (req as any).user?.daos ?? [];
 
     // Check if user is member of this DAO
-    if (!(req as any).user.daos.includes(daoId)) {
+    if (!userDaos.includes(daoId)) {
       return res.status(403).json({
         success: false,
         error: 'Access denied: Not a member of this DAO'
@@ -387,14 +393,15 @@ router.get('/kaizen/dao/:daoId/status', isAuthenticated, (req: Request, res: Res
  */
 router.get('/scry/health', (req: Request, res: Response) => {
   try {
-    const { eldScry } = require('../core/elders/scry');
     const status = eldScry.getStatus();
+
+    const analysisInterval = (status as any).analysisInterval;
 
     res.json({
       success: true,
       elderName: 'ELD-SCRY',
       status: status.status,
-      active: !!status.analysisInterval,
+      active: !!analysisInterval,
       monitoredDAOs: status.threatStats.activeMonitoredDAOs,
       threatsDetected: status.threatStats.totalThreatsDetected,
       lastAnalysis: status.lastAnalysis
@@ -411,9 +418,8 @@ router.get('/scry/health', (req: Request, res: Response) => {
  * GET /api/elders/scry/dashboard
  * Get superuser dashboard - all DAOs threat overview
  */
-router.get('/scry/dashboard', isAuthenticated, (req: Request, res: Response) => {
+router.get('/scry/dashboard', isAuthenticated, isSuperUser, (req: Request, res: Response) => {
   try {
-    const { eldScry } = require('../core/elders/scry');
     const status = eldScry.getStatus();
 
     // Convert Map to array for JSON serialization
@@ -449,16 +455,16 @@ router.get('/scry/dashboard', isAuthenticated, (req: Request, res: Response) => 
 router.get('/scry/dao/:daoId/threats', isAuthenticated, (req: Request, res: Response) => {
   try {
     const { daoId } = req.params;
+    const userDaos = (req as any).user?.daos ?? [];
 
     // Check if user is member of this DAO
-    if (!(req as any).user.daos.includes(daoId)) {
+    if (!userDaos.includes(daoId)) {
       return res.status(403).json({
         success: false,
         error: 'Access denied: Not a member of this DAO'
       });
     }
 
-    const { eldScry } = require('../core/elders/scry');
     const threats = eldScry.getDAOThreats(daoId);
 
     res.json({
@@ -492,16 +498,16 @@ router.get('/scry/dao/:daoId/threats', isAuthenticated, (req: Request, res: Resp
 router.get('/scry/dao/:daoId/forecast', isAuthenticated, (req: Request, res: Response) => {
   try {
     const { daoId } = req.params;
+    const userDaos = (req as any).user?.daos ?? [];
 
     // Check if user is member of this DAO
-    if (!(req as any).user.daos.includes(daoId)) {
+    if (!userDaos.includes(daoId)) {
       return res.status(403).json({
         success: false,
         error: 'Access denied: Not a member of this DAO'
       });
     }
 
-    const { eldScry } = require('../core/elders/scry');
     const forecast = eldScry.getDAOForecast(daoId);
 
     if (!forecast) {
@@ -511,16 +517,19 @@ router.get('/scry/dao/:daoId/forecast', isAuthenticated, (req: Request, res: Res
       });
     }
 
+    const forecastWindowHours = (forecast as any).timeframeHours ?? 24;
+    const forecastRecommendations = (forecast as any).interventionRecommendations ?? [];
+
     res.json({
       success: true,
       daoId,
       forecast: {
-        timeframeHours: forecast.timeframeHours,
-        predictedScore: forecast.predictedScore,
+        timeframeHours: forecastWindowHours,
+        predictedScore: (forecast as any).predictedScore ?? 0,
         confidence: forecast.confidence,
         riskFactors: forecast.riskFactors,
         earlyWarnings: forecast.earlyWarnings,
-        interventionRecommendations: forecast.interventionRecommendations
+        interventionRecommendations: forecastRecommendations
       },
       timestamp: forecast.timestamp
     });
@@ -539,16 +548,16 @@ router.get('/scry/dao/:daoId/forecast', isAuthenticated, (req: Request, res: Res
 router.get('/scry/dao/:daoId/suspicion/:userId', isAuthenticated, (req: Request, res: Response) => {
   try {
     const { daoId, userId } = req.params;
+    const userDaos = (req as any).user?.daos ?? [];
 
     // Check if user is member of this DAO
-    if (!(req as any).user.daos.includes(daoId)) {
+    if (!userDaos.includes(daoId)) {
       return res.status(403).json({
         success: false,
         error: 'Access denied: Not a member of this DAO'
       });
     }
 
-    const { eldScry } = require('../core/elders/scry');
     const suspicionScore = eldScry.getSuspicionScore(userId);
 
     res.json({
@@ -571,9 +580,8 @@ router.get('/scry/dao/:daoId/suspicion/:userId', isAuthenticated, (req: Request,
  * GET /api/elders/scry/threat-signatures
  * Get all learned threat signatures (superuser only)
  */
-router.get('/scry/threat-signatures', isAuthenticated, (req: Request, res: Response) => {
+router.get('/scry/threat-signatures', isAuthenticated, isSuperUser, (req: Request, res: Response) => {
   try {
-    const { eldScry } = require('../core/elders/scry');
     const signatures = eldScry.getThreatSignatures();
 
     res.json({
@@ -605,7 +613,7 @@ router.get('/scry/threat-signatures', isAuthenticated, (req: Request, res: Respo
  * POST /api/elders/lumen/review
  * Request ethical review of a decision (superuser only)
  */
-router.post('/lumen/review', isAuthenticated, async (req: Request, res: Response) => {
+router.post('/lumen/review', isAuthenticated, isSuperUser, async (req: Request, res: Response) => {
   try {
     const { decisionType, proposedAction, affectedParties, potentialHarms, potentialBenefits, justification, urgency, metadata } = req.body;
 
@@ -646,7 +654,7 @@ router.post('/lumen/review', isAuthenticated, async (req: Request, res: Response
  * GET /api/elders/lumen/audit-log
  * Get ethical audit log (superuser only)
  */
-router.get('/lumen/audit-log', isAuthenticated, (req: Request, res: Response) => {
+router.get('/lumen/audit-log', isAuthenticated, isSuperUser, (req: Request, res: Response) => {
   try {
     const days = parseInt(req.query.days as string) || 30;
     const auditLog = eldLumen.getAuditLog(days);
@@ -678,7 +686,7 @@ router.get('/lumen/audit-log', isAuthenticated, (req: Request, res: Response) =>
  * GET /api/elders/lumen/statistics
  * Get ethical review statistics (superuser only)
  */
-router.get('/lumen/statistics', isAuthenticated, (req: Request, res: Response) => {
+router.get('/lumen/statistics', isAuthenticated, isSuperUser, (req: Request, res: Response) => {
   try {
     const days = parseInt(req.query.days as string) || 30;
     const stats = eldLumen.getEthicalStatistics(days);
@@ -709,7 +717,7 @@ router.get('/lumen/statistics', isAuthenticated, (req: Request, res: Response) =
  * GET /api/elders/lumen/dashboard
  * Get ethics dashboard (superuser only)
  */
-router.get('/lumen/dashboard', isAuthenticated, (req: Request, res: Response) => {
+router.get('/lumen/dashboard', isAuthenticated, isSuperUser, (req: Request, res: Response) => {
   try {
     const weekStats = eldLumen.getEthicalStatistics(7);
     const monthStats = eldLumen.getEthicalStatistics(30);

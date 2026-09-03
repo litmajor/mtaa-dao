@@ -1,15 +1,15 @@
-import { Router, Request, Response } from 'express';
+import { Router } from 'express';
+import type { Request, Response } from 'express';
 import { db } from '../../db';
 import { logger } from '../../utils/logger';
-import { proposals, daos, daoMemberships, votes } from '../../../shared/schema';
-import { eq, desc, sql, and, or, like, inArray, gte, lte } from 'drizzle-orm';
+import { proposals, daos, daoMemberships, votes, auditLogs } from '../../../shared/schema';
+import { eq, desc, sql, and, or, inArray } from 'drizzle-orm';
+import { randomUUID } from 'node:crypto';
 import { requireRole } from '../../middleware/rbac';
-import { logConsolidatedAuditEvent, AuditEventType } from '../../services/auditConsolidated';
 import { getEventEmitter } from '../../middleware/websocket-event-emitter';
 
 const router = Router();
 const requireSuperAdmin = requireRole('super_admin');
-const requireAdmin = requireRole('admin');
 
 /**
  * Proposals Management Routes with Role-Based Access Control
@@ -34,8 +34,8 @@ router.get('/daos/:daoId/proposals', async (req: Request, res: Response) => {
   try {
     const { daoId } = req.params;
     const { page = '1', limit = '20', status = '' } = req.query;
-    const adminId = (req.user as any)?.id;
-    const userRole = (req.user as any)?.roles;
+    const adminId = getUserId(req);
+    const isSuperAdmin = hasRole(req, 'super_admin');
 
     // Verify DAO exists
     const dao = await db.select().from(daos).where(eq(daos.id, daoId));
@@ -46,22 +46,12 @@ router.get('/daos/:daoId/proposals', async (req: Request, res: Response) => {
     // Check permissions
     // Super admin can see all DAOs
     // Regular admins can only see their own DAO's proposals
-    if (userRole !== 'super_admin') {
-      const isDAOAdmin = await db
-        .select()
-        .from(daoMemberships)
-        .where(and(
-          eq(daoMemberships.daoId, daoId),
-          eq(daoMemberships.userId, adminId),
-          eq(daoMemberships.role, 'admin') // or 'creator'
-        ));
-      
-      if (!isDAOAdmin.length) {
+    if (!isSuperAdmin && !(adminId && await isDaoAdministrator(adminId, daoId))) {
         return res.status(403).json({ error: 'Access denied to this DAO' });
-      }
     }
 
-    const offset = (parseInt(page as string) - 1) * parseInt(limit as string);
+    const pagination = parsePagination(page, limit);
+    const offset = (pagination.page - 1) * pagination.limit;
     const conditions: any[] = [eq(proposals.daoId, daoId)];
 
     if (status && typeof status === 'string' && status !== 'all') {
@@ -76,15 +66,15 @@ router.get('/daos/:daoId/proposals', async (req: Request, res: Response) => {
         title: proposals.title,
         description: proposals.description,
         status: proposals.status,
-        type: proposals.type,
+        proposalType: proposals.proposalType,
         createdAt: proposals.createdAt,
-        votingEndDate: proposals.votingEndDate,
-        createdBy: proposals.createdBy,
+        voteEndTime: proposals.voteEndTime,
+        proposerId: proposals.proposerId,
       })
       .from(proposals)
       .where(whereClause)
       .orderBy(desc(proposals.createdAt))
-      .limit(parseInt(limit as string))
+      .limit(pagination.limit)
       .offset(offset);
 
     const totalCount = await db
@@ -99,15 +89,18 @@ router.get('/daos/:daoId/proposals', async (req: Request, res: Response) => {
         name: dao[0].name,
       },
       pagination: {
-        page: parseInt(page as string),
-        limit: parseInt(limit as string),
+        page: pagination.page,
+        limit: pagination.limit,
         total: totalCount[0].count,
-        pages: Math.ceil(totalCount[0].count / parseInt(limit as string)),
+        pages: Math.ceil(totalCount[0].count / pagination.limit),
       },
-      userRole,
-      canManage: userRole === 'super_admin' || (userRole === 'admin' || userRole === 'user'), // DAO admin check
+      userRole: isSuperAdmin ? 'super_admin' : 'admin',
+      canManage: isSuperAdmin || Boolean(adminId && await isDaoAdministrator(adminId, daoId)),
     });
   } catch (error) {
+    if (error instanceof InvalidParameterError) {
+      return res.status(400).json({ error: error.message });
+    }
     logger.error('Error fetching proposals:', error);
     res.status(500).json({ error: 'Failed to fetch proposals' });
   }
@@ -117,8 +110,8 @@ router.get('/daos/:daoId/proposals', async (req: Request, res: Response) => {
 router.get('/daos/:daoId/proposals/:proposalId', async (req: Request, res: Response) => {
   try {
     const { daoId, proposalId } = req.params;
-    const adminId = (req.user as any)?.id;
-    const userRole = (req.user as any)?.roles;
+    const adminId = getUserId(req);
+    const isSuperAdmin = hasRole(req, 'super_admin');
 
     // Verify DAO exists
     const dao = await db.select().from(daos).where(eq(daos.id, daoId));
@@ -127,23 +120,30 @@ router.get('/daos/:daoId/proposals/:proposalId', async (req: Request, res: Respo
     }
 
     // Check permissions
-    if (userRole !== 'super_admin') {
-      const isDAOAdmin = await db
-        .select()
-        .from(daoMemberships)
-        .where(and(
-          eq(daoMemberships.daoId, daoId),
-          eq(daoMemberships.userId, adminId)
-        ));
-      
-      if (!isDAOAdmin.length) {
-        return res.status(403).json({ error: 'Access denied to this DAO' });
-      }
+    if (!isSuperAdmin && !(adminId && await isDaoAdministrator(adminId, daoId))) {
+      return res.status(403).json({ error: 'Access denied to this DAO' });
     }
 
     // Get proposal with votes
     const proposal = await db
-      .select()
+      .select({
+        id: proposals.id,
+        title: proposals.title,
+        description: proposals.description,
+        proposalType: proposals.proposalType,
+        status: proposals.status,
+        daoId: proposals.daoId,
+        proposerId: proposals.proposerId,
+        voteStartTime: proposals.voteStartTime,
+        voteEndTime: proposals.voteEndTime,
+        quorumRequired: proposals.quorumRequired,
+        yesVotes: proposals.yesVotes,
+        noVotes: proposals.noVotes,
+        abstainVotes: proposals.abstainVotes,
+        metadata: proposals.metadata,
+        createdAt: proposals.createdAt,
+        updatedAt: proposals.updatedAt,
+      })
       .from(proposals)
       .where(and(
         eq(proposals.id, proposalId),
@@ -166,13 +166,17 @@ router.get('/daos/:daoId/proposals/:proposalId', async (req: Request, res: Respo
 
     res.json({
       proposal: proposal[0],
-      votes: voteStats[0],
+      votes: {
+        yesCount: Number(voteStats[0]?.yesCount || 0),
+        noCount: Number(voteStats[0]?.noCount || 0),
+        abstainCount: Number(voteStats[0]?.abstainCount || 0),
+      },
       dao: {
         id: dao[0].id,
         name: dao[0].name,
       },
-      userRole,
-      isSuperAdmin: userRole === 'super_admin',
+      userRole: isSuperAdmin ? 'super_admin' : 'admin',
+      isSuperAdmin,
     });
   } catch (error) {
     logger.error('Error fetching proposal detail:', error);
@@ -185,7 +189,14 @@ router.post('/daos/:daoId/proposals/:proposalId/flag', requireSuperAdmin, async 
   try {
     const { daoId, proposalId } = req.params;
     const { reason, severity } = req.body;
-    const adminId = (req.user as any).id;
+    const adminId = getUserId(req);
+
+    if (!adminId || !isValidReason(reason)) {
+      return res.status(400).json({ error: 'A reason between 1 and 1000 characters is required' });
+    }
+    if (severity !== undefined && !['low', 'medium', 'high', 'critical'].includes(severity)) {
+      return res.status(400).json({ error: 'Invalid severity' });
+    }
 
     const dao = await db.select().from(daos).where(eq(daos.id, daoId));
     if (!dao.length) {
@@ -204,35 +215,43 @@ router.post('/daos/:daoId/proposals/:proposalId/flag', requireSuperAdmin, async 
       return res.status(404).json({ error: 'Proposal not found' });
     }
 
-    // Update proposal with flag
-    await db
-      .update(proposals)
-      .set({
-        flagged: true,
-        flagReason: reason,
-        flaggedAt: new Date(),
-        flaggedBy: adminId,
-      })
-      .where(eq(proposals.id, proposalId));
+    const now = new Date();
+    await db.transaction(async tx => {
+      await tx
+        .update(proposals)
+        .set({
+          metadata: sql`jsonb_set(
+            COALESCE(${proposals.metadata}, '{}'::jsonb),
+            '{moderation}',
+            COALESCE(${proposals.metadata}->'moderation', '{}'::jsonb) || ${JSON.stringify({
+              flagged: true,
+              flagReason: reason,
+              flaggedAt: now.toISOString(),
+              flaggedBy: adminId,
+            })}::jsonb,
+            true
+          )`,
+        })
+        .where(and(eq(proposals.id, proposalId), eq(proposals.daoId, daoId)));
 
-    // Log audit event
-    await logAuditEvent({
-      eventType: AuditEventType.PROPOSAL_FLAGGED,
-      userId: adminId,
-      action: `Proposal flagged: ${proposal[0].title}`,
-      severity: severity || 'high',
-      endpoint: `/api/admin/daos/:daoId/proposals/:proposalId/flag`,
-      method: 'POST',
-      ipAddress: req.ip,
-      userAgent: req.get('user-agent'),
-      statusCode: 200,
-      metadata: {
-        daoId,
-        proposalId,
-        reason,
-        severity,
-      }
-    }).catch(err => console.error('Audit log failed:', err));
+      await tx.insert(auditLogs).values({
+        id: randomUUID(),
+        userId: adminId,
+        action: 'PROPOSAL_FLAGGED',
+        resource: 'proposal',
+        resourceId: proposalId,
+        method: 'admin',
+        endpoint: '/api/admin/daos/:daoId/proposals/:proposalId/flag',
+        ipAddress: req.ip || 'unknown',
+        userAgent: req.get('user-agent') || 'unknown',
+        status: 200,
+        details: { daoId, reason, severity: severity || 'high' },
+        severity: severity || 'high',
+        category: 'governance',
+        createdAt: now,
+        updatedAt: now,
+      } as any);
+    });
 
     logger.info('Proposal flagged by super admin', { proposalId, daoId, adminId, reason });
 
@@ -246,7 +265,7 @@ router.post('/daos/:daoId/proposals/:proposalId/flag', requireSuperAdmin, async 
         flaggedAt: new Date()
       });
     } catch (wsError) {
-      logger.warn('Failed to emit WebSocket event for proposal flag:', wsError);
+      logger.warn('Failed to emit WebSocket event for proposal flag:', { error: String(wsError) });
     }
 
     res.json({
@@ -270,7 +289,11 @@ router.post('/daos/:daoId/proposals/:proposalId/suspend', requireSuperAdmin, asy
   try {
     const { daoId, proposalId } = req.params;
     const { reason } = req.body;
-    const adminId = (req.user as any).id;
+    const adminId = getUserId(req);
+
+    if (!adminId || !isValidReason(reason)) {
+      return res.status(400).json({ error: 'A reason between 1 and 1000 characters is required' });
+    }
 
     const dao = await db.select().from(daos).where(eq(daos.id, daoId));
     if (!dao.length) {
@@ -289,32 +312,44 @@ router.post('/daos/:daoId/proposals/:proposalId/suspend', requireSuperAdmin, asy
       return res.status(404).json({ error: 'Proposal not found' });
     }
 
-    // Suspend the proposal
-    await db
-      .update(proposals)
-      .set({
-        status: 'suspended',
-        updatedAt: new Date(),
-      })
-      .where(eq(proposals.id, proposalId));
+    const now = new Date();
+    await db.transaction(async tx => {
+      await tx
+        .update(proposals)
+        .set({
+          status: 'suspended',
+          updatedAt: now,
+          metadata: sql`jsonb_set(
+            COALESCE(${proposals.metadata}, '{}'::jsonb),
+            '{moderation}',
+            COALESCE(${proposals.metadata}->'moderation', '{}'::jsonb) || ${JSON.stringify({
+              suspendedReason: reason,
+              suspendedAt: now.toISOString(),
+              suspendedBy: adminId,
+            })}::jsonb,
+            true
+          )`,
+        })
+        .where(and(eq(proposals.id, proposalId), eq(proposals.daoId, daoId)));
 
-    // Log audit event
-    await logAuditEvent({
-      eventType: AuditEventType.PROPOSAL_SUSPENDED,
-      userId: adminId,
-      action: `Proposal suspended: ${proposal[0].title}`,
-      severity: 'critical',
-      endpoint: `/api/admin/daos/:daoId/proposals/:proposalId/suspend`,
-      method: 'POST',
-      ipAddress: req.ip,
-      userAgent: req.get('user-agent'),
-      statusCode: 200,
-      metadata: {
-        daoId,
-        proposalId,
-        reason,
-      }
-    }).catch(err => console.error('Audit log failed:', err));
+      await tx.insert(auditLogs).values({
+        id: randomUUID(),
+        userId: adminId,
+        action: 'PROPOSAL_SUSPENDED',
+        resource: 'proposal',
+        resourceId: proposalId,
+        method: 'admin',
+        endpoint: '/api/admin/daos/:daoId/proposals/:proposalId/suspend',
+        ipAddress: req.ip || 'unknown',
+        userAgent: req.get('user-agent') || 'unknown',
+        status: 200,
+        details: { daoId, reason },
+        severity: 'critical',
+        category: 'governance',
+        createdAt: now,
+        updatedAt: now,
+      } as any);
+    });
 
     logger.warn('Proposal suspended by super admin', { proposalId, daoId, adminId, reason });
 
@@ -327,7 +362,7 @@ router.post('/daos/:daoId/proposals/:proposalId/suspend', requireSuperAdmin, asy
         suspendedAt: new Date()
       });
     } catch (wsError) {
-      logger.warn('Failed to emit WebSocket event for proposal suspend:', wsError);
+      logger.warn('Failed to emit WebSocket event for proposal suspend:', { error: String(wsError) });
     }
 
     res.json({
@@ -344,8 +379,8 @@ router.post('/daos/:daoId/proposals/:proposalId/suspend', requireSuperAdmin, asy
 router.get('/daos/:daoId/proposals/stats', async (req: Request, res: Response) => {
   try {
     const { daoId } = req.params;
-    const adminId = (req.user as any)?.id;
-    const userRole = (req.user as any)?.roles;
+    const adminId = getUserId(req);
+    const isSuperAdmin = hasRole(req, 'super_admin');
 
     // Verify DAO exists
     const dao = await db.select().from(daos).where(eq(daos.id, daoId));
@@ -354,60 +389,30 @@ router.get('/daos/:daoId/proposals/stats', async (req: Request, res: Response) =
     }
 
     // Check permissions
-    if (userRole !== 'super_admin') {
-      const isDAOAdmin = await db
-        .select()
-        .from(daoMemberships)
-        .where(and(
-          eq(daoMemberships.daoId, daoId),
-          eq(daoMemberships.userId, adminId)
-        ));
-      
-      if (!isDAOAdmin.length) {
+    if (!isSuperAdmin && !(adminId && await isDaoAdministrator(adminId, daoId))) {
         return res.status(403).json({ error: 'Access denied to this DAO' });
-      }
     }
 
-    const [
-      totalProposals,
-      activeProposals,
-      passedProposals,
-      failedProposals,
-      suspendedProposals,
-      flaggedProposals,
-    ] = await Promise.all([
-      db.select({ count: sql<number>`count(*)` }).from(proposals).where(eq(proposals.daoId, daoId)),
-      db.select({ count: sql<number>`count(*)` }).from(proposals).where(and(
-        eq(proposals.daoId, daoId),
-        eq(proposals.status, 'active')
-      )),
-      db.select({ count: sql<number>`count(*)` }).from(proposals).where(and(
-        eq(proposals.daoId, daoId),
-        eq(proposals.status, 'passed')
-      )),
-      db.select({ count: sql<number>`count(*)` }).from(proposals).where(and(
-        eq(proposals.daoId, daoId),
-        eq(proposals.status, 'failed')
-      )),
-      db.select({ count: sql<number>`count(*)` }).from(proposals).where(and(
-        eq(proposals.daoId, daoId),
-        eq(proposals.status, 'suspended')
-      )),
-      db.select({ count: sql<number>`count(*)` }).from(proposals).where(and(
-        eq(proposals.daoId, daoId),
-        // @ts-ignore - flagged is a custom field
-        sql`flagged = true`
-      )),
-    ]);
+    const [proposalStats] = await db
+      .select({
+        total: sql<number>`COUNT(*)`,
+        active: sql<number>`COUNT(*) FILTER (WHERE ${proposals.status} = 'active')`,
+        passed: sql<number>`COUNT(*) FILTER (WHERE ${proposals.status} = 'passed')`,
+        failed: sql<number>`COUNT(*) FILTER (WHERE ${proposals.status} = 'failed')`,
+        suspended: sql<number>`COUNT(*) FILTER (WHERE ${proposals.status} = 'suspended')`,
+        flagged: sql<number>`COUNT(*) FILTER (WHERE ${proposals.metadata}->'moderation'->>'flagged' = 'true')`,
+      })
+      .from(proposals)
+      .where(eq(proposals.daoId, daoId));
 
     res.json({
       stats: {
-        totalProposals: totalProposals[0].count,
-        activeProposals: activeProposals[0].count,
-        passedProposals: passedProposals[0].count,
-        failedProposals: failedProposals[0].count,
-        suspendedProposals: suspendedProposals[0].count,
-        flaggedProposals: flaggedProposals[0].count,
+        totalProposals: Number(proposalStats.total),
+        activeProposals: Number(proposalStats.active),
+        passedProposals: Number(proposalStats.passed),
+        failedProposals: Number(proposalStats.failed),
+        suspendedProposals: Number(proposalStats.suspended),
+        flaggedProposals: Number(proposalStats.flagged),
       }
     });
   } catch (error) {
@@ -421,7 +426,8 @@ router.get('/daos/:daoId/proposals/stats', async (req: Request, res: Response) =
 router.get('/proposals/pending', requireSuperAdmin, async (req: Request, res: Response) => {
   try {
     const { page = '1', limit = '20' } = req.query;
-    const offset = (parseInt(page as string) - 1) * parseInt(limit as string);
+    const pagination = parsePagination(page, limit);
+    const offset = (pagination.page - 1) * pagination.limit;
 
     const pendingProposals = await db
       .select({
@@ -430,12 +436,12 @@ router.get('/proposals/pending', requireSuperAdmin, async (req: Request, res: Re
         daoId: proposals.daoId,
         status: proposals.status,
         createdAt: proposals.createdAt,
-        flagged: sql<boolean>`flagged`,
+        flagged: sql<boolean>`COALESCE(${proposals.metadata}->'moderation'->>'flagged', 'false') = 'true'`,
       })
       .from(proposals)
       .where(eq(proposals.status, 'active'))
       .orderBy(desc(proposals.createdAt))
-      .limit(parseInt(limit as string))
+      .limit(pagination.limit)
       .offset(offset);
 
     const totalCount = await db
@@ -446,16 +452,64 @@ router.get('/proposals/pending', requireSuperAdmin, async (req: Request, res: Re
     res.json({
       proposals: pendingProposals,
       pagination: {
-        page: parseInt(page as string),
-        limit: parseInt(limit as string),
+        page: pagination.page,
+        limit: pagination.limit,
         total: totalCount[0].count,
-        pages: Math.ceil(totalCount[0].count / parseInt(limit as string)),
+        pages: Math.ceil(totalCount[0].count / pagination.limit),
       }
     });
   } catch (error) {
+    if (error instanceof InvalidParameterError) {
+      return res.status(400).json({ error: error.message });
+    }
     logger.error('Error fetching pending proposals:', error);
     res.status(500).json({ error: 'Failed to fetch pending proposals' });
   }
 });
+
+function getUserId(req: Request): string | undefined {
+  const user = req.user as any;
+  return user?.id || user?.claims?.sub;
+}
+
+function hasRole(req: Request, role: string): boolean {
+  const user = req.user as any;
+  const roleValues = user?.roles ?? user?.role ?? user?.claims?.roles ?? user?.claims?.role ?? [];
+  const roles = Array.isArray(roleValues) ? roleValues : String(roleValues).split(',').map(value => value.trim());
+  return roles.includes(role);
+}
+
+async function isDaoAdministrator(userId: string, daoId: string): Promise<boolean> {
+  const memberships = await db
+    .select({ id: daoMemberships.id })
+    .from(daoMemberships)
+    .where(and(
+      eq(daoMemberships.daoId, daoId),
+      eq(daoMemberships.userId, userId),
+      eq(daoMemberships.status, 'approved'),
+      eq(daoMemberships.isBanned, false),
+      or(
+        inArray(daoMemberships.role, ['admin', 'owner', 'elder']),
+        eq(daoMemberships.isAdmin, true)
+      )
+    ))
+    .limit(1);
+  return memberships.length > 0;
+}
+
+function parsePagination(pageValue: unknown, limitValue: unknown): { page: number; limit: number } {
+  const page = Number(pageValue);
+  const limit = Number(limitValue);
+  if (!Number.isSafeInteger(page) || page < 1 || !Number.isSafeInteger(limit) || limit < 1 || limit > 100) {
+    throw new InvalidParameterError('Invalid pagination parameters');
+  }
+  return { page, limit };
+}
+
+function isValidReason(reason: unknown): reason is string {
+  return typeof reason === 'string' && reason.trim().length > 0 && reason.length <= 1000;
+}
+
+class InvalidParameterError extends Error {}
 
 export default router;

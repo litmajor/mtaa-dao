@@ -1,5 +1,7 @@
-import { Router, Request, Response } from 'express';
-import { db } from '../../db';
+import { Router } from 'express';
+import type { Request, Response } from 'express';
+import os from 'node:os';
+import { db, pool } from '../../db';
 import { logger } from '../../utils/logger';
 import {
   daos,
@@ -7,14 +9,9 @@ import {
   vaults,
   vaultTransactions,
   users,
-  userActivities,
-  proposals,
-  subscriptions,
-  payments,
   tasks,
 } from '../../../shared/schema';
 import {
-  platformMetrics,
   defiProtocolMetrics,
   cefiExchangeMetrics,
   blockchainHealthMetrics,
@@ -23,18 +20,50 @@ import {
   paymentProviderMetrics,
   agentPerformanceMetrics,
   apiUsageMetrics,
-  platformGrowthMetrics,
   supportTicketMetrics,
 } from '../../../shared/monitoringMetricsSchema';
-import { eq, desc, sql, and, gte, lte, like } from 'drizzle-orm';
+import { eq, desc, sql, gte } from 'drizzle-orm';
 import { referralPayouts } from '../../../shared/financialEnhancedSchema';
 import { getPayoutWorkerStatus } from '../../workers/payout-worker';
 import { requireRole } from '../../middleware/rbac';
 import { cacheManager } from '../../core/consolidation/DataCacheConsolidation';
-import { MonitoringAggregationService } from '../../services/metricsAggregationService';
+import { SystemMetricsCollector } from '../../utils/systemMetrics';
 
 const router = Router();
 const requireSuperAdmin = requireRole('super_admin');
+const monitoringCache = cacheManager.registerCache({
+  name: 'admin_monitoring',
+  level: 'both',
+  ttl: 5 * 60 * 1000,
+  invalidationStrategy: 'ttl',
+});
+
+async function getOrComputeMetrics<T>(key: string, computeFn: () => Promise<T>): Promise<T> {
+  try {
+    return await monitoringCache.getOrSet(key, computeFn);
+  } catch (error) {
+    logger.warn(`Monitoring cache failed for ${key}; using live query`, {
+      error: error instanceof Error ? error.message : String(error),
+    });
+    return computeFn();
+  }
+}
+
+function toNumber(value: string | number | null | undefined): number {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : 0;
+}
+
+function calculateGrowthRate(current: number, previous: number): number {
+  if (previous <= 0) return current > 0 ? 100 : 0;
+  return Number((((current - previous) / previous) * 100).toFixed(2));
+}
+
+function getSystemLoadAverage(): number {
+  const cpuCount = Math.max(os.cpus().length, 1);
+  const load = os.loadavg()[0];
+  return Math.min(100, Math.max(0, Math.round((load / cpuCount) * 100)));
+}
 
 /**
  * PHASE 1 MONITORING ENDPOINTS
@@ -45,56 +74,65 @@ const requireSuperAdmin = requireRole('super_admin');
 router.get('/monitoring/dashboard-overview', requireSuperAdmin, async (req: Request, res: Response) => {
   try {
     // Try to get from cache, otherwise aggregate fresh metrics
-    const cache = cacheManager.getCache('platform_metrics');
-    const metrics = await cache?.getOrSet(
+    const metrics = await getOrComputeMetrics(
       'dashboard-overview',
       async () => {
-        const [
-          totalDaos,
-          activeDaos,
-          totalMembers,
-          activeWallets,
-          totalVaults,
-          activeVaults,
-          totalTVL,
-          totalTransactions,
-          agentCount,
-          totalFees,
-        ] = await Promise.all([
-          db.select({ count: sql<number>`count(*)` }).from(daos),
-          db.select({ count: sql<number>`count(*)` }).from(daos).where(eq(daos.isActive, true)),
-          db.select({ count: sql<number>`count(DISTINCT ${users.id})` }).from(daoMemberships),
-          db.select({ count: sql<number>`count(DISTINCT ${users.walletAddress})` }).from(users).where(sql`${users.walletAddress} IS NOT NULL`),
-          db.select({ count: sql<number>`count(*)` }).from(vaults),
-          db.select({ count: sql<number>`count(*)` }).from(vaults).where(eq(vaults.isActive, true)),
-          db.select({ total: sql<string>`COALESCE(SUM(CAST(${vaults.balance} AS NUMERIC)), 0)` }).from(vaults),
-          db.select({ count: sql<number>`count(*)` }).from(vaultTransactions),
-          db.select({ count: sql<number>`count(*)` }).from(tasks),
-          db.select({ total: sql<string>`COALESCE(SUM(CAST(${vaultTransactions.feeAmount} AS NUMERIC)), 0)` }).from(vaultTransactions),
-        ]);
+        const result = await db.execute(sql`
+          WITH dao_stats AS (
+            SELECT COUNT(*)::int AS total, COUNT(*) FILTER (WHERE status = 'active')::int AS active
+            FROM ${daos}
+          ),
+          member_stats AS (
+            SELECT COUNT(DISTINCT user_id)::int AS total_members FROM ${daoMemberships}
+          ),
+          wallet_stats AS (
+            SELECT COUNT(DISTINCT wallet_address)::int AS active_wallets
+            FROM ${users} WHERE wallet_address IS NOT NULL
+          ),
+          vault_stats AS (
+            SELECT COUNT(*)::int AS total,
+                   COUNT(*) FILTER (WHERE is_active = true)::int AS active,
+                   COALESCE(SUM(balance::numeric), 0)::float AS tvl
+            FROM ${vaults}
+          ),
+          tx_stats AS (
+            SELECT COUNT(*)::int AS total,
+                   COALESCE(SUM(amount::numeric), 0)::float AS total_fees
+            FROM ${vaultTransactions}
+          ),
+          task_stats AS (
+            SELECT COUNT(*)::int AS active_agents FROM ${tasks}
+          )
+          SELECT dao_stats.total AS "totalDaos", dao_stats.active AS "activeDaos",
+                 member_stats.total_members AS "totalMembers", wallet_stats.active_wallets AS "activeWallets",
+                 vault_stats.total AS "totalVaults", vault_stats.active AS "activeVaults",
+                 vault_stats.tvl AS "totalTVL", tx_stats.total AS "totalTransactions",
+                 tx_stats.total_fees AS "totalFees", task_stats.active_agents AS "activeAgents"
+          FROM dao_stats, member_stats, wallet_stats, vault_stats, tx_stats, task_stats
+        `);
+        const overview = result.rows[0] as Record<string, string | number | null>;
 
         return {
           platformHealth: {
-            daos: totalDaos[0].count,
-            activeDaos: activeDaos[0].count,
-            totalMembers: totalMembers[0].count,
-            activeWallets: activeWallets[0].count,
+            daos: toNumber(overview.totalDaos),
+            activeDaos: toNumber(overview.activeDaos),
+            totalMembers: toNumber(overview.totalMembers),
+            activeWallets: toNumber(overview.activeWallets),
           },
           vaults: {
-            total: totalVaults[0].count,
-            active: activeVaults[0].count,
-            totalValue: parseFloat(totalTVL[0].total || '0'),
+            total: toNumber(overview.totalVaults),
+            active: toNumber(overview.activeVaults),
+            totalValue: toNumber(overview.totalTVL),
           },
           transactions: {
-            total: totalTransactions[0].count,
-            totalFees: parseFloat(totalFees[0].total || '0'),
+            total: toNumber(overview.totalTransactions),
+            totalFees: toNumber(overview.totalFees),
           },
           agents: {
-            active: agentCount[0].count,
+            active: toNumber(overview.activeAgents),
           },
         };
-      },
-      CACHE_TTL.SHORT
+      }
     );
 
     res.json({
@@ -110,21 +148,20 @@ router.get('/monitoring/dashboard-overview', requireSuperAdmin, async (req: Requ
 // GET /api/admin/monitoring/defi-protocols
 router.get('/monitoring/defi-protocols', requireSuperAdmin, async (req: Request, res: Response) => {
   try {
-    const protocols = await MetricsCacheService.getOrSet(
-      CACHE_KEYS.DEFI_PROTOCOLS,
+    const protocols = await getOrComputeMetrics(
+      'defi-protocols',
       async () => {
         return db.select({
           name: defiProtocolMetrics.protocolName,
           status: defiProtocolMetrics.status,
-          tvl: defiProtocolMetrics.totalValueLocked,
-          apy: defiProtocolMetrics.averageApy,
+          tvl: defiProtocolMetrics.tvl,
+          apy: defiProtocolMetrics.apy,
           pools: defiProtocolMetrics.poolCount,
           health: defiProtocolMetrics.healthScore,
         })
         .from(defiProtocolMetrics)
-        .orderBy(desc(defiProtocolMetrics.totalValueLocked));
-      },
-      CACHE_TTL.SHORT
+        .orderBy(desc(defiProtocolMetrics.tvl));
+      }
     );
 
     const totalTVL = protocols?.reduce((sum, p) => sum + (parseFloat(String(p.tvl || 0))), 0) || 0;
@@ -174,25 +211,24 @@ router.get('/monitoring/workers', requireSuperAdmin, async (req: Request, res: R
 // GET /api/admin/monitoring/cefi-exchanges
 router.get('/monitoring/cefi-exchanges', requireSuperAdmin, async (req: Request, res: Response) => {
   try {
-    const exchanges = await MetricsCacheService.getOrSet(
-      CACHE_KEYS.CEFI_EXCHANGES,
+    const exchanges = await getOrComputeMetrics(
+      'cefi-exchanges',
       async () => {
         return db.select({
           name: cefiExchangeMetrics.exchangeName,
           status: cefiExchangeMetrics.status,
-          tradingVolume: cefiExchangeMetrics.tradingVolume24h,
+          tradingVolume: cefiExchangeMetrics.tradingVolume,
           activeAccounts: cefiExchangeMetrics.activeAccounts,
-          fees: cefiExchangeMetrics.feesCollected24h,
+          fees: cefiExchangeMetrics.feesCollected,
           health: cefiExchangeMetrics.healthScore,
         })
         .from(cefiExchangeMetrics)
-        .orderBy(desc(cefiExchangeMetrics.tradingVolume24h));
-      },
-      CACHE_TTL.SHORT
+        .orderBy(desc(cefiExchangeMetrics.tradingVolume));
+      }
     );
 
     const totalVolume = exchanges?.reduce((sum, e) => sum + (parseFloat(String(e.tradingVolume || 0))), 0) || 0;
-    const totalAccounts = exchanges?.reduce((sum, e) => sum + (e.activeAccounts || 0), 0) || 0;
+    const totalAccounts = exchanges?.reduce((sum, e) => sum + toNumber(e.activeAccounts), 0) || 0;
     const totalFees = exchanges?.reduce((sum, e) => sum + (parseFloat(String(e.fees || 0))), 0) || 0;
 
     res.json({
@@ -212,34 +248,35 @@ router.get('/monitoring/cefi-exchanges', requireSuperAdmin, async (req: Request,
 // GET /api/admin/monitoring/health-status
 router.get('/monitoring/health-status', requireSuperAdmin, async (req: Request, res: Response) => {
   try {
-    const chains = await MetricsCacheService.getOrSet(
-      CACHE_KEYS.BLOCKCHAIN_HEALTH,
+    const chains = await getOrComputeMetrics(
+      'blockchain-health',
       async () => {
         return db.select({
           name: blockchainHealthMetrics.chainName,
           status: blockchainHealthMetrics.status,
-          latency: blockchainHealthMetrics.averageLatency,
-          nodeCount: blockchainHealthMetrics.activeNodeCount,
+          latency: blockchainHealthMetrics.latency,
+          nodeCount: blockchainHealthMetrics.nodeCount,
           alerts: blockchainHealthMetrics.alertCount,
+          health: blockchainHealthMetrics.healthScore,
         })
         .from(blockchainHealthMetrics)
-        .orderBy(desc(blockchainHealthMetrics.activeNodeCount));
-      },
-      CACHE_TTL.SHORT
+        .orderBy(desc(blockchainHealthMetrics.nodeCount));
+      }
     );
 
+    const system = SystemMetricsCollector.getSystemMetrics();
     const systemMetrics = {
-      cpuUsage: 42,
-      memoryUsage: 65,
-      diskUsage: 34,
-      networkLatency: 125,
-      databaseConnections: 245,
-      activeRequests: 1203,
+      ...system,
+      networkLatency: SystemMetricsCollector.getNetworkLatency(),
+      databaseConnections: null,
+      activeRequests: null,
     };
-
-    const overallHealth = 98;
-    const criticalAlerts = 0;
-    const warningAlerts = 2;
+    const healthScores = chains.map(chain => toNumber(chain.health)).filter(score => score > 0);
+    const overallHealth = healthScores.length > 0
+      ? Math.round(healthScores.reduce((sum, score) => sum + score, 0) / healthScores.length)
+      : null;
+    const criticalAlerts = chains.reduce((sum, chain) => sum + (chain.status === 'error' ? 1 : 0), 0);
+    const warningAlerts = chains.reduce((sum, chain) => sum + toNumber(chain.alerts), 0);
 
     res.json({
       chains: chains || [],
@@ -260,22 +297,21 @@ router.get('/monitoring/health-status', requireSuperAdmin, async (req: Request, 
 // GET /api/admin/monitoring/liquidity-pools
 router.get('/monitoring/liquidity-pools', requireSuperAdmin, async (req: Request, res: Response) => {
   try {
-    const pools = await MetricsCacheService.getOrSet(
-      CACHE_KEYS.LIQUIDITY_POOLS,
+    const pools = await getOrComputeMetrics(
+      'liquidity-pools',
       async () => {
         return db.select({
-          id: liquidityPoolMetrics.poolId,
+          id: liquidityPoolMetrics.poolAddress,
           name: liquidityPoolMetrics.poolName,
-          exchange: liquidityPoolMetrics.exchange,
-          liquidity: liquidityPoolMetrics.totalLiquidity,
-          spread: liquidityPoolMetrics.bidAskSpread,
+          exchange: liquidityPoolMetrics.exchangeName,
+          liquidity: liquidityPoolMetrics.liquidity,
+          spread: liquidityPoolMetrics.spread,
           health: liquidityPoolMetrics.healthScore,
           volume24h: liquidityPoolMetrics.volume24h,
         })
         .from(liquidityPoolMetrics)
-        .orderBy(desc(liquidityPoolMetrics.totalLiquidity));
-      },
-      CACHE_TTL.SHORT
+        .orderBy(desc(liquidityPoolMetrics.liquidity));
+      }
     );
 
     const totalLiquidity = pools?.reduce((sum, p) => sum + (parseFloat(String(p.liquidity || 0))), 0) || 0;
@@ -299,35 +335,27 @@ router.get('/monitoring/liquidity-pools', requireSuperAdmin, async (req: Request
 // GET /api/admin/monitoring/revenue
 router.get('/monitoring/revenue', requireSuperAdmin, async (req: Request, res: Response) => {
   try {
-    const metrics = await MetricsCacheService.getOrSet(
-      CACHE_KEYS.REVENUE_METRICS,
+    const metrics = await getOrComputeMetrics(
+      'revenue',
       async () => {
         const now = new Date();
         const thirtyDaysAgo = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
 
-        const [
-          transactionFees,
-          subscriptionRevenue,
-          vaultFees,
-        ] = await Promise.all([
-          db
-            .select({ total: sql<string>`COALESCE(SUM(CAST(${vaultTransactions.feeAmount} AS NUMERIC)), 0)` })
-            .from(vaultTransactions)
-            .where(gte(vaultTransactions.createdAt, thirtyDaysAgo)),
-          db
-            .select({ count: sql<number>`count(*)` })
-            .from(subscriptions)
-            .where(and(eq(subscriptions.status, 'active'), eq(subscriptions.plan, 'premium'))),
-          db
-            .select({ total: sql<string>`COALESCE(SUM(CAST(${vaults.maintenanceFee} AS NUMERIC)), 0)` })
-            .from(vaults),
-        ]);
+        const [revenue] = await db
+          .select({
+            transactionFees: sql<string>`COALESCE(SUM(${revenueMetrics.transactionFees}), 0)`,
+            subscriptionRevenue: sql<string>`COALESCE(SUM(${revenueMetrics.subscriptionRevenue}), 0)`,
+            vaultFees: sql<string>`COALESCE(SUM(${revenueMetrics.vaultFees}), 0)`,
+            serviceFees: sql<string>`COALESCE(SUM(${revenueMetrics.serviceFees}), 0)`,
+          })
+          .from(revenueMetrics)
+          .where(gte(revenueMetrics.date, thirtyDaysAgo));
 
         const revenueBreakdown = {
-          transactionFees: parseFloat(transactionFees[0].total || '0'),
-          subscriptionRevenue: (subscriptionRevenue[0].count * 99) || 0,
-          vaultFees: parseFloat(vaultFees[0].total || '0'),
-          serviceFees: 50000,
+          transactionFees: toNumber(revenue.transactionFees),
+          subscriptionRevenue: toNumber(revenue.subscriptionRevenue),
+          vaultFees: toNumber(revenue.vaultFees),
+          serviceFees: toNumber(revenue.serviceFees),
         };
 
         const totalRevenue = Object.values(revenueBreakdown).reduce((a, b) => a + b, 0);
@@ -336,10 +364,9 @@ router.get('/monitoring/revenue', requireSuperAdmin, async (req: Request, res: R
           totalRevenue,
           breakdown: revenueBreakdown,
           monthlyAverage: (totalRevenue / 30).toFixed(2),
-          growth: 12.5,
+          growth: null,
         };
-      },
-      CACHE_TTL.MEDIUM
+      }
     );
 
     res.json({
@@ -355,23 +382,22 @@ router.get('/monitoring/revenue', requireSuperAdmin, async (req: Request, res: R
 // GET /api/admin/monitoring/payments
 router.get('/monitoring/payments', requireSuperAdmin, async (req: Request, res: Response) => {
   try {
-    const paymentProviders = await MetricsCacheService.getOrSet(
-      CACHE_KEYS.PAYMENT_PROVIDERS,
+    const paymentProviders = await getOrComputeMetrics(
+      'payment-providers',
       async () => {
         return db.select({
           name: paymentProviderMetrics.providerName,
           status: paymentProviderMetrics.status,
-          transactionCount: paymentProviderMetrics.transactionCount24h,
+          transactionCount: paymentProviderMetrics.transactionCount,
           successRate: paymentProviderMetrics.successRate,
-          totalProcessed: paymentProviderMetrics.volumeProcessed24h,
+          totalProcessed: paymentProviderMetrics.totalProcessed,
         })
         .from(paymentProviderMetrics)
-        .orderBy(desc(paymentProviderMetrics.volumeProcessed24h));
-      },
-      CACHE_TTL.SHORT
+        .orderBy(desc(paymentProviderMetrics.totalProcessed));
+      }
     );
 
-    const totalTransactions = paymentProviders?.reduce((sum, p) => sum + (p.transactionCount || 0), 0) || 0;
+    const totalTransactions = paymentProviders?.reduce((sum, p) => sum + toNumber(p.transactionCount), 0) || 0;
     const totalProcessed = paymentProviders?.reduce((sum, p) => sum + (parseFloat(String(p.totalProcessed || 0))), 0) || 0;
     const avgSuccessRate = paymentProviders && paymentProviders.length > 0
       ? (paymentProviders.reduce((sum, p) => sum + (parseFloat(String(p.successRate || 0))), 0) / paymentProviders.length).toFixed(2)
@@ -394,38 +420,27 @@ router.get('/monitoring/payments', requireSuperAdmin, async (req: Request, res: 
 // GET /api/admin/monitoring/agents
 router.get('/monitoring/agents', requireSuperAdmin, async (req: Request, res: Response) => {
   try {
-    const agents = await MetricsCacheService.getOrSet(
-      CACHE_KEYS.AGENT_PERFORMANCE,
+    const agents = await getOrComputeMetrics(
+      'agent-performance',
       async () => {
-        const [
-          totalAgents,
-          activeTasks,
-          completedTasks,
-        ] = await Promise.all([
-          db.select({ count: sql<number>`count(*)` }).from(tasks),
-          db.select({ count: sql<number>`count(*)` }).from(tasks).where(eq(tasks.status, 'open')),
-          db.select({ count: sql<number>`count(*)` }).from(tasks).where(eq(tasks.status, 'completed')),
-        ]);
-
         return db.select({
           id: agentPerformanceMetrics.agentId,
           name: agentPerformanceMetrics.agentName,
           status: agentPerformanceMetrics.status,
-          tasksCompleted: agentPerformanceMetrics.tasksCompletedCount,
-          tasksActive: agentPerformanceMetrics.tasksActiveCount,
+          tasksCompleted: agentPerformanceMetrics.tasksCompleted,
+          tasksActive: agentPerformanceMetrics.tasksActive,
           successRate: agentPerformanceMetrics.successRate,
         })
         .from(agentPerformanceMetrics)
-        .orderBy(desc(agentPerformanceMetrics.tasksCompletedCount));
-      },
-      CACHE_TTL.SHORT
+        .orderBy(desc(agentPerformanceMetrics.tasksCompleted));
+      }
     );
 
     res.json({
       agents: agents || [],
       totalAgents: agents?.length || 0,
       activeAgents: agents?.filter(a => a.status === 'active').length || 0,
-      systemLoad: 77,
+      systemLoad: getSystemLoadAverage(),
       timestamp: new Date(),
     });
   } catch (error) {
@@ -442,53 +457,52 @@ router.get('/monitoring/agents', requireSuperAdmin, async (req: Request, res: Re
 // GET /api/admin/monitoring/platform-growth
 router.get('/monitoring/platform-growth', requireSuperAdmin, async (req: Request, res: Response) => {
   try {
-    const growthData = await MetricsCacheService.getOrSet(
-      CACHE_KEYS.PLATFORM_GROWTH,
+    const growthData = await getOrComputeMetrics(
+      'platform-growth',
       async () => {
         const now = new Date();
         const thirtyDaysAgo = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
 
-        const [
-          totalUsers,
-          newUsersThisMonth,
-          totalVaults,
-          newVaultsThisMonth,
-          totalDaos,
-          newDaosThisMonth,
-        ] = await Promise.all([
-          db.select({ count: sql<number>`count(*)` }).from(users),
-          db.select({ count: sql<number>`count(*)` }).from(users).where(gte(users.createdAt, thirtyDaysAgo)),
-          db.select({ count: sql<number>`count(*)` }).from(vaults),
-          db.select({ count: sql<number>`count(*)` }).from(vaults).where(gte(vaults.createdAt, thirtyDaysAgo)),
-          db.select({ count: sql<number>`count(*)` }).from(daos),
-          db.select({ count: sql<number>`count(*)` }).from(daos).where(gte(daos.createdAt, thirtyDaysAgo)),
-        ]);
-
-        const totalTVL = await db.select({ total: sql<string>`COALESCE(SUM(CAST(${vaults.balance} AS NUMERIC)), 0)` }).from(vaults);
+        const result = await db.execute(sql`
+          SELECT
+            (SELECT COUNT(*)::int FROM ${users}) AS "totalUsers",
+            (SELECT COUNT(*)::int FROM ${users} WHERE created_at >= ${thirtyDaysAgo}) AS "newUsers",
+            (SELECT COUNT(*)::int FROM ${vaults}) AS "totalVaults",
+            (SELECT COUNT(*)::int FROM ${vaults} WHERE created_at >= ${thirtyDaysAgo}) AS "newVaults",
+            (SELECT COUNT(*)::int FROM ${daos}) AS "totalDaos",
+            (SELECT COUNT(*)::int FROM ${daos} WHERE created_at >= ${thirtyDaysAgo}) AS "newDaos",
+            (SELECT COALESCE(SUM(balance::numeric), 0)::float FROM ${vaults}) AS "totalTVL"
+        `);
+        const growth = result.rows[0] as Record<string, string | number | null>;
+        const totalUsers = toNumber(growth.totalUsers);
+        const newUsers = toNumber(growth.newUsers);
+        const totalVaults = toNumber(growth.totalVaults);
+        const newVaults = toNumber(growth.newVaults);
+        const totalDaos = toNumber(growth.totalDaos);
+        const newDaos = toNumber(growth.newDaos);
 
         return {
           users: {
-            total: totalUsers[0].count,
-            newThisMonth: newUsersThisMonth[0].count,
-            growth: ((newUsersThisMonth[0].count / totalUsers[0].count) * 100).toFixed(1),
+            total: totalUsers,
+            newThisMonth: newUsers,
+            growth: calculateGrowthRate(newUsers, totalUsers),
           },
           vaults: {
-            total: totalVaults[0].count,
-            newThisMonth: newVaultsThisMonth[0].count,
-            growth: ((newVaultsThisMonth[0].count / totalVaults[0].count) * 100).toFixed(1),
+            total: totalVaults,
+            newThisMonth: newVaults,
+            growth: calculateGrowthRate(newVaults, totalVaults),
           },
           daos: {
-            total: totalDaos[0].count,
-            newThisMonth: newDaosThisMonth[0].count,
-            growth: ((newDaosThisMonth[0].count / totalDaos[0].count) * 100).toFixed(1),
+            total: totalDaos,
+            newThisMonth: newDaos,
+            growth: calculateGrowthRate(newDaos, totalDaos),
           },
           platformMetrics: {
-            totalTVL: parseFloat(totalTVL[0].total || '0'),
-            monthlyActiveUsers: totalUsers[0].count,
+            totalTVL: toNumber(growth.totalTVL),
+            monthlyActiveUsers: newUsers,
           },
         };
-      },
-      CACHE_TTL.MEDIUM
+      }
     );
 
     res.json({
@@ -504,31 +518,30 @@ router.get('/monitoring/platform-growth', requireSuperAdmin, async (req: Request
 // GET /api/admin/monitoring/api-usage
 router.get('/monitoring/api-usage', requireSuperAdmin, async (req: Request, res: Response) => {
   try {
-    const apiMetrics = await MetricsCacheService.getOrSet(
-      CACHE_KEYS.API_USAGE,
+    const apiMetrics = await getOrComputeMetrics(
+      'api-usage',
       async () => {
         const endpointData = await db.select({
-          name: apiUsageMetrics.endpointName,
-          calls: apiUsageMetrics.callCount24h,
-          avgLatency: apiUsageMetrics.averageLatency,
+          name: apiUsageMetrics.topEndpoint,
+          calls: apiUsageMetrics.requestsThisHour,
+          avgLatency: apiUsageMetrics.averageResponseTime,
           errorRate: apiUsageMetrics.errorRate,
         })
         .from(apiUsageMetrics)
-        .orderBy(desc(apiUsageMetrics.callCount24h))
+        .orderBy(desc(apiUsageMetrics.requestsThisHour))
         .limit(10);
 
         const totalRequests = await db.select({
-          count: sql<number>`SUM(CAST(${apiUsageMetrics.callCount24h} AS NUMERIC))`,
+          count: sql<number>`SUM(CAST(${apiUsageMetrics.totalRequests} AS NUMERIC))`,
         }).from(apiUsageMetrics);
 
         return {
-          totalRequests: totalRequests[0].count || 0,
+          totalRequests: toNumber(totalRequests[0].count),
           endpoints: endpointData || [],
           developers: 2340,
           errorRate: 0.23,
         };
-      },
-      CACHE_TTL.SHORT
+      }
     );
 
     res.json({
@@ -543,89 +556,91 @@ router.get('/monitoring/api-usage', requireSuperAdmin, async (req: Request, res:
 
 // GET /api/admin/monitoring/tokenomics
 router.get('/monitoring/tokenomics', requireSuperAdmin, async (req: Request, res: Response) => {
-  try {
-    const tokenomics = {
-      tokenInfo: {
-        name: 'MTAA Token',
-        symbol: 'MTAA',
-        decimals: 18,
-        currentPrice: 2.45,
-        priceChange24h: 5.2,
-        marketCap: 12300000,
-      },
-      supply: {
-        total: 5000000,
-        circulating: 2500000,
-        locked: 1200000,
-        burned: 300000,
-      },
-      holders: {
-        total: 15420,
-        topHolders: 150,
-        averageHoldingSize: 162,
-      },
-      distribution: {
-        team: 15,
-        community: 40,
-        liquidity: 20,
-        marketing: 10,
-        treasury: 15,
-      },
-      emissions: {
-        dailyEmission: 5000,
-        monthlyEmission: 150000,
-        emissionSchedule: 'Progressive decrease',
-      },
-    };
+  const chainId = Number(process.env.MTAA_CHAIN_ID || 0);
+  const tokenAddress = process.env.MTAA_TOKEN_ADDRESS?.toLowerCase();
+  if (!chainId || !tokenAddress) {
+    return res.status(503).json({ error: 'MTAA token deployment is not configured', available: false, timestamp: new Date() });
+  }
 
+  try {
+    const result = await pool.query(
+      `SELECT * FROM tokenomics_snapshots
+       WHERE chain_id = $1 AND token_address = $2
+       ORDER BY created_at DESC LIMIT 1`,
+      [chainId, tokenAddress]
+    );
+    const snapshot = result.rows[0];
+    if (!snapshot) {
+      return res.status(503).json({ error: 'MTAA tokenomics indexer has not produced a snapshot', available: false, timestamp: new Date() });
+    }
     res.json({
-      ...tokenomics,
+      available: true,
+      deployment: { chainId, tokenAddress },
+      snapshot: {
+        blockNumber: Number(snapshot.block_number),
+        totalSupply: String(snapshot.total_supply),
+        totalBurned: String(snapshot.total_burned),
+        totalStaked: String(snapshot.total_staked),
+        lockedSupply: String(snapshot.locked_supply),
+        circulatingSupply: String(snapshot.circulating_supply),
+        holderCount: Number(snapshot.holder_count),
+        transferCount: Number(snapshot.transfer_count),
+        transferVolume: String(snapshot.transfer_volume),
+        rewardsEmitted: String(snapshot.rewards_emitted),
+        rewardsClaimed: String(snapshot.rewards_claimed),
+        vestedReleased: String(snapshot.vested_released),
+        price: snapshot.price,
+        priceSource: snapshot.price_source,
+        asOf: snapshot.created_at,
+      },
       timestamp: new Date(),
     });
   } catch (error) {
-    logger.error('Tokenomics error:', error);
-    res.status(500).json({ error: 'Failed to fetch tokenomics' });
+    logger.error('Tokenomics metrics error:', error);
+    res.status(500).json({ error: 'Failed to fetch tokenomics data' });
   }
 });
 
 // GET /api/admin/monitoring/support-tickets
 router.get('/monitoring/support-tickets', requireSuperAdmin, async (req: Request, res: Response) => {
   try {
-    const supportTickets = {
-      summary: {
-        total: 2340,
-        open: 145,
-        inProgress: 82,
-        resolved: 2100,
-        closed: 13,
-      },
-      categories: [
-        { category: 'Technical', count: 450, avgResolutionTime: 2.5 },
-        { category: 'Billing', count: 380, avgResolutionTime: 1.2 },
-        { category: 'Account', count: 620, avgResolutionTime: 0.8 },
-        { category: 'Feature Request', count: 520, avgResolutionTime: 3.5 },
-        { category: 'Bug Report', count: 370, avgResolutionTime: 4.2 },
-      ],
-      satisfaction: {
-        avgScore: 4.3,
-        satisfied: 1890,
-        neutral: 380,
-        unsatisfied: 70,
-      },
-      responseMetrics: {
-        avgFirstResponseTime: 0.5,
-        avgResolutionTime: 2.1,
-        resolutionRate: 89.7,
-      },
-    };
+    const metrics = await getOrComputeMetrics('support-tickets', async () => {
+      const [latest] = await db.select({
+        total: supportTicketMetrics.totalTickets,
+        open: supportTicketMetrics.openTickets,
+        inProgress: supportTicketMetrics.inProgressTickets,
+        resolved: supportTicketMetrics.resolvedTickets,
+        closed: supportTicketMetrics.closedTickets,
+        avgFirstResponseTime: supportTicketMetrics.avgFirstResponseTime,
+        avgResolutionTime: supportTicketMetrics.avgResolutionTime,
+        resolutionRate: supportTicketMetrics.resolutionRate,
+        satisfactionScore: supportTicketMetrics.satisfactionScore,
+        date: supportTicketMetrics.date,
+      }).from(supportTicketMetrics).orderBy(desc(supportTicketMetrics.date)).limit(1);
+      return latest || null;
+    });
 
+    if (!metrics) {
+      return res.status(503).json({ error: 'Support metrics are not available', available: false, timestamp: new Date() });
+    }
     res.json({
-      ...supportTickets,
+      available: true,
+      summary: {
+        total: toNumber(metrics.total), open: toNumber(metrics.open), inProgress: toNumber(metrics.inProgress),
+        resolved: toNumber(metrics.resolved), closed: toNumber(metrics.closed),
+      },
+      metrics: {
+        avgFirstResponseTime: toNumber(metrics.avgFirstResponseTime),
+        avgResolutionTime: toNumber(metrics.avgResolutionTime),
+        resolutionRate: toNumber(metrics.resolutionRate),
+        satisfactionScore: toNumber(metrics.satisfactionScore),
+      },
+      asOf: metrics.date,
       timestamp: new Date(),
     });
   } catch (error) {
-    logger.error('Support tickets error:', error);
-    res.status(500).json({ error: 'Failed to fetch support tickets' });
+    logger.error('Support ticket metrics error:', error);
+    res.status(500).json({ error: 'Failed to fetch support ticket metrics' });
   }
 });
 

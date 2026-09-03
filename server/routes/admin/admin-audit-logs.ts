@@ -6,18 +6,53 @@
  * Power Checklist: #4 Authority Transparency, #8 Post-Action Narrative
  */
 
-import { Router, Request, Response } from 'express';
+import type { Request, Response } from 'express';
+import { Router } from 'express';
 import auditLoggingService from '../../services/auditLoggingService';
+import { requireRole } from '../../middleware/rbac';
+
+type AuthenticatedRequest = Request & {
+  user?: {
+    id?: string;
+    role?: string;
+    roles?: string[];
+  };
+};
 
 const router = Router();
+const requireSuperAdmin = requireRole('super_admin');
+
+function getAdminId(req: AuthenticatedRequest): string | null {
+  return req.user?.id ?? null;
+}
+
+function parseIntegerQuery(value: unknown, defaultValue: number, maxValue = Number.MAX_SAFE_INTEGER): number {
+  const parsed = Number.parseInt(String(value ?? defaultValue), 10);
+  if (!Number.isFinite(parsed)) return defaultValue;
+  if (parsed < 0) return 0;
+  return Math.min(parsed, maxValue);
+}
+
+function parseNaturalQuery(value: unknown, defaultValue: number, maxValue = Number.MAX_SAFE_INTEGER): number {
+  const parsed = Number.parseInt(String(value ?? defaultValue), 10);
+  if (!Number.isFinite(parsed)) return defaultValue;
+  if (parsed < 1) return defaultValue;
+  return Math.min(parsed, maxValue);
+}
+
+function parseDateQuery(value: unknown): Date | null {
+  if (value === undefined || value === null || value === '') return null;
+  const date = new Date(String(value));
+  return Number.isFinite(date.getTime()) ? date : null;
+}
 
 /**
  * GET /api/admin/audit-logs
  * Query audit logs with flexible filtering
  */
-router.get('/', async (req: Request, res: Response) => {
+router.get('/', requireSuperAdmin, async (req: AuthenticatedRequest, res: Response) => {
   try {
-    const adminId = (req as any).adminId;
+    const adminId = getAdminId(req);
     if (!adminId) {
       return res.status(403).json({ error: 'Unauthorized' });
     }
@@ -38,8 +73,8 @@ router.get('/', async (req: Request, res: Response) => {
 
     // Parse filters
     const filters: any = {
-      limit: Math.min(parseInt(limit as string), 1000),
-      offset: parseInt(offset as string),
+      limit: parseNaturalQuery(limit, 50, 1000),
+      offset: parseIntegerQuery(offset, 0),
     };
 
     if (actionType) {
@@ -71,11 +106,13 @@ router.get('/', async (req: Request, res: Response) => {
     }
 
     if (since) {
-      filters.sinceDate = new Date(since as string);
+      const parsedSince = parseDateQuery(since);
+      if (parsedSince) filters.sinceDate = parsedSince;
     }
 
     if (until) {
-      filters.untilDate = new Date(until as string);
+      const parsedUntil = parseDateQuery(until);
+      if (parsedUntil) filters.untilDate = parsedUntil;
     }
 
     const { logs, total } = await auditLoggingService.queryAuditLogs(filters);
@@ -94,38 +131,12 @@ router.get('/', async (req: Request, res: Response) => {
 });
 
 /**
- * GET /api/admin/audit-logs/:logId
- * Get full details of a specific audit log entry
- */
-router.get('/:logId', async (req: Request, res: Response) => {
-  try {
-    const adminId = (req as any).adminId;
-    if (!adminId) {
-      return res.status(403).json({ error: 'Unauthorized' });
-    }
-
-    const { logId } = req.params;
-
-    const log = await auditLoggingService.getActionDetails(logId);
-
-    if (!log) {
-      return res.status(404).json({ error: 'Log not found' });
-    }
-
-    res.json(log);
-  } catch (error) {
-    console.error('Error getting audit log details:', error);
-    res.status(500).json({ error: 'Internal server error' });
-  }
-});
-
-/**
  * GET /api/admin/audit-logs/actor/:actorId
  * Get all actions by a specific actor
  */
-router.get('/actor/:actorId', async (req: Request, res: Response) => {
+router.get('/actor/:actorId', requireSuperAdmin, async (req: AuthenticatedRequest, res: Response) => {
   try {
-    const adminId = (req as any).adminId;
+    const adminId = getAdminId(req);
     if (!adminId) {
       return res.status(403).json({ error: 'Unauthorized' });
     }
@@ -134,8 +145,8 @@ router.get('/actor/:actorId', async (req: Request, res: Response) => {
     const { actionType, since = '7', limit = '50', offset = '0' } = req.query;
 
     const filters: any = {
-      limit: Math.min(parseInt(limit as string), 1000),
-      offset: parseInt(offset as string),
+      limit: parseNaturalQuery(limit, 50, 1000),
+      offset: parseIntegerQuery(offset, 0),
     };
 
     if (actionType) {
@@ -143,7 +154,7 @@ router.get('/actor/:actorId', async (req: Request, res: Response) => {
     }
 
     if (since) {
-      const days = parseInt(since as string);
+      const days = parseIntegerQuery(since, 7);
       filters.since = new Date(Date.now() - days * 24 * 60 * 60 * 1000);
     }
 
@@ -164,9 +175,9 @@ router.get('/actor/:actorId', async (req: Request, res: Response) => {
  * GET /api/admin/audit-logs/resource/:targetType/:targetId
  * Get all actions affecting a specific resource
  */
-router.get('/resource/:targetType/:targetId', async (req: Request, res: Response) => {
+router.get('/resource/:targetType/:targetId', requireSuperAdmin, async (req: AuthenticatedRequest, res: Response) => {
   try {
-    const adminId = (req as any).adminId;
+    const adminId = getAdminId(req);
     if (!adminId) {
       return res.status(403).json({ error: 'Unauthorized' });
     }
@@ -175,12 +186,12 @@ router.get('/resource/:targetType/:targetId', async (req: Request, res: Response
     const { since = '30', limit = '50', offset = '0' } = req.query;
 
     const filters: any = {
-      limit: Math.min(parseInt(limit as string), 1000),
-      offset: parseInt(offset as string),
+      limit: parseNaturalQuery(limit, 50, 1000),
+      offset: parseIntegerQuery(offset, 0),
     };
 
     if (since) {
-      const days = parseInt(since as string);
+      const days = parseIntegerQuery(since, 30);
       filters.since = new Date(Date.now() - days * 24 * 60 * 60 * 1000);
     }
 
@@ -202,17 +213,19 @@ router.get('/resource/:targetType/:targetId', async (req: Request, res: Response
  * GET /api/admin/audit-logs/stats
  * Get audit statistics for a time period
  */
-router.get('/stats/period', async (req: Request, res: Response) => {
+router.get('/stats/period', requireSuperAdmin, async (req: AuthenticatedRequest, res: Response) => {
   try {
-    const adminId = (req as any).adminId;
+    const adminId = getAdminId(req);
     if (!adminId) {
       return res.status(403).json({ error: 'Unauthorized' });
     }
 
     const { since = '7', until = '0' } = req.query;
 
-    const sinceDate = new Date(Date.now() - parseInt(since as string) * 24 * 60 * 60 * 1000);
-    const untilDate = new Date(Date.now() - parseInt(until as string) * 24 * 60 * 60 * 1000);
+    const sinceDays = parseIntegerQuery(since, 7);
+    const untilDays = parseIntegerQuery(until, 0);
+    const sinceDate = new Date(Date.now() - sinceDays * 24 * 60 * 60 * 1000);
+    const untilDate = new Date(Date.now() - untilDays * 24 * 60 * 60 * 1000);
 
     const stats = await auditLoggingService.getAuditStats({
       since: sinceDate,
@@ -228,6 +241,32 @@ router.get('/stats/period', async (req: Request, res: Response) => {
     });
   } catch (error) {
     console.error('Error getting audit stats:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+/**
+ * GET /api/admin/audit-logs/:logId
+ * Get full details of a specific audit log entry
+ */
+router.get('/:logId', requireSuperAdmin, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const adminId = getAdminId(req);
+    if (!adminId) {
+      return res.status(403).json({ error: 'Unauthorized' });
+    }
+
+    const { logId } = req.params;
+
+    const log = await auditLoggingService.getActionDetails(logId);
+
+    if (!log) {
+      return res.status(404).json({ error: 'Log not found' });
+    }
+
+    res.json(log);
+  } catch (error) {
+    console.error('Error getting audit log details:', error);
     res.status(500).json({ error: 'Internal server error' });
   }
 });

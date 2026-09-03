@@ -1,16 +1,146 @@
-import { Router, Request, Response } from 'express';
+/**
+ * Admin endpoints for managing Agents and Elders
+ */
+import { Router } from 'express';
+import type { Request, Response, NextFunction } from 'express';
+import { z } from 'zod';
 import { db } from '../../db';
 import { logger } from '../../utils/logger';
-import { daoMemberships, daos, users, auditLogs } from '../../../shared/schema';
-import { eq, desc, sql, and, count } from 'drizzle-orm';
-import { logConsolidatedAuditEvent, AuditEventType } from '../../services/auditConsolidated';
+import { daoMemberships, auditLogs } from '../../../shared/schema';
+import { eq, desc, sql, and } from 'drizzle-orm';
+import { logConsolidatedAuditEvent } from '../../services/auditConsolidated';
+import { logAuditEvent, AuditEventType } from '../../services/auditLogging';
 import * as agentsEldersService from '../../db/services/agentsEldersService';
 import { getEventEmitter } from '../../middleware/websocket-event-emitter';
+import { authenticateToken } from '../../middleware/auth';
+import { requireRole } from '../../middleware/rbac';
+import { rateLimitPerUser } from '../../middleware/rateLimit';
+
+interface BulkUpdateItem {
+  id: string;
+  type: 'elder' | 'agent';
+  configuration: Record<string, unknown>;
+}
+
+interface BulkUpdateRequest {
+  updates: BulkUpdateItem[];
+}
+
+export const bulkUpdateRequestSchema = z.object({
+  updates: z.array(
+    z.object({
+      id: z.string().min(1),
+      type: z.enum(['elder', 'agent']),
+      configuration: z.record(z.any()),
+    })
+  ),
+});
+
+const safeLogAuditEvent = (event: Parameters<typeof logAuditEvent>[0]) => {
+  return logAuditEvent(event).catch((err: unknown) => {
+    logger.error('Audit log failed:', err);
+  });
+};
+
+
+async function ensureAdminAccess(req: Request): Promise<string> {
+  const userId = (req.user as any)?.id as string | undefined;
+  const roleValues = (req.user as any)?.roles ?? [];
+  const roles = Array.isArray(roleValues) ? roleValues : [roleValues];
+
+  if (userId && (roles.includes('super_admin') || roles.includes('admin') || roles.includes('owner'))) {
+    await logConsolidatedAuditEvent({
+      actorId: userId,
+      actionType: AuditEventType.ADMIN_USER_LIST_ACCESSED,
+      targetType: 'admin_access',
+      targetId: userId,
+      actionCategory: 'admin',
+      result: 'success',
+      severity: 'low',
+      metadata: { permissionCheck: 'admin-role' },
+    });
+    return userId;
+  }
+
+  if (!userId) {
+    throw new Error('Authentication required for admin configuration access');
+  }
+
+  const membership = await db
+    .select()
+    .from(daoMemberships)
+    .where(eq(daoMemberships.userId, userId))
+    .limit(1);
+
+  const hasAdminMembership = membership.some((record) => ['admin', 'owner', 'super_admin'].includes(String(record.role || '').toLowerCase()));
+  if (!hasAdminMembership) {
+    await logConsolidatedAuditEvent({
+      actorId: userId,
+      actionType: AuditEventType.PERMISSION_DENIED,
+      targetType: 'admin_access',
+      targetId: userId,
+      actionCategory: 'security',
+      result: 'failed',
+      severity: 'high',
+      metadata: { reason: 'missing_admin_role' },
+    });
+    throw new Error('Administrator access required');
+  }
+
+  return userId;
+}
 
 const router = Router();
 
 /**
- * Agents & Elders Management Routes (Phase 5)
+ * ============================================================================
+ * MIDDLEWARE DEFINITIONS
+ * ============================================================================
+ */
+
+// Require admin or super_admin role
+const requireAdmin = requireRole('admin', 'super_admin');
+const requireSuperAdmin = requireRole('super_admin');
+
+/**
+ * Audit logging middleware for admin access
+ */
+const auditAdminAccess = async (req: Request, res: Response, next: NextFunction) => {
+  const userId = (req.user as any)?.id || 'unknown';
+  const endpoint = req.originalUrl || req.path;
+  
+  await logConsolidatedAuditEvent({
+    actorId: userId,
+    actionType: AuditEventType.ADMIN_USER_LIST_ACCESSED,
+    actionCategory: 'admin',
+    targetType: 'admin_endpoint',
+    targetId: endpoint,
+    result: 'success',
+    severity: 'low',
+    metadata: {
+      endpoint,
+      method: req.method,
+      timestamp: new Date().toISOString(),
+    },
+  }).catch(err => logger.warn('Failed to log admin access:', err));
+
+  next();
+};
+
+/**
+ * Rate limiting middleware for admin operations
+ * - READ operations: 60 requests per 10 minutes per user
+ * - WRITE operations: 20 requests per 10 minutes per user
+ * - SENSITIVE operations (system config): 5 requests per hour per user
+ */
+const adminReadLimiter = rateLimitPerUser('admin-read', 60, '10min');
+const adminWriteLimiter = rateLimitPerUser('admin-write', 20, '10min');
+const adminSystemLimiter = rateLimitPerUser('admin-system', 5, '1h');
+
+/**
+ * ============================================================================
+ * AGENTS & ELDERS MANAGEMENT ROUTES (PHASE 5)
+ * ============================================================================
  * 
  * SUPER ADMIN:
  * - View all agents and elders across all DAOs
@@ -30,11 +160,17 @@ const router = Router();
 /**
  * GET /api/admin/agents-elders/elders/overview
  * Get overview of all three Elders with their stats and roles
+ * REQUIRES: admin or super_admin role
+ * RATE LIMITED: 60 requests per 10 minutes
  */
-router.get('/elders/overview', async (req: Request, res: Response) => {
+router.get('/elders/overview', [
+  authenticateToken,
+  requireAdmin,
+  adminReadLimiter,
+  auditAdminAccess,
+], async (req: Request, res: Response) => {
   try {
-    const adminId = (req.user as any)?.id;
-    const userRole = (req.user as any)?.roles;
+    const adminId = await ensureAdminAccess(req);
 
     // Fetch all elders from database
     const elders = await agentsEldersService.getAllElders();
@@ -78,167 +214,54 @@ router.get('/elders/overview', async (req: Request, res: Response) => {
 /**
  * GET /api/admin/agents-elders/elders/:elderId/details
  * Get detailed statistics for a specific Elder
+ * REQUIRES: admin or super_admin role
+ * RATE LIMITED: 60 requests per 10 minutes
  */
-router.get('/elders/:elderId/details', async (req: Request, res: Response) => {
+router.get('/elders/:elderId/details', [
+  authenticateToken,
+  requireAdmin,
+  adminReadLimiter,
+  auditAdminAccess,
+], async (req: Request, res: Response) => {
   try {
     const { elderId } = req.params;
 
-    const elderDetails: Record<string, any> = {
-      'eld-kaizen': {
-        id: 'eld-kaizen',
-        name: 'KAIZEN - Optimization Elder',
-        description: 'Continuous improvement specialist for governance processes',
-        type: 'optimization',
-        version: '2.1.0',
-        lastUpdate: new Date(Date.now() - 24 * 60 * 60 * 1000),
-        stats: {
-          totalProposalsAnalyzed: 245,
-          optimizationsGenerated: 87,
-          implementedOptimizations: 63,
-          implementationRate: 0.72,
-          efficiencyGainAverage: 0.35,
-          processTimeReduction: '45%',
-          costSavings: '$12,450'
-        },
-        recentOptimizations: [
-          {
-            id: 'opt-1',
-            proposal: 'Voting Period Reduction',
-            daos: 5,
-            impact: 'Reduced avg voting time from 3 days to 2 days',
-            implementedDate: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000)
-          },
-          {
-            id: 'opt-2',
-            proposal: 'Parallel Voting Streams',
-            daos: 3,
-            impact: 'Enabled simultaneous voting on related proposals',
-            implementedDate: new Date(Date.now() - 14 * 24 * 60 * 60 * 1000)
-          },
-          {
-            id: 'opt-3',
-            proposal: 'Smart Quorum Adjustment',
-            daos: 8,
-            impact: 'Dynamic quorum based on member availability',
-            implementedDate: new Date(Date.now() - 21 * 24 * 60 * 60 * 1000)
-          }
-        ],
-        performanceMetrics: {
-          accuracy: 0.94,
-          timeToAnalyze: '2.4 hours avg',
-          costPerAnalysis: '$0.45',
-          daosServed: 42,
-          totalProposalsImpacted: 245
-        }
-      },
-      'eld-scry': {
-        id: 'eld-scry',
-        name: 'SCRY - Security Elder',
-        description: 'Threat detection and risk management specialist',
-        type: 'security',
-        version: '3.0.1',
-        lastUpdate: new Date(Date.now() - 12 * 60 * 60 * 1000),
-        stats: {
-          threatsDetected: 156,
-          risksIdentified: 342,
-          complianceIssuesFound: 12,
-          falsePositiveRate: 0.05,
-          avgResponseTime: '15 minutes',
-          mitigationSuccessRate: 0.96
-        },
-        recentThreats: [
-          {
-            id: 'threat-1',
-            type: 'CENTRALIZATION_RISK',
-            severity: 'high',
-            dao: 'dao-123',
-            description: '3 admins control 75% of voting power',
-            detectedDate: new Date(Date.now() - 2 * 60 * 60 * 1000),
-            status: 'active'
-          },
-          {
-            id: 'threat-2',
-            type: 'PROPOSAL_ATTACK',
-            severity: 'critical',
-            dao: 'dao-456',
-            description: 'Suspicious voting pattern detected',
-            detectedDate: new Date(Date.now() - 5 * 60 * 60 * 1000),
-            status: 'mitigated'
-          },
-          {
-            id: 'threat-3',
-            type: 'COMPLIANCE_VIOLATION',
-            severity: 'medium',
-            dao: 'dao-789',
-            description: 'Proposal violates treasury allocation rules',
-            detectedDate: new Date(Date.now() - 1 * 24 * 60 * 60 * 1000),
-            status: 'active'
-          }
-        ],
-        threatTrends: {
-          last7days: 42,
-          last30days: 156,
-          trend: 'increasing',
-          topThreatType: 'CENTRALIZATION_RISK'
-        }
-      },
-      'eld-lumen': {
-        id: 'eld-lumen',
-        name: 'LUMEN - Ethics Elder',
-        description: 'Ethical review and fairness assessment specialist',
-        type: 'ethics',
-        version: '1.8.2',
-        lastUpdate: new Date(Date.now() - 36 * 60 * 60 * 1000),
-        stats: {
-          proposalsReviewed: 198,
-          ethicalConcernsRaised: 34,
-          biasDetected: 8,
-          fairnessApprovalRate: 0.91,
-          ethicsScore: 0.94,
-          recommendedForRejection: 5
-        },
-        recentReviews: [
-          {
-            id: 'review-1',
-            proposal: 'Funding Allocation Change',
-            ethicsScore: 0.88,
-            concerns: ['May disproportionately impact new members'],
-            recommendation: 'Approve with modifications',
-            reviewDate: new Date(Date.now() - 3 * 60 * 60 * 1000)
-          },
-          {
-            id: 'review-2',
-            proposal: 'Member Role Hierarchy',
-            ethicsScore: 0.72,
-            concerns: ['Potential discrimination', 'Unfair advantage to early members'],
-            recommendation: 'Reject and revise',
-            reviewDate: new Date(Date.now() - 8 * 60 * 60 * 1000)
-          },
-          {
-            id: 'review-3',
-            proposal: 'Community Fund Distribution',
-            ethicsScore: 0.96,
-            concerns: [],
-            recommendation: 'Approve',
-            reviewDate: new Date(Date.now() - 15 * 60 * 60 * 1000)
-          }
-        ],
-        biasAnalysis: {
-          genderBias: 0.02,
-          ageBias: 0.03,
-          economicBias: 0.04,
-          geographicBias: 0.01,
-          overallBias: 0.025
-        }
-      }
-    };
-
-    const details = elderDetails[elderId];
-    if (!details) {
+    // Query elder from database instead of hardcoded mock
+    const elder = await agentsEldersService.getElderById(elderId);
+    if (!elder) {
       return res.status(404).json({ error: 'Elder not found' });
     }
 
-    res.json(details);
+    // Query associated activity/metrics from audit logs
+    const recentActivity = await db
+      .select()
+      .from(auditLogs)
+      .where(
+        and(
+          eq(auditLogs.resourceId, elderId),
+          desc(auditLogs.createdAt)
+        )
+      )
+      .limit(10);
+
+    res.json({
+      id: elder.id,
+      name: elder.name,
+      type: elder.type,
+      status: elder.status || 'online',
+      version: elder.version || '1.0.0',
+      lastUpdate: elder.updatedAt,
+      configuration: elder.configuration || {},
+      stats: elder.stats || {},
+      recentActivity: recentActivity.map(log => ({
+        id: log.id,
+        action: log.action,
+        timestamp: log.createdAt,
+        result: log.status === 200 ? 'success' : 'failed',
+        details: log.details
+      })),
+      performanceMetrics: elder.performanceMetrics || {}
+    });
   } catch (error) {
     logger.error('Error fetching elder details:', error);
     res.status(500).json({ error: 'Failed to fetch elder details' });
@@ -248,37 +271,55 @@ router.get('/elders/:elderId/details', async (req: Request, res: Response) => {
 /**
  * GET /api/admin/agents-elders/elders/:elderId/history
  * Get activity history for a specific Elder
+ * REQUIRES: admin or super_admin role
+ * RATE LIMITED: 60 requests per 10 minutes
  */
-router.get('/elders/:elderId/history', async (req: Request, res: Response) => {
+router.get('/elders/:elderId/history', [
+  authenticateToken,
+  requireAdmin,
+  adminReadLimiter,
+  auditAdminAccess,
+], async (req: Request, res: Response) => {
   try {
     const { elderId } = req.params;
     const { days = '30', limit = '100' } = req.query;
 
     const periodDays = parseInt(days as string);
     const resultLimit = parseInt(limit as string);
+    const startDate = new Date(Date.now() - periodDays * 24 * 60 * 60 * 1000);
 
-    // Mock activity history
-    const activities = [];
-    for (let i = 0; i < resultLimit; i++) {
-      const daysAgo = Math.floor(Math.random() * periodDays);
-      activities.push({
-        id: `activity-${i}`,
-        timestamp: new Date(Date.now() - daysAgo * 24 * 60 * 60 * 1000),
-        action: ['proposal_analyzed', 'threat_detected', 'optimization_suggested', 'ethics_review_completed'][Math.floor(Math.random() * 4)],
-        dao: `dao-${Math.floor(Math.random() * 50)}`,
-        result: 'success',
-        details: 'Activity details...'
-      });
-    }
+    // Query audit logs for this elder's activity
+    const activities = await db
+      .select()
+      .from(auditLogs)
+      .where(
+        and(
+          eq(auditLogs.resourceId, elderId),
+          desc(auditLogs.createdAt)
+        )
+      )
+      .limit(resultLimit);
+
+    // Calculate statistics
+    const successCount = activities.filter(a => a.status >= 200 && a.status < 300).length;
+    const errorCount = activities.filter(a => a.status >= 400).length;
+    const successRate = activities.length > 0 ? successCount / activities.length : 0;
 
     res.json({
       elderId,
       period: `${periodDays} days`,
-      activities: activities.sort((a, b) => b.timestamp.getTime() - a.timestamp.getTime()),
+      activities: activities.map(a => ({
+        id: a.id,
+        timestamp: a.createdAt,
+        action: a.action,
+        dao: (a.details as any)?.daoId || 'unknown',
+        result: a.status >= 200 && a.status < 300 ? 'success' : 'failed',
+        details: a.details
+      })),
       summary: {
         totalActivities: activities.length,
-        successRate: 0.98,
-        errorCount: Math.floor(activities.length * 0.02)
+        successRate: parseFloat((successRate * 100).toFixed(2)),
+        errorCount
       }
     });
   } catch (error) {
@@ -294,8 +335,15 @@ router.get('/elders/:elderId/history', async (req: Request, res: Response) => {
 /**
  * GET /api/admin/agents-elders/agents/overview
  * Get overview of all agents with their stats
+ * REQUIRES: admin or super_admin role
+ * RATE LIMITED: 60 requests per 10 minutes
  */
-router.get('/agents/overview', async (req: Request, res: Response) => {
+router.get('/agents/overview', [
+  authenticateToken,
+  requireAdmin,
+  adminReadLimiter,
+  auditAdminAccess,
+], async (req: Request, res: Response) => {
   try {
     // Fetch all agents from database
     const agents = await agentsEldersService.getAllAgents();
@@ -341,92 +389,66 @@ router.get('/agents/overview', async (req: Request, res: Response) => {
 /**
  * GET /api/admin/agents-elders/agents/:agentId/details
  * Get detailed stats for a specific agent
+ * REQUIRES: admin or super_admin role
+ * RATE LIMITED: 60 requests per 10 minutes
  */
-router.get('/agents/:agentId/details', async (req: Request, res: Response) => {
+router.get('/agents/:agentId/details', [
+  authenticateToken,
+  requireAdmin,
+  adminReadLimiter,
+  auditAdminAccess,
+], async (req: Request, res: Response) => {
   try {
     const { agentId } = req.params;
 
-    const agentDetails: Record<string, any> = {
-      'agent-analyzer': {
-        id: 'agent-analyzer',
-        name: 'Analyzer Agent',
-        type: 'Data Analyzer',
-        version: '1.5.2',
-        description: 'Comprehensive data analysis and proposal evaluation',
-        status: 'online',
-        uptime: 0.995,
-        lastUpdate: new Date(Date.now() - 24 * 60 * 60 * 1000),
-        performance: {
-          messagesProcessed: 1243,
-          averageResponseTime: 245,
-          peakLoad: 450,
-          errorRate: 0.01,
-          successRate: 0.99,
-          queueSize: 12
-        },
-        capabilities: ['Proposal analysis', 'Data aggregation', 'Trend detection', 'Quality assessment'],
-        recentActivity: [
-          { timestamp: new Date(Date.now() - 5 * 60000), action: 'Analyzed proposal', result: 'success' },
-          { timestamp: new Date(Date.now() - 15 * 60000), action: 'Generated report', result: 'success' },
-          { timestamp: new Date(Date.now() - 25 * 60000), action: 'Processed 50 records', result: 'success' }
-        ]
-      },
-      'agent-defender': {
-        id: 'agent-defender',
-        name: 'Defender Agent',
-        type: 'Security Monitor',
-        version: '2.0.1',
-        description: 'Advanced threat detection and prevention',
-        status: 'online',
-        uptime: 0.998,
-        lastUpdate: new Date(Date.now() - 12 * 60 * 60 * 1000),
-        performance: {
-          messagesProcessed: 856,
-          averageResponseTime: 156,
-          peakLoad: 320,
-          errorRate: 0.005,
-          successRate: 0.995,
-          queueSize: 8
-        },
-        capabilities: ['Threat detection', 'Attack prevention', 'Pattern recognition', 'Alert generation'],
-        recentActivity: [
-          { timestamp: new Date(Date.now() - 1 * 60000), action: 'Detected anomaly', result: 'threat_detected' },
-          { timestamp: new Date(Date.now() - 10 * 60000), action: 'Validated signatures', result: 'success' },
-          { timestamp: new Date(Date.now() - 20 * 60000), action: 'Processed 100 events', result: 'success' }
-        ]
-      },
-      'agent-scout': {
-        id: 'agent-scout',
-        name: 'Scout Agent',
-        type: 'System Monitor',
-        version: '1.2.0',
-        description: 'System health monitoring and metrics collection',
-        status: 'online',
-        uptime: 0.999,
-        lastUpdate: new Date(Date.now() - 6 * 60 * 60 * 1000),
-        performance: {
-          messagesProcessed: 2341,
-          averageResponseTime: 89,
-          peakLoad: 200,
-          errorRate: 0.002,
-          successRate: 0.998,
-          queueSize: 3
-        },
-        capabilities: ['Health monitoring', 'Metrics collection', 'Performance tracking', 'Alert notification'],
-        recentActivity: [
-          { timestamp: new Date(Date.now() - 30000), action: 'Collected metrics', result: 'success' },
-          { timestamp: new Date(Date.now() - 5 * 60000), action: 'System check', result: 'success' },
-          { timestamp: new Date(Date.now() - 10 * 60000), action: 'Alert sent', result: 'success' }
-        ]
-      }
-    };
-
-    const details = agentDetails[agentId];
-    if (!details) {
+    // Query agent from database
+    const agent = await agentsEldersService.getAgentById(agentId);
+    if (!agent) {
       return res.status(404).json({ error: 'Agent not found' });
     }
 
-    res.json(details);
+    // Query performance metrics from audit logs
+    const recentActivity = await db
+      .select()
+      .from(auditLogs)
+      .where(
+        and(
+          eq(auditLogs.resourceId, agentId),
+          desc(auditLogs.createdAt)
+        )
+      )
+      .limit(10);
+
+    // Calculate metrics from activity
+    const successCount = recentActivity.filter(a => a.status >= 200 && a.status < 300).length;
+    const errorCount = recentActivity.filter(a => a.status >= 400).length;
+    const successRate = recentActivity.length > 0 ? successCount / recentActivity.length : 0;
+
+    res.json({
+      id: agent.id,
+      name: agent.name,
+      type: agent.type,
+      status: agent.status || 'online',
+      version: agent.version || '1.0.0',
+      description: agent.description || '',
+      lastUpdate: agent.updatedAt,
+      uptime: agent.uptime || 0.99,
+      performance: {
+        messagesProcessed: (agent.stats as any)?.messagesProcessed || 0,
+        averageResponseTime: (agent.stats as any)?.avgResponseTime || 0,
+        peakLoad: (agent.stats as any)?.peakLoad || 0,
+        errorRate: 1 - successRate,
+        successRate,
+        queueSize: (agent.stats as any)?.queueSize || 0
+      },
+      capabilities: agent.capabilities || [],
+      recentActivity: recentActivity.map(a => ({
+        timestamp: a.createdAt,
+        action: a.action,
+        result: a.status >= 200 && a.status < 300 ? 'success' : 'failed'
+      })),
+      configuration: agent.configuration || {}
+    });
   } catch (error) {
     logger.error('Error fetching agent details:', error);
     res.status(500).json({ error: 'Failed to fetch agent details' });
@@ -436,31 +458,49 @@ router.get('/agents/:agentId/details', async (req: Request, res: Response) => {
 /**
  * GET /api/admin/agents-elders/agents/:agentId/logs
  * Get logs for a specific agent
+ * REQUIRES: admin or super_admin role
+ * RATE LIMITED: 60 requests per 10 minutes
  */
-router.get('/agents/:agentId/logs', async (req: Request, res: Response) => {
+router.get('/agents/:agentId/logs', [
+  authenticateToken,
+  requireAdmin,
+  adminReadLimiter,
+  auditAdminAccess,
+], async (req: Request, res: Response) => {
   try {
     const { agentId } = req.params;
     const { limit = '50' } = req.query;
     const resultLimit = parseInt(limit as string);
 
-    const logs = [];
-    for (let i = 0; i < resultLimit; i++) {
-      logs.push({
-        id: `log-${i}`,
-        timestamp: new Date(Date.now() - i * 5 * 60000),
-        level: ['info', 'debug', 'warning', 'error'][Math.floor(Math.random() * 4)],
-        message: `Agent activity log entry ${i}`,
-        details: {}
-      });
-    }
+    // Query real logs from audit table
+    const logs = await db
+      .select()
+      .from(auditLogs)
+      .where(
+        and(
+          eq(auditLogs.resourceId, agentId),
+          desc(auditLogs.createdAt)
+        )
+      )
+      .limit(resultLimit);
+
+    const errorCount = logs.filter(l => l.status >= 400).length;
+    const warningCount = logs.filter(l => l.status >= 300 && l.status < 400).length;
 
     res.json({
       agentId,
-      logs,
+      logs: logs.map(log => ({
+        id: log.id,
+        timestamp: log.createdAt,
+        level: log.status >= 400 ? 'error' : log.status >= 300 ? 'warning' : 'info',
+        message: log.action,
+        status: log.status,
+        details: log.details
+      })),
       summary: {
         totalLogs: logs.length,
-        errorCount: logs.filter(l => l.level === 'error').length,
-        warningCount: logs.filter(l => l.level === 'warning').length
+        errorCount,
+        warningCount
       }
     });
   } catch (error) {
@@ -476,8 +516,15 @@ router.get('/agents/:agentId/logs', async (req: Request, res: Response) => {
 /**
  * GET /api/admin/agents-elders/configuration
  * Get current configuration for all agents and elders
+ * REQUIRES: admin or super_admin role
+ * RATE LIMITED: 60 requests per 10 minutes
  */
-router.get('/configuration', async (req: Request, res: Response) => {
+router.get('/configuration', [
+  authenticateToken,
+  requireAdmin,
+  adminReadLimiter,
+  auditAdminAccess,
+], async (req: Request, res: Response) => {
   try {
     // Fetch system configuration from database
     const systemConfig = await agentsEldersService.getSystemConfiguration();
@@ -516,8 +563,15 @@ router.get('/configuration', async (req: Request, res: Response) => {
 /**
  * PUT /api/admin/agents-elders/configuration
  * Update configuration for agents/elders
+ * REQUIRES: admin or super_admin role
+ * RATE LIMITED: 20 requests per 10 minutes
  */
-router.put('/configuration', async (req: Request, res: Response) => {
+router.put('/configuration', [
+  authenticateToken,
+  requireAdmin,
+  adminWriteLimiter,
+  auditAdminAccess,
+], async (req: Request, res: Response) => {
   try {
     const { elderSettings, agentSettings, systemSettings } = req.body;
     const adminId = (req.user as any)?.id;
@@ -568,8 +622,15 @@ router.put('/configuration', async (req: Request, res: Response) => {
 /**
  * GET /api/admin/agents-elders/config/elders/:elderId
  * Get current configuration for an elder
+ * REQUIRES: admin or super_admin role
+ * RATE LIMITED: 60 requests per 10 minutes
  */
-router.get('/config/elders/:elderId', async (req: Request, res: Response) => {
+router.get('/config/elders/:elderId', [
+  authenticateToken,
+  requireAdmin,
+  adminReadLimiter,
+  auditAdminAccess,
+], async (req: Request, res: Response) => {
   try {
     const { elderId } = req.params;
 
@@ -593,8 +654,15 @@ router.get('/config/elders/:elderId', async (req: Request, res: Response) => {
 /**
  * PUT /api/admin/agents-elders/config/elders/:elderId
  * Update configuration for an elder with validation and audit logging
+ * REQUIRES: admin or super_admin role
+ * RATE LIMITED: 20 requests per 10 minutes
  */
-router.put('/config/elders/:elderId', async (req: Request, res: Response) => {
+router.put('/config/elders/:elderId', [
+  authenticateToken,
+  requireAdmin,
+  adminWriteLimiter,
+  auditAdminAccess,
+], async (req: Request, res: Response) => {
   try {
     const { elderId } = req.params;
     const { configuration } = req.body;
@@ -649,7 +717,9 @@ router.put('/config/elders/:elderId', async (req: Request, res: Response) => {
         configuration
       });
     } catch (wsError) {
-      logger.warn('Failed to emit WebSocket event for elder config update:', wsError);
+      logger.warn('Failed to emit WebSocket event for elder config update:', {
+        error: wsError instanceof Error ? wsError.message : String(wsError),
+      });
     }
 
     res.json({
@@ -666,8 +736,15 @@ router.put('/config/elders/:elderId', async (req: Request, res: Response) => {
 /**
  * GET /api/admin/agents-elders/config/agents/:agentId
  * Get current configuration for an agent
+ * REQUIRES: admin or super_admin role
+ * RATE LIMITED: 60 requests per 10 minutes
  */
-router.get('/config/agents/:agentId', async (req: Request, res: Response) => {
+router.get('/config/agents/:agentId', [
+  authenticateToken,
+  requireAdmin,
+  adminReadLimiter,
+  auditAdminAccess,
+], async (req: Request, res: Response) => {
   try {
     const { agentId } = req.params;
 
@@ -691,8 +768,15 @@ router.get('/config/agents/:agentId', async (req: Request, res: Response) => {
 /**
  * PUT /api/admin/agents-elders/config/agents/:agentId
  * Update configuration for an agent with validation and audit logging
+ * REQUIRES: admin or super_admin role
+ * RATE LIMITED: 20 requests per 10 minutes
  */
-router.put('/config/agents/:agentId', async (req: Request, res: Response) => {
+router.put('/config/agents/:agentId', [
+  authenticateToken,
+  requireAdmin,
+  adminWriteLimiter,
+  auditAdminAccess,
+], async (req: Request, res: Response) => {
   try {
     const { agentId } = req.params;
     const { configuration } = req.body;
@@ -747,7 +831,9 @@ router.put('/config/agents/:agentId', async (req: Request, res: Response) => {
         configuration
       });
     } catch (wsError) {
-      logger.warn('Failed to emit WebSocket event for agent config update:', wsError);
+      logger.warn('Failed to emit WebSocket event for agent config update:', {
+        error: wsError instanceof Error ? wsError.message : String(wsError),
+      });
     }
 
     res.json({
@@ -764,8 +850,15 @@ router.put('/config/agents/:agentId', async (req: Request, res: Response) => {
 /**
  * GET /api/admin/agents-elders/config/system
  * Get current system configuration
+ * REQUIRES: admin or super_admin role
+ * RATE LIMITED: 60 requests per 10 minutes
  */
-router.get('/config/system', async (req: Request, res: Response) => {
+router.get('/config/system', [
+  authenticateToken,
+  requireAdmin,
+  adminReadLimiter,
+  auditAdminAccess,
+], async (req: Request, res: Response) => {
   try {
     const config = await agentsEldersService.getSystemConfiguration();
     if (!config) {
@@ -782,11 +875,18 @@ router.get('/config/system', async (req: Request, res: Response) => {
 /**
  * PUT /api/admin/agents-elders/config/system
  * Update system configuration (super admin only)
+ * REQUIRES: super_admin role
+ * RATE LIMITED: 5 requests per hour (CRITICAL SYSTEM OPERATION)
  */
-router.put('/config/system', async (req: Request, res: Response) => {
+router.put('/config/system', [
+  authenticateToken,
+  requireSuperAdmin,
+  adminSystemLimiter,
+  auditAdminAccess,
+], async (req: Request, res: Response) => {
   try {
     const { settings } = req.body;
-    const adminId = (req.user as any)?.id;
+    const adminId = await ensureAdminAccess(req);
     const userRole = (req.user as any)?.roles;
 
     // Check super admin permission
@@ -845,7 +945,9 @@ router.put('/config/system', async (req: Request, res: Response) => {
         }
       );
     } catch (wsError) {
-      logger.warn('Failed to emit WebSocket event for system config update:', wsError);
+      logger.warn('Failed to emit WebSocket event for system config update:', {
+        error: wsError instanceof Error ? wsError.message : String(wsError),
+      });
     }
 
     res.json({
@@ -862,8 +964,15 @@ router.put('/config/system', async (req: Request, res: Response) => {
 /**
  * GET /api/admin/agents-elders/config/all
  * Get all configurations (elders, agents, system)
+ * REQUIRES: admin or super_admin role
+ * RATE LIMITED: 60 requests per 10 minutes
  */
-router.get('/config/all', async (req: Request, res: Response) => {
+router.get('/config/all', [
+  authenticateToken,
+  requireAdmin,
+  adminReadLimiter,
+  auditAdminAccess,
+], async (req: Request, res: Response) => {
   try {
     const [elders, agents, systemConfig] = await Promise.all([
       agentsEldersService.getAllElders(),
@@ -895,15 +1004,31 @@ router.get('/config/all', async (req: Request, res: Response) => {
 /**
  * PUT /api/admin/agents-elders/config/bulk
  * Update multiple configurations in a single request
+ * REQUIRES: admin or super_admin role
+ * RATE LIMITED: 20 requests per 10 minutes
  */
-router.put('/config/bulk', async (req: Request, res: Response) => {
+router.put('/config/bulk', [
+  authenticateToken,
+  requireAdmin,
+  adminWriteLimiter,
+  auditAdminAccess,
+], async (req: Request, res: Response) => {
   try {
-    const { updates } = req.body;
-    const adminId = (req.user as any)?.id;
+    const parsedBody = bulkUpdateRequestSchema.safeParse(req.body) as {
+      success: boolean;
+      data?: BulkUpdateRequest;
+      error?: { flatten: () => Record<string, unknown> };
+    };
 
-    if (!Array.isArray(updates)) {
-      return res.status(400).json({ error: 'Updates must be an array' });
+    if (!parsedBody.success) {
+      return res.status(400).json({
+        error: 'Invalid bulk update payload',
+        details: parsedBody.error?.flatten?.() ?? parsedBody.error,
+      });
     }
+
+    const { updates } = parsedBody.data as BulkUpdateRequest;
+    const adminId = (req.user as any)?.id;
 
     const results = {
       successful: 0,
@@ -911,85 +1036,64 @@ router.put('/config/bulk', async (req: Request, res: Response) => {
       details: [] as any[],
     };
 
-    for (const update of updates) {
-      try {
+    const updateResults = await Promise.allSettled(
+      updates.map(async (update: BulkUpdateItem) => {
         const { type, id, configuration } = update;
 
         if (!type || !id || !configuration) {
-          results.failed++;
-          results.details.push({
-            type,
-            id,
-            error: 'Missing required fields',
-          });
-          continue;
+          throw new Error('Missing required fields');
         }
 
         if (type === 'elder') {
           const elder = await agentsEldersService.getElderById(id);
           if (!elder) {
-            results.failed++;
-            results.details.push({
-              type,
-              id,
-              error: 'Elder not found',
-            });
-            continue;
+            throw new Error('Elder not found');
           }
 
           const validation = validateElderConfig(configuration, elder.type);
           if (!validation.valid) {
-            results.failed++;
-            results.details.push({
-              type,
-              id,
-              error: validation.errors.join('; '),
-            });
-            continue;
+            throw new Error(validation.errors.join('; '));
           }
 
           await agentsEldersService.updateElder(id, { configuration });
-          results.successful++;
-          results.details.push({ type, id, status: 'updated' });
-        } else if (type === 'agent') {
+          return { type, id, status: 'updated' };
+        }
+
+        if (type === 'agent') {
           const agent = await agentsEldersService.getAgentById(id);
           if (!agent) {
-            results.failed++;
-            results.details.push({
-              type,
-              id,
-              error: 'Agent not found',
-            });
-            continue;
+            throw new Error('Agent not found');
           }
 
           const validation = validateAgentConfig(configuration, agent.type);
           if (!validation.valid) {
-            results.failed++;
-            results.details.push({
-              type,
-              id,
-              error: validation.errors.join('; '),
-            });
-            continue;
+            throw new Error(validation.errors.join('; '));
           }
 
           await agentsEldersService.updateAgent(id, { configuration });
-          results.successful++;
-          results.details.push({ type, id, status: 'updated' });
+          return { type, id, status: 'updated' };
         }
-      } catch (err) {
+
+        throw new Error('Unsupported update type');
+      })
+    );
+
+    for (const [index, result] of updateResults.entries()) {
+      const update = updates[index];
+      if (result.status === 'fulfilled') {
+        results.successful++;
+        results.details.push(result.value);
+      } else {
         results.failed++;
         results.details.push({
-          type: update.type,
-          id: update.id,
-          error: err instanceof Error ? err.message : 'Unknown error',
+          type: update?.type,
+          id: update?.id,
+          error: result.reason instanceof Error ? result.reason.message : 'Unknown error',
         });
       }
     }
 
-    // Log audit event
-    await logAuditEvent({
+    void safeLogAuditEvent({
       userId: adminId,
       eventType: AuditEventType.ADMIN_SETTINGS_CHANGED,
       action: 'bulk_update_config',
@@ -1023,42 +1127,45 @@ router.put('/config/bulk', async (req: Request, res: Response) => {
 /**
  * Validate elder configuration based on elder type
  */
-function validateElderConfig(config: any, elderType: string): { valid: boolean; errors: string[] } {
+export function validateElderConfig(config: any, elderType: string): { valid: boolean; errors: string[] } {
   const errors: string[] = [];
+  const normalizedElderType = elderType.trim().toUpperCase();
+
+  const requireInteger = (fieldName: string, value: unknown, minimum = 0) => {
+    if (value !== undefined && (!Number.isInteger(value) || Number(value) < minimum)) {
+      errors.push(`${fieldName} must be an integer greater than or equal to ${minimum}`);
+    }
+  };
 
   // Base validation for all elders
   if (typeof config.enabled !== 'boolean') {
     errors.push('enabled must be a boolean');
   }
-  if (typeof config.updateInterval !== 'number' || config.updateInterval < 100) {
-    errors.push('updateInterval must be a number >= 100');
+  if (config.updateInterval !== undefined && (!Number.isInteger(config.updateInterval) || config.updateInterval < 100)) {
+    errors.push('updateInterval must be an integer greater than or equal to 100');
   }
   if (!['error', 'warn', 'info', 'debug'].includes(config.logLevel)) {
     errors.push('logLevel must be one of: error, warn, info, debug');
   }
 
   // Type-specific validation
-  if (elderType === 'KAIZEN') {
+  if (normalizedElderType === 'KAIZEN') {
     if (!['performance', 'safety', 'balance'].includes(config.optimizationTarget)) {
       errors.push('optimizationTarget must be one of: performance, safety, balance');
     }
-    if (typeof config.maxIterations !== 'number' || config.maxIterations < 1) {
-      errors.push('maxIterations must be a number >= 1');
-    }
+    requireInteger('maxIterations', config.maxIterations, 1);
     if (config.learningRate && (typeof config.learningRate !== 'number' || config.learningRate < 0 || config.learningRate > 1)) {
       errors.push('learningRate must be a number between 0 and 1');
     }
-  } else if (elderType === 'SCRY') {
-    if (typeof config.predictionHorizon !== 'number' || config.predictionHorizon < 1) {
-      errors.push('predictionHorizon must be a number >= 1');
-    }
+  } else if (normalizedElderType === 'SCRY') {
+    requireInteger('predictionHorizon', config.predictionHorizon, 1);
     if (typeof config.confidence_threshold !== 'number' || config.confidence_threshold < 0 || config.confidence_threshold > 100) {
       errors.push('confidence_threshold must be a number between 0 and 100');
     }
     if (!['onchain', 'offchain', 'hybrid'].includes(config.dataSource)) {
       errors.push('dataSource must be one of: onchain, offchain, hybrid');
     }
-  } else if (elderType === 'LUMEN') {
+  } else if (normalizedElderType === 'LUMEN') {
     if (!['local', 'network', 'full'].includes(config.monitoringScope)) {
       errors.push('monitoringScope must be one of: local, network, full');
     }
@@ -1073,29 +1180,35 @@ function validateElderConfig(config: any, elderType: string): { valid: boolean; 
 /**
  * Validate agent configuration based on agent type
  */
-function validateAgentConfig(config: any, agentType: string): { valid: boolean; errors: string[] } {
+export function validateAgentConfig(config: any, agentType: string): { valid: boolean; errors: string[] } {
   const errors: string[] = [];
+
+  const requireInteger = (fieldName: string, value: unknown, minimum = 0) => {
+    if (value !== undefined && (!Number.isInteger(value) || Number(value) < minimum)) {
+      errors.push(`${fieldName} must be an integer greater than or equal to ${minimum}`);
+    }
+  };
+
+  const normalizedAgentType = agentType.trim().toLowerCase();
 
   // Base validation for all agents
   if (typeof config.enabled !== 'boolean') {
     errors.push('enabled must be a boolean');
   }
-  if (typeof config.updateInterval !== 'number' || config.updateInterval < 100) {
-    errors.push('updateInterval must be a number >= 100');
+  if (config.updateInterval !== undefined && (!Number.isInteger(config.updateInterval) || config.updateInterval < 100)) {
+    errors.push('updateInterval must be an integer greater than or equal to 100');
   }
   if (!['error', 'warn', 'info', 'debug'].includes(config.logLevel)) {
     errors.push('logLevel must be one of: error, warn, info, debug');
   }
 
   // Type-specific validation
-  if (agentType === 'Analyzer') {
+  if (normalizedAgentType === 'analyzer') {
     if (!['shallow', 'standard', 'deep'].includes(config.analysisDepth)) {
       errors.push('analysisDepth must be one of: shallow, standard, deep');
     }
-    if (typeof config.timeWindow !== 'number' || config.timeWindow < 1) {
-      errors.push('timeWindow must be a number >= 1');
-    }
-  } else if (agentType === 'Defender') {
+    requireInteger('timeWindow', config.timeWindow, 1);
+  } else if (normalizedAgentType === 'defender') {
     if (!['low', 'medium', 'high', 'critical'].includes(config.threatLevel)) {
       errors.push('threatLevel must be one of: low, medium, high, critical');
     }
@@ -1105,36 +1218,32 @@ function validateAgentConfig(config: any, agentType: string): { valid: boolean; 
     if (typeof config.responseThreshold !== 'number' || config.responseThreshold < 0 || config.responseThreshold > 100) {
       errors.push('responseThreshold must be a number between 0 and 100');
     }
-  } else if (agentType === 'Scout') {
+  } else if (normalizedAgentType === 'scout') {
+    if (config.updateFrequency !== undefined &&
+        (typeof config.updateFrequency !== 'string' || !/^\d+[mhd]$/.test(config.updateFrequency))) {
+      errors.push('Update frequency must be in format: 5m, 1h, 1d');
+    }
     if (!['local', 'network', 'global'].includes(config.scanRadius)) {
       errors.push('scanRadius must be one of: local, network, global');
     }
     if (!['passive', 'active', 'hybrid'].includes(config.discoveryMode)) {
       errors.push('discoveryMode must be one of: passive, active, hybrid');
     }
-    if (typeof config.maxTargets !== 'number' || config.maxTargets < 1) {
-      errors.push('maxTargets must be a number >= 1');
-    }
-  } else if (agentType === 'Coordinator') {
+    requireInteger('maxTargets', config.maxTargets, 1);
+  } else if (normalizedAgentType === 'coordinator') {
     if (!['sequential', 'parallel', 'adaptive'].includes(config.coordinationMode)) {
       errors.push('coordinationMode must be one of: sequential, parallel, adaptive');
     }
-    if (typeof config.syncInterval !== 'number' || config.syncInterval < 1) {
-      errors.push('syncInterval must be a number >= 1');
-    }
-    if (typeof config.maxConcurrent !== 'number' || config.maxConcurrent < 1) {
-      errors.push('maxConcurrent must be a number >= 1');
-    }
-  } else if (agentType === 'Kwetu') {
+    requireInteger('syncInterval', config.syncInterval, 1);
+    requireInteger('maxConcurrent', config.maxConcurrent, 1);
+  } else if (normalizedAgentType === 'kwetu') {
     if (!['community', 'growth', 'support', 'innovation'].includes(config.focusArea)) {
       errors.push('focusArea must be one of: community, growth, support, innovation');
     }
     if (typeof config.engagementLevel !== 'number' || config.engagementLevel < 0 || config.engagementLevel > 100) {
       errors.push('engagementLevel must be a number between 0 and 100');
     }
-    if (typeof config.responseTime !== 'number' || config.responseTime < 1) {
-      errors.push('responseTime must be a number >= 1');
-    }
+    requireInteger('responseTime', config.responseTime, 1);
   }
 
   return { valid: errors.length === 0, errors };
@@ -1219,8 +1328,15 @@ function validateSystemConfig(config: any): { valid: boolean; errors: string[] }
 /**
  * GET /api/admin/agents-elders/history/:entityType/:entityId
  * Get configuration history for an entity
+ * REQUIRES: admin or super_admin role
+ * RATE LIMITED: 60 requests per 10 minutes
  */
-router.get('/history/:entityType/:entityId', async (req: Request, res: Response) => {
+router.get('/history/:entityType/:entityId', [
+  authenticateToken,
+  requireAdmin,
+  adminReadLimiter,
+  auditAdminAccess,
+], async (req: Request, res: Response) => {
   try {
     const { entityType, entityId } = req.params;
     const limit = parseInt(req.query.limit as string) || 50;
@@ -1261,8 +1377,15 @@ router.get('/history/:entityType/:entityId', async (req: Request, res: Response)
 /**
  * GET /api/admin/agents-elders/history/:entityType/:entityId/:versionNumber
  * Get a specific version of configuration
+ * REQUIRES: admin or super_admin role
+ * RATE LIMITED: 60 requests per 10 minutes
  */
-router.get('/history/:entityType/:entityId/:versionNumber', async (req: Request, res: Response) => {
+router.get('/history/:entityType/:entityId/:versionNumber', [
+  authenticateToken,
+  requireAdmin,
+  adminReadLimiter,
+  auditAdminAccess,
+], async (req: Request, res: Response) => {
   try {
     const { entityType, entityId, versionNumber } = req.params;
     const advancedService = await import('../../db/services/agentsEldersAdvancedService');
@@ -1294,8 +1417,15 @@ router.get('/history/:entityType/:entityId/:versionNumber', async (req: Request,
 /**
  * GET /api/admin/agents-elders/history/:entityType/:entityId/compare
  * Compare two versions of configuration
+ * REQUIRES: admin or super_admin role
+ * RATE LIMITED: 60 requests per 10 minutes
  */
-router.get('/history/:entityType/:entityId/compare', async (req: Request, res: Response) => {
+router.get('/history/:entityType/:entityId/compare', [
+  authenticateToken,
+  requireAdmin,
+  adminReadLimiter,
+  auditAdminAccess,
+], async (req: Request, res: Response) => {
   try {
     const { entityType, entityId } = req.params;
     const versionA = parseInt(req.query.versionA as string);
@@ -1330,8 +1460,15 @@ router.get('/history/:entityType/:entityId/compare', async (req: Request, res: R
 /**
  * GET /api/admin/agents-elders/templates/:entityType
  * Get configuration templates for an entity type
+ * REQUIRES: admin or super_admin role
+ * RATE LIMITED: 60 requests per 10 minutes
  */
-router.get('/templates/:entityType', async (req: Request, res: Response) => {
+router.get('/templates/:entityType', [
+  authenticateToken,
+  requireAdmin,
+  adminReadLimiter,
+  auditAdminAccess,
+], async (req: Request, res: Response) => {
   try {
     const { entityType } = req.params;
     const includePrivate = req.query.private === 'true';
@@ -1358,8 +1495,15 @@ router.get('/templates/:entityType', async (req: Request, res: Response) => {
 /**
  * POST /api/admin/agents-elders/templates
  * Create a new configuration template
+ * REQUIRES: admin or super_admin role
+ * RATE LIMITED: 20 requests per 10 minutes
  */
-router.post('/templates', async (req: Request, res: Response) => {
+router.post('/templates', [
+  authenticateToken,
+  requireAdmin,
+  adminWriteLimiter,
+  auditAdminAccess,
+], async (req: Request, res: Response) => {
   try {
     const { name, configuration, entityType, description, specificType, category, isPublic, tags } = req.body;
     const userId = (req.user as any)?.id;
@@ -1404,8 +1548,15 @@ router.post('/templates', async (req: Request, res: Response) => {
 /**
  * POST /api/admin/agents-elders/templates/:templateId/apply
  * Apply a template to an entity
+ * REQUIRES: admin or super_admin role
+ * RATE LIMITED: 20 requests per 10 minutes
  */
-router.post('/templates/:templateId/apply', async (req: Request, res: Response) => {
+router.post('/templates/:templateId/apply', [
+  authenticateToken,
+  requireAdmin,
+  adminWriteLimiter,
+  auditAdminAccess,
+], async (req: Request, res: Response) => {
   try {
     const { templateId } = req.params;
     const { entityId, changeReason } = req.body;
@@ -1447,8 +1598,15 @@ router.post('/templates/:templateId/apply', async (req: Request, res: Response) 
 /**
  * GET /api/admin/agents-elders/scheduled-changes
  * Get scheduled configuration changes
+ * REQUIRES: admin or super_admin role
+ * RATE LIMITED: 60 requests per 10 minutes
  */
-router.get('/scheduled-changes', async (req: Request, res: Response) => {
+router.get('/scheduled-changes', [
+  authenticateToken,
+  requireAdmin,
+  adminReadLimiter,
+  auditAdminAccess,
+], async (req: Request, res: Response) => {
   try {
     const status = req.query.status as string;
     const entityType = req.query.entityType as string;
@@ -1474,8 +1632,15 @@ router.get('/scheduled-changes', async (req: Request, res: Response) => {
 /**
  * POST /api/admin/agents-elders/scheduled-changes
  * Schedule a configuration change
+ * REQUIRES: admin or super_admin role
+ * RATE LIMITED: 20 requests per 10 minutes
  */
-router.post('/scheduled-changes', async (req: Request, res: Response) => {
+router.post('/scheduled-changes', [
+  authenticateToken,
+  requireAdmin,
+  adminWriteLimiter,
+  auditAdminAccess,
+], async (req: Request, res: Response) => {
   try {
     const { entityType, entityId, configuration, scheduledFor, changeReason, schedule } = req.body;
     const userId = (req.user as any)?.id;
@@ -1522,8 +1687,15 @@ router.post('/scheduled-changes', async (req: Request, res: Response) => {
 /**
  * PUT /api/admin/agents-elders/scheduled-changes/:changeId/approve
  * Approve a scheduled change
+ * REQUIRES: admin or super_admin role
+ * RATE LIMITED: 20 requests per 10 minutes
  */
-router.put('/scheduled-changes/:changeId/approve', async (req: Request, res: Response) => {
+router.put('/scheduled-changes/:changeId/approve', [
+  authenticateToken,
+  requireAdmin,
+  adminWriteLimiter,
+  auditAdminAccess,
+], async (req: Request, res: Response) => {
   try {
     const { changeId } = req.params;
     const userId = (req.user as any)?.id;
@@ -1562,8 +1734,15 @@ router.put('/scheduled-changes/:changeId/approve', async (req: Request, res: Res
 /**
  * GET /api/admin/agents-elders/alerts
  * Get configuration alerts
+ * REQUIRES: admin or super_admin role
+ * RATE LIMITED: 60 requests per 10 minutes
  */
-router.get('/alerts', async (req: Request, res: Response) => {
+router.get('/alerts', [
+  authenticateToken,
+  requireAdmin,
+  adminReadLimiter,
+  auditAdminAccess,
+], async (req: Request, res: Response) => {
   try {
     const resolved = req.query.resolved as string;
     const severity = req.query.severity as string;
@@ -1592,8 +1771,15 @@ router.get('/alerts', async (req: Request, res: Response) => {
 /**
  * PUT /api/admin/agents-elders/alerts/:alertId/resolve
  * Resolve an alert
+ * REQUIRES: admin or super_admin role
+ * RATE LIMITED: 20 requests per 10 minutes
  */
-router.put('/alerts/:alertId/resolve', async (req: Request, res: Response) => {
+router.put('/alerts/:alertId/resolve', [
+  authenticateToken,
+  requireAdmin,
+  adminWriteLimiter,
+  auditAdminAccess,
+], async (req: Request, res: Response) => {
   try {
     const { alertId } = req.params;
     const userId = (req.user as any)?.id;
@@ -1632,8 +1818,15 @@ router.put('/alerts/:alertId/resolve', async (req: Request, res: Response) => {
 /**
  * GET /api/admin/agents-elders/alert-rules
  * Get alert rules
+ * REQUIRES: admin or super_admin role
+ * RATE LIMITED: 60 requests per 10 minutes
  */
-router.get('/alert-rules', async (req: Request, res: Response) => {
+router.get('/alert-rules', [
+  authenticateToken,
+  requireAdmin,
+  adminReadLimiter,
+  auditAdminAccess,
+], async (req: Request, res: Response) => {
   try {
     const enabled = req.query.enabled as string;
     const entityType = req.query.entityType as string;
@@ -1659,8 +1852,15 @@ router.get('/alert-rules', async (req: Request, res: Response) => {
 /**
  * POST /api/admin/agents-elders/alert-rules
  * Create an alert rule
+ * REQUIRES: admin or super_admin role
+ * RATE LIMITED: 20 requests per 10 minutes
  */
-router.post('/alert-rules', async (req: Request, res: Response) => {
+router.post('/alert-rules', [
+  authenticateToken,
+  requireAdmin,
+  adminWriteLimiter,
+  auditAdminAccess,
+], async (req: Request, res: Response) => {
   try {
     const { name, alertType, condition, description, entityType, entityId, threshold, severity, notificationChannels } = req.body;
     const userId = (req.user as any)?.id;
@@ -1705,8 +1905,15 @@ router.post('/alert-rules', async (req: Request, res: Response) => {
 /**
  * GET /api/admin/agents-elders/search-profiles
  * Get search profiles
+ * REQUIRES: admin or super_admin role
+ * RATE LIMITED: 60 requests per 10 minutes
  */
-router.get('/search-profiles', async (req: Request, res: Response) => {
+router.get('/search-profiles', [
+  authenticateToken,
+  requireAdmin,
+  adminReadLimiter,
+  auditAdminAccess,
+], async (req: Request, res: Response) => {
   try {
     const userId = (req.user as any)?.id;
 
@@ -1727,8 +1934,15 @@ router.get('/search-profiles', async (req: Request, res: Response) => {
 /**
  * POST /api/admin/agents-elders/search-profiles
  * Create a search profile
+ * REQUIRES: admin or super_admin role
+ * RATE LIMITED: 20 requests per 10 minutes
  */
-router.post('/search-profiles', async (req: Request, res: Response) => {
+router.post('/search-profiles', [
+  authenticateToken,
+  requireAdmin,
+  adminWriteLimiter,
+  auditAdminAccess,
+], async (req: Request, res: Response) => {
   try {
     const { name, query, description, filters, isPublic } = req.body;
     const userId = (req.user as any)?.id;
@@ -1772,8 +1986,15 @@ router.post('/search-profiles', async (req: Request, res: Response) => {
 /**
  * GET /api/admin/agents-elders/performance-analytics
  * Get performance analytics data
+ * REQUIRES: admin or super_admin role
+ * RATE LIMITED: 60 requests per 10 minutes
  */
-router.get('/performance-analytics', async (req: Request, res: Response) => {
+router.get('/performance-analytics', [
+  authenticateToken,
+  requireAdmin,
+  adminReadLimiter,
+  auditAdminAccess,
+], async (req: Request, res: Response) => {
   try {
     const entityType = req.query.entityType as string;
     const entityId = req.query.entityId as string;
@@ -1812,8 +2033,15 @@ router.get('/performance-analytics', async (req: Request, res: Response) => {
 /**
  * POST /api/admin/agents-elders/history/:entityType/:entityId/rollback
  * Rollback configuration to a specific version
+ * REQUIRES: admin or super_admin role
+ * RATE LIMITED: 20 requests per 10 minutes
  */
-router.post('/history/:entityType/:entityId/rollback', async (req: Request, res: Response) => {
+router.post('/history/:entityType/:entityId/rollback', [
+  authenticateToken,
+  requireAdmin,
+  adminWriteLimiter,
+  auditAdminAccess,
+], async (req: Request, res: Response) => {
   try {
     const { entityType, entityId } = req.params;
     const { targetVersion, rollbackReason } = req.body;
@@ -1899,8 +2127,15 @@ router.post('/history/:entityType/:entityId/rollback', async (req: Request, res:
 /**
  * POST /api/admin/agents-elders/search
  * Advanced search in configuration history
+ * REQUIRES: admin or super_admin role
+ * RATE LIMITED: 60 requests per 10 minutes
  */
-router.post('/search', async (req: Request, res: Response) => {
+router.post('/search', [
+  authenticateToken,
+  requireAdmin,
+  adminReadLimiter,
+  auditAdminAccess,
+], async (req: Request, res: Response) => {
   try {
     const { query, filters, limit, offset } = req.body;
 
@@ -1944,8 +2179,15 @@ router.post('/search', async (req: Request, res: Response) => {
 /**
  * GET /api/admin/agents-elders/analytics
  * Get configuration change analytics
+ * REQUIRES: admin or super_admin role
+ * RATE LIMITED: 60 requests per 10 minutes
  */
-router.get('/analytics', async (req: Request, res: Response) => {
+router.get('/analytics', [
+  authenticateToken,
+  requireAdmin,
+  adminReadLimiter,
+  auditAdminAccess,
+], async (req: Request, res: Response) => {
   try {
     const entityType = req.query.entityType as string;
 
@@ -1966,8 +2208,15 @@ router.get('/analytics', async (req: Request, res: Response) => {
 /**
  * GET /api/admin/agents-elders/analytics/trends/:entityType/:entityId
  * Get performance trend data
+ * REQUIRES: admin or super_admin role
+ * RATE LIMITED: 60 requests per 10 minutes
  */
-router.get('/analytics/trends/:entityType/:entityId', async (req: Request, res: Response) => {
+router.get('/analytics/trends/:entityType/:entityId', [
+  authenticateToken,
+  requireAdmin,
+  adminReadLimiter,
+  auditAdminAccess,
+], async (req: Request, res: Response) => {
   try {
     const { entityType, entityId } = req.params;
     const days = parseInt(req.query.days as string) || 30;

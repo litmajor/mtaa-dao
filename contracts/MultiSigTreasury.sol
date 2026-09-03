@@ -31,13 +31,24 @@ contract MultiSigTreasury is ReentrancyGuard {
     uint256 public constant REQUIRED_CONFIRMATIONS = 3;
     uint256 public constant NUM_SIGNERS = 5;
     uint256 public constant TIMELOCK = 48 hours;
+    uint256 public constant ROTATION_INTERVAL = 365 days;
     
     // ─────────────────────────────────────────────────────
     // State
     // ─────────────────────────────────────────────────────
     
     IERC20 public mtaaToken;
+    address public immutable bootstrapper;
     address[NUM_SIGNERS] public signers;
+    mapping(address => bool) public allowedTargets;
+    uint256 public nextRotationDue;
+
+    struct ScheduledRotation {
+        address replacement;
+        uint256 effectiveAt;
+    }
+
+    mapping(address => ScheduledRotation) public scheduledRotations;
     
     struct Transaction {
         address target;         // Where to send tokens or call
@@ -62,6 +73,10 @@ contract MultiSigTreasury is ReentrancyGuard {
     event TransactionConfirmed(uint256 indexed txnId, address confirmedBy, uint256 totalConfirmations);
     event TransactionExecuted(uint256 indexed txnId);
     event TransactionRevoked(uint256 indexed txnId, address revokedBy);
+    event TargetAllowlistUpdated(address indexed target, bool allowed);
+    event SignerRotationScheduled(address indexed currentSigner, address indexed replacement, uint256 effectiveAt);
+    event SignerRotationExecuted(address indexed previousSigner, address indexed replacement, uint256 nextRotationDue);
+    event MtaaTokenInitialized(address indexed token);
     
     // ─────────────────────────────────────────────────────
     // Constructor
@@ -72,7 +87,10 @@ contract MultiSigTreasury is ReentrancyGuard {
         address[5] memory _signers
     ) {
         mtaaToken = IERC20(_mtaaToken);
+        bootstrapper = msg.sender;
+        allowedTargets[_mtaaToken] = true;
         signers = _signers;
+        nextRotationDue = block.timestamp + ROTATION_INTERVAL;
         
         // Validate signers are unique
         for (uint i = 0; i < NUM_SIGNERS; i++) {
@@ -98,6 +116,20 @@ contract MultiSigTreasury is ReentrancyGuard {
         }
         require(isSigner, "Only signer can call");
         _;
+    }
+
+    /**
+     * @notice Set the token after deployment when the token and treasury have circular dependencies.
+     * @dev This one-time bootstrap action is restricted to the deployment account. Future target
+     *      changes, including Beacon authorization, must use the multisig self-call path.
+     */
+    function setMtaaToken(address token) external {
+        require(msg.sender == bootstrapper, "Only bootstrapper can initialize");
+        require(address(mtaaToken) == address(0), "MTAA token already initialized");
+        require(token != address(0), "Invalid token");
+        mtaaToken = IERC20(token);
+        allowedTargets[token] = true;
+        emit MtaaTokenInitialized(token);
     }
     
     /**
@@ -166,9 +198,9 @@ contract MultiSigTreasury is ReentrancyGuard {
         
         txn.executed = true;
 
-        // Restrict allowed targets to MTAA token calls or internal contract management
+        // New targets must be added through an approved multisig self-call.
         require(
-            txn.target == address(mtaaToken) || txn.target == address(this),
+            txn.target == address(this) || allowedTargets[txn.target],
             "Target not allowed"
         );
 
@@ -182,6 +214,56 @@ contract MultiSigTreasury is ReentrancyGuard {
     // ─────────────────────────────────────────────────────
     // View Functions
     // ─────────────────────────────────────────────────────
+
+    /**
+     * @notice Add or remove a contract target through the multisig itself.
+     * @dev This must be called by an executed transaction targeting this contract.
+     */
+    function setAllowedTarget(address target, bool allowed) external {
+        require(msg.sender == address(this), "Must go through multisig");
+        require(target != address(0), "Invalid target");
+        allowedTargets[target] = allowed;
+        emit TargetAllowlistUpdated(target, allowed);
+    }
+
+    /**
+     * @notice Schedule a signer replacement through the multisig itself.
+     * @dev The replacement becomes permissionlessly executable after the
+     *      scheduled date, so rotation does not depend on one signer acting.
+     */
+    function scheduleSignerRotation(
+        address currentSigner,
+        address replacement,
+        uint256 effectiveAt
+    ) external {
+        require(msg.sender == address(this), "Must go through multisig");
+        require(_isSigner(currentSigner), "Unknown signer");
+        require(replacement != address(0), "Invalid new signer");
+        require(!_isSigner(replacement), "New signer already present");
+        require(effectiveAt >= nextRotationDue, "Rotation date too soon");
+        require(scheduledRotations[currentSigner].effectiveAt == 0, "Rotation already scheduled");
+
+        scheduledRotations[currentSigner] = ScheduledRotation({
+            replacement: replacement,
+            effectiveAt: effectiveAt
+        });
+        emit SignerRotationScheduled(currentSigner, replacement, effectiveAt);
+    }
+
+    /**
+     * @notice Execute a previously approved signer rotation after its effective date.
+     * @dev Anyone may call this once the multisig-approved schedule is due.
+     */
+    function executeScheduledSignerRotation(address currentSigner) external {
+        ScheduledRotation memory rotation = scheduledRotations[currentSigner];
+        require(rotation.effectiveAt != 0, "Rotation not scheduled");
+        require(block.timestamp >= rotation.effectiveAt, "Rotation not due");
+
+        _replaceSigner(currentSigner, rotation.replacement);
+        delete scheduledRotations[currentSigner];
+        nextRotationDue = rotation.effectiveAt + ROTATION_INTERVAL;
+        emit SignerRotationExecuted(currentSigner, rotation.replacement, nextRotationDue);
+    }
     
     function getTreasuryBalance() external view returns (uint256) {
         return mtaaToken.balanceOf(address(this));
@@ -208,18 +290,29 @@ contract MultiSigTreasury is ReentrancyGuard {
      */
     function replaceSigner(address oldSigner, address newSigner) external {
         require(msg.sender == address(this), "Must go through multisig");
+        _replaceSigner(oldSigner, newSigner);
+    }
+
+    function _replaceSigner(address oldSigner, address newSigner) internal {
         require(newSigner != address(0), "Invalid new signer");
 
-        for (uint i = 0; i < NUM_SIGNERS; i++) {
-            if (signers[i] == oldSigner) {
-                // Ensure newSigner is not already present
-                for (uint j = 0; j < NUM_SIGNERS; j++) {
-                    require(signers[j] != newSigner, "New signer already present");
+        for (uint256 signerIndex = 0; signerIndex < NUM_SIGNERS; signerIndex++) {
+            if (signers[signerIndex] == oldSigner) {
+                for (uint256 existingIndex = 0; existingIndex < NUM_SIGNERS; existingIndex++) {
+                    require(signers[existingIndex] != newSigner, "New signer already present");
                 }
-                signers[i] = newSigner;
-                break;
+                signers[signerIndex] = newSigner;
+                return;
             }
         }
+        revert("Unknown signer");
+    }
+
+    function _isSigner(address candidate) internal view returns (bool) {
+        for (uint256 signerIndex = 0; signerIndex < NUM_SIGNERS; signerIndex++) {
+            if (signers[signerIndex] == candidate) return true;
+        }
+        return false;
     }
     
     function hasConfirmed(uint256 txnId, address signer) external view returns (bool) {

@@ -5,9 +5,8 @@
  * Integrates with real database and price feeds.
  */
 
-import { DAOType, TreasuryAsset, DAOTreasury, ChainType } from '@/types/treasury';
-import { getTreasuryConfigForDAOType } from '@/config/treasury.config';
-import { getAssetPrice, getPriceDataObjectForTreasury } from './price.service';
+import type { DAOType, TreasuryAsset, DAOTreasury, ChainType } from '@/types/treasury';
+import { getAssetPrice } from './price.service';
 
 const ASSET_CLASS_MAP: Record<string, string> = {
   'cUSD': 'stable', 'USDC': 'stable', 'USDT': 'stable', 'DAI': 'stable',
@@ -32,9 +31,16 @@ const RISK_LEVELS: Record<string, string> = {
 /**
  * Classify asset from treasury
  */
-export async function classifyAsset(asset: TreasuryAsset) {
+type TreasuryAssetLike = TreasuryAsset & {
+  amount?: string | number;
+  balance?: string | number;
+};
+
+export async function classifyAsset(asset: TreasuryAssetLike) {
   const assetClass = ASSET_CLASS_MAP[asset.symbol] || 'exotic';
   const risk = RISK_LEVELS[assetClass] || 'medium';
+  const rawAmount = Number(asset.amount ?? asset.balance ?? 0);
+  const amount = Number.isFinite(rawAmount) ? rawAmount : 0;
 
   const price = await getAssetPrice(asset.symbol, asset.chain);
 
@@ -43,7 +49,7 @@ export async function classifyAsset(asset: TreasuryAsset) {
     chain: asset.chain,
     assetClass,
     riskProfile: risk,
-    usdValue: (parseFloat(asset.amount.toString()) || 0) * price.priceUsd,
+    usdValue: amount * price.priceUsd,
     currentPrice: price.priceUsd,
     strategyEligible: assetClass !== 'nft' && assetClass !== 'exotic',
     yieldCapable: ['stable', 'volatile', 'wrapped'].includes(assetClass),
@@ -186,11 +192,11 @@ export async function normalizeCrossChainState(
  * Recommend governance formula based on treasury characteristics
  */
 export function recommendGovernanceFormula(
-  daoType: DAOType,
+  daoType: DAOType | string,
   behavior?: any,
   crossChainState?: any
 ) {
-  const formulas: Record<DAOType, any> = {
+  const formulas: Record<string, any> = {
     free: {
       recommendedFormula: 'equal',
       rationale: 'Equal voting is fundamental for free DAOs - fair for all members',
@@ -241,7 +247,8 @@ export function recommendGovernanceFormula(
     }
   };
 
-  return formulas[daoType] || formulas['collective'];
+  const normalizedKey = String(daoType || 'free');
+  return formulas[normalizedKey] || formulas.free || formulas.collective;
 }
 
 /**
@@ -303,7 +310,7 @@ export async function generateTreasuryIntelligence(
   }
 
   // Character mapping
-  const characterMap: Record<DAOType, string> = {
+  const characterMap: Record<string, string> = {
     free: 'conservative-minimal',
     shortTerm: 'conservative-distributive',
     collective: 'balanced-accumulative',

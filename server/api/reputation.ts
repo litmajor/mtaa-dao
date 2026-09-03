@@ -1,73 +1,138 @@
-
-import { Request, Response } from 'express';
+import type { Request, Response, NextFunction } from 'express';
 import { db } from '../db';
-import { users, proposals, tasks } from '../../shared/schema';
-import { userActivities } from '../../shared/schema';
-import { eq, desc, sql, and, gte } from 'drizzle-orm';
+import { users, userActivities } from '../../shared/schema';
+import { eq, desc, sql, and, gte, count } from 'drizzle-orm';
 import { Logger } from '../utils/logger';
-import { AppError } from '../middleware/errorHandler';
 
 const logger = new Logger('reputation-api');
 
-export async function getUserReputationHandler(req: Request, res: Response) {
+const DEFAULT_LIMIT = 20;
+const MAX_LIMIT = 100;
+
+/**
+ * Calculates a date threshold based on timeframe string
+ */
+function getTimeframeCutoff(timeframe?: string): Date | null {
+  const now = new Date();
+  if (timeframe === '7d' || timeframe === 'weekly') {
+    return new Date(now.setDate(now.getDate() - 7));
+  }
+  if (timeframe === '30d' || timeframe === 'monthly') {
+    return new Date(now.setDate(now.getDate() - 30));
+  }
+  return null; // 'all'
+}
+
+/**
+ * GET /api/reputation/user/:userId
+ * Get user reputation score, breakdown, and recent activity history
+ */
+export async function getUserReputationHandler(req: Request, res: Response, next: NextFunction) {
   try {
     const { userId } = req.params;
 
-    // Get user's reputation score and activities
-      const userResult = await db
+    if (!userId) {
+      return res.status(400).json({ error: 'User ID is required' });
+    }
+
+    // 1. Get user record
+    const [user] = await db
+      .select({
+        id: users.id,
+        firstName: users.firstName,
+        lastName: users.lastName,
+        profilePicture: users.profilePicture,
+        reputationScore: users.reputationScore,
+      })
+      .from(users)
+      .where(eq(users.id, userId))
+      .limit(1);
+
+    if (!user) {
+      return res.status(404).json({ error: 'User not found' });
+    }
+
+    // 2. Fetch recent activities for display
+    const recentActivities = await db
+      .select()
+      .from(userActivities)
+      .where(eq(userActivities.userId, userId))
+      .orderBy(desc(userActivities.createdAt))
+      .limit(10);
+
+    // 3. Count activity totals for accurate category breakdown
+    const activityCounts = await db
+      .select({
+        type: userActivities.type,
+        activityCount: count(userActivities.id),
+      })
+      .from(userActivities)
+      .where(eq(userActivities.userId, userId))
+      .groupBy(userActivities.type);
+
+    const countsMap = new Map(activityCounts.map(a => [a.type, Number(a.activityCount)]));
+
+    const proposalsCount = (countsMap.get('proposal_created') || 0) + (countsMap.get('proposal_voted') || 0);
+    const tasksCount = (countsMap.get('task_completed') || 0) + (countsMap.get('task_claimed') || 0);
+    const contributionsCount = countsMap.get('contribution_made') || 0;
+
+    return res.json({
+      user,
+      reputation: {
+        total: user.reputationScore ? Number(user.reputationScore) : 0,
+        breakdown: {
+          proposals: proposalsCount * 10,
+          tasks: tasksCount * 15,
+          contributions: contributionsCount * 5,
+        },
+      },
+      recentActivities,
+    });
+  } catch (error) {
+    logger.error('Failed to get user reputation', error);
+    next(error);
+  }
+}
+
+/**
+ * GET /api/reputation/leaderboard
+ * Get global reputation leaderboard with timeframe support
+ */
+export async function getReputationLeaderboardHandler(req: Request, res: Response, next: NextFunction) {
+  try {
+    const { limit: rawLimit = String(DEFAULT_LIMIT), timeframe } = req.query;
+    const parsedLimit = Math.min(Math.max(1, parseInt(rawLimit as string, 10) || DEFAULT_LIMIT), MAX_LIMIT);
+    const cutoffDate = getTimeframeCutoff(timeframe as string);
+
+    // If a specific timeframe (7d, 30d) is specified, rank by activity score in that window
+    if (cutoffDate) {
+      const timeframeLeaderboard = await db
         .select({
           id: users.id,
           firstName: users.firstName,
           lastName: users.lastName,
           profilePicture: users.profilePicture,
           reputationScore: users.reputationScore,
+          periodActivityCount: count(userActivities.id),
         })
         .from(users)
-        .where(eq(users.id, userId))
-        .limit(1);
+        .innerJoin(userActivities, eq(users.id, userActivities.userId))
+        .where(gte(userActivities.createdAt, cutoffDate))
+        .groupBy(
+          users.id,
+          users.firstName,
+          users.lastName,
+          users.profilePicture,
+          users.reputationScore
+        )
+        .orderBy(desc(count(userActivities.id)))
+        .limit(parsedLimit);
 
-    if (userResult.length === 0) {
-      return res.status(404).json({ error: 'User not found' });
+      return res.json({ timeframe, leaderboard: timeframeLeaderboard });
     }
 
-    const user = userResult[0];
-
-    // Get recent activities for reputation calculation
-    const activities = await db
-      .select()
-      .from(userActivities)
-      .where(eq(userActivities.userId, userId))
-      .orderBy(desc(userActivities.createdAt))
-      .limit(50);
-
-    // Calculate reputation breakdown
-    const proposalActivities = activities.filter(a => a.type === 'proposal_created' || a.type === 'proposal_voted');
-    const taskActivities = activities.filter(a => a.type === 'task_completed' || a.type === 'task_claimed');
-    const contributionActivities = activities.filter(a => a.type === 'contribution_made');
-
-    res.json({
-      user,
-      reputation: {
-        total: user.reputationScore ? Number(user.reputationScore) : 0,
-        breakdown: {
-          proposals: proposalActivities.length * 10,
-          tasks: taskActivities.length * 15,
-          contributions: contributionActivities.length * 5,
-        },
-      },
-      recentActivities: activities.slice(0, 10),
-    });
-  } catch (error) {
-    logger.error('Failed to get user reputation', error);
-    throw new AppError('Failed to retrieve user reputation', 500);
-  }
-}
-
-export async function getReputationLeaderboardHandler(req: Request, res: Response) {
-  try {
-    const { limit = 20, timeframe = 'all' } = req.query;
-
-    let query = db
+    // Default 'all-time' global leaderboard
+    const leaderboard = await db
       .select({
         id: users.id,
         firstName: users.firstName,
@@ -79,23 +144,29 @@ export async function getReputationLeaderboardHandler(req: Request, res: Respons
       .from(users)
       .where(sql`${users.reputationScore} > 0`)
       .orderBy(desc(users.reputationScore))
-      .limit(parseInt(limit as string));
+      .limit(parsedLimit);
 
-    const leaderboard = await query;
-
-    res.json({ leaderboard });
+    return res.json({ timeframe: 'all', leaderboard });
   } catch (error) {
     logger.error('Failed to get reputation leaderboard', error);
-    throw new AppError('Failed to retrieve reputation leaderboard', 500);
+    next(error);
   }
 }
 
-export async function getDaoReputationLeaderboardHandler(req: Request, res: Response) {
+/**
+ * GET /api/reputation/dao/:daoId/leaderboard
+ * Get DAO-specific reputation leaderboard
+ */
+export async function getDaoReputationLeaderboardHandler(req: Request, res: Response, next: NextFunction) {
   try {
     const { daoId } = req.params;
-    const { limit = 20 } = req.query;
+    const { limit: rawLimit = String(DEFAULT_LIMIT) } = req.query;
+    const parsedLimit = Math.min(Math.max(1, parseInt(rawLimit as string, 10) || DEFAULT_LIMIT), MAX_LIMIT);
 
-    // Get users who have activities in this DAO
+    if (!daoId) {
+      return res.status(400).json({ error: 'DAO ID is required' });
+    }
+
     const daoLeaderboard = await db
       .select({
         id: users.id,
@@ -103,21 +174,29 @@ export async function getDaoReputationLeaderboardHandler(req: Request, res: Resp
         lastName: users.lastName,
         profilePicture: users.profilePicture,
         reputationScore: users.reputationScore,
-        daoActivityCount: sql<number>`COUNT(${userActivities.id})`,
+        daoActivityCount: count(userActivities.id),
       })
       .from(users)
       .innerJoin(userActivities, eq(users.id, userActivities.userId))
-      .where(and(
-        eq(userActivities, daoId),
-        sql`${users.reputationScore} > 0`
-      ))
-      .groupBy(users.id)
-      .orderBy(desc(users.reputationScore))
-      .limit(parseInt(limit as string));
+      .where(
+        and(
+          eq(userActivities.dao_id, daoId),
+          sql`${users.reputationScore} > 0`
+        )
+      )
+      .groupBy(
+        users.id,
+        users.firstName,
+        users.lastName,
+        users.profilePicture,
+        users.reputationScore
+      ) // Fixed PostgreSQL strict GROUP BY requirement
+      .orderBy(desc(count(userActivities.id)), desc(users.reputationScore))
+      .limit(parsedLimit);
 
-    res.json({ leaderboard: daoLeaderboard });
+    return res.json({ daoId, leaderboard: daoLeaderboard });
   } catch (error) {
     logger.error('Failed to get DAO reputation leaderboard', error);
-    throw new AppError('Failed to retrieve DAO reputation leaderboard', 500);
+    next(error);
   }
 }

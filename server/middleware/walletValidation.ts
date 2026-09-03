@@ -5,13 +5,35 @@
  * Vaults require a connected wallet for deposits, withdrawals, and other operations.
  */
 
-import { Request, Response, NextFunction } from 'express';
+import type { Request, Response, NextFunction } from 'express';
 import { db } from '../db';
 import { users } from '../../shared/schema';
 import { eq } from 'drizzle-orm';
 import { Logger } from '../utils/logger';
 
+declare global {
+  namespace Express {
+    interface Request {
+      wallet?: {
+        address: string;
+        userId: string;
+      };
+    }
+  }
+}
+
 const logger = Logger.getLogger();
+
+const getAuthenticatedUserId = (req: Request): string | null => {
+  const rawUser = req.user as { id?: string | number; claims?: { id?: string | number; sub?: string | number } } | undefined;
+  const rawValue = rawUser?.claims?.id ?? rawUser?.claims?.sub ?? rawUser?.id;
+
+  if (rawValue === undefined || rawValue === null || rawValue === '') {
+    return null;
+  }
+
+  return String(rawValue);
+};
 
 /**
  * Middleware: Requires connected wallet
@@ -29,7 +51,7 @@ export async function requireConnectedWallet(
   next: NextFunction
 ) {
   try {
-    const userId = (req.user as any)?.claims?.id;
+    const userId = getAuthenticatedUserId(req);
 
     // Check authentication
     if (!userId) {
@@ -73,9 +95,9 @@ export async function requireConnectedWallet(
     }
 
     // Attach wallet info to request for use in handlers
-    (req as any).wallet = {
+    req.wallet = {
       address: user.walletAddress,
-      userId: user.id
+      userId: String(user.id)
     };
 
     logger.debug(`Wallet validation passed for user: ${user.username} (${user.walletAddress})`);
@@ -105,7 +127,7 @@ export async function attachWalletIfExists(
   next: NextFunction
 ) {
   try {
-    const userId = (req.user as any)?.claims?.id;
+    const userId = getAuthenticatedUserId(req);
 
     if (userId) {
       const user = await db.query.users.findFirst({
@@ -116,9 +138,9 @@ export async function attachWalletIfExists(
       });
 
       if (user?.walletAddress) {
-        (req as any).wallet = {
+        req.wallet = {
           address: user.walletAddress,
-          userId: userId
+          userId
         };
       }
     }
@@ -147,8 +169,8 @@ export async function walletOwnershipGuard(
   next: NextFunction
 ) {
   try {
-    const authenticatedUserId = (req.user as any)?.claims?.id || (req.user as any)?.id;
-    const paramUserId = req.params.userId;
+    const authenticatedUserId = getAuthenticatedUserId(req);
+    const paramUserId = req.params.userId ? String(req.params.userId) : null;
 
     // Check authentication
     if (!authenticatedUserId) {
@@ -160,7 +182,16 @@ export async function walletOwnershipGuard(
       });
     }
 
-    // Verify ownership
+    if (!paramUserId) {
+      logger.warn(`Wallet ownership check missing userId in route params from IP: ${req.ip}`);
+      return res.status(400).json({
+        error: 'Missing user identifier',
+        code: 'MISSING_USER_ID',
+        message: 'The route is missing the user id parameter.'
+      });
+    }
+
+    // Verify ownership after normalizing both values to strings.
     if (authenticatedUserId !== paramUserId) {
       logger.warn(
         `Unauthorized wallet access attempt: user ${authenticatedUserId} tried to access resources for user ${paramUserId} from IP: ${req.ip}`

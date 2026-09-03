@@ -5,7 +5,7 @@
  * Prevents unvalidated treasury transfers flagged in MtaaDAO security audit
  */
 
-import { Request, Response, NextFunction } from 'express';
+import type { Request, Response, NextFunction } from 'express';
 
 /**
  * Middleware: Verify user is authenticated DAO member

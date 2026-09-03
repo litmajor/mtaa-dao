@@ -119,10 +119,13 @@ export class RecurringPaymentService {
       const provider = getMultiChainProvider().getProvider('polygon');
       const gasStrategy = await gasPriceOracle.getOptimalGasStrategy(provider, 'polygon', 'standard');
 
-      // Heuristic: consider network congested when instant price >> standard price
-      const prices = await gasPriceOracle.getCurrentGasPrices(provider, 'polygon');
-      const isCongested = !!(prices.instant && prices.standard &&
-        BigInt(prices.instant) > (BigInt(prices.standard) * BigInt(150) / BigInt(100)));
+      // Heuristic: consider network congested when instant tier >> standard tier
+      const standardStrategy = await gasPriceOracle.getOptimalGasStrategy(provider, 'polygon', 'standard');
+      const instantStrategy = await gasPriceOracle.getOptimalGasStrategy(provider, 'polygon', 'instant');
+      const standardFee = BigInt(standardStrategy.maxFeePerGas || standardStrategy.gasPrice || '0');
+      const instantFee = BigInt(instantStrategy.maxFeePerGas || instantStrategy.gasPrice || '0');
+      const isCongested = !!(instantFee > 0n && standardFee > 0n &&
+        instantFee > (standardFee * BigInt(150) / BigInt(100)));
 
       if (isCongested) {
         logger.warn(`Network congested, delaying payment ${payment.id}`);

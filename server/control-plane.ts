@@ -1,4 +1,5 @@
-import { Request, Response, Router } from 'express';
+import { Router } from 'express';
+import type { Request, Response } from 'express';
 import eventFabric from './event-fabric';
 
 interface ControlPlaneState {

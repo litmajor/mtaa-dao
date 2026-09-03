@@ -8,7 +8,7 @@
  * Database-backed ownership checks
  */
 
-import { Request, Response, NextFunction } from 'express';
+import type { Request, Response, NextFunction } from 'express';
 import { db } from '../db';
 import { vaults, daoMemberships, daoMultisigConfig } from '../../shared/schema';
 import { eq, and } from 'drizzle-orm';
@@ -68,7 +68,7 @@ export const loadVaultContext = async (
       ownerId: ownerId as string,
       treasuryId: undefined,
       vaultType: vault.vaultType || 'custom',
-      isActive: vault.isActive || true,
+      isActive: vault.isActive === false ? false : (vault.isActive ?? true),
     };
 
     return context;

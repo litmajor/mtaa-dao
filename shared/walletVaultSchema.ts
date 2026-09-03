@@ -51,7 +51,7 @@ export const walletVaultAccessLogs = pgTable(
     id: uuid('id').primaryKey().defaultRandom(),
     walletId: uuid('wallet_id').notNull(),
     userId: text('user_id').notNull(),
-    action: text('action').notNull(), // 'backup_created' | 'backup_retrieved' | 'backup_retrieval_denied'
+    action: text('action').notNull(), // 'backup_created' | 'backup_retrieved' | 'backup_retrieval_denied' | 'backup_deleted'
     ipAddress: text('ip_address'),
     userAgent: text('user_agent'),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),

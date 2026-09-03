@@ -844,6 +844,40 @@ export const votes = pgTable("votes", {
   updatedAt: timestamp("updated_at").defaultNow(),
 });
 
+export const telegramLinkTokens = pgTable("telegram_link_tokens", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  userId: varchar("user_id").references(() => users.id).notNull(),
+  token: varchar("token", { length: 128 }).notNull().unique(),
+  expiresAt: timestamp("expires_at").notNull(),
+  used: boolean("used").default(false).notNull(),
+  createdAt: timestamp("created_at").defaultNow(),
+  usedAt: timestamp("used_at"),
+  linkedTelegramId: varchar("linked_telegram_id"),
+});
+
+export const telegramReferralAttributions = pgTable("telegram_referral_attributions", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  telegramUserId: varchar("telegram_user_id").notNull().unique(),
+  referrerId: varchar("referrer_id").references(() => users.id).notNull(),
+  token: varchar("token", { length: 256 }).notNull(),
+  expiresAt: timestamp("expires_at").notNull(),
+  used: boolean("used").default(false).notNull(),
+  usedAt: timestamp("used_at"),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+});
+
+export const telegramAuditLog = pgTable("telegram_audit_log", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  action: varchar("action").notNull(),
+  adminId: varchar("admin_id"),
+  adminIp: varchar("admin_ip"),
+  details: jsonb("details").default({}),
+  result: varchar("result").default("success").notNull(),
+  errorMessage: text("error_message"),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
 // Cross-Chain Votes Ledger
 export const crossChainVotesLedger = pgTable("cross_chain_votes_ledger", {
   id: uuid("id").primaryKey().defaultRandom(),
@@ -904,7 +938,7 @@ export const contributions = pgTable("contributions", {
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
   vault : boolean("vault").default(false), // true if contribution goes to DAO vault
-
+  status: varchar("status").default("pending"), // pending, completed, failed
 });
 
 // Locked Savings table

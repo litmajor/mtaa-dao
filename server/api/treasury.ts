@@ -5,28 +5,19 @@
  * Provides semantic analysis and recommendations for DAO treasuries.
  */
 
-import { Request, Response } from 'express';
+import type { Request, Response } from 'express';
 import { db } from '../db';
-import { daos, daoMemberships, vaultTokenHoldings } from '../../shared/schema';
-import { eq, desc } from 'drizzle-orm';
-import { 
-  generateTreasuryIntelligence, 
-  analyzeTreasuryBehavior, 
+import { daos, daoMemberships, vaultTokenHoldings, vaults } from '../../shared/schema';
+import { and, eq, inArray } from 'drizzle-orm';
+import {
+  analyzeTreasuryBehavior,
+  classifyAsset,
+  generateTreasuryIntelligence,
   normalizeCrossChainState,
   recommendGovernanceFormula,
-  classifyAsset
 } from '../services/treasury-intelligence.service';
-import { 
-  getAssetPrices, 
-  getPriceDataObjectForTreasury,
-  getAssetPrice 
-} from '../services/price.service';
-import { 
-  getTreasuryHealthHistory, 
-  getLatestTreasuryHealth,
-  monitorDaoTreasuryNow 
-} from '../services/treasury-monitoring.service';
-import { getTreasuryConfigForDAOType } from '@/config/treasury.config';
+import { getPriceDataObjectForTreasury } from '../services/price.service';
+import { getTreasuryHealthHistory } from '../services/treasury-monitoring.service';
 import { logger } from '../utils/logger';
 
 /**
@@ -60,31 +51,93 @@ import { logger } from '../utils/logger';
  *   timestamp: string;
  * }
  */
+function normalizeDaoType(daoType?: string | null): any {
+  if (!daoType) return 'free';
+
+  const normalized = String(daoType).trim();
+  const typeMap: Record<string, string> = {
+    free: 'free',
+    harambee: 'free',
+    short_term: 'shortTerm',
+    shortTerm: 'shortTerm',
+    collective: 'collective',
+    community: 'collective',
+    savings: 'collective',
+    investment: 'meta',
+    investment_club: 'meta',
+    governance: 'governance',
+    meta: 'meta',
+    merryGoRound: 'collective',
+    merry_go_round: 'collective',
+  };
+
+  return typeMap[normalized] ?? normalized;
+}
+
+function resolveTreasuryAssetMeta(symbol: string, daoType?: string | null) {
+  const normalizedType = normalizeDaoType(daoType);
+  const symbolUpper = String(symbol).trim().toUpperCase();
+  const assetChainMap: Record<string, string> = {
+    CELO: 'CELO',
+    CUSD: 'CELO',
+    CEUR: 'CELO',
+    USDC: 'CELO',
+    USDT: 'CELO',
+    BTC: 'bitcoin',
+    ETH: 'ethereum',
+    SOL: 'solana',
+    MTAA: normalizedType === 'meta' ? 'multi' : 'CELO',
+  };
+
+  return {
+    chain: assetChainMap[symbolUpper] || 'unknown',
+    decimals: Number(symbolUpper === 'USDC' || symbolUpper === 'USDT' ? 6 : 18),
+  };
+}
+
+function buildTreasuryAssetsFromHoldings(holdings: any[], daoType?: string | null) {
+  return holdings.map((holding: any) => {
+    const symbol = String(holding?.tokenSymbol ?? holding?.symbol ?? 'UNKNOWN').trim();
+    const assetMeta = resolveTreasuryAssetMeta(symbol, daoType);
+    const chain = typeof holding?.chain === 'string' && holding.chain.trim() ? holding.chain.trim() : assetMeta.chain;
+
+    return {
+      symbol,
+      chain,
+      amount: holding?.balance ?? holding?.amount ?? '0',
+      decimals: assetMeta.decimals,
+    };
+  });
+}
+
 export async function analyzeTreasuryHandler(req: Request, res: Response) {
   try {
-    const { daoId, priceData } = req.body;
+    const daoId = typeof req.body?.daoId === 'string' ? req.body.daoId.trim() : '';
+    const { priceData } = req.body;
     
     if (!daoId) {
       return res.status(400).json({ error: 'daoId is required' });
     }
 
-    // Verify user is member of this DAO
     const userId = (req.user as any)?.id || (req.user as any)?.userId;
     if (!userId) {
       return res.status(401).json({ error: 'Unauthorized' });
     }
 
     const membership = await db
-      .select()
+      .select({ id: daoMemberships.id, status: daoMemberships.status, isBanned: daoMemberships.isBanned })
       .from(daoMemberships)
-      .where(eq(daoMemberships.daoId, daoId))
-      .then(rows => rows.length > 0);
+      .where(and(
+        eq(daoMemberships.daoId, daoId),
+        eq(daoMemberships.userId, userId),
+        eq(daoMemberships.status, 'approved')
+      ))
+      .limit(1);
 
-    if (!membership) {
-      return res.status(403).json({ error: 'Forbidden: Not a member of this DAO' });
+    if (membership.length === 0 || membership[0].isBanned) {
+      return res.status(403).json({ error: 'Forbidden: Not an approved member of this DAO' });
     }
 
-    // Fetch DAO data
     const daoResult = await db
       .select()
       .from(daos)
@@ -95,30 +148,36 @@ export async function analyzeTreasuryHandler(req: Request, res: Response) {
     }
 
     const daoData = daoResult[0];
+    const normalizedDaoType = normalizeDaoType(daoData.daoType);
+    const vaultRows = await db
+      .select({ id: vaults.id })
+      .from(vaults)
+      .where(eq(vaults.daoId, daoId));
 
-    // Fetch treasury assets from vault holdings
-    const holdings = await db
-      .select()
-      .from(vaultTokenHoldings)
-      .where(eq(vaultTokenHoldings.vaultId, daoId));
+    const vaultIds = vaultRows.map((vault) => vault.id);
+    const holdings = vaultIds.length > 0
+      ? await db
+          .select()
+          .from(vaultTokenHoldings)
+          .where(inArray(vaultTokenHoldings.vaultId, vaultIds))
+      : [];
 
-    // Build treasury object from DAO and holdings data
+    const treasuryAssets = buildTreasuryAssetsFromHoldings(holdings, normalizedDaoType);
+    const treasuryPriceData = typeof priceData === 'object' && priceData !== null
+      ? priceData
+      : await getPriceDataObjectForTreasury(treasuryAssets);
+
     const treasury = {
       daoId,
-      daoType: (daoData.daoType || 'free') as any,
-      assets: holdings.map((h: any) => ({
-        symbol: (h as any).tokenSymbol,
-        chain: (h as any).chain || 'CELO',
-        amount: (h as any).balance ?? (h as any).tokenAmount ?? '0',
-        decimals: (h as any).tokenDecimals ?? 18,
-      })),
+      daoType: normalizedDaoType,
+      assets: treasuryAssets,
       multisigRequired: Boolean((daoData as any).treasuryMultisigEnabled),
       minSigners: Number((daoData as any).treasuryRequiredSignatures || 1),
       customTokenAllowed: true,
     } as any;
 
     // Generate real treasury intelligence
-    const intelligence = await generateTreasuryIntelligence(treasury, priceData);
+    const intelligence = await generateTreasuryIntelligence(treasury, treasuryPriceData);
 
     logger.info(`Treasury analysis completed for DAO ${daoId}`, {
       daoType: daoData.daoType,
@@ -136,9 +195,9 @@ export async function analyzeTreasuryHandler(req: Request, res: Response) {
 
   } catch (error: any) {
     logger.error(`Treasury analysis error for DAO analysis request`, error);
-    res.status(500).json({ 
-      error: error.message || 'Failed to analyze treasury',
-      stack: process.env.NODE_ENV === 'development' ? error.stack : undefined
+    res.status(500).json({
+      error: 'Failed to analyze treasury',
+      ...(process.env.NODE_ENV === 'development' ? { stack: error instanceof Error ? error.stack : undefined } : {}),
     });
   }
 }
@@ -166,29 +225,39 @@ export async function analyzeTreasuryHandler(req: Request, res: Response) {
  */
 export async function recommendFormulaHandler(req: Request, res: Response) {
   try {
-    const { daoId, daoType } = req.body;
+    const daoId = typeof req.body?.daoId === 'string' ? req.body.daoId.trim() : '';
+    const daoType = typeof req.body?.daoType === 'string' ? req.body.daoType.trim() : '';
 
     if (!daoId || !daoType) {
       return res.status(400).json({ error: 'daoId and daoType are required' });
     }
 
-    // Verify authorization
+    const normalizedDaoType = normalizeDaoType(daoType);
+    const allowedTypes = ['free', 'shortTerm', 'collective', 'governance', 'meta'];
+    if (!allowedTypes.includes(normalizedDaoType)) {
+      return res.status(400).json({ error: 'Unsupported daoType provided' });
+    }
+
     const userId = (req.user as any)?.id || (req.user as any)?.userId;
     if (!userId) {
       return res.status(401).json({ error: 'Unauthorized' });
     }
 
     const membership = await db
-      .select()
+      .select({ id: daoMemberships.id, status: daoMemberships.status, isBanned: daoMemberships.isBanned })
       .from(daoMemberships)
-      .where(eq(daoMemberships.daoId, daoId));
+      .where(and(
+        eq(daoMemberships.daoId, daoId),
+        eq(daoMemberships.userId, userId),
+        eq(daoMemberships.status, 'approved')
+      ))
+      .limit(1);
 
-    if (!membership.length) {
-      return res.status(403).json({ error: 'Forbidden: Not a member of this DAO' });
+    if (!membership.length || membership[0].isBanned) {
+      return res.status(403).json({ error: 'Forbidden: Not an approved member of this DAO' });
     }
 
-    // Generate formula recommendation
-    const recommendation = recommendGovernanceFormula(daoType);
+    const recommendation = recommendGovernanceFormula(normalizedDaoType);
 
     logger.info(`Governance formula recommended for DAO ${daoId}`, {
       daoType,
@@ -203,9 +272,7 @@ export async function recommendFormulaHandler(req: Request, res: Response) {
 
   } catch (error: any) {
     logger.error('Formula recommendation error for DAO formula request', error);
-    res.status(500).json({ 
-      error: error.message || 'Failed to recommend formula'
-    });
+    res.status(500).json({ error: 'Failed to recommend formula' });
   }
 }
 
@@ -250,29 +317,35 @@ export async function recommendFormulaHandler(req: Request, res: Response) {
  */
 export async function getTreasuryHealthHandler(req: Request, res: Response) {
   try {
-    const { daoId } = req.params;
-    const { includeHistory = 'true', timeframe = '30d' } = req.query;
+    const daoId = typeof req.params?.daoId === 'string' ? req.params.daoId.trim() : '';
+    const includeHistoryParam = req.query.includeHistory;
+    const timeframeParam = req.query.timeframe ?? '30d';
+    const includeHistory = typeof includeHistoryParam === 'string' ? includeHistoryParam === 'true' : Boolean(includeHistoryParam);
+    const timeframe = ['24h', '7d', '30d', '90d'].includes(String(timeframeParam)) ? String(timeframeParam) : '30d';
 
     if (!daoId) {
       return res.status(400).json({ error: 'daoId is required' });
     }
 
-    // Verify authorization
     const userId = (req.user as any)?.id || (req.user as any)?.userId;
     if (!userId) {
       return res.status(401).json({ error: 'Unauthorized' });
     }
 
     const membership = await db
-      .select()
+      .select({ id: daoMemberships.id, status: daoMemberships.status, isBanned: daoMemberships.isBanned })
       .from(daoMemberships)
-      .where(eq(daoMemberships.daoId, daoId));
+      .where(and(
+        eq(daoMemberships.daoId, daoId),
+        eq(daoMemberships.userId, userId),
+        eq(daoMemberships.status, 'approved')
+      ))
+      .limit(1);
 
-    if (!membership.length) {
-      return res.status(403).json({ error: 'Forbidden: Not a member of this DAO' });
+    if (!membership.length || membership[0].isBanned) {
+      return res.status(403).json({ error: 'Forbidden: Not an approved member of this DAO' });
     }
 
-    // Fetch DAO and treasury data
     const daoResult = await db
       .select()
       .from(daos)
@@ -283,31 +356,42 @@ export async function getTreasuryHealthHandler(req: Request, res: Response) {
     }
 
     const daoData = daoResult[0];
+    const normalizedDaoType = normalizeDaoType(daoData.daoType);
+    const vaultRows = await db
+      .select({ id: vaults.id })
+      .from(vaults)
+      .where(eq(vaults.daoId, daoId));
 
-    // Fetch vault holdings for treasury assets
-    const holdings = await db
-      .select()
-      .from(vaultTokenHoldings)
-      .where(eq(vaultTokenHoldings.vaultId, daoId));
+    const vaultIds = vaultRows.map((vault) => vault.id);
+    const holdings = vaultIds.length > 0
+      ? await db
+          .select()
+          .from(vaultTokenHoldings)
+          .where(inArray(vaultTokenHoldings.vaultId, vaultIds))
+      : [];
 
-    // Build treasury object
+    const treasuryAssets = buildTreasuryAssetsFromHoldings(holdings, normalizedDaoType);
     const treasury = {
       daoId,
-      daoType: (daoData.daoType || 'free') as any,
-      assets: holdings.map(h => ({
-        symbol: h.tokenSymbol,
-        chain: 'CELO' as any,
-        amount: h.tokenAmount,
-        decimals: h.tokenDecimals || 18,
-      })),
-    };
+      daoType: normalizedDaoType,
+      assets: treasuryAssets,
+    } as any;
 
     // Generate health report using real intelligence
-    const intelligence = await generateTreasuryIntelligence(treasury);
-    const health = calculateHealthScore(intelligence);
+    const priceData = await getPriceDataObjectForTreasury(treasuryAssets);
+    const classifications = await Promise.all((treasury.assets || []).map((asset: any) => classifyAsset(asset as any)));
+    const behavior = await analyzeTreasuryBehavior(treasury as any, classifications);
+    const crossChainState = await normalizeCrossChainState(treasury as any, classifications);
+    const intelligence = await generateTreasuryIntelligence(treasury, priceData);
+    const health = calculateHealthScore({
+      ...intelligence,
+      crossChainState,
+      behavior,
+      risks: intelligence.risks || [],
+    });
     
-    const history = includeHistory === 'true' 
-      ? await fetchHealthHistory(daoId, timeframe as string) 
+    const history = includeHistory
+      ? await fetchHealthHistory(daoId, timeframe)
       : undefined;
 
     logger.info(`Treasury health check completed for DAO ${daoId}`, {
@@ -325,9 +409,7 @@ export async function getTreasuryHealthHandler(req: Request, res: Response) {
 
   } catch (error: any) {
     logger.error('Treasury health check error for DAO health check request', error);
-    res.status(500).json({ 
-      error: error.message || 'Failed to fetch treasury health'
-    });
+    res.status(500).json({ error: 'Failed to fetch treasury health' });
   }
 }
 
@@ -335,12 +417,10 @@ export async function getTreasuryHealthHandler(req: Request, res: Response) {
  * Calculate health score from treasury intelligence
  */
 function calculateHealthScore(intelligence: any) {
-  const { crossChainState, semanticSummary, risks } = intelligence;
+  const { crossChainState, risks } = intelligence;
   
-  // Base score starts at 100
   let score = 100;
 
-  // Deductions based on risks and exposures
   if (crossChainState.volatileExposure > 80) score -= 30;
   else if (crossChainState.volatileExposure > 60) score -= 15;
   else if (crossChainState.volatileExposure > 40) score -= 5;
@@ -350,20 +430,18 @@ function calculateHealthScore(intelligence: any) {
 
   if (crossChainState.stableExposure < 30 && crossChainState.totalValueUSD > 1000) score -= 15;
 
-  // Bonuses for good characteristics
   if (Object.keys(crossChainState.exposureByChain).length > 2) score += 5;
   if (crossChainState.assetConcentration < 0.3) score += 10;
 
-  // Risk deductions
   score -= Math.min(risks.length * 3, 15);
-
-  // Clamp between 0-100
   score = Math.max(0, Math.min(100, score));
 
-  // Determine status from score
   let status = 'healthy';
   if (score < 40) status = 'critical';
   else if (score < 70) status = 'caution';
+
+  const chainCount = Object.keys(crossChainState.exposureByChain || {}).length || 1;
+  const governanceDistribution = Math.max(0, Math.min(1, (crossChainState.stableExposure / 100) * 0.6 + (chainCount / 5) * 0.4));
 
   return {
     status,
@@ -373,10 +451,10 @@ function calculateHealthScore(intelligence: any) {
       assetConcentration: crossChainState.assetConcentration,
       chainFragmentation: 1 - crossChainState.chainConcentration,
       volatileExposure: crossChainState.volatileExposure / 100,
-      governanceDistribution: 0.65, // TODO: calculate from actual governance
+      governanceDistribution,
       liquidityScore: crossChainState.stableExposure > 0.5 ? 0.85 : 0.6,
     },
-    alerts: risks.length > 0 ? risks.map((risk, idx) => ({
+    alerts: risks.length > 0 ? risks.map((risk: string, idx: number) => ({
       severity: idx === 0 ? 'high' : 'medium',
       type: 'treasury-risk',
       message: risk,
@@ -395,7 +473,11 @@ async function fetchHealthHistory(daoId: string, timeframe: string) {
     const history = await getTreasuryHealthHistory(daoId, days);
     return history;
   } catch (error) {
-    logger.warn(`Failed to fetch health history for DAO ${daoId}, returning empty array`, error as Error);
+    logger.warn(`Failed to fetch health history for DAO ${daoId}, returning empty array`, {
+      daoId,
+      timeframe,
+      error: error instanceof Error ? error.message : String(error),
+    });
     return [];
   }
 }

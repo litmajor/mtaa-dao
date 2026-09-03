@@ -1,5 +1,5 @@
 
-import { Request, Response, NextFunction } from 'express';
+import type { Request, Response, NextFunction } from 'express';
 import { vaultService } from '../services/vaultService';
 import { Logger } from '../utils/logger';
 
@@ -24,8 +24,8 @@ export async function authorizeVaultAccess(req: Request, res: Response, next: Ne
       return res.status(404).json({ error: 'Vault not found' });
     }
 
-    // Check if user owns the vault or has appropriate permissions
-    if (vault.userId !== userId && !await vaultService.hasVaultAccess(userId, vaultId)) {
+    // Check if user owns the vault
+    if (vault.userId !== userId) {
       return res.status(403).json({ error: 'Access denied to this vault' });
     }
 

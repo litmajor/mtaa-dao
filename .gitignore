@@ -65,6 +65,8 @@ cache/solidity-files-cache.json
 /dist/
 /server/logs/
 /route-usage.csv
+typechain/
+typechain-types/
 
 #log formats
 *.log

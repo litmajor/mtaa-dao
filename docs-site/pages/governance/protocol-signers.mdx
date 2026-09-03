@@ -1,0 +1,56 @@
+---
+title: Protocol Signer Policy
+description: How MtaaDAO selects, protects, monitors, and replaces platform multisig signers.
+audience: maintainers, governance participants
+status: ACCEPTED
+last_verified: 2026-08-25
+---
+
+# Protocol Signer Policy
+
+The platform-level `MultiSigTreasury` is a separate governance body from the signers of any individual Chama. It protects platform-wide authorities, including the `UpgradeableBeacon` when BeaconProxy deployments are used.
+
+## Signer Composition
+
+The five seats should balance technical capability, operational knowledge, and independence:
+
+1. **Core technical team (1-2 seats)**: a smart-contract architect or CTO who understands upgrades and incident response.
+2. **Operations and finance lead (1 seat)**: a CEO, COO, or finance officer responsible for treasury operations.
+3. **External trusted parties (1-2 seats)**: independent security advisors, ecosystem grant leads, or trusted community delegates.
+
+The contract enforces five unique, nonzero addresses, 3-of-5 approval, and a mandatory 48-hour delay. It cannot prove that those keys belong to five independent people. Before deployment and after every replacement, record the seat holder, identity verification, conflict-of-interest review, and confirmation that the key is independently controlled.
+
+## Key and Availability Standards
+
+- Use a dedicated hardware wallet or isolated Web3 wallet for every signer.
+- Never share a seed phrase, device, or hot wallet between signers.
+- Distribute signers across locations and schedules so three approvals can be gathered promptly.
+- Maintain a tested recovery procedure without disclosing private material.
+- Perform a quarterly signing test and verify a current contact route for every seat.
+
+## Replacement Triggers
+
+Begin replacement when a signer:
+
+- leaves the team or no longer holds the role;
+- reports a lost, exposed, inaccessible, or suspected-compromised key; or
+- is inactive for more than 30 consecutive days without approved leave and a recorded return date.
+
+Human inactivity and independence are operational checks. The smart contract cannot detect either condition by itself.
+
+## Replacement Flow
+
+1. Record the trigger, affected seat, incident details, and proposed replacement in the governance log.
+2. Notify the remaining signers and review the replacement for conflicts of interest and independence.
+3. If compromise is suspected, stop sensitive proposals and use the existing multisig-controlled pause or incident process where available. Never use a private-key shortcut.
+4. Submit a transaction targeting `MultiSigTreasury` itself that calls `replaceSigner(oldSigner, newSigner)`.
+5. Obtain confirmation from 3 of 5 signers and wait the mandatory 48-hour on-chain timelock.
+6. Execute the transaction, verify the signer list, rotate affected operational credentials, update the governance log, and run a signing test with the new signer.
+
+If the remaining available signers cannot reach 3-of-5, there is no unilateral recovery path in the contract. Follow the incident-recovery procedure; redeployment may be required.
+
+## Annual Review and Rotation
+
+Review the five seats annually. The contract can enforce a pre-approved annual rotation schedule, but the team must select and verify the replacement and assess real-world independence.
+
+This policy applies to the platform multisig. Each Chama manages its local signers under its own governance rules.

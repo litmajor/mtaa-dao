@@ -14,7 +14,8 @@
  * ═══════════════════════════════════════════════════════════════════════════════
  */
 
-import express, { Request, Response, NextFunction } from 'express';
+import type { Request, Response, NextFunction } from 'express';
+import express from 'express';
 import { isAuthenticated } from '../auth';
 import { notificationService } from '../notificationService';
 import { authenticateToken } from '../middleware/auth';

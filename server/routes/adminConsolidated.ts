@@ -72,9 +72,11 @@
  * ═══════════════════════════════════════════════════════════════════════════════
  */
 
-import { Router, Request, Response } from 'express';
+import { Router } from 'express';
+import type { Request, Response } from 'express';
 import { db } from '../db';
 import { Logger } from '../utils/logger';
+import { isAuthenticated } from '../auth';
 import { requireRole } from '../middleware/rbac';
 import { nuru } from '../core/nuru';
 import { kwetu } from '../core/kwetu';
@@ -115,6 +117,24 @@ const router = Router();
 
 // Middleware: Require super_admin role
 const requireSuperAdmin = requireRole('super_admin');
+
+function parsePagination(
+  query: Request['query'],
+  defaults: { skip: number; limit: number } = { skip: 0, limit: 20 },
+  maxLimit = 100,
+): { skip: number; limit: number } | null {
+  const skipValue = String(query.skip ?? defaults.skip);
+  const limitValue = String(query.limit ?? defaults.limit);
+  if (!/^\d+$/.test(skipValue) || !/^\d+$/.test(limitValue)) return null;
+
+  const skip = Number(skipValue);
+  const limit = Number(limitValue);
+  if (!Number.isSafeInteger(skip) || !Number.isSafeInteger(limit) || limit < 1 || limit > maxLimit) {
+    return null;
+  }
+
+  return { skip, limit };
+}
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // ADMIN AUTH RATE LIMITERS
@@ -225,7 +245,7 @@ router.post('/auth/login', adminLoginLimiter, adminLoginIpLimiter, async (req: R
     }
 
     // Check if user has admin role
-    const roles = user.roles ? user.roles.split(',') : [];
+    const roles = (user.roles ?? '').split(',').map((r: string) => r.trim()).filter(Boolean);
     if (!roles.includes('super_admin')) {
       // Log unauthorized access attempt
       await logConsolidatedAuditEvent({
@@ -378,10 +398,11 @@ router.post('/auth/login', adminLoginLimiter, adminLoginIpLimiter, async (req: R
     }
 
     // Generate JWT token (only after successful password AND 2FA verification)
+    // NOTE: must use `sub` to align with the authenticate() middleware in auth.ts
     const token = jwt.sign(
-      { id: user.id, email: user.email, roles: user.roles },
+      { sub: user.id, email: user.email, roles: user.roles },
       JWT_SECRET,
-      { expiresIn: '4h' } // Shorter expiry for admin sessions
+      { expiresIn: '4h', algorithm: 'HS256' } // Shorter expiry for admin sessions
     );
 
     // Log successful admin login
@@ -417,6 +438,8 @@ router.post('/auth/login', adminLoginLimiter, adminLoginIpLimiter, async (req: R
     });
   }
 });
+
+router.use(isAuthenticated, requireSuperAdmin);
 
 /**
  * POST /api/admin/auth/register
@@ -561,7 +584,9 @@ router.post('/auth/register', requireSuperAdmin, async (req: Request, res: Respo
  */
 router.get('/users', requireSuperAdmin, async (req: Request, res: Response) => {
   try {
-    const { skip = 0, limit = 20, search, role } = req.query;
+    const { search, role } = req.query;
+    const pagination = parsePagination(req.query);
+    if (!pagination) return res.status(400).json({ success: false, error: 'skip must be non-negative and limit must be between 1 and 100' });
 
     const filters: any[] = [];
     if (search) {
@@ -576,8 +601,8 @@ router.get('/users', requireSuperAdmin, async (req: Request, res: Response) => {
 
     const allUsers = await db.query.users.findMany({
       where: filters.length > 0 ? and(...filters) : undefined,
-      limit: parseInt(limit as string),
-      offset: parseInt(skip as string)
+      limit: pagination.limit,
+      offset: pagination.skip
     });
 
     const totalCount = await db.select({ count: count() }).from(users).where(
@@ -604,8 +629,8 @@ router.get('/users', requireSuperAdmin, async (req: Request, res: Response) => {
       data: safeUsers,
       pagination: {
         total: totalCount[0].count,
-        skip: parseInt(skip as string),
-        limit: parseInt(limit as string)
+        skip: pagination.skip,
+        limit: pagination.limit
       }
     });
   } catch (error) {
@@ -614,6 +639,34 @@ router.get('/users', requireSuperAdmin, async (req: Request, res: Response) => {
       success: false,
       error: 'Failed to list users'
     });
+  }
+});
+
+// Backwards-compatible route: /api/admin/users/activity -> /api/admin/activity-logs
+// Keep this before /users/:userId so "activity" is not treated as a user ID.
+router.get('/users/activity', requireSuperAdmin, async (req: Request, res: Response) => {
+  try {
+    const { userId } = req.query;
+    const pagination = parsePagination(req.query, { skip: 0, limit: 100 }, 200);
+    if (!pagination) return res.status(400).json({ success: false, error: 'skip must be non-negative and limit must be between 1 and 200' });
+    const filters = userId ? [eq(userActivities.userId, userId as string)] : [];
+    const activities = await db.query.userActivities.findMany({
+      where: filters.length > 0 ? and(...filters) : undefined,
+      limit: pagination.limit,
+      offset: pagination.skip,
+      orderBy: [desc(userActivities.createdAt)]
+    });
+    const totalCount = await db.select({ count: count() }).from(userActivities).where(
+      filters.length > 0 ? and(...filters) : undefined
+    );
+    res.json({
+      success: true,
+      data: activities,
+      pagination: { total: totalCount[0].count, skip: pagination.skip, limit: pagination.limit }
+    });
+  } catch (error) {
+    logger.error('[Admin] Get activity logs (compat) error:', error);
+    res.status(500).json({ success: false, error: 'Failed to get activity logs' });
   }
 });
 
@@ -674,10 +727,13 @@ router.put('/users/:userId/ban', requireSuperAdmin, adminDestructiveOpsLimiter, 
   try {
     const { userId } = req.params;
     const { banned, reason } = req.body;
+    if (typeof banned !== 'boolean') {
+      return res.status(400).json({ success: false, error: 'banned must be a boolean' });
+    }
 
     const updated = await db.update(users)
       .set({
-        isBanned: banned || false,
+        isBanned: banned,
         banReason: reason || null
       })
       .where(eq(users.id, userId))
@@ -696,10 +752,17 @@ router.put('/users/:userId/ban', requireSuperAdmin, adminDestructiveOpsLimiter, 
       severity: 'high'
     });
 
+    // Strip sensitive fields from response
+    const safeUpdated = updated[0] ? {
+      id: (updated[0] as any).id,
+      email: (updated[0] as any).email,
+      isBanned: (updated[0] as any).isBanned,
+      banReason: (updated[0] as any).banReason,
+    } : null;
     res.json({
       success: true,
       message: banned ? 'User banned' : 'User unbanned',
-      data: updated[0]
+      data: safeUpdated
     });
   } catch (error) {
     logger.error('[Admin] Ban user error:', error);
@@ -738,8 +801,9 @@ router.delete('/users/:userId', requireSuperAdmin, adminDestructiveOpsLimiter, a
 
     // Soft delete: mark as deleted and retain record for audit/recovery
     // Use raw SQL to perform soft-delete to avoid strict Drizzle type checks for extended fields
-    const deletedRows = await db.execute(sql`UPDATE users SET is_deleted = true, deleted_at = now(), deleted_by = ${adminId} WHERE id = ${userId} RETURNING *`);
-    const deleted = deletedRows && Array.isArray(deletedRows) ? deletedRows[0] as any : null;
+    const deletedRows = await db.execute(sql`UPDATE users SET is_deleted = true, deleted_at = now(), deleted_by = ${adminId} WHERE id = ${userId} RETURNING id, email`);
+    // db.execute returns rows directly as an array; no extra [0] index needed
+    const deleted = Array.isArray(deletedRows) ? deletedRows[0] as any : null;
 
     await logConsolidatedAuditEvent({
       actorId: adminId,
@@ -752,7 +816,7 @@ router.delete('/users/:userId', requireSuperAdmin, adminDestructiveOpsLimiter, a
       severity: 'critical'
     });
 
-    res.json({ success: true, message: 'User soft-deleted', data: deleted[0] });
+    res.json({ success: true, message: 'User soft-deleted', data: deleted });
   } catch (error) {
     logger.error('[Admin] Delete user error:', error);
     res.status(500).json({ success: false, error: 'Failed to delete user' });
@@ -769,11 +833,12 @@ router.delete('/users/:userId', requireSuperAdmin, adminDestructiveOpsLimiter, a
  */
 router.get('/daos', requireSuperAdmin, async (req: Request, res: Response) => {
   try {
-    const { skip = 0, limit = 20 } = req.query;
+    const pagination = parsePagination(req.query);
+    if (!pagination) return res.status(400).json({ success: false, error: 'skip must be non-negative and limit must be between 1 and 100' });
 
     const allDAOs = await db.query.daos.findMany({
-      limit: parseInt(limit as string),
-      offset: parseInt(skip as string)
+      limit: pagination.limit,
+      offset: pagination.skip
     });
 
     const totalCount = await db.select({ count: count() }).from(daos);
@@ -783,8 +848,8 @@ router.get('/daos', requireSuperAdmin, async (req: Request, res: Response) => {
       data: allDAOs,
       pagination: {
         total: totalCount[0].count,
-        skip: parseInt(skip as string),
-        limit: parseInt(limit as string)
+        skip: pagination.skip,
+        limit: pagination.limit
       }
     });
   } catch (error) {
@@ -848,6 +913,17 @@ router.put('/daos/:daoId/status', requireSuperAdmin, async (req: Request, res: R
       .where(eq(daos.id, daoId))
       .returning();
 
+    await logConsolidatedAuditEvent({
+      actorId: (req as any).user?.id || 'unknown',
+      actionType: 'ADMIN_DAO_STATUS_CHANGED',
+      targetType: 'dao',
+      targetId: daoId,
+      result: 'success',
+      ipAddress: req.ip,
+      metadata: { newStatus: status },
+      severity: 'high'
+    });
+
     res.json({
       success: true,
       message: 'DAO status updated',
@@ -872,13 +948,15 @@ router.put('/daos/:daoId/status', requireSuperAdmin, async (req: Request, res: R
  */
 router.get('/security/sessions', requireSuperAdmin, async (req: Request, res: Response) => {
   try {
-    const { skip = 0, limit = 50, userId } = req.query;
+    const { userId } = req.query;
+    const pagination = parsePagination(req.query, { skip: 0, limit: 50 }, 200);
+    if (!pagination) return res.status(400).json({ success: false, error: 'skip must be non-negative and limit must be between 1 and 200' });
     const whereClause = userId ? eq(sessions.userId, userId as string) : undefined;
 
     const sessionsList = await db.query.sessions.findMany({
       where: whereClause,
-      limit: Math.min(parseInt(limit as string), 200),
-      offset: parseInt(skip as string),
+      limit: pagination.limit,
+      offset: pagination.skip,
       orderBy: [desc(sessions.createdAt)]
     });
 
@@ -910,8 +988,20 @@ router.get('/security/sessions', requireSuperAdmin, async (req: Request, res: Re
 router.delete('/security/sessions/:sessionId', requireSuperAdmin, async (req: Request, res: Response) => {
   try {
     const { sessionId } = req.params;
+    const adminId = (req as any).user?.id || 'unknown';
 
     await db.delete(sessions).where(eq(sessions.id, sessionId));
+
+    await logConsolidatedAuditEvent({
+      actorId: adminId,
+      actionType: 'ADMIN_SESSION_REVOKED',
+      targetType: 'session',
+      targetId: sessionId,
+      result: 'success',
+      ipAddress: req.ip,
+      metadata: {},
+      severity: 'high'
+    });
 
     res.json({
       success: true,
@@ -932,11 +1022,12 @@ router.delete('/security/sessions/:sessionId', requireSuperAdmin, async (req: Re
  */
 router.get('/security/audit', requireSuperAdmin, async (req: Request, res: Response) => {
   try {
-    const { skip = 0, limit = 100 } = req.query;
+    const pagination = parsePagination(req.query, { skip: 0, limit: 100 }, 200);
+    if (!pagination) return res.status(400).json({ success: false, error: 'skip must be non-negative and limit must be between 1 and 200' });
 
     const logs = await db.query.auditLogs.findMany({
-      limit: parseInt(limit as string),
-      offset: parseInt(skip as string),
+      limit: pagination.limit,
+      offset: pagination.skip,
       orderBy: [desc(auditLogs.createdAt)]
     });
 
@@ -947,8 +1038,8 @@ router.get('/security/audit', requireSuperAdmin, async (req: Request, res: Respo
       data: logs,
       pagination: {
         total: totalCount[0].count,
-        skip: parseInt(skip as string),
-        limit: parseInt(limit as string)
+        skip: pagination.skip,
+        limit: pagination.limit
       }
     });
   } catch (error) {
@@ -966,14 +1057,16 @@ router.get('/security/audit', requireSuperAdmin, async (req: Request, res: Respo
  */
 router.get('/activity-logs', requireSuperAdmin, async (req: Request, res: Response) => {
   try {
-    const { skip = 0, limit = 100, userId } = req.query;
+    const { userId } = req.query;
+    const pagination = parsePagination(req.query, { skip: 0, limit: 100 }, 200);
+    if (!pagination) return res.status(400).json({ success: false, error: 'skip must be non-negative and limit must be between 1 and 200' });
 
     const filters = userId ? [eq(userActivities.userId, userId as string)] : [];
 
     const activities = await db.query.userActivities.findMany({
       where: filters.length > 0 ? and(...filters) : undefined,
-      limit: parseInt(limit as string),
-      offset: parseInt(skip as string),
+      limit: pagination.limit,
+      offset: pagination.skip,
       orderBy: [desc(userActivities.createdAt)]
     });
 
@@ -986,8 +1079,8 @@ router.get('/activity-logs', requireSuperAdmin, async (req: Request, res: Respon
       data: activities,
       pagination: {
         total: totalCount[0].count,
-        skip: parseInt(skip as string),
-        limit: parseInt(limit as string)
+        skip: pagination.skip,
+        limit: pagination.limit
       }
     });
   } catch (error) {
@@ -997,11 +1090,6 @@ router.get('/activity-logs', requireSuperAdmin, async (req: Request, res: Respon
       error: 'Failed to get activity logs'
     });
   }
-});
-
-// Backwards-compatible route: /api/admin/users/activity -> redirects to /api/admin/activity-logs
-router.get('/users/activity', requireSuperAdmin, async (req: Request, res: Response) => {
-  return res.redirect(307, '/api/admin/activity-logs');
 });
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -1036,26 +1124,30 @@ router.get('/settings', requireSuperAdmin, async (req: Request, res: Response) =
 router.put('/settings', requireSuperAdmin, async (req: Request, res: Response) => {
   try {
     const { key, value } = req.body;
+    if (typeof key !== 'string' || !key.trim() || value === undefined) {
+      return res.status(400).json({ success: false, error: 'key and value are required' });
+    }
+    const normalizedKey = key.trim();
     // Protect critical keys from being updated via this endpoint
     const protectedKeys = ['JWT_SECRET', 'ADMIN_TOKEN', 'STRIPE_WEBHOOK_SECRET', 'DB_PASSWORD', 'TWO_FA_ENCRYPTION_KEY'];
-    if (protectedKeys.includes(key)) {
+    if (protectedKeys.includes(normalizedKey)) {
       return res.status(403).json({ success: false, error: 'Updating this config key is not allowed via API' });
     }
 
     // Ensure key exists
-    const existing = await db.query.config.findFirst({ where: eq(config.key, key) });
+    const existing = await db.query.config.findFirst({ where: eq(config.key, normalizedKey) });
     if (!existing) return res.status(404).json({ success: false, error: 'Config key not found' });
 
     const updated = await db.update(config)
       .set({ value })
-      .where(eq(config.key, key))
+      .where(eq(config.key, normalizedKey))
       .returning();
 
     await logConsolidatedAuditEvent({
       actorId: (req as any).user?.id || 'unknown',
       actionType: 'ADMIN_CONFIG_UPDATED',
       targetType: 'config',
-      targetId: key,
+      targetId: normalizedKey,
       result: 'success',
       ipAddress: req.ip,
       metadata: { newValuePresent: true },

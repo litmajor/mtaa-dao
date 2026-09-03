@@ -59,7 +59,7 @@ contract RotationModule is Ownable, ReentrancyGuard, Pausable {
 
     struct RotationCycle {
         uint256 cycleNumber;
-        address currentRecipient;
+        bytes32 currentRecipientId;
         uint256 expectedPool;           // Expected total (all members × contribution)
         uint256 actualPool;             // Actual collected this cycle
         uint256 amountDistributed;
@@ -83,11 +83,12 @@ contract RotationModule is Ownable, ReentrancyGuard, Pausable {
 
     struct RotationProgress {
         uint256 currentCycleNumber;
-        address[] memberList;
-        mapping(address => uint256) memberRotationIndex;
+        bytes32[] memberList;
+        mapping(bytes32 => uint256) memberRotationIndex;
         // cycle-keyed payment tracking - no reset loop needed
-        mapping(uint256 cycleNumber => mapping(address => bool)) hasPaid;
+        mapping(uint256 cycleNumber => mapping(bytes32 => bool)) hasPaid;
         mapping(uint256 cycleNumber => uint256) paidCountByCycle;
+        bool cancelled;
     }
 
     // =========================================================================
@@ -100,6 +101,8 @@ contract RotationModule is Ownable, ReentrancyGuard, Pausable {
     mapping(address => RotationProgress) private progress;
     // vault address → cycle number → cycle data
     mapping(address => mapping(uint256 => RotationCycle)) public cycles;
+    mapping(address => mapping(bytes32 => address)) public memberAddress;
+    mapping(address => mapping(uint256 => bool)) public pendingProposal;
 
     mapping(address => uint256) public totalDistributed;
     mapping(address => uint256) public totalCollected;
@@ -154,8 +157,8 @@ contract RotationModule is Ownable, ReentrancyGuard, Pausable {
 
     event PositionSwapped(
         address indexed vault,
-        address indexed member1,
-        address indexed member2,
+        bytes32 indexed member1,
+        bytes32 indexed member2,
         uint256 position1,
         uint256 position2
     );
@@ -164,6 +167,12 @@ contract RotationModule is Ownable, ReentrancyGuard, Pausable {
         address indexed vault,
         uint256 cycleNumber,
         string reason
+    );
+
+    event TreasuryAddressUpdated(
+        address indexed vault,
+        address indexed oldTreasury,
+        address indexed newTreasury
     );
 
     event CycleDistributionProposed(
@@ -199,6 +208,13 @@ contract RotationModule is Ownable, ReentrancyGuard, Pausable {
     error LotteryRequiresVRF();
     error CannotSwapPastCycle();
     error RotationAlreadyInitialized();
+    error Unauthorized();
+    error RotationCancelledError();
+    error InvalidMemberId();
+    error InvalidArrayLength();
+    error MemberNotRegistered();
+    error PendingProposal();
+    error UnsupportedSelectionMethod();
 
     // =========================================================================
     // CONSTRUCTOR
@@ -213,7 +229,8 @@ contract RotationModule is Ownable, ReentrancyGuard, Pausable {
     /**
      * @notice Initialize a rotation for a specific vault/chama
      * @param vault         Identifier for this rotation (can be ChamaTreasury address)
-     * @param members       Members in rotation order (min 2, max 1000)
+    * @param memberIds     Stable member identifiers in rotation order (min 2, max 1000)
+    * @param initialAddresses Current wallet address for each member ID
      * @param monthlyContribution Per-member contribution per cycle (stablecoin units)
      * @param selectionMethod SEQUENTIAL recommended; LOTTERY requires VRF
      * @param minimumParticipationBps Minimum % of members who must pay before payout
@@ -223,7 +240,8 @@ contract RotationModule is Ownable, ReentrancyGuard, Pausable {
      */
     function initializeRotation(
         address vault,
-        address[] calldata members,
+        bytes32[] calldata memberIds,
+        address[] calldata initialAddresses,
         uint256 monthlyContribution,
         RotationSelectionMethod selectionMethod,
         uint256 minimumParticipationBps,
@@ -233,7 +251,8 @@ contract RotationModule is Ownable, ReentrancyGuard, Pausable {
         if (vault == address(0)) revert ZeroAddress();
         if (chamaTreasury == address(0)) revert ZeroAddress();
         if (stablecoin == address(0)) revert ZeroAddress();
-        if (members.length < 2 || members.length > 1000) revert InvalidMemberCount();
+        if (memberIds.length != initialAddresses.length) revert InvalidArrayLength();
+        if (memberIds.length < 2 || memberIds.length > 1000) revert InvalidMemberCount();
         if (monthlyContribution == 0) revert InvalidContribution();
         if (minimumParticipationBps > 10000) revert InvalidParticipationThreshold();
         if (configs[vault].totalMembers != 0) revert RotationAlreadyInitialized();
@@ -242,11 +261,14 @@ contract RotationModule is Ownable, ReentrancyGuard, Pausable {
         if (selectionMethod == RotationSelectionMethod.LOTTERY) {
             revert LotteryRequiresVRF();
         }
+        if (selectionMethod == RotationSelectionMethod.PROPORTIONAL) {
+            revert UnsupportedSelectionMethod();
+        }
 
-        uint256 totalCycles = members.length; // one payout per member
+        uint256 totalCycles = memberIds.length; // one payout per member
 
         configs[vault] = RotationConfig({
-            totalMembers:             members.length,
+            totalMembers:             memberIds.length,
             totalCycles:              totalCycles,
             cycleStartDate:           block.timestamp,
             cycleEndDate:             block.timestamp + (30 days * totalCycles),
@@ -259,17 +281,20 @@ contract RotationModule is Ownable, ReentrancyGuard, Pausable {
 
         RotationProgress storage prog = progress[vault];
         prog.currentCycleNumber = 1;
-        prog.memberList = members;
+        prog.memberList = memberIds;
 
-        for (uint256 i = 0; i < members.length; i++) {
-            prog.memberRotationIndex[members[i]] = i;
+        for (uint256 i = 0; i < memberIds.length; i++) {
+            if (memberIds[i] == bytes32(0) || initialAddresses[i] == address(0)) revert InvalidMemberId();
+            if (prog.memberRotationIndex[memberIds[i]] != 0) revert InvalidMemberId();
+            prog.memberRotationIndex[memberIds[i]] = i + 1;
+            memberAddress[vault][memberIds[i]] = initialAddresses[i];
         }
 
         // Initialize first cycle
         cycles[vault][1] = RotationCycle({
             cycleNumber:          1,
-            currentRecipient:     members[0],
-            expectedPool:         monthlyContribution * members.length,
+            currentRecipientId:   memberIds[0],
+            expectedPool:         monthlyContribution * memberIds.length,
             actualPool:           0,
             amountDistributed:    0,
             status:               RotationStatus.ACTIVE,
@@ -281,7 +306,7 @@ contract RotationModule is Ownable, ReentrancyGuard, Pausable {
         emit RotationInitialized(
             vault,
             chamaTreasury,
-            members.length,
+            memberIds.length,
             totalCycles,
             monthlyContribution,
             block.timestamp + (30 days * totalCycles)
@@ -298,12 +323,12 @@ contract RotationModule is Ownable, ReentrancyGuard, Pausable {
      *      This function records the payment in rotation state only.
      *      Called by the server oracle after verifying the treasury deposit.
      * @param vault     Rotation vault identifier
-     * @param member    Member who paid
+    * @param memberId  Stable member identifier who paid
      * @param amount    Amount paid (must equal monthlyContribution)
      */
     function recordContribution(
         address vault,
-        address member,
+        bytes32 memberId,
         uint256 amount
     ) external onlyOwner {
         RotationConfig storage config = configs[vault];
@@ -311,18 +336,15 @@ contract RotationModule is Ownable, ReentrancyGuard, Pausable {
         if (amount != config.monthlyContribution) revert InvalidContribution();
 
         RotationProgress storage prog = progress[vault];
+        if (prog.cancelled) revert RotationCancelledError();
         uint256 cycleNum = prog.currentCycleNumber;
 
         // Check member is registered
-        bool isMember = false;
-        for (uint256 i = 0; i < prog.memberList.length; i++) {
-            if (prog.memberList[i] == member) { isMember = true; break; }
-        }
-        if (!isMember) revert NotAMember();
+        if (prog.memberRotationIndex[memberId] == 0) revert NotAMember();
 
-        if (prog.hasPaid[cycleNum][member]) revert AlreadyPaidThisCycle();
+        if (prog.hasPaid[cycleNum][memberId]) revert AlreadyPaidThisCycle();
 
-        prog.hasPaid[cycleNum][member] = true;
+        prog.hasPaid[cycleNum][memberId] = true;
         prog.paidCountByCycle[cycleNum]++;
 
         cycles[vault][cycleNum].actualPool += amount;
@@ -330,7 +352,7 @@ contract RotationModule is Ownable, ReentrancyGuard, Pausable {
 
         emit ContributionRecorded(
             vault,
-            member,
+            memberAddress[vault][memberId],
             cycleNum,
             amount,
             prog.paidCountByCycle[cycleNum]
@@ -362,10 +384,12 @@ contract RotationModule is Ownable, ReentrancyGuard, Pausable {
         if (config.totalMembers == 0) revert RotationNotInitialized();
 
         RotationProgress storage prog = progress[vault];
+        if (prog.cancelled) revert RotationCancelledError();
         uint256 cycleNum = prog.currentCycleNumber;
         RotationCycle storage cycle = cycles[vault][cycleNum];
 
         if (cycle.hasBeenDistributed) revert CycleAlreadyDistributed();
+        if (pendingProposal[vault][cycleNum]) revert PendingProposal();
 
         // Check participation threshold
         uint256 paidCount = prog.paidCountByCycle[cycleNum];
@@ -411,7 +435,7 @@ contract RotationModule is Ownable, ReentrancyGuard, Pausable {
         // treasury executes the proposal.
         string memory reason = "Rotation payout";
         uint256 proposalId = IChamaTreasury(config.chamaTreasury).proposeWithdrawalByModule(
-            cycle.currentRecipient,
+            memberAddress[vault][cycle.currentRecipientId],
             netAmount,
             0,
             reason,
@@ -422,11 +446,12 @@ contract RotationModule is Ownable, ReentrancyGuard, Pausable {
         // Map proposal -> vault/cycle so we can confirm on execution
         proposalVault[proposalId] = vault;
         proposalCycle[proposalId] = cycleNum;
+        pendingProposal[vault][cycleNum] = true;
 
         emit CycleDistributionProposed(
             vault,
             cycleNum,
-            cycle.currentRecipient,
+            memberAddress[vault][cycle.currentRecipientId],
             amountToSend,
             proposalId
         );
@@ -434,17 +459,12 @@ contract RotationModule is Ownable, ReentrancyGuard, Pausable {
         emit CycleDistributed(
             vault,
             cycleNum,
-            cycle.currentRecipient,
+            memberAddress[vault][cycle.currentRecipientId],
             amountToSend,
             participationBps
         );
 
-        // Advance to next cycle or complete rotation
-        if (cycleNum < config.totalCycles) {
-            _advanceToNextCycle(vault);
-        } else {
-            emit RotationCompleted(vault, config.totalCycles, totalDistributed[vault]);
-        }
+        // The cycle advances only after ChamaTreasury confirms execution.
     }
 
     // =========================================================================
@@ -458,23 +478,21 @@ contract RotationModule is Ownable, ReentrancyGuard, Pausable {
         uint256 nextCycleNum = prog.currentCycleNumber + 1;
         prog.currentCycleNumber = nextCycleNum;
 
-        address nextRecipient;
+        bytes32 nextRecipientId;
 
         if (config.selectionMethod == RotationSelectionMethod.SEQUENTIAL) {
             // Sequential: next in list (wraps, but rotation ends at totalCycles)
             uint256 nextIndex = (nextCycleNum - 1) % config.totalMembers;
-            nextRecipient = prog.memberList[nextIndex];
+            nextRecipientId = prog.memberList[nextIndex];
         } else {
-            // PROPORTIONAL: backend determines order; use sequential as fallback
-            uint256 nextIndex = (nextCycleNum - 1) % config.totalMembers;
-            nextRecipient = prog.memberList[nextIndex];
+            revert UnsupportedSelectionMethod();
         }
 
         uint256 nextDistDate = block.timestamp + 30 days;
 
         cycles[vault][nextCycleNum] = RotationCycle({
             cycleNumber:          nextCycleNum,
-            currentRecipient:     nextRecipient,
+            currentRecipientId:   nextRecipientId,
             expectedPool:         config.monthlyContribution * config.totalMembers,
             actualPool:           0,
             amountDistributed:    0,
@@ -484,7 +502,7 @@ contract RotationModule is Ownable, ReentrancyGuard, Pausable {
             hasBeenDistributed:   false
         });
 
-        emit CycleAdvanced(vault, nextCycleNum, nextRecipient, nextDistDate);
+        emit CycleAdvanced(vault, nextCycleNum, memberAddress[vault][nextRecipientId], nextDistDate);
     }
 
     // =========================================================================
@@ -497,18 +515,21 @@ contract RotationModule is Ownable, ReentrancyGuard, Pausable {
      */
     function swapRotationPositions(
         address vault,
-        address member1,
-        address member2
+        bytes32 member1,
+        bytes32 member2
     ) external onlyOwner whenNotPaused {
         RotationProgress storage prog = progress[vault];
         RotationConfig storage config = configs[vault];
 
-        uint256 idx1 = prog.memberRotationIndex[member1];
-        uint256 idx2 = prog.memberRotationIndex[member2];
+        uint256 storedIdx1 = prog.memberRotationIndex[member1];
+        uint256 storedIdx2 = prog.memberRotationIndex[member2];
+        if (storedIdx1 == 0 || storedIdx2 == 0) revert MemberNotRegistered();
+        uint256 idx1 = storedIdx1 - 1;
+        uint256 idx2 = storedIdx2 - 1;
 
         // Cannot swap a position that has already been paid out
         uint256 currentCycle = prog.currentCycleNumber;
-        if (idx1 < currentCycle || idx2 < currentCycle) {
+        if (idx1 + 1 < currentCycle || idx2 + 1 < currentCycle) {
             revert CannotSwapPastCycle();
         }
 
@@ -516,18 +537,49 @@ contract RotationModule is Ownable, ReentrancyGuard, Pausable {
         prog.memberList[idx1] = member2;
         prog.memberList[idx2] = member1;
 
-        prog.memberRotationIndex[member1] = idx2;
-        prog.memberRotationIndex[member2] = idx1;
+        prog.memberRotationIndex[member1] = idx2 + 1;
+        prog.memberRotationIndex[member2] = idx1 + 1;
 
         // Update upcoming cycle recipients if affected
         for (uint256 c = currentCycle; c <= config.totalCycles; c++) {
             if (!cycles[vault][c].hasBeenDistributed) {
                 uint256 recipientIdx = (c - 1) % config.totalMembers;
-                cycles[vault][c].currentRecipient = prog.memberList[recipientIdx];
+                cycles[vault][c].currentRecipientId = prog.memberList[recipientIdx];
             }
         }
 
         emit PositionSwapped(vault, member1, member2, idx1, idx2);
+    }
+
+    function updateMemberAddress(
+        address vault,
+        bytes32 memberId,
+        address newAddress
+    ) external onlyOwner whenNotPaused {
+        if (newAddress == address(0)) revert ZeroAddress();
+        if (progress[vault].memberRotationIndex[memberId] == 0) revert MemberNotRegistered();
+        memberAddress[vault][memberId] = newAddress;
+    }
+
+    /**
+     * @notice Repoint the rotation module to a new treasury address.
+     * @dev This is the pre-launch migration affordance for a treasury move without
+     *      redeploying the module. Pending cycle proposals remain tied to the
+     *      vault's cycle mapping; only the treasury address used for new payouts
+     *      and future proposal validation is updated here.
+     */
+    function updateTreasuryAddress(address vault, address newTreasury)
+        external
+        onlyOwner
+    {
+        RotationConfig storage config = configs[vault];
+        if (config.totalMembers == 0) revert RotationNotInitialized();
+        if (newTreasury == address(0)) revert ZeroAddress();
+
+        address oldTreasury = config.chamaTreasury;
+        config.chamaTreasury = newTreasury;
+
+        emit TreasuryAddressUpdated(vault, oldTreasury, newTreasury);
     }
 
     // =========================================================================
@@ -557,6 +609,7 @@ contract RotationModule is Ownable, ReentrancyGuard, Pausable {
         onlyOwner
     {
         RotationProgress storage prog = progress[vault];
+        prog.cancelled = true;
         uint256 cycleNum = prog.currentCycleNumber;
         cycles[vault][cycleNum].status = RotationStatus.CANCELLED;
         emit RotationCancelled(vault, cycleNum, reason);
@@ -586,7 +639,7 @@ contract RotationModule is Ownable, ReentrancyGuard, Pausable {
     function getMemberList(address vault)
         external
         view
-        returns (address[] memory)
+        returns (bytes32[] memory)
     {
         return progress[vault].memberList;
     }
@@ -600,7 +653,7 @@ contract RotationModule is Ownable, ReentrancyGuard, Pausable {
         RotationConfig storage config = configs[vault];
         uint256 nextCycle = prog.currentCycleNumber + 1;
         if (nextCycle > config.totalCycles) return address(0);
-        return cycles[vault][nextCycle].currentRecipient;
+        return memberAddress[vault][cycles[vault][nextCycle].currentRecipientId];
     }
 
     function getMemberContributionStatus(address vault)
@@ -616,13 +669,13 @@ contract RotationModule is Ownable, ReentrancyGuard, Pausable {
         );
     }
 
-    function hasMemberPaid(address vault, address member)
+    function hasMemberPaid(address vault, bytes32 memberId)
         external
         view
         returns (bool)
     {
         RotationProgress storage prog = progress[vault];
-        return prog.hasPaid[prog.currentCycleNumber][member];
+        return prog.hasPaid[prog.currentCycleNumber][memberId];
     }
 
     function getRotationProgress(address vault)
@@ -664,13 +717,14 @@ contract RotationModule is Ownable, ReentrancyGuard, Pausable {
         if (vault == address(0)) revert RotationNotInitialized();
 
         RotationConfig storage config = configs[vault];
-        if (msg.sender != config.chamaTreasury) revert ZeroAddress();
+        if (msg.sender != config.chamaTreasury) revert Unauthorized();
 
         RotationCycle storage cycle = cycles[vault][cycleNum];
+        if (!pendingProposal[vault][cycleNum]) revert PendingProposal();
         if (cycle.hasBeenDistributed) revert CycleAlreadyDistributed();
 
         // Basic sanity checks: recipient and amount should match expectations
-        if (cycle.currentRecipient != recipient) revert InvalidContribution();
+        if (memberAddress[vault][cycle.currentRecipientId] != recipient) revert InvalidContribution();
         if (amount == 0) revert InsufficientFunds(0, 1);
 
         // Mark distributed now that treasury executed the transfer
@@ -678,6 +732,7 @@ contract RotationModule is Ownable, ReentrancyGuard, Pausable {
         cycle.status = RotationStatus.COMPLETED;
         cycle.distributionDate = block.timestamp;
         cycle.amountDistributed = amount;
+        pendingProposal[vault][cycleNum] = false;
 
         totalDistributed[vault] += amount;
 

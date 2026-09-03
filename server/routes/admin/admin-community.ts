@@ -1,71 +1,92 @@
-import { Router, Request, Response } from 'express';
+import { Router } from 'express';
+import type { Request, Response } from 'express';
+import { desc, eq, gte, sql } from 'drizzle-orm';
+import { z } from 'zod';
 import { db } from '../../db';
 import { logger } from '../../utils/logger';
 import {
-  users,
-  daos,
-  referralRewards,
   contributions,
-  tasks,
-  announcements,
-  userAchievements,
-} from '../../../shared/schema';
-import {
-  referralMetrics,
-  leaderboardRankings,
-  rewardDistribution,
   daoAnalytics,
-  supportTicketMetrics,
-} from '../../../shared/monitoringMetricsSchema';
-import { eq, desc, sql, and, gte, lte } from 'drizzle-orm';
+  daos,
+  platformAnnouncements,
+  referralRewards,
+  rewardDistribution,
+  tasks,
+} from '../../../shared/schema';
+import { achievements, userAchievements } from '../../../shared/achievementSchema';
 import { requireRole } from '../../middleware/rbac';
 import { cacheManager } from '../../core/consolidation/DataCacheConsolidation';
-import { CommunityAggregationService } from '../../services/metricsAggregationService';
 
 const router = Router();
 const requireSuperAdmin = requireRole('super_admin');
+const communityCache = cacheManager.registerCache({
+  name: 'admin_community',
+  level: 'memory',
+  ttl: 10 * 60 * 1000,
+  invalidationStrategy: 'ttl',
+});
 
-/**
- * PHASE 3 COMMUNITY & ENGAGEMENT ENDPOINTS
- * Referrals, Leaderboard, Rewards, Achievements, Announcements, DAO Analytics
- */
+const paginationSchema = z.object({
+  page: z.coerce.number().int().min(1).default(1),
+  limit: z.coerce.number().int().min(1).max(100).default(20),
+});
 
-// GET /api/admin/referrals/metrics
-router.get('/referrals/metrics', requireSuperAdmin, async (req: Request, res: Response) => {
+const achievementInputSchema = z.object({
+  name: z.string().trim().min(1).max(255),
+  description: z.string().trim().max(2000).optional(),
+  difficulty: z.string().trim().min(1).max(50),
+  points: z.coerce.number().int().min(0).max(1_000_000),
+  category: z.string().trim().min(1).max(100).default('general'),
+});
+
+const taskInputSchema = z.object({
+  daoId: z.string().min(1),
+  creatorId: z.string().min(1),
+  name: z.string().trim().min(1).max(255),
+  description: z.string().trim().min(1).max(5000),
+  type: z.string().trim().min(1).max(100),
+  difficulty: z.string().trim().min(1).max(50),
+  reward: z.coerce.number().min(0).max(1_000_000),
+});
+
+const announcementInputSchema = z.object({
+  title: z.string().trim().min(1).max(255),
+  content: z.string().trim().min(1).max(10000),
+  type: z.string().trim().min(1).max(50).default('info'),
+  audience: z.string().trim().min(1).max(50).default('all'),
+  expiresAt: z.coerce.date().nullable().optional(),
+});
+
+async function getCached<T>(key: string, loader: () => Promise<T>): Promise<T> {
+  const cached = await communityCache.get(key);
+  if (cached !== null) return cached as T;
+  const value = await loader();
+  await communityCache.set(key, value);
+  return value;
+}
+
+function invalidateCommunityCache(): void {
+  void communityCache.clear().catch(error => logger.warn('Community cache invalidation failed:', error));
+}
+
+router.get('/referrals/metrics', requireSuperAdmin, async (_req: Request, res: Response) => {
   try {
-    const cache = cacheManager.getCache('platform_metrics');
-    const metrics = await cache?.getOrSet(
-      'referral-metrics',
-      async () => {
-        const today = new Date();
-        today.setHours(0, 0, 0, 0);
-
-        const [
-          totalReferrals,
-          newReferralsToday,
-          activeReferrers,
-          totalRewardsDistributed,
-        ] = await Promise.all([
-          db.select({ count: sql<number>`count(*)` }).from(referralRewards),
-          db.select({ count: sql<number>`count(*)` }).from(referralRewards).where(gte(referralRewards.createdAt, today)),
-          db.select({ count: sql<number>`count(DISTINCT ${referralRewards.referrerId})` }).from(referralRewards),
-          db.select({ total: sql<string>`COALESCE(SUM(CAST(${referralRewards.rewardAmount} AS NUMERIC)), 0)` }).from(referralRewards),
-        ]);
-
-        return {
-          newReferrals: newReferralsToday[0].count || 0,
-          activeReferrers: activeReferrers[0].count || 0,
-          conversionRate: 3.8,
-          totalReferrals: totalReferrals[0].count || 0,
-          totalRewardsDistributed: parseFloat(totalRewardsDistributed[0].total || '0'),
-          recentTrend: 12.5,
-        };
-      },
-      CACHE_TTL.MEDIUM
-    );
-
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const [total, todayTotal, referrers, rewards] = await Promise.all([
+      db.select({ count: sql<number>`count(*)` }).from(referralRewards),
+      db.select({ count: sql<number>`count(*)` }).from(referralRewards).where(gte(referralRewards.createdAt, today)),
+      db.select({ count: sql<number>`count(distinct ${referralRewards.referrerId})` }).from(referralRewards),
+      db.select({ total: sql<string>`coalesce(sum(cast(${referralRewards.rewardAmount} as numeric)), 0)` }).from(referralRewards),
+    ]);
+    const totalReferrals = Number(total[0]?.count || 0);
+    const activeReferrers = Number(referrers[0]?.count || 0);
     res.json({
-      ...metrics,
+      newReferrals: Number(todayTotal[0]?.count || 0),
+      activeReferrers,
+      conversionRate: activeReferrers ? Math.round((totalReferrals / activeReferrers) * 100) / 100 : 0,
+      totalReferrals,
+      totalRewardsDistributed: Number(rewards[0]?.total || 0),
       timestamp: new Date(),
     });
   } catch (error) {
@@ -74,64 +95,34 @@ router.get('/referrals/metrics', requireSuperAdmin, async (req: Request, res: Re
   }
 });
 
-// GET /api/admin/referrals/top-referrers
-router.get('/referrals/top-referrers', requireSuperAdmin, async (req: Request, res: Response) => {
+router.get('/referrals/top-referrers', requireSuperAdmin, async (_req: Request, res: Response) => {
   try {
-    const topReferrers = await MetricsCacheService.getOrSet(
-      CACHE_KEYS.TOP_REFERRERS,
-      async () => {
-        return db.select({
-          id: referralRewards.referrerId,
-          referrals: sql<number>`COUNT(*)`,
-          totalEarnings: sql<string>`COALESCE(SUM(CAST(${referralRewards.rewardAmount} AS NUMERIC)), 0)`,
-        })
-        .from(referralRewards)
-        .groupBy(referralRewards.referrerId)
-        .orderBy(desc(sql<number>`SUM(CAST(${referralRewards.rewardAmount} AS NUMERIC))`))
-        .limit(20);
-      },
-      CACHE_TTL.MEDIUM
-    );
-
-    res.json({
-      topReferrers: topReferrers || [],
-      timestamp: new Date(),
-    });
+    const topReferrers = await db.select({
+      id: referralRewards.referrerId,
+      referrals: sql<number>`count(*)`,
+      totalEarnings: sql<string>`coalesce(sum(cast(${referralRewards.rewardAmount} as numeric)), 0)`,
+    }).from(referralRewards)
+      .groupBy(referralRewards.referrerId)
+      .orderBy(desc(sql`sum(cast(${referralRewards.rewardAmount} as numeric))`))
+      .limit(20);
+    res.json({ topReferrers, timestamp: new Date() });
   } catch (error) {
     logger.error('Top referrers error:', error);
     res.status(500).json({ error: 'Failed to fetch top referrers' });
   }
 });
 
-// GET /api/admin/referrals/sources
-router.get('/referrals/sources', requireSuperAdmin, async (req: Request, res: Response) => {
+router.get('/referrals/sources', requireSuperAdmin, async (_req: Request, res: Response) => {
   try {
-    const sources = await MetricsCacheService.getOrSet(
-      CACHE_KEYS.REFERRAL_SOURCES,
-      async () => {
-        const referralData = await db.select({
-          source: referralRewards.source,
-          count: sql<number>`COUNT(*)`,
-          conversionValue: sql<string>`COALESCE(SUM(CAST(${referralRewards.rewardAmount} AS NUMERIC)), 0)`,
-        })
-        .from(referralRewards)
-        .groupBy(referralRewards.source)
-        .orderBy(desc(sql<number>`COUNT(*)`));
-
-        return referralData.map(r => ({
-          source: r.source || 'Unknown',
-          referrals: r.count || 0,
-          revenue: parseFloat(r.conversionValue || '0'),
-          conversionRate: 0,
-        }));
-      },
-      CACHE_TTL.MEDIUM
-    );
-
+    const referralData = await db.select({
+      source: referralRewards.rewardType,
+      referrals: sql<number>`count(*)`,
+      revenue: sql<string>`coalesce(sum(cast(${referralRewards.rewardAmount} as numeric)), 0)`,
+    }).from(referralRewards)
+      .groupBy(referralRewards.rewardType)
+      .orderBy(desc(sql`count(*)`));
     res.json({
-      sources: sources || [],
-      totalReferrals: sources?.reduce((sum, s) => sum + s.referrals, 0) || 0,
-      totalConversions: sources?.length || 0,
+      sources: referralData.map(item => ({ ...item, revenue: Number(item.revenue || 0), conversionRate: 0 })),
       timestamp: new Date(),
     });
   } catch (error) {
@@ -140,631 +131,247 @@ router.get('/referrals/sources', requireSuperAdmin, async (req: Request, res: Re
   }
 });
 
-// GET /api/admin/leaderboard/members?type=overall
 router.get('/leaderboard/members', requireSuperAdmin, async (req: Request, res: Response) => {
   try {
-    const type = (req.query.type as string) || 'overall';
-    const cacheKey = type === 'weekly' ? CACHE_KEYS.LEADERBOARD_WEEKLY : 
-                     type === 'monthly' ? CACHE_KEYS.LEADERBOARD_MONTHLY :
-                     CACHE_KEYS.LEADERBOARD_OVERALL;
-
-    const members = await MetricsCacheService.getOrSet(
-      cacheKey,
-      async () => {
-        let timeFilter;
-        const now = new Date();
-        
-        if (type === 'weekly') {
-          timeFilter = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
-        } else if (type === 'monthly') {
-          timeFilter = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
-        } else {
-          timeFilter = null;
-        }
-
-        let query = db.select({
-          userId: contributions.userId,
-          rank: sql<number>`ROW_NUMBER() OVER (ORDER BY COUNT(*) DESC)`,
-          score: sql<number>`COUNT(*) * 100`,
-          contributions: sql<number>`COUNT(*)`,
-        })
-        .from(contributions)
-        .groupBy(contributions.userId)
-        .orderBy(desc(sql<number>`COUNT(*)`))
-        .limit(20);
-
-        if (timeFilter) {
-          query = db.select({
-            userId: contributions.userId,
-            rank: sql<number>`ROW_NUMBER() OVER (ORDER BY COUNT(*) DESC)`,
-            score: sql<number>`COUNT(*) * 100`,
-            contributions: sql<number>`COUNT(*)`,
-          })
-          .from(contributions)
-          .where(gte(contributions.createdAt, timeFilter))
-          .groupBy(contributions.userId)
-          .orderBy(desc(sql<number>`COUNT(*)`))
-          .limit(20);
-        }
-
-        return query;
-      },
-      CACHE_TTL.MEDIUM
-    );
-
-    res.json({
-      type,
-      members: members || [],
-      podium: members?.slice(0, 3) || [],
-      timestamp: new Date(),
-    });
+    const type = typeof req.query.type === 'string' ? req.query.type : 'overall';
+    const since = type === 'weekly' ? new Date(Date.now() - 7 * 86400000) : type === 'monthly' ? new Date(Date.now() - 30 * 86400000) : null;
+    const members = await db.select({
+      userId: contributions.userId,
+      rank: sql<number>`row_number() over (order by count(*) desc)`,
+      score: sql<number>`count(*) * 100`,
+      contributions: sql<number>`count(*)`,
+    }).from(contributions)
+      .where(since ? gte(contributions.createdAt, since) : undefined)
+      .groupBy(contributions.userId)
+      .orderBy(desc(sql`count(*)`))
+      .limit(20);
+    res.json({ type, members, podium: members.slice(0, 3), timestamp: new Date() });
   } catch (error) {
     logger.error('Leaderboard members error:', error);
     res.status(500).json({ error: 'Failed to fetch leaderboard members' });
   }
 });
 
-// GET /api/admin/leaderboard/achievements
-router.get('/leaderboard/achievements', requireSuperAdmin, async (req: Request, res: Response) => {
+router.get('/leaderboard/achievements', requireSuperAdmin, async (_req: Request, res: Response) => {
   try {
-    const achievements = await MetricsCacheService.getOrSet(
-      CACHE_KEYS.USER_ACHIEVEMENTS,
-      async () => {
-        return db.select({
-          id: userAchievements.id,
-          name: userAchievements.name,
-          description: userAchievements.description,
-          earnedCount: sql<number>`COUNT(${userAchievements.id})`,
-        })
-        .from(userAchievements)
-        .groupBy(userAchievements.id, userAchievements.name, userAchievements.description)
-        .orderBy(desc(sql<number>`COUNT(${userAchievements.id})`));
-      },
-      CACHE_TTL.MEDIUM
-    );
-
-    const totalEarned = achievements?.reduce((sum, a) => sum + (a.earnedCount || 0), 0) || 0;
-
-    res.json({
-      achievements: achievements || [],
-      totalEarned,
-      totalAchievements: achievements?.length || 0,
-      timestamp: new Date(),
-    });
+    const rows = await db.select({
+      id: achievements.id,
+      name: achievements.name,
+      description: achievements.description,
+      earnedCount: sql<number>`count(${userAchievements.id})`,
+    }).from(achievements)
+      .leftJoin(userAchievements, eq(userAchievements.achievementId, achievements.id))
+      .groupBy(achievements.id, achievements.name, achievements.description)
+      .orderBy(desc(sql`count(${userAchievements.id})`));
+    res.json({ achievements: rows, totalEarned: rows.reduce((sum, row) => sum + Number(row.earnedCount || 0), 0), totalAchievements: rows.length, timestamp: new Date() });
   } catch (error) {
     logger.error('Achievements error:', error);
     res.status(500).json({ error: 'Failed to fetch achievements' });
   }
 });
 
-// GET /api/admin/rewards/metrics
-router.get('/rewards/metrics', requireSuperAdmin, async (req: Request, res: Response) => {
+router.get('/rewards/metrics', requireSuperAdmin, async (_req: Request, res: Response) => {
   try {
-    const metrics = await MetricsCacheService.getOrSet(
-      CACHE_KEYS.REWARD_METRICS,
-      async () => {
-        const oneWeekAgo = new Date();
-        oneWeekAgo.setDate(oneWeekAgo.getDate() - 7);
-
-        const [
-          totalDistributed,
-          weekDistributed,
-          totalRewards,
-          topEarners,
-        ] = await Promise.all([
-          db.select({ total: sql<string>`COALESCE(SUM(CAST(${rewardDistribution.amount} AS NUMERIC)), 0)` })
-            .from(rewardDistribution),
-          db.select({ total: sql<string>`COALESCE(SUM(CAST(${rewardDistribution.amount} AS NUMERIC)), 0)` })
-            .from(rewardDistribution)
-            .where(gte(rewardDistribution.distributedAt, oneWeekAgo)),
-          db.select({ count: sql<number>`COUNT(*)` }).from(rewardDistribution),
-          db.select({
-            userId: rewardDistribution.userId,
-            amount: sql<string>`SUM(CAST(${rewardDistribution.amount} AS NUMERIC))`,
-          })
-          .from(rewardDistribution)
-          .groupBy(rewardDistribution.userId)
-          .orderBy(desc(sql<string>`SUM(CAST(${rewardDistribution.amount} AS NUMERIC))`))
-          .limit(5),
-        ]);
-
-        return {
-          totalDistributed: parseFloat(totalDistributed[0].total || '0'),
-          thisWeekAmount: parseFloat(weekDistributed[0].total || '0'),
-          averageReward: totalRewards[0].count > 0 ? parseFloat(totalDistributed[0].total || '0') / totalRewards[0].count : 0,
-          topEarners: topEarners || [],
-        };
-      },
-      CACHE_TTL.MEDIUM
-    );
-
-    res.json({
-      ...metrics,
-      timestamp: new Date(),
+    const metrics = await getCached('rewards:metrics', async () => {
+      const weekAgo = new Date(Date.now() - 7 * 86400000);
+      const [all, week, count] = await Promise.all([
+        db.select({ total: sql<string>`coalesce(sum(cast(${rewardDistribution.amount} as numeric)), 0)` }).from(rewardDistribution),
+        db.select({ total: sql<string>`coalesce(sum(cast(${rewardDistribution.amount} as numeric)), 0)` }).from(rewardDistribution).where(gte(rewardDistribution.distributionDate, weekAgo)),
+        db.select({ count: sql<number>`count(*)` }).from(rewardDistribution),
+      ]);
+      const totalDistributed = Number(all[0]?.total || 0);
+      return { totalDistributed, thisWeekAmount: Number(week[0]?.total || 0), averageReward: Number(count[0]?.count || 0) ? totalDistributed / Number(count[0].count) : 0 };
     });
+    res.json({ ...metrics, timestamp: new Date() });
   } catch (error) {
     logger.error('Rewards metrics error:', error);
     res.status(500).json({ error: 'Failed to fetch rewards metrics' });
   }
 });
 
-// GET /api/admin/rewards/tiers
-router.get('/rewards/tiers', requireSuperAdmin, async (req: Request, res: Response) => {
+router.get('/rewards/tiers', requireSuperAdmin, async (_req: Request, res: Response) => {
   try {
-    const tiers = await MetricsCacheService.getOrSet(
-      CACHE_KEYS.REWARD_TIERS,
-      async () => {
-        const tierCounts = await db.select({
-          tier: rewardDistribution.tier,
-          count: sql<number>`COUNT(*)`,
-          totalAmount: sql<string>`COALESCE(SUM(CAST(${rewardDistribution.amount} AS NUMERIC)), 0)`,
-        })
-        .from(rewardDistribution)
-        .groupBy(rewardDistribution.tier);
-
-        const total = tierCounts.reduce((sum, t) => sum + (t.count || 0), 0);
-
-        return tierCounts.map(t => ({
-          tier: t.tier || 'Standard',
-          members: t.count || 0,
-          percentage: total > 0 ? ((t.count || 0) / total * 100).toFixed(1) : 0,
-          totalAmount: parseFloat(t.totalAmount || '0'),
-        }));
-      },
-      CACHE_TTL.MEDIUM
-    );
-
-    res.json({
-      tiers: tiers || [],
-      totalMembers: tiers?.reduce((sum, t) => sum + (t.members || 0), 0) || 0,
-      timestamp: new Date(),
+    const tiers = await getCached('rewards:tiers', async () => {
+      const rows = await db.select({ tier: rewardDistribution.status, members: sql<number>`count(*)`, totalAmount: sql<string>`coalesce(sum(cast(${rewardDistribution.amount} as numeric)), 0)` }).from(rewardDistribution).groupBy(rewardDistribution.status);
+      const total = rows.reduce((sum, row) => sum + Number(row.members || 0), 0);
+      return rows.map(row => ({ tier: row.tier, members: Number(row.members || 0), percentage: total ? ((Number(row.members || 0) / total) * 100).toFixed(1) : '0.0', totalAmount: Number(row.totalAmount || 0) }));
     });
+    res.json({ tiers, totalMembers: tiers.reduce((sum, tier) => sum + tier.members, 0), timestamp: new Date() });
   } catch (error) {
     logger.error('Reward tiers error:', error);
     res.status(500).json({ error: 'Failed to fetch reward tiers' });
   }
 });
 
-// GET /api/admin/rewards/users
-router.get('/rewards/users', requireSuperAdmin, async (req: Request, res: Response) => {
+router.get('/rewards/users', requireSuperAdmin, async (_req: Request, res: Response) => {
   try {
-    const userRewards = await MetricsCacheService.getOrSet(
-      CACHE_KEYS.USER_REWARDS,
-      async () => {
-        return db.select({
-          userId: rewardDistribution.userId,
-          totalEarned: sql<string>`COALESCE(SUM(CAST(${rewardDistribution.amount} AS NUMERIC)), 0)`,
-          tier: rewardDistribution.tier,
-          lastDistributedAt: rewardDistribution.distributedAt,
-        })
-        .from(rewardDistribution)
-        .groupBy(rewardDistribution.userId, rewardDistribution.tier, rewardDistribution.distributedAt)
-        .orderBy(desc(sql<string>`SUM(CAST(${rewardDistribution.amount} AS NUMERIC))`))
-        .limit(100);
-      },
-      CACHE_TTL.MEDIUM
-    );
-
-    const distribution = {
-      claimed: userRewards?.filter(u => u.tier === 'claimed').length || 0,
-      pending: userRewards?.filter(u => u.tier === 'pending').length || 0,
-      locked: userRewards?.filter(u => u.tier === 'locked').length || 0,
-    };
-
-    res.json({
-      users: userRewards || [],
-      distribution,
-      timestamp: new Date(),
-    });
+    const users = await getCached('rewards:users', () => db.select({
+      userId: rewardDistribution.recipientId,
+      totalEarned: sql<string>`coalesce(sum(cast(${rewardDistribution.amount} as numeric)), 0)`,
+      tier: rewardDistribution.status,
+      lastDistributedAt: rewardDistribution.distributionDate,
+    }).from(rewardDistribution).groupBy(rewardDistribution.recipientId, rewardDistribution.status, rewardDistribution.distributionDate).orderBy(desc(sql`sum(cast(${rewardDistribution.amount} as numeric))`)).limit(100));
+    res.json({ users, distribution: { claimed: users.filter(user => user.tier === 'claimed').length, pending: users.filter(user => user.tier === 'pending').length, locked: users.filter(user => users.length > 0 && user.tier === 'locked').length }, timestamp: new Date() });
   } catch (error) {
     logger.error('User rewards error:', error);
     res.status(500).json({ error: 'Failed to fetch user rewards' });
   }
 });
 
-// GET /api/admin/achievements
-router.get('/achievements', requireSuperAdmin, async (req: Request, res: Response) => {
+router.get('/achievements', requireSuperAdmin, async (_req: Request, res: Response) => {
   try {
-    const achievements = await MetricsCacheService.getOrSet(
-      CACHE_KEYS.ALL_ACHIEVEMENTS,
-      async () => {
-        return db.select({
-          id: userAchievements.id,
-          name: userAchievements.name,
-          description: userAchievements.description,
-          points: userAchievements.points,
-          earnedCount: sql<number>`COUNT(*)`,
-        })
-        .from(userAchievements)
-        .groupBy(userAchievements.id, userAchievements.name, userAchievements.description, userAchievements.points)
-        .orderBy(desc(sql<number>`COUNT(*)`));
-      },
-      CACHE_TTL.MEDIUM
-    );
-
-    res.json({
-      achievements: achievements || [],
-      total: achievements?.length || 0,
-      timestamp: new Date(),
-    });
+    const rows = await getCached('achievements:list', () => db.select({ id: achievements.id, name: achievements.name, description: achievements.description, points: achievements.rewardPoints, earnedCount: sql<number>`count(${userAchievements.id})` }).from(achievements).leftJoin(userAchievements, eq(userAchievements.achievementId, achievements.id)).groupBy(achievements.id, achievements.name, achievements.description, achievements.rewardPoints).orderBy(desc(achievements.name)));
+    res.json({ achievements: rows, total: rows.length, timestamp: new Date() });
   } catch (error) {
     logger.error('Achievements list error:', error);
     res.status(500).json({ error: 'Failed to fetch achievements' });
   }
 });
 
-// POST /api/admin/achievements
 router.post('/achievements', requireSuperAdmin, async (req: Request, res: Response) => {
+  const parsed = achievementInputSchema.safeParse(req.body);
+  if (!parsed.success) return res.status(400).json({ error: 'Invalid achievement payload', details: parsed.error.flatten() });
   try {
-    const { name, description, difficulty, points, category } = req.body;
-
-    if (!name || !description || !difficulty || !points) {
-      return res.status(400).json({ error: 'Missing required fields' });
-    }
-
-    const newAchievement = {
-      id: `ach-${Date.now()}`,
-      name,
-      description,
-      difficulty,
-      points,
-      category: category || 'General',
-      createdAt: new Date(),
-    };
-
-    res.json({
-      success: true,
-      achievement: newAchievement,
-      message: 'Achievement created successfully',
-    });
+    const [achievement] = await db.insert(achievements).values({ name: parsed.data.name, description: parsed.data.description || null, category: parsed.data.category, criteria: JSON.stringify({ difficulty: parsed.data.difficulty }), rewardPoints: parsed.data.points }).returning();
+    invalidateCommunityCache();
+    res.status(201).json({ success: true, achievement, message: 'Achievement created successfully' });
   } catch (error) {
     logger.error('Achievement creation error:', error);
     res.status(500).json({ error: 'Failed to create achievement' });
   }
 });
 
-// GET /api/admin/tasks
-router.get('/tasks', requireSuperAdmin, async (req: Request, res: Response) => {
+router.get('/achievements/metrics', requireSuperAdmin, async (_req: Request, res: Response) => {
   try {
-    const tasksList = await MetricsCacheService.getOrSet(
-      CACHE_KEYS.TASKS_LIST,
-      async () => {
-        return db.select({
-          id: tasks.id,
-          name: tasks.name,
-          type: tasks.type,
-          description: tasks.description,
-          reward: tasks.rewardAmount,
-          completionCount: sql<number>`COUNT(*)`,
-          status: tasks.status,
-        })
-        .from(tasks)
-        .groupBy(tasks.id, tasks.name, tasks.type, tasks.description, tasks.rewardAmount, tasks.status)
-        .orderBy(desc(sql<number>`COUNT(*)`));
-      },
-      CACHE_TTL.MEDIUM
-    );
-
-    res.json({
-      tasks: tasksList || [],
-      total: tasksList?.length || 0,
-      activeCount: tasksList?.filter(t => t.status === 'active').length || 0,
-      timestamp: new Date(),
-    });
-  } catch (error) {
-    logger.error('Tasks list error:', error);
-    res.status(500).json({ error: 'Failed to fetch tasks' });
-  }
-});
-
-// POST /api/admin/tasks
-router.post('/tasks', requireSuperAdmin, async (req: Request, res: Response) => {
-  try {
-    const { name, type, difficulty, reward } = req.body;
-
-    if (!name || !type || !difficulty || !reward) {
-      return res.status(400).json({ error: 'Missing required fields' });
-    }
-
-    const newTask = {
-      id: `task-${Date.now()}`,
-      name,
-      type,
-      difficulty,
-      reward,
-      completionCount: 0,
-      activeUsers: 0,
-      status: 'active',
-      createdAt: new Date(),
-    };
-
-    res.json({
-      success: true,
-      task: newTask,
-      message: 'Task created successfully',
-    });
-  } catch (error) {
-    logger.error('Task creation error:', error);
-    res.status(500).json({ error: 'Failed to create task' });
-  }
-});
-
-// GET /api/admin/achievements/metrics
-router.get('/achievements/metrics', requireSuperAdmin, async (req: Request, res: Response) => {
-  try {
-    const metrics = await MetricsCacheService.getOrSet(
-      CACHE_KEYS.ACHIEVEMENT_METRICS,
-      async () => {
-        const [
-          totalAchievements,
-          totalTasks,
-          activeUsers,
-          totalPointsAwarded,
-        ] = await Promise.all([
-          db.select({ count: sql<number>`COUNT(DISTINCT ${userAchievements.id})` }).from(userAchievements),
-          db.select({ count: sql<number>`COUNT(DISTINCT ${tasks.id})` }).from(tasks),
-          db.select({ count: sql<number>`COUNT(DISTINCT ${userAchievements.userId})` }).from(userAchievements),
-          db.select({ total: sql<string>`COALESCE(SUM(CAST(${userAchievements.points} AS NUMERIC)), 0)` }).from(userAchievements),
-        ]);
-
-        return {
-          totalAchievements: totalAchievements[0].count || 0,
-          totalTasks: totalTasks[0].count || 0,
-          activeUsers: activeUsers[0].count || 0,
-          totalPointsAwarded: parseFloat(totalPointsAwarded[0].total || '0'),
-          engagementRate: 78.5,
-        };
-      },
-      CACHE_TTL.MEDIUM
-    );
-
-    res.json({
-      ...metrics,
-      timestamp: new Date(),
-    });
+    const [achievementCount, taskCount, activeUsers, points] = await Promise.all([
+      db.select({ count: sql<number>`count(*)` }).from(achievements),
+      db.select({ count: sql<number>`count(*)` }).from(tasks),
+      db.select({ count: sql<number>`count(distinct ${userAchievements.userId})` }).from(userAchievements),
+      db.select({ total: sql<number>`coalesce(sum(${achievements.rewardPoints}), 0)` }).from(achievements),
+    ]);
+    res.json({ totalAchievements: Number(achievementCount[0]?.count || 0), totalTasks: Number(taskCount[0]?.count || 0), activeUsers: Number(activeUsers[0]?.count || 0), totalPointsAwarded: Number(points[0]?.total || 0), timestamp: new Date() });
   } catch (error) {
     logger.error('Achievements metrics error:', error);
     res.status(500).json({ error: 'Failed to fetch achievements metrics' });
   }
 });
 
-// GET /api/admin/announcements
-router.get('/announcements', requireSuperAdmin, async (req: Request, res: Response) => {
+router.get('/tasks', requireSuperAdmin, async (req: Request, res: Response) => {
+  const parsed = paginationSchema.safeParse(req.query);
+  if (!parsed.success) return res.status(400).json({ error: 'Invalid pagination' });
   try {
-    const announcementsList = await MetricsCacheService.getOrSet(
-      CACHE_KEYS.ANNOUNCEMENTS_LIST,
-      async () => {
-        return db.select({
-          id: announcements.id,
-          title: announcements.title,
-          content: announcements.content,
-          type: announcements.type,
-          audience: announcements.audience,
-          status: announcements.status,
-          views: sql<number>`0`,
-          clicks: sql<number>`0`,
-          createdAt: announcements.createdAt,
-          expiresAt: announcements.expiresAt,
-        })
-        .from(announcements)
-        .orderBy(desc(announcements.createdAt));
-      },
-      CACHE_TTL.MEDIUM
-    );
+    const { page, limit } = parsed.data;
+    const rows = await getCached('tasks:list', () => db.select({ id: tasks.id, name: tasks.title, type: tasks.category, description: tasks.description, reward: tasks.reward, completionCount: sql<number>`0`, status: tasks.status }).from(tasks).orderBy(desc(tasks.createdAt)).limit(limit).offset((page - 1) * limit));
+    res.json({ tasks: rows, total: rows.length, activeCount: rows.filter(task => task.status === 'open').length, timestamp: new Date() });
+  } catch (error) {
+    logger.error('Tasks list error:', error);
+    res.status(500).json({ error: 'Failed to fetch tasks' });
+  }
+});
 
-    res.json({
-      announcements: announcementsList || [],
-      published: announcementsList?.filter(a => a.status === 'published') || [],
-      draft: announcementsList?.filter(a => a.status === 'draft') || [],
-      timestamp: new Date(),
-    });
+router.post('/tasks', requireSuperAdmin, async (req: Request, res: Response) => {
+  const parsed = taskInputSchema.safeParse(req.body);
+  if (!parsed.success) return res.status(400).json({ error: 'Invalid task payload', details: parsed.error.flatten() });
+  try {
+    const [task] = await db.insert(tasks).values({ daoId: parsed.data.daoId, creatorId: parsed.data.creatorId, title: parsed.data.name, description: parsed.data.description, category: parsed.data.type, difficulty: parsed.data.difficulty, reward: String(parsed.data.reward), status: 'open' }).returning();
+    invalidateCommunityCache();
+    res.status(201).json({ success: true, task, message: 'Task created successfully' });
+  } catch (error) {
+    logger.error('Task creation error:', error);
+    res.status(500).json({ error: 'Failed to create task' });
+  }
+});
+
+router.get('/announcements', requireSuperAdmin, async (_req: Request, res: Response) => {
+  try {
+    const rows = await getCached('announcements:list', () => db.select({ id: platformAnnouncements.id, title: platformAnnouncements.title, content: platformAnnouncements.message, type: platformAnnouncements.type, audience: platformAnnouncements.targetAudience, status: platformAnnouncements.isActive, createdAt: platformAnnouncements.createdAt, expiresAt: platformAnnouncements.expiresAt }).from(platformAnnouncements).orderBy(desc(platformAnnouncements.createdAt)));
+    res.json({ announcements: rows, published: rows.filter(row => row.status), draft: rows.filter(row => !row.status), timestamp: new Date() });
   } catch (error) {
     logger.error('Announcements list error:', error);
     res.status(500).json({ error: 'Failed to fetch announcements' });
   }
 });
 
-// POST /api/admin/announcements
 router.post('/announcements', requireSuperAdmin, async (req: Request, res: Response) => {
+  const parsed = announcementInputSchema.safeParse(req.body);
+  if (!parsed.success) return res.status(400).json({ error: 'Invalid announcement payload', details: parsed.error.flatten() });
   try {
-    const { title, content, type, audience, expiresAt } = req.body;
-
-    if (!title || !content || !type || !audience) {
-      return res.status(400).json({ error: 'Missing required fields' });
-    }
-
-    const newAnnouncement = {
-      id: `ann-${Date.now()}`,
-      title,
-      content,
-      type,
-      audience,
-      status: 'draft',
-      views: 0,
-      clicks: 0,
-      createdAt: new Date().toISOString().split('T')[0],
-      expiresAt: expiresAt || null,
-    };
-
-    res.json({
-      success: true,
-      announcement: newAnnouncement,
-      message: 'Announcement created successfully',
-    });
+    const [announcement] = await db.insert(platformAnnouncements).values({ title: parsed.data.title, message: parsed.data.content, type: parsed.data.type, targetAudience: parsed.data.audience, expiresAt: parsed.data.expiresAt || null, isActive: false }).returning();
+    invalidateCommunityCache();
+    res.status(201).json({ success: true, announcement, message: 'Announcement created successfully' });
   } catch (error) {
     logger.error('Announcement creation error:', error);
     res.status(500).json({ error: 'Failed to create announcement' });
   }
 });
 
-// POST /api/admin/announcements/:id/publish
 router.post('/announcements/:id/publish', requireSuperAdmin, async (req: Request, res: Response) => {
   try {
-    const { id } = req.params;
-
-    res.json({
-      success: true,
-      message: `Announcement ${id} published successfully`,
-      status: 'published',
-      publishedAt: new Date(),
-    });
+    const [updated] = await db.update(platformAnnouncements).set({ isActive: true, startsAt: new Date(), updatedAt: new Date() }).where(eq(platformAnnouncements.id, req.params.id)).returning();
+    if (!updated) return res.status(404).json({ error: 'Announcement not found' });
+    invalidateCommunityCache();
+    res.json({ success: true, message: `Announcement ${req.params.id} published successfully`, status: 'published', publishedAt: updated.startsAt });
   } catch (error) {
     logger.error('Announcement publish error:', error);
     res.status(500).json({ error: 'Failed to publish announcement' });
   }
 });
 
-// DELETE /api/admin/announcements/:id
 router.delete('/announcements/:id', requireSuperAdmin, async (req: Request, res: Response) => {
   try {
-    const { id } = req.params;
-
-    res.json({
-      success: true,
-      message: `Announcement ${id} deleted successfully`,
-    });
+    const deleted = await db.delete(platformAnnouncements).where(eq(platformAnnouncements.id, req.params.id)).returning({ id: platformAnnouncements.id });
+    if (!deleted.length) return res.status(404).json({ error: 'Announcement not found' });
+    invalidateCommunityCache();
+    res.json({ success: true, message: `Announcement ${req.params.id} deleted successfully` });
   } catch (error) {
     logger.error('Announcement deletion error:', error);
     res.status(500).json({ error: 'Failed to delete announcement' });
   }
 });
 
-// GET /api/admin/daos/analytics/by-type
-router.get('/daos/analytics/by-type', requireSuperAdmin, async (req: Request, res: Response) => {
+router.get('/daos/analytics/by-type', requireSuperAdmin, async (_req: Request, res: Response) => {
   try {
-    const daoTypes = await MetricsCacheService.getOrSet(
-      CACHE_KEYS.DAO_ANALYTICS_BY_TYPE,
-      async () => {
-        return db.select({
-          type: daos.type,
-          count: sql<number>`COUNT(*)`,
-          members: sql<number>`COUNT(DISTINCT ${daos.memberCount})`,
-          treasury: sql<string>`COALESCE(SUM(CAST(${daos.treasury} AS NUMERIC)), 0)`,
-          healthScore: sql<number>`AVG(CAST(${daos.healthScore} AS NUMERIC))`,
-        })
-        .from(daos)
-        .groupBy(daos.type)
-        .orderBy(desc(sql<number>`COUNT(*)`));
-      },
-      CACHE_TTL.MEDIUM
-    );
-
-    res.json({
-      types: daoTypes || [],
-      totalDAOs: daoTypes?.reduce((sum, t) => sum + (t.count || 0), 0) || 0,
-      timestamp: new Date(),
-    });
+    const types = await getCached('dao-analytics:type', () => db.select({ type: daoAnalytics.daoType, count: sql<number>`count(*)`, members: sql<number>`sum(${daoAnalytics.totalMembers})`, treasury: sql<string>`coalesce(sum(${daoAnalytics.treasuryBalance}), 0)`, healthScore: sql<number>`avg(${daoAnalytics.averageParticipation})` }).from(daoAnalytics).groupBy(daoAnalytics.daoType).orderBy(desc(sql`count(*)`)));
+    res.json({ types, totalDAOs: types.reduce((sum, type) => sum + Number(type.count || 0), 0), timestamp: new Date() });
   } catch (error) {
     logger.error('DAO type analytics error:', error);
     res.status(500).json({ error: 'Failed to fetch DAO type analytics' });
   }
 });
 
-// GET /api/admin/daos/analytics/by-region?region=North America
 router.get('/daos/analytics/by-region', requireSuperAdmin, async (req: Request, res: Response) => {
   try {
-    const region = (req.query.region as string) || 'North America';
-    const cacheKey = `${CACHE_KEYS.DAO_ANALYTICS_BY_REGION}:${region}`;
-
-    const regionAnalytics = await MetricsCacheService.getOrSet(
-      cacheKey,
-      async () => {
-        return db.select({
-          region: daos.region,
-          count: sql<number>`COUNT(*)`,
-          members: sql<number>`COUNT(DISTINCT ${daos.memberCount})`,
-          treasury: sql<string>`COALESCE(SUM(CAST(${daos.treasury} AS NUMERIC)), 0)`,
-          healthScore: sql<number>`AVG(CAST(${daos.healthScore} AS NUMERIC))`,
-        })
-        .from(daos)
-        .where(eq(daos.region, region))
-        .groupBy(daos.region);
-      },
-      CACHE_TTL.MEDIUM
-    );
-
-    res.json({
-      region: regionAnalytics?.[0] || null,
-      timestamp: new Date(),
-    });
+    const region = typeof req.query.region === 'string' ? req.query.region : 'North America';
+    const [result] = await db.select({ region: daoAnalytics.region, count: sql<number>`count(*)`, members: sql<number>`sum(${daoAnalytics.totalMembers})`, treasury: sql<string>`coalesce(sum(${daoAnalytics.treasuryBalance}), 0)`, healthScore: sql<number>`avg(${daoAnalytics.averageParticipation})` }).from(daoAnalytics).where(eq(daoAnalytics.region, region)).groupBy(daoAnalytics.region);
+    res.json({ region: result || null, timestamp: new Date() });
   } catch (error) {
     logger.error('DAO region analytics error:', error);
     res.status(500).json({ error: 'Failed to fetch DAO region analytics' });
   }
 });
 
-// GET /api/admin/daos/analytics/by-cause
-router.get('/daos/analytics/by-cause', requireSuperAdmin, async (req: Request, res: Response) => {
+router.get('/daos/analytics/by-cause', requireSuperAdmin, async (_req: Request, res: Response) => {
   try {
-    const causes = await MetricsCacheService.getOrSet(
-      CACHE_KEYS.DAO_ANALYTICS_BY_CAUSE,
-      async () => {
-        return db.select({
-          cause: daos.purpose,
-          count: sql<number>`COUNT(*)`,
-          members: sql<number>`COUNT(DISTINCT ${daos.memberCount})`,
-          treasury: sql<string>`COALESCE(SUM(CAST(${daos.treasury} AS NUMERIC)), 0)`,
-          healthScore: sql<number>`AVG(CAST(${daos.healthScore} AS NUMERIC))`,
-        })
-        .from(daos)
-        .groupBy(daos.purpose)
-        .orderBy(desc(sql<number>`AVG(CAST(${daos.healthScore} AS NUMERIC))`));
-      },
-      CACHE_TTL.MEDIUM
-    );
-
-    res.json({
-      causes: causes || [],
-      totalCauses: causes?.length || 0,
-      timestamp: new Date(),
-    });
+    const causes = await db.select({ cause: daoAnalytics.causeCategory, count: sql<number>`count(*)`, members: sql<number>`sum(${daoAnalytics.totalMembers})`, treasury: sql<string>`coalesce(sum(${daoAnalytics.treasuryBalance}), 0)`, healthScore: sql<number>`avg(${daoAnalytics.averageParticipation})` }).from(daoAnalytics).groupBy(daoAnalytics.causeCategory).orderBy(desc(sql`avg(${daoAnalytics.averageParticipation})`));
+    res.json({ causes, totalCauses: causes.length, timestamp: new Date() });
   } catch (error) {
     logger.error('DAO cause analytics error:', error);
     res.status(500).json({ error: 'Failed to fetch DAO cause analytics' });
   }
 });
 
-// GET /api/admin/daos/analytics/metrics
-router.get('/daos/analytics/metrics', requireSuperAdmin, async (req: Request, res: Response) => {
+router.get('/daos/analytics/metrics', requireSuperAdmin, async (_req: Request, res: Response) => {
   try {
-    const metrics = await MetricsCacheService.getOrSet(
-      CACHE_KEYS.DAO_ANALYTICS_METRICS,
-      async () => {
-        const thirtyDaysAgo = new Date();
-        thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
-
-        const [
-          totalDAOs,
-          totalMembers,
-          totalTreasury,
-          averageHealthScore,
-          activeDAOs,
-          newDAOsMonth,
-        ] = await Promise.all([
-          db.select({ count: sql<number>`COUNT(*)` }).from(daos),
-          db.select({ count: sql<number>`COUNT(DISTINCT ${daos.memberCount})` }).from(daos),
-          db.select({ total: sql<string>`COALESCE(SUM(CAST(${daos.treasury} AS NUMERIC)), 0)` }).from(daos),
-          db.select({ avg: sql<number>`AVG(CAST(${daos.healthScore} AS NUMERIC))` }).from(daos),
-          db.select({ count: sql<number>`COUNT(*)` }).from(daos).where(gt(daos.healthScore, 70)),
-          db.select({ count: sql<number>`COUNT(*)` }).from(daos).where(gte(daos.createdAt, thirtyDaysAgo)),
-        ]);
-
-        return {
-          totalDAOs: totalDAOs[0].count || 0,
-          totalMembers: totalMembers[0].count || 0,
-          totalTreasury: parseFloat(totalTreasury[0].total || '0'),
-          averageHealthScore: Math.round((averageHealthScore[0].avg || 0) * 10) / 10,
-          activeDAOs: activeDAOs[0].count || 0,
-          growthRate: ((newDAOsMonth[0].count || 0) / (totalDAOs[0].count || 1) * 100).toFixed(1),
-        };
-      },
-      CACHE_TTL.MEDIUM
-    );
-
-    res.json({
-      ...metrics,
-      timestamp: new Date(),
-    });
+    const [totalDAOs, members, treasury, health, active, recent] = await Promise.all([
+      db.select({ count: sql<number>`count(*)` }).from(daos),
+      db.select({ total: sql<number>`coalesce(sum(${daoAnalytics.totalMembers}), 0)` }).from(daoAnalytics),
+      db.select({ total: sql<string>`coalesce(sum(${daoAnalytics.treasuryBalance}), 0)` }).from(daoAnalytics),
+      db.select({ avg: sql<number>`coalesce(avg(${daoAnalytics.averageParticipation}), 0)` }).from(daoAnalytics),
+      db.select({ count: sql<number>`count(*)` }).from(daos).where(eq(daos.status, 'active')),
+      db.select({ count: sql<number>`count(*)` }).from(daos).where(gte(daos.createdAt, new Date(Date.now() - 30 * 86400000))),
+    ]);
+    const total = Number(totalDAOs[0]?.count || 0);
+    res.json({ totalDAOs: total, totalMembers: Number(members[0]?.total || 0), totalTreasury: Number(treasury[0]?.total || 0), averageHealthScore: Number(health[0]?.avg || 0), activeDAOs: Number(active[0]?.count || 0), growthRate: `${((Number(recent[0]?.count || 0) / Math.max(total, 1)) * 100).toFixed(1)}`, timestamp: new Date() });
   } catch (error) {
     logger.error('DAO analytics metrics error:', error);
     res.status(500).json({ error: 'Failed to fetch DAO analytics metrics' });

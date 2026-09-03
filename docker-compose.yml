@@ -1,12 +1,28 @@
+version: "3.8"
+
+# ==============================================================================
+# MtaaDAO Production Docker Infrastructure Configuration
+# Optimized for: High concurrency, auto-healing, security isolation, & scaling
+# ==============================================================================
+
 services:
+
+  # ----------------------------------------------------------------------------
+  # API BACKEND SERVICE
+  # Node.js/Express or Python application handling business logic and WebSockets
+  # ----------------------------------------------------------------------------
   api:
     build:
       context: .
       dockerfile: DockerFile.backend
-    container_name: mtaadao-api
+    # NOTE: 'container_name' is intentionally omitted here to allow horizontal
+    # replica scaling via 'docker compose up -d --scale api=3'. Docker's internal
+    # DNS automatically round-robins requests sent to 'http://api:5000'.
     restart: always
     env_file: .env.production
     expose:
+      # Exposes port 5000 ONLY to other containers on 'mtaadao-network'.
+      # Keeps API inaccessible directly from the host's public IP.
       - "5000"
     environment:
       PORT: 5000
@@ -15,23 +31,30 @@ services:
       REDIS_URL: redis://redis:6379
     depends_on:
       db:
+        # Ensures API doesn't start until Postgres is ready to accept connections
         condition: service_healthy
       redis:
-        condition: service_started
+        # Ensures Redis ping check passes before API attempts caching connections
+        condition: service_healthy
     healthcheck:
+      # Verifies the API is serving responses before route traffic is sent to it
       test: ["CMD", "curl", "-f", "http://localhost:5000/health"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-      start_period: 40s
+      interval: 15s      # Time between health checks
+      timeout: 5s        # Time allowed before marking a test failed
+      retries: 3         # Failed checks required before container is marked 'unhealthy'
+      start_period: 20s  # Grace period for app boots/DB migrations before checks begin
     networks:
       - mtaadao-network
     logging:
       driver: "json-file"
       options:
-        max-size: "100m"
-        max-file: "10"
+        max-size: "50m"  # Prevents container logs from exhausting host disk space
+        max-file: "5"
 
+  # ----------------------------------------------------------------------------
+  # FRONTEND WEB APPLICATION
+  # Static asset server or Next.js/SSR frontend container
+  # ----------------------------------------------------------------------------
   frontend:
     build:
       context: .
@@ -39,6 +62,7 @@ services:
     container_name: mtaadao-frontend
     restart: always
     expose:
+      # Internal port exposed only to NGINX proxy
       - "80"
     depends_on:
       api:
@@ -48,26 +72,42 @@ services:
     logging:
       driver: "json-file"
       options:
-        max-size: "100m"
-        max-file: "10"
+        max-size: "50m"
+        max-file: "5"
 
+  # ----------------------------------------------------------------------------
+  # NGINX EDGE REVERSE PROXY & SSL TERMINATOR
+  # Public-facing web server handling SSL, rate limiting, and HTTP/WS proxying
+  # ----------------------------------------------------------------------------
   nginx:
     image: nginx:alpine
     container_name: mtaadao-nginx
     restart: always
     ports:
+      # Binds public ports 80 (HTTP) and 443 (HTTPS) directly to host interface
       - "80:80"
       - "443:443"
+    ulimits:
+      # CRITICAL: Overrides Linux default max open files (1024) to match NGINX's
+      # high worker_connections (8192). Prevents 'Too many open files' socket errors.
+      nofile:
+        soft: 65535
+        hard: 65535
     volumes:
+      # Mounts NGINX configuration in read-only mode
       - ./nginx.conf:/etc/nginx/nginx.conf:ro
+      # TLS SSL Certificate and Key files directory
       - ./certs:/etc/nginx/certs:ro
+      # Shared volume for Let's Encrypt / Certbot ACME HTTP-01 challenges
+      - certbot-www:/var/www/certbot:ro
     depends_on:
       - frontend
       - api
     healthcheck:
+      # Verifies NGINX is responding on its health check endpoint
       test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost/health"]
-      interval: 30s
-      timeout: 10s
+      interval: 15s
+      timeout: 5s
       retries: 3
       start_period: 10s
     networks:
@@ -75,23 +115,41 @@ services:
     logging:
       driver: "json-file"
       options:
-        max-size: "100m"
-        max-file: "10"
+        max-size: "50m"
+        max-file: "5"
 
+  # ----------------------------------------------------------------------------
+  # POSTGRESQL DATABASE
+  # Primary persistent relational data store
+  # ----------------------------------------------------------------------------
   db:
-    image: postgres:16
+    image: postgres:16-alpine
     container_name: mtaadao-db
     restart: always
     expose:
+      # Port 5432 kept internal. DB cannot be reached from the public internet.
       - "5432"
     environment:
       POSTGRES_DB: ${DB_NAME}
       POSTGRES_USER: ${DB_USER}
       POSTGRES_PASSWORD: ${DB_PASSWORD}
+    command: >
+      postgres
+      -c max_connections=300              # Allows high-concurrency API connection pooling
+      -c shared_buffers=256MB             # RAM allocated for cached DB blocks
+      -c effective_cache_size=768MB       # Planner estimate of total memory available for caching
+      -c maintenance_work_mem=64MB        # Memory for VACUUM, CREATE INDEX operations
+      -c checkpoint_completion_target=0.9 # Spreads out checkpoint I/O write spikes
+      -c wal_buffers=16MB                 # Memory allocated for unwritten write-ahead logs
+      -c default_statistics_target=100    # Improves query planner accuracy
+      -c random_page_cost=1.1             # Optimized for SSD storage access speeds
+      -c work_mem=8MB                     # Memory limit per query sort/hash operation
     volumes:
+      # Persists PostgreSQL data outside the container lifecycle
       - pgdata:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${DB_USER}"]
+      # Tests actual database socket readiness using 'pg_isready'
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USER} -d ${DB_NAME}"]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -101,9 +159,13 @@ services:
     logging:
       driver: "json-file"
       options:
-        max-size: "100m"
-        max-file: "10"
+        max-size: "50m"
+        max-file: "5"
 
+  # ----------------------------------------------------------------------------
+  # REDIS CACHE & SESSION STORE
+  # In-memory storage for JWT revocation, session tokens, and rate limits
+  # ----------------------------------------------------------------------------
   redis:
     image: redis:7-alpine
     container_name: mtaadao-redis
@@ -111,17 +173,29 @@ services:
     expose:
       - "6379"
     volumes:
+      # Persists AOF/RDB Redis snapshots to disk
       - redis-data:/data
+      # Mounts custom redis config (e.g. maxmemory policies) in read-only mode
       - ./config/redis.conf:/usr/local/etc/redis/redis.conf:ro
     command: ["redis-server", "/usr/local/etc/redis/redis.conf"]
+    healthcheck:
+      # Pings Redis server to confirm ready state
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
     networks:
       - mtaadao-network
     logging:
       driver: "json-file"
       options:
-        max-size: "100m"
-        max-file: "10"
+        max-size: "50m"
+        max-file: "5"
 
+  # ----------------------------------------------------------------------------
+  # PGADMIN DB MANAGEMENT INTERFACE
+  # Web-based administration tool for PostgreSQL
+  # ----------------------------------------------------------------------------
   pgadmin:
     image: dpage/pgadmin4
     container_name: mtaadao-pgadmin
@@ -131,6 +205,7 @@ services:
     environment:
       PGADMIN_DEFAULT_EMAIL: ${PGADMIN_EMAIL:-admin@mtaadao.org}
       PGADMIN_DEFAULT_PASSWORD: ${PGADMIN_PASSWORD}
+      # Security flags for session cookies
       PGADMIN_CONFIG_ENHANCED_COOKIE_PROTECTION: "True"
       PGADMIN_CONFIG_COOKIE_DEFAULT_SECURE: "True"
       PGADMIN_CONFIG_COOKIE_DEFAULT_SAMESITE: "Lax"
@@ -142,9 +217,13 @@ services:
     logging:
       driver: "json-file"
       options:
-        max-size: "100m"
-        max-file: "10"
+        max-size: "20m"
+        max-file: "3"
 
+  # ----------------------------------------------------------------------------
+  # PROMETHEUS METRICS MONITORING
+  # Time-series metrics collector for NGINX, API, and DB telemetry
+  # ----------------------------------------------------------------------------
   prometheus:
     image: prom/prometheus:latest
     container_name: mtaadao-prometheus
@@ -152,20 +231,26 @@ services:
     expose:
       - "9090"
     volumes:
+      # Prometheus configuration rules
       - ./monitoring/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      # Storage volume for collected metric history
       - prometheus-data:/prometheus
     command:
       - "--config.file=/etc/prometheus/prometheus.yml"
       - "--storage.tsdb.path=/prometheus"
-      - "--storage.tsdb.retention.time=30d"
+      - "--storage.tsdb.retention.time=30d" # Retains telemetry data for 30 days
     networks:
       - mtaadao-network
     logging:
       driver: "json-file"
       options:
-        max-size: "100m"
-        max-file: "10"
+        max-size: "20m"
+        max-file: "3"
 
+  # ----------------------------------------------------------------------------
+  # GRAFANA MONITORING DASHBOARD
+  # Visual analytics UI for metrics collected by Prometheus
+  # ----------------------------------------------------------------------------
   grafana:
     image: grafana/grafana:latest
     container_name: mtaadao-grafana
@@ -173,14 +258,16 @@ services:
     expose:
       - "3000"
     volumes:
+      # Persists user dashboards and settings
       - grafana-data:/var/lib/grafana
+      # Pre-provisions Prometheus datasource automatically on boot
       - ./monitoring/grafana/provisioning:/etc/grafana/provisioning:ro
     environment:
       GF_SECURITY_ADMIN_USER: ${GRAFANA_USER:-admin}
       GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_PASSWORD}
       GF_SECURITY_DISABLE_GRAVATAR: "true"
       GF_INSTALL_PLUGINS: "grafana-piechart-panel"
-      GF_USERS_ALLOW_SIGN_UP: "false"
+      GF_USERS_ALLOW_SIGN_UP: "false" # Disables public signups
     depends_on:
       - prometheus
     networks:
@@ -188,16 +275,24 @@ services:
     logging:
       driver: "json-file"
       options:
-        max-size: "100m"
-        max-file: "10"
+        max-size: "20m"
+        max-file: "3"
 
+# ==============================================================================
+# PERSISTENT VOLUMES DEFINITION
+# Data stored here survives container stops, removals, and recreations
+# ==============================================================================
 volumes:
-  pgdata:
-  redis-data:
-  grafana-data:
-  prometheus-data:
+  pgdata:          # PostgreSQL physical table data files
+  redis-data:      # Redis persistent dataset snapshots
+  grafana-data:    # Custom Grafana dashboard layout settings
+  prometheus-data: # 30-day historical monitoring metric database
+  certbot-www:     # Temporary Let's Encrypt challenge files
 
+# ==============================================================================
+# NETWORK ISOLATION DEFINITION
+# Creates a dedicated internal virtual bridge network for service inter-comm
+# ==============================================================================
 networks:
   mtaadao-network:
-    driver: bridge
-
+    driver: bridge # Isolates containers from default Docker bridge network

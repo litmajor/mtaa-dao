@@ -158,9 +158,11 @@ contract QuoteManipulationTest is MultiAssetSwapBase {
 
         assertGt(impliedPrice, BTC_USD * 1e9, "implied price is off by ~1e10 for an 8-decimal asset");
 
+        // After the decimals bug fix the protected path should succeed for
+        // non-18-decimal assets when the oracle and DEX agree on price.
         vm.prank(manager);
-        vm.expectRevert("Price deviates from oracle");
-        vault.acquireAssetViaSwap(address(cusd), "BTC", TRADE, quote);
+        uint256 received = vault.acquireAssetViaSwap(address(cusd), "BTC", TRADE, quote);
+        assertGt(received, 0, "protected acquisition now succeeds for 8-decimal assets");
     }
 
     /// @notice The contrast that makes the sell-side finding sharper: the
@@ -168,7 +170,10 @@ contract QuoteManipulationTest is MultiAssetSwapBase {
     ///         asset that the *protected* path refuses to touch.
     function test_UnprotectedPathStillTradesTheAssetTheProtectedPathRejects() public {
         _fundVaultWithBtc(1e8);
+        // Both the protected acquisition and the rebalance sell path now use
+        // oracle-derived floors; ensure the rebalance executes and the vault
+        // receives stablecoin proceeds.
         _sellBtcViaRebalance(1e8);
-        assertGt(cusd.balanceOf(address(vault)), 0, "sell path executes without the oracle check");
+        assertGt(cusd.balanceOf(address(vault)), 0, "sell path executes and yields stablecoin proceeds");
     }
 }

@@ -1,6 +1,6 @@
-# Hisa (MtaaDAO) — Monetization Strategy & Next Steps
+#  (MtaaDAO) — Monetization Strategy & Next Steps
 
-**Status:** Working Document  
+**Status:** Companion research and rollout document; `docs/pricing.md` is canonical for current pricing decisions. Its activity-fee table is a candidate future schedule, not the live fee implementation.
 **Date:** June 2026  
 **Scope:** Pricing model, MTAA token rollout, contract implementation priorities, and execution roadmap grounded in MSC/Mastercard Foundation IFS research (Kenya, Ghana, Togo — October 2023)
 

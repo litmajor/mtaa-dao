@@ -20,7 +20,8 @@
  * ═══════════════════════════════════════════════════════════════════════════════
  */
 
-import { Router, Request, Response, NextFunction } from 'express';
+import { Router } from 'express';
+import type { Request, Response, NextFunction } from 'express';
 import { authenticateToken } from '../middleware/auth';
 import initializeUserAccounts, { getAccountInitializationSummary } from '../migrations/initialize-user-accounts';
 

@@ -32,19 +32,18 @@ export default function BackupWalletModal({ isOpen, onClose, userAddress }: Back
   const requestBackupExport = async () => {
     setLoading(true);
     try {
-      const resp = await fetch('/api/v1/wallets/setup/backup/export', {
-        method: 'POST',
+      const resp = await fetch('/api/v1/wallets/setup/backup', {
+        method: 'GET',
         headers: {
           'Content-Type': 'application/json',
           ...(await authClient.getAuthHeaders())
-        },
-        body: JSON.stringify({ password })
+        }
       });
 
       const data = await resp.json();
       if (!resp.ok) throw new Error(data.error || data.message || 'Export failed');
 
-      setExportPayload({ backup: data.data?.backup || data.data, filename: data.data?.filename });
+      setExportPayload({ backup: data.blob, filename: `mtaadao-wallet-backup-${Date.now()}.json` });
       setStep('done');
       toast({ title: 'Backup Ready', description: 'You can download your encrypted backup file now' });
     } catch (err: any) {

@@ -239,8 +239,6 @@ const CreateDAOFlowContent: React.FC = () => {
   const [newMember, setNewMember] = useState({ address: '', role: 'member', name: '' });
   const [newMultisigSigner, setNewMultisigSigner] = useState('');
   const [showMultisigManager, setShowMultisigManager] = useState(false);
-  const [upsellOpen, setUpsellOpen] = useState(false);
-  const [upsellRequiredTier, setUpsellRequiredTier] = useState<string | null>(null);
   const { toast } = useToast();
 
   // Input sanitization helper
@@ -777,20 +775,11 @@ const CreateDAOFlowContent: React.FC = () => {
         .filter(m => m.address !== walletAddress)
         .map(m => m.address);
 
-      const typeConfig = getDaoTypeConfig(daoData.daoType);
-      const requiredTier = typeConfig?.requiredTier || 'free';
-      const tierHierarchy = ['free', 'growth', 'professional', 'enterprise'];
-      const userTierIndex = Math.max(0, tierHierarchy.indexOf(userTier));
-      const requiredTierIndex = Math.max(0, tierHierarchy.indexOf(requiredTier));
+      // NOTE: DAO type tier gating removed per pricing.md § 3, § 7.
+      // No DAO type requires subscription tier to be created.
+      // Feature gating (if any) belongs in subscription upsell flow, not creation path.
 
-      if (userTierIndex < requiredTierIndex) {
-        // Show inline upsell modal instead of blocking confirm
-        toast({ title: 'Upgrade required', description: `Creating a ${daoData.daoType} requires the ${requiredTier} plan.`, variant: 'destructive' });
-        setUpsellRequiredTier(requiredTier);
-        setUpsellOpen(true);
-        setIsDeploying(false);
-        return;
-      }
+      const daoTypeConfig = DAO_TYPE_CONFIG[daoData.daoType as keyof typeof DAO_TYPE_CONFIG];
 
       const result = await authClient.post('/api/dao-deploy', {
           daoData: {
@@ -799,8 +788,8 @@ const CreateDAOFlowContent: React.FC = () => {
             daoType: daoData.daoType,
             category: daoData.category,
             treasuryType: daoData.treasuryType,
-            modules: typeConfig?.contracts?.spawnsOnCreate || [],  // optional chaining
-            features: typeConfig?.features ? { ...typeConfig.features } : {},  // null-safe
+            modules: daoTypeConfig?.contracts?.spawnsOnCreate || [],  // optional chaining
+            features: daoTypeConfig?.features ? { ...daoTypeConfig.features } : {},  // null-safe
             customTokenAddress: daoData.treasuryType === 'custom' ? daoData.customTokenAddress : undefined,
             durationDays: daoData.duration,
             rotationFrequency: daoData.daoType === 'shortTerm' ? 'monthly' : undefined
@@ -927,28 +916,6 @@ const CreateDAOFlowContent: React.FC = () => {
           </Card>
         ))}
       </div>
-        {/* Upsell Modal for insufficient tier */}
-        <Dialog open={upsellOpen} onOpenChange={setUpsellOpen}>
-          <DialogContent className="max-w-md">
-            <DialogHeader>
-              <DialogTitle>Upgrade Required</DialogTitle>
-            </DialogHeader>
-            <div className="py-4">
-              <p className="text-sm">Creating a <strong>{daoData.daoType}</strong> requires a <strong>{upsellRequiredTier}</strong> subscription. Upgrade to unlock this DAO type and its features.</p>
-              <ul className="mt-3 text-sm list-disc list-inside">
-                {(getDaoTypeConfig(daoData.daoType)?.features ? Object.keys(getDaoTypeConfig(daoData.daoType)!.features) : []).map(f => (
-                  <li key={f}>{f}</li>
-                ))}
-              </ul>
-            </div>
-            <DialogFooter>
-              <div className="flex gap-2">
-                <Button variant="outline" onClick={() => setUpsellOpen(false)}>Cancel</Button>
-                <Button onClick={() => { window.open('/pricing', '_blank'); setUpsellOpen(false); }}>View Plans</Button>
-              </div>
-            </DialogFooter>
-          </DialogContent>
-        </Dialog>
     </div>
   );
 

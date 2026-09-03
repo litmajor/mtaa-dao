@@ -1,24 +1,21 @@
-import { Router, Request, Response } from 'express';
+import { Router } from 'express';
+import type { Request, Response } from 'express';
 import { TaskManagementService } from '../services/taskManagementService';
-
+import { authenticateToken } from '../middleware/auth';
+import { requireAdmin } from 'server/auth';
 const router = Router();
 
 // ============ TASK MANAGEMENT ============
-
-// NOTE: More specific routes must come BEFORE generic /:taskId routes
+// NOTE: Specific static routes must precede parametric /:taskId routes
 
 // ============ USER TASK ROUTES ============
 
 /**
  * GET /api/tasks-v2/user/my-tasks - Get user's tasks
  */
-router.get('/user/my-tasks', async (req: Request, res: Response) => {
+router.get('/user/my-tasks', authenticateToken, async (req: Request, res: Response) => {
   try {
-    if (!req.user) {
-      return res.status(401).json({ error: 'Unauthorized' });
-    }
-
-    const userId = (req.user as any).id || (req.user as any).sub;
+    const userId = req.user?.id || (req.user as any)?.sub;
     const { status } = req.query;
 
     const userTasks = await TaskManagementService.getUserTasks(userId, status as string);
@@ -35,13 +32,9 @@ router.get('/user/my-tasks', async (req: Request, res: Response) => {
 /**
  * GET /api/tasks-v2/user/my-claims - Get user's bounty claims
  */
-router.get('/user/my-claims', async (req: Request, res: Response) => {
+router.get('/user/my-claims', authenticateToken, async (req: Request, res: Response) => {
   try {
-    if (!req.user) {
-      return res.status(401).json({ error: 'Unauthorized' });
-    }
-
-    const userId = (req.user as any).id || (req.user as any).sub;
+    const userId = req.user?.id || (req.user as any)?.sub;
     const claims = await TaskManagementService.getUserBountyClaims(userId);
 
     res.json({
@@ -59,13 +52,9 @@ router.get('/user/my-claims', async (req: Request, res: Response) => {
 /**
  * POST /api/tasks-v2/assignments/:assignmentId/accept - Accept assignment
  */
-router.post('/assignments/:assignmentId/accept', async (req: Request, res: Response) => {
+router.post('/assignments/:assignmentId/accept', authenticateToken, async (req: Request, res: Response) => {
   try {
-    if (!req.user) {
-      return res.status(401).json({ error: 'Unauthorized' });
-    }
-
-    const userId = (req.user as any).id || (req.user as any).sub;
+    const userId = req.user?.id || (req.user as any)?.sub;
     const updated = await TaskManagementService.acceptAssignment(req.params.assignmentId, userId);
 
     res.json({
@@ -101,17 +90,11 @@ router.get('/bounties/active', async (req: Request, res: Response) => {
 /**
  * PATCH /api/tasks-v2/claims/:claimId - Review bounty claim (admin)
  */
-router.patch('/claims/:claimId', async (req: Request, res: Response) => {
+router.patch('/claims/:claimId', authenticateToken, requireAdmin, async (req: Request, res: Response) => {
   try {
-    if (!req.user) {
-      return res.status(401).json({ error: 'Unauthorized' });
-    }
-
-    // TODO: Add admin role check
-    const userId = (req.user as any).id || (req.user as any).sub;
+    const userId = req.user?.id || (req.user as any)?.sub;
     const { status, reviewNotes } = req.body;
 
-    // Validate required field
     if (!status) {
       return res.status(400).json({ error: 'Missing required field: status' });
     }
@@ -160,9 +143,8 @@ router.get('/stats/overview', async (req: Request, res: Response) => {
 /**
  * POST /api/tasks-v2/stats/refresh - Refresh statistics (admin)
  */
-router.post('/stats/refresh', async (req: Request, res: Response) => {
+router.post('/stats/refresh', authenticateToken, requireAdmin, async (req: Request, res: Response) => {
   try {
-    // TODO: Add admin role check
     const stats = await TaskManagementService.calculateStatistics();
 
     res.json({
@@ -174,7 +156,7 @@ router.post('/stats/refresh', async (req: Request, res: Response) => {
   }
 });
 
-// ============ GENERIC TASK ROUTES (LESS SPECIFIC) ============
+// ============ GENERIC TASK ROUTES ============
 
 /**
  * GET /api/tasks-v2 - List all tasks
@@ -207,16 +189,11 @@ router.get('/', async (req: Request, res: Response) => {
 /**
  * POST /api/tasks-v2 - Create new task
  */
-router.post('/', async (req: Request, res: Response) => {
+router.post('/', authenticateToken, async (req: Request, res: Response) => {
   try {
-    if (!req.user) {
-      return res.status(401).json({ error: 'Unauthorized' });
-    }
-
-    const userId = (req.user as any).id || (req.user as any).sub;
+    const userId = req.user?.id || (req.user as any)?.sub;
     const { title, description, category, priority, bountyAmount, bountyToken, distributionType, ...restData } = req.body;
 
-    // Validate required fields
     if (!title || !description || !category) {
       return res.status(400).json({
         error: 'Missing required fields: title, description, category',
@@ -232,7 +209,6 @@ router.post('/', async (req: Request, res: Response) => {
       ...restData,
     });
 
-    // Create bounty if specified
     if (bountyAmount) {
       const bounty = await TaskManagementService.createBounty({
         taskId: task.id,
@@ -288,58 +264,11 @@ router.get('/:taskId', async (req: Request, res: Response) => {
 });
 
 /**
- * POST /api/tasks-v2 - Create new task
- */
-router.post('/', async (req: Request, res: Response) => {
-  try {
-    if (!req.user) {
-      return res.status(401).json({ error: 'Unauthorized' });
-    }
-
-    const userId = (req.user as any).id || (req.user as any).sub;
-    const taskData = req.body;
-
-    const task = await TaskManagementService.createTask({
-      ...taskData,
-      createdById: userId,
-    });
-
-    // Create bounty if specified
-    if (taskData.bountyAmount) {
-      const bounty = await TaskManagementService.createBounty({
-        taskId: task.id,
-        totalAmount: taskData.bountyAmount,
-        tokenSymbol: taskData.bountyToken || 'MTAA',
-        distributionType: taskData.distributionType,
-      });
-
-      return res.status(201).json({
-        success: true,
-        task,
-        bounty,
-      });
-    }
-
-    res.status(201).json({
-      success: true,
-      task,
-    });
-  } catch (err) {
-    console.error('Error creating task:', err);
-    res.status(400).json({ error: 'Failed to create task' });
-  }
-});
-
-/**
  * PUT /api/tasks-v2/:taskId - Update task
  */
-router.put('/:taskId', async (req: Request, res: Response) => {
+router.put('/:taskId', authenticateToken, async (req: Request, res: Response) => {
   try {
-    if (!req.user) {
-      return res.status(401).json({ error: 'Unauthorized' });
-    }
-
-    const userId = (req.user as any).id || (req.user as any).sub;
+    const userId = req.user?.id || (req.user as any)?.sub;
     const updated = await TaskManagementService.updateTask(req.params.taskId, req.body, userId);
 
     res.json({
@@ -354,19 +283,15 @@ router.put('/:taskId', async (req: Request, res: Response) => {
 /**
  * PATCH /api/tasks-v2/:taskId/status - Update task status
  */
-router.patch('/:taskId/status', async (req: Request, res: Response) => {
+router.patch('/:taskId/status', authenticateToken, async (req: Request, res: Response) => {
   try {
-    if (!req.user) {
-      return res.status(401).json({ error: 'Unauthorized' });
-    }
-
     const { status } = req.body;
 
     if (!status) {
       return res.status(400).json({ error: 'Missing required field: status' });
     }
 
-    const userId = (req.user as any).id || (req.user as any).sub;
+    const userId = req.user?.id || (req.user as any)?.sub;
     const updated = await TaskManagementService.updateTaskStatus(req.params.taskId, status, userId);
 
     res.json({
@@ -381,13 +306,9 @@ router.patch('/:taskId/status', async (req: Request, res: Response) => {
 /**
  * DELETE /api/tasks-v2/:taskId - Delete task
  */
-router.delete('/:taskId', async (req: Request, res: Response) => {
+router.delete('/:taskId', authenticateToken, async (req: Request, res: Response) => {
   try {
-    if (!req.user) {
-      return res.status(401).json({ error: 'Unauthorized' });
-    }
-
-    const userId = (req.user as any).id || (req.user as any).sub;
+    const userId = req.user?.id || (req.user as any)?.sub;
     const deleted = await TaskManagementService.deleteTask(req.params.taskId, userId);
 
     res.json({
@@ -404,16 +325,11 @@ router.delete('/:taskId', async (req: Request, res: Response) => {
 /**
  * POST /api/tasks-v2/:taskId/assign - Assign user to task
  */
-router.post('/:taskId/assign', async (req: Request, res: Response) => {
+router.post('/:taskId/assign', authenticateToken, async (req: Request, res: Response) => {
   try {
-    if (!req.user) {
-      return res.status(401).json({ error: 'Unauthorized' });
-    }
-
-    const userId = (req.user as any).id || (req.user as any).sub;
+    const userId = req.user?.id || (req.user as any)?.sub;
     const { assignUserId, role, capacityPercent } = req.body;
 
-    // Validate required field
     if (!assignUserId) {
       return res.status(400).json({ error: 'Missing required field: assignUserId' });
     }
@@ -476,16 +392,11 @@ router.get('/:taskId/bounty', async (req: Request, res: Response) => {
 /**
  * POST /api/tasks-v2/:taskId/bounty/claim - Submit bounty claim
  */
-router.post('/:taskId/bounty/claim', async (req: Request, res: Response) => {
+router.post('/:taskId/bounty/claim', authenticateToken, async (req: Request, res: Response) => {
   try {
-    if (!req.user) {
-      return res.status(401).json({ error: 'Unauthorized' });
-    }
-
-    const userId = (req.user as any).id || (req.user as any).sub;
+    const userId = req.user?.id || (req.user as any)?.sub;
     const { bountyId, claimAmount, walletAddress, proof } = req.body;
 
-    // Validate required fields
     if (!bountyId || !claimAmount || !walletAddress) {
       return res.status(400).json({
         error: 'Missing required fields: bountyId, claimAmount, walletAddress',
@@ -534,13 +445,9 @@ router.get('/:taskId/bounty/claims', async (req: Request, res: Response) => {
 /**
  * POST /api/tasks-v2/:taskId/comments - Add comment
  */
-router.post('/:taskId/comments', async (req: Request, res: Response) => {
+router.post('/:taskId/comments', authenticateToken, async (req: Request, res: Response) => {
   try {
-    if (!req.user) {
-      return res.status(401).json({ error: 'Unauthorized' });
-    }
-
-    const userId = (req.user as any).id || (req.user as any).sub;
+    const userId = req.user?.id || (req.user as any)?.sub;
     const { content, mentions, parentCommentId } = req.body;
 
     const comment = await TaskManagementService.addComment({

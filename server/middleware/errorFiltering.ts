@@ -1,25 +1,21 @@
-import { Request, Response, NextFunction } from 'express';
+/**
+ * Centralized Error Filtering Middleware for Express.js
+ * This middleware captures all errors thrown in the application, sanitizes them for client consumption, and logs detailed diagnostic information for server-side observability.
+ * It distinguishes between operational errors (expected application errors) and unhandled system crashes.
+ */ 
+
+import type { Request, Response, NextFunction } from 'express';
 import { Logger } from '../utils/logger';
 
 const logger = new Logger('error-filter-middleware');
-
-/**
- * Error Message Filtering Middleware
- * 
- * Prevents sensitive information leakage:
- * - Stack traces never sent to clients
- * - Database errors sanitized
- * - File paths removed
- * - Internal details hidden
- * - Full details logged server-side for debugging
- */
 
 export interface ClientErrorResponse {
   success: false;
   error: {
     message: string;
     code?: string;
-    statusCode?: number;
+    statusCode: number;
+    details?: Record<string, string[]>;
   };
 }
 
@@ -33,28 +29,42 @@ export interface ServerErrorDetails {
   method?: string;
 }
 
-/**
- * Safe error messages to send to clients
- * Mapped from error codes/types to user-friendly messages
- */
 const SAFE_ERROR_MESSAGES: Record<string, string> = {
-  'VALIDATION_ERROR': 'The provided data is invalid',
-  'NOT_FOUND': 'The requested resource was not found',
-  'UNAUTHORIZED': 'You do not have permission to access this resource',
-  'FORBIDDEN': 'Access to this resource is forbidden',
-  'CONFLICT': 'This resource already exists',
-  'RATE_LIMIT': 'Too many requests, please try again later',
-  'DATABASE_ERROR': 'An error occurred while processing your request',
-  'NETWORK_ERROR': 'A network error occurred, please try again',
-  'TIMEOUT': 'The request took too long, please try again',
-  'INTERNAL_ERROR': 'An unexpected error occurred, please try again later',
+  VALIDATION_ERROR: 'The provided data is invalid',
+  NOT_FOUND: 'The requested resource was not found',
+  UNAUTHORIZED: 'Authentication required to access this resource',
+  FORBIDDEN: 'Access to this resource is forbidden',
+  CONFLICT: 'This resource already exists',
+  RATE_LIMIT: 'Too many requests, please try again later',
+  DATABASE_ERROR: 'A database error occurred while processing your request',
+  NETWORK_ERROR: 'A downstream network error occurred',
+  INTERNAL_ERROR: 'An unexpected internal error occurred. Please try again later',
 };
 
 /**
- * Extract error code from error object
+ * Custom Operational Error Class
+ * Distinguishes expected application errors from unhandled system crashes
  */
-function getErrorCode(error: any): string | null {
-  if (error.code) return error.code;
+export class AppError extends Error {
+  public readonly statusCode: number;
+  public readonly code?: string;
+  public readonly isOperational: boolean;
+
+  constructor(message: string, statusCode = 500, code?: string, isOperational = true) {
+    super(message);
+    this.statusCode = statusCode;
+    this.code = code;
+    this.isOperational = isOperational;
+    Object.setPrototypeOf(this, new.target.prototype);
+    Error.captureStackTrace(this, this.constructor);
+  }
+}
+
+/**
+ * Extract error code from error object or class name
+ */
+function getErrorCode(error: any): string | undefined {
+  if (error.code) return String(error.code);
   if (error.constructor?.name) {
     const name = error.constructor.name;
     if (name === 'ValidationError') return 'VALIDATION_ERROR';
@@ -62,125 +72,81 @@ function getErrorCode(error: any): string | null {
     if (name === 'UnauthorizedError') return 'UNAUTHORIZED';
     if (name === 'ForbiddenError') return 'FORBIDDEN';
   }
-  return null;
+  return undefined;
 }
 
 /**
- * Check if error is a database error (should be sanitized)
+ * Detect database or system-level driver errors
  */
-function isDatabaseError(error: any): boolean {
-  const errorMessage = error.message?.toLowerCase() || '';
+function isInternalDriverError(error: any): boolean {
+  const msg = error.message?.toLowerCase() || '';
+  const name = error.name || '';
   return (
-    errorMessage.includes('database') ||
-    errorMessage.includes('query') ||
-    errorMessage.includes('sql') ||
-    error.name?.includes('Database') ||
-    error.name?.includes('SQL')
+    msg.includes('postgres') ||
+    msg.includes('mysql') ||
+    msg.includes('sqlite') ||
+    msg.includes('mongo') ||
+    msg.includes('syntax error at or near') ||
+    msg.includes('connection refused') ||
+    name.includes('Database') ||
+    name.includes('QueryFailed')
   );
 }
 
 /**
- * Check if error is sensitive (should be hidden)
+ * Sanitize error message for client consumption
  */
-function isSensitiveError(error: any): boolean {
-  if (isDatabaseError(error)) return true;
-  
-  const message = error.message?.toLowerCase() || '';
-  return (
-    message.includes('password') ||
-    message.includes('secret') ||
-    message.includes('api_key') ||
-    message.includes('token') ||
-    message.includes('credential') ||
-    message.includes('/') || // File paths
-    message.includes('\\')   // Windows paths
-  );
-}
-
-/**
- * Sanitize error message - remove sensitive information
- */
-function sanitizeErrorMessage(message: string, statusCode: number): string {
-  if (!message) {
-    return SAFE_ERROR_MESSAGES['INTERNAL_ERROR'];
+function sanitizeErrorMessage(error: any, statusCode: number): string {
+  // Always mask non-operational 500 errors and DB driver leaks
+  if (statusCode >= 500 || isInternalDriverError(error)) {
+    return SAFE_ERROR_MESSAGES.INTERNAL_ERROR;
   }
 
-  const lowerMessage = message.toLowerCase();
-
-  // Database errors
-  if (lowerMessage.includes('database') || lowerMessage.includes('query')) {
-    return SAFE_ERROR_MESSAGES['DATABASE_ERROR'];
+  // If error is marked explicitly operational, return message safely
+  if (error.isOperational && error.message) {
+    return error.message;
   }
 
-  // File system errors
-  if (lowerMessage.includes('enoent') || lowerMessage.includes('no such file')) {
-    return SAFE_ERROR_MESSAGES['NOT_FOUND'];
-  }
-
-  // Network errors
-  if (lowerMessage.includes('econnrefused') || lowerMessage.includes('timeout')) {
-    return SAFE_ERROR_MESSAGES['NETWORK_ERROR'];
-  }
-
-  // Validation errors (keep some context)
-  if (statusCode === 400 && lowerMessage.includes('invalid')) {
-    return 'The provided data is invalid. Please check your input and try again.';
-  }
-
-  // Try to get from safe messages using error code
-  const errorCode = getErrorCode({ message });
+  const errorCode = getErrorCode(error);
   if (errorCode && SAFE_ERROR_MESSAGES[errorCode]) {
     return SAFE_ERROR_MESSAGES[errorCode];
   }
 
-  // Generic safe message based on status code
   switch (statusCode) {
-    case 400:
-      return 'Bad request. Please check your input.';
-    case 401:
-      return 'Authentication required.';
-    case 403:
-      return 'You do not have permission to access this resource.';
-    case 404:
-      return 'The requested resource was not found.';
-    case 409:
-      return 'This resource already exists.';
-    case 429:
-      return SAFE_ERROR_MESSAGES['RATE_LIMIT'];
-    case 500:
-    case 502:
-    case 503:
-    case 504:
-      return SAFE_ERROR_MESSAGES['INTERNAL_ERROR'];
-    default:
-      return 'An error occurred. Please try again later.';
+    case 400: return 'Bad request. Please verify your input.';
+    case 401: return SAFE_ERROR_MESSAGES.UNAUTHORIZED;
+    case 403: return SAFE_ERROR_MESSAGES.FORBIDDEN;
+    case 404: return SAFE_ERROR_MESSAGES.NOT_FOUND;
+    case 409: return SAFE_ERROR_MESSAGES.CONFLICT;
+    case 429: return SAFE_ERROR_MESSAGES.RATE_LIMIT;
+    default: return SAFE_ERROR_MESSAGES.INTERNAL_ERROR;
   }
 }
 
 /**
- * Create a safe response for the client
+ * Build safe client response payload
  */
 export function createClientErrorResponse(
   statusCode: number,
-  errorMessage: string,
-  errorCode?: string
+  rawError: any,
+  errorCode?: string,
+  details?: Record<string, string[]>
 ): ClientErrorResponse {
   return {
     success: false,
     error: {
-      message: sanitizeErrorMessage(errorMessage, statusCode),
-      code: errorCode,
+      message: sanitizeErrorMessage(rawError, statusCode),
+      code: errorCode || getErrorCode(rawError),
       statusCode,
+      ...(details ? { details } : {}),
     },
   };
 }
 
 /**
- * Log detailed error information server-side
+ * Log server-side diagnostic details without truncation
  */
-function logDetailedError(
-  details: ServerErrorDetails
-): void {
+function logDetailedError(details: ServerErrorDetails): void {
   const logData = {
     message: details.originalMessage,
     code: details.code,
@@ -189,39 +155,30 @@ function logDetailedError(
     path: details.path,
     method: details.method,
     timestamp: new Date().toISOString(),
+    stack: details.stack, // Full stack trace preserved for server observability
   };
 
   if (details.statusCode >= 500) {
-    logger.error('Server error occurred', {
-      ...logData,
-      stack: details.stack?.substring(0, 500), // Truncate stack
-    });
-  } else if (details.statusCode >= 400) {
-    logger.warn('Client error occurred', logData);
+    logger.error('Unhandled server error occurred', logData);
   } else {
-    logger.info('Error response sent', logData);
+    logger.warn('Client request error', logData);
   }
 }
 
 /**
- * Express error filtering middleware
- * Should be placed AFTER all other middleware and route handlers
- * 
- * Usage:
- * app.use(errorFilteringMiddleware);
+ * Central Express Error Filtering Middleware
  */
 export const errorFilteringMiddleware = (
   error: any,
   req: Request,
   res: Response,
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   next: NextFunction
 ) => {
-  // Ensure we have an Express error handler signature
   const statusCode = error.statusCode || error.status || 500;
   const errorMessage = error.message || 'Unknown error occurred';
   const errorCode = getErrorCode(error);
 
-  // Log detailed error (server-side only)
   logDetailedError({
     originalMessage: errorMessage,
     stack: error.stack,
@@ -232,70 +189,42 @@ export const errorFilteringMiddleware = (
     method: req.method,
   });
 
-  // Check if error should be completely hidden
-  if (isSensitiveError(error) && statusCode < 500) {
-    logger.warn('Sensitive error detected, replacing with generic message', {
-      originalError: errorMessage.substring(0, 100),
-      path: req.path,
-    });
-    return res.status(statusCode).json(
-      createClientErrorResponse(statusCode, SAFE_ERROR_MESSAGES['INTERNAL_ERROR'])
-    );
-  }
-
-  // Send safe error response to client
   res.status(statusCode).json(
-    createClientErrorResponse(statusCode, errorMessage, errorCode)
+    createClientErrorResponse(statusCode, error, errorCode)
   );
 };
 
 /**
- * Validation error handler
- * Converts Zod validation errors to safe response
- */
-export function handleValidationError(
-  errors: Record<string, string[]>
-): ClientErrorResponse {
-  const fieldErrors = Object.entries(errors)
-    .map(([field, messages]) => `${field}: ${messages.join(', ')}`)
-    .slice(0, 5) // Only show first 5 errors
-    .join('; ');
-
-  return {
-    success: false,
-    error: {
-      message: `Validation failed: ${fieldErrors}`,
-      code: 'VALIDATION_ERROR',
-      statusCode: 400,
-    },
-  };
-}
-
-/**
- * Wrap async route handlers to catch errors
+ * Wrap async route handlers to delegate errors to central middleware
  */
 export function asyncHandler(
   fn: (req: Request, res: Response, next: NextFunction) => Promise<any>
 ) {
   return (req: Request, res: Response, next: NextFunction) => {
-    Promise.resolve(fn(req, res, next)).catch((error) => {
-      // Log the error
-      logger.error('Unhandled error in route handler', {
-        error: error.message,
-        path: req.path,
-        method: req.method,
-      });
-
-      // Send safe error response
-      res.status(500).json(
-        createClientErrorResponse(500, error.message || 'Internal server error')
-      );
-    });
+    //  FIX: Delegates all caught errors to Express next(err) pipeline
+    Promise.resolve(fn(req, res, next)).catch(next);
   };
 }
 
 /**
- * Middleware to wrap JSON parsing errors
+ * Format structured validation error responses (e.g., Zod / express-validator)
+ */
+export function handleValidationError(
+  fieldErrors: Record<string, string[]>
+): ClientErrorResponse {
+  return {
+    success: false,
+    error: {
+      message: SAFE_ERROR_MESSAGES.VALIDATION_ERROR,
+      code: 'VALIDATION_ERROR',
+      statusCode: 400,
+      details: fieldErrors,
+    },
+  };
+}
+
+/**
+ * Handle invalid JSON body syntax errors from body-parser
  */
 export function jsonErrorHandler(
   error: any,
@@ -304,9 +233,9 @@ export function jsonErrorHandler(
   next: NextFunction
 ) {
   if (error instanceof SyntaxError && 'body' in error) {
-    logger.warn('JSON parse error', { path: req.path });
+    logger.warn('JSON parse error in request body', { path: req.path });
     return res.status(400).json(
-      createClientErrorResponse(400, 'Invalid JSON in request body')
+      createClientErrorResponse(400, new AppError('Invalid JSON format in request body', 400, 'INVALID_JSON'))
     );
   }
   next(error);

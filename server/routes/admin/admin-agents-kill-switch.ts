@@ -13,18 +13,44 @@
  * 9. Emotional Safety: Soft language
  */
 
-import express, { Router, Request, Response } from 'express';
+import express from 'express';
+import { Router } from 'express';
+import type { Request, Response } from 'express';
 import { v4 as uuidv4 } from 'uuid';
 import { agentStatusService } from '../../services/agentStatusService';
-import { circuitBreakerRegistry } from '../../core/consolidation/CircuitBreakerConsolidation';
-import { healthRegistry } from '../../core/consolidation/HealthRegistryConsolidation';
-// Migration Status (Phase 5):
-// PARTIAL: Circuit breaker operations now use circuitBreakerRegistry.getOrCreate(`agent:${id}`, 'agent')
-// TODO: Full migration of deactivateAgent/activateAgent to pure consolidation API in Phase 6
-// See deprecation notice in agentStatusService.ts for details
+import { authenticateToken } from '../../middleware/auth';
+import { requireRole } from '../../middleware/rbac';
 import { logger } from '../../utils/logger';
 
 const router = Router();
+const requireSuperAdmin = requireRole('super_admin');
+
+function parsePositiveInteger(value: unknown, defaultValue: number, maxValue: number): number {
+  const parsed = Number.parseInt(String(value ?? defaultValue), 10);
+  if (!Number.isFinite(parsed) || parsed < 0) return defaultValue;
+  return Math.min(parsed, maxValue);
+}
+
+function getAuthenticatedUserId(req: Request): string {
+  const userId = (req as any).user?.id;
+  if (typeof userId !== 'string' || !userId.trim()) {
+    throw Object.assign(new Error('Authentication required'), { statusCode: 401 });
+  }
+  return userId.trim();
+}
+
+function validateReason(reason: unknown): string | null {
+  if (typeof reason !== 'string') {
+    return null;
+  }
+
+  const trimmed = reason.trim();
+  if (trimmed.length < 10) {
+    return null;
+  }
+
+  return trimmed;
+}
 
 /**
  * Helper: Generate human-readable narrative from action
@@ -55,8 +81,9 @@ function generateNarrative(action: any): string {
  * 4. ✅ Authority Transparency: Shows who can activate/deactivate
  * 8. ✅ Post-Action Narrative: Full history of all state changes
  */
-router.get('/status', async (req: Request, res: Response) => {
+router.get('/status', authenticateToken, requireSuperAdmin, async (req: Request, res: Response) => {
   try {
+    getAuthenticatedUserId(req);
     const agents = await agentStatusService.getAllAgentsWithStatus();
     
     // Format response for power-checklist clarity
@@ -122,14 +149,15 @@ router.get('/status', async (req: Request, res: Response) => {
  * 8. ✅ Post-Action Narrative: Returns what happened
  * 9. ✅ Emotional Safety: "paused" not "killed", calm tone
  */
-router.post('/:agentId/kill-switch', async (req: Request, res: Response) => {
+router.post('/:agentId/kill-switch', authenticateToken, requireSuperAdmin, async (req: Request, res: Response) => {
   try {
     const { agentId } = req.params;
     const { reason, suppressNotifications } = req.body;
-    const userId = (req.user as any)?.id || 'unknown';
+    const userId = getAuthenticatedUserId(req);
 
     // Checklist #6: Intent Confirmation - Require explicit reason
-    if (!reason || typeof reason !== 'string' || reason.trim().length < 10) {
+    const safeReason = validateReason(reason);
+    if (!safeReason) {
       return res.status(400).json({
         powerChecklistItem: 6,
         error: 'Intent confirmation required',
@@ -165,8 +193,8 @@ router.post('/:agentId/kill-switch', async (req: Request, res: Response) => {
       agentId,
       daoId: (agent.dao_id as string),
       deactivatedBy: userId,
-      reason,
-      authority: 'superuser'
+      reason: safeReason,
+      authority: 'super_admin'
     });
 
     // Checklist #3: State Clarity - Show AFTER state
@@ -189,8 +217,8 @@ router.post('/:agentId/kill-switch', async (req: Request, res: Response) => {
       timeline: {
         activatedAt: result.deactivatedAt,
         activatedBy: userId,
-        reason: reason,
-        authority: 'superuser',
+        reason: safeReason,
+        authority: 'super_admin',
         reversible: 'YES - use POST /reactivate anytime'
       },
       nextSteps: [
@@ -209,8 +237,8 @@ router.post('/:agentId/kill-switch', async (req: Request, res: Response) => {
       
       // Checklist #3: State Clarity
       stateChange: {
-        before: { status: 'ACTIVE', is_active: true },
-        after: { status: 'PAUSED', is_active: false },
+        before: beforeSnapshot,
+        after: afterSnapshot,
         timestamp: result.deactivatedAt
       },
       
@@ -225,8 +253,9 @@ router.post('/:agentId/kill-switch', async (req: Request, res: Response) => {
     
   } catch (error) {
     logger.error('Kill-switch error:', error);
-    res.status(500).json({
-      error: 'Failed to activate kill-switch',
+    const statusCode = (error as any)?.statusCode === 401 ? 401 : 500;
+    res.status(statusCode).json({
+      error: statusCode === 401 ? 'Authentication required' : 'Failed to activate kill-switch',
       errorId: uuidv4()
     });
   }
@@ -241,14 +270,15 @@ router.post('/:agentId/kill-switch', async (req: Request, res: Response) => {
  * 8. ✅ Post-Action Narrative: Show what's being reactivated
  * 9. ✅ Emotional Safety: Reassure agent is safe after review
  */
-router.post('/:agentId/reactivate', async (req: Request, res: Response) => {
+router.post('/:agentId/reactivate', authenticateToken, requireSuperAdmin, async (req: Request, res: Response) => {
   try {
     const { agentId } = req.params;
     const { reason } = req.body;
-    const userId = (req.user as any)?.id || 'unknown';
+    const userId = getAuthenticatedUserId(req);
 
     // Checklist #6: Intent Confirmation
-    if (!reason || typeof reason !== 'string' || reason.trim().length < 10) {
+    const safeReason = validateReason(reason);
+    if (!safeReason) {
       return res.status(400).json({
         powerChecklistItem: 6,
         error: 'Agent review required',
@@ -281,7 +311,7 @@ router.post('/:agentId/reactivate', async (req: Request, res: Response) => {
       agentId,
       daoId: (agent.dao_id as string),
       activatedBy: userId,
-      reason
+      reason: safeReason
     });
 
     // Checklist #3: State Clarity - Show AFTER
@@ -299,7 +329,7 @@ router.post('/:agentId/reactivate', async (req: Request, res: Response) => {
       agent: agent.name,
       reactivatedAt: result.activatedAt,
       reactivatedBy: userId,
-      reviewNotes: reason,
+      reviewNotes: safeReason,
       nextSteps: [
         'Monitor execution rate in next 24 hours',
         `Review circuit breaker threshold: ${agent.circuit_breaker_threshold}/hour`,
@@ -311,15 +341,18 @@ router.post('/:agentId/reactivate', async (req: Request, res: Response) => {
       success: true,
       narrative,
       stateChange: {
-        before: { status: 'PAUSED', is_active: false },
-        after: { status: 'ACTIVE', is_active: true },
+        before: beforeSnapshot,
+        after: afterSnapshot,
         timestamp: result.activatedAt
       }
     });
     
   } catch (error) {
     logger.error('Reactivation error:', error);
-    res.status(500).json({ error: 'Failed to reactivate agent' });
+    const statusCode = (error as any)?.statusCode === 401 ? 401 : 500;
+    res.status(statusCode).json({
+      error: statusCode === 401 ? 'Authentication required' : 'Failed to reactivate agent'
+    });
   }
 });
 
@@ -330,15 +363,17 @@ router.post('/:agentId/reactivate', async (req: Request, res: Response) => {
  * 8. ✅ Post-Action Narrative: Full activity log with before/after
  * 4. ✅ Authority Transparency: Shows who did what
  */
-router.get('/:agentId/history', async (req: Request, res: Response) => {
+router.get('/:agentId/history', authenticateToken, requireSuperAdmin, async (req: Request, res: Response) => {
   try {
     const { agentId } = req.params;
     const { limit = '50', skip = '0' } = req.query;
+    const safeLimit = parsePositiveInteger(limit, 50, 100);
+    const safeSkip = parsePositiveInteger(skip, 0, 10000);
 
     const history = await agentStatusService.getAgentStateHistory(
       agentId,
-      Math.min(parseInt(limit as string), 100),
-      parseInt(skip as string)
+      safeLimit,
+      safeSkip
     );
 
     return res.json({
@@ -377,7 +412,10 @@ router.get('/:agentId/history', async (req: Request, res: Response) => {
     
   } catch (error) {
     logger.error('History fetch error:', error);
-    res.status(500).json({ error: 'Failed to fetch history' });
+    const statusCode = (error as any)?.statusCode === 401 ? 401 : 500;
+    res.status(statusCode).json({
+      error: statusCode === 401 ? 'Authentication required' : 'Failed to fetch history'
+    });
   }
 });
 

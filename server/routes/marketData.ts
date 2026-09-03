@@ -8,7 +8,8 @@
  * - Liquidity depth analytics
  */
 
-import { Router, Request, Response } from 'express';
+import { Router } from 'express';
+import type { Request, Response } from 'express';
 import { authenticateToken } from '../middleware/auth';
 import { ccxtService } from '../services/ccxtService';
 import { SmartRouter } from '../services/smartRouter';
@@ -90,17 +91,18 @@ router.get('/orderbook/:symbol', async (req: Request, res: Response) => {
     let liquidityAt1Pct = 0;
     let liquidityAt5Pct = 0;
 
-    const targetPrice = (topBid[0] + topAsk[0]) / 2;
+    const safeMidPrice = (topBid[0] + topAsk[0]) > 0 ? (topBid[0] + topAsk[0]) / 2 : 0;
+    const targetPrice = safeMidPrice || 1;
 
     for (const [price, qty] of orderBook.bids || []) {
       if (price >= targetPrice * 0.99) liquidityAtTopLevel += qty;
-      if (price >= targetPrice * 0.95) liquidityAt1Pct += qty;
+      if (price >= targetPrice * 0.99) liquidityAt1Pct += qty;
       if (price >= targetPrice * 0.95) liquidityAt5Pct += qty;
     }
 
     for (const [price, qty] of orderBook.asks || []) {
       if (price <= targetPrice * 1.01) liquidityAtTopLevel += qty;
-      if (price <= targetPrice * 1.05) liquidityAt1Pct += qty;
+      if (price <= targetPrice * 1.01) liquidityAt1Pct += qty;
       if (price <= targetPrice * 1.05) liquidityAt5Pct += qty;
     }
 
@@ -131,7 +133,7 @@ router.get('/orderbook/:symbol', async (req: Request, res: Response) => {
           bestBidQty: topBid[1],
           bestAsk: topAsk[0],
           bestAskQty: topAsk[1],
-          midPrice: (topBid[0] + topAsk[0]) / 2,
+          midPrice: safeMidPrice,
         },
       },
     };
@@ -162,7 +164,7 @@ router.get('/orderbook/:symbol', async (req: Request, res: Response) => {
  * 
  * Returns: Best route + all alternatives with full cost breakdown
  */
-router.get('/optimal-routes/:symbol', [authenticateToken as any], async (req: Request, res: Response) => {
+router.get('/optimal-routes/:symbol', authenticateToken, async (req: Request, res: Response) => {
   try {
     const { symbol } = req.params;
     const amount = parseFloat(req.query.amount as string);
@@ -263,6 +265,17 @@ router.get('/liquidity-depth/:symbol', async (req: Request, res: Response) => {
     const priceRangesStr = (req.query.priceRanges as string) || '0.5,1,2,5,10';
     const priceRanges = priceRangesStr.split(',').map((r) => parseFloat(r)).filter((r) => !isNaN(r));
 
+    if (priceRanges.length === 0) {
+      return res.status(400).json(
+        createApiError(
+          ApiErrorCode.INVALID_PARAMETER,
+          'priceRanges must contain at least one valid percentage value',
+          400,
+          { suggestion: 'Use a comma-separated list like 0.5,1,2,5,10' }
+        )
+      );
+    }
+
     // Get order book
     let orderBook: any = null;
     try {
@@ -279,7 +292,18 @@ router.get('/liquidity-depth/:symbol', async (req: Request, res: Response) => {
 
     const topBid = orderBook.bids?.[0]?.[0] || 0;
     const topAsk = orderBook.asks?.[0]?.[0] || 0;
-    const midPrice = (topBid + topAsk) / 2;
+    const midPrice = topBid > 0 && topAsk > 0 ? (topBid + topAsk) / 2 : 0;
+
+    if (midPrice <= 0) {
+      return res.status(400).json(
+        createApiError(
+          ApiErrorCode.INVALID_PARAMETER,
+          `Liquidity data is unavailable for ${symbol}`,
+          400,
+          { suggestion: 'Try a different symbol or exchange' }
+        )
+      );
+    }
 
     // Calculate liquidity at each price range
     const liquidity = priceRanges.map((range) => {
@@ -350,7 +374,7 @@ router.get('/spread-analysis/:symbol', async (req: Request, res: Response) => {
           const topBid = book.bids?.[0]?.[0] || 0;
           const topAsk = book.asks?.[0]?.[0] || 0;
           const spread = topAsk - topBid;
-          const spreadPct = topBid > 0 ? (spread / topBid) * 100 : 0;
+          const spreadPct = topBid > 0 && Number.isFinite(topBid) ? (spread / topBid) * 100 : 0;
 
           return {
             exchange: ex,

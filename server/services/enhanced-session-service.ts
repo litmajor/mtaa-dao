@@ -231,20 +231,30 @@ export async function createSessionNotification(
  * Mark notification as read
  */
 export async function markNotificationAsRead(
-  notificationId: string
-): Promise<void> {
+  notificationId: string,
+  userId?: string
+): Promise<boolean> {
   try {
     const now = new Date();
 
-    await db
+    const whereClause = userId
+      ? and(
+          eq(sessionNotifications.id, notificationId),
+          eq(sessionNotifications.userId, userId)
+        )
+      : eq(sessionNotifications.id, notificationId);
+
+    const updatedRows = await db
       .update(sessionNotifications)
       .set({
         isRead: true,
         readAt: now,
       })
-      .where(eq(sessionNotifications.id, notificationId));
+      .where(whereClause)
+      .returning({ id: sessionNotifications.id });
 
-    logger.info(`Notification marked as read`, { notificationId });
+    logger.info(`Notification marked as read`, { notificationId, userId, updatedRows: updatedRows.length });
+    return updatedRows.length > 0;
   } catch (error) {
     logger.error('Failed to mark notification as read:', error);
     throw error;

@@ -1,38 +1,29 @@
-import { Request, Response, NextFunction } from 'express';
+import type { Request, Response, NextFunction } from 'express';
 
 /**
  * Cache control middleware for static assets
- * Sets appropriate cache headers based on file type
  */
 export function staticAssetCache(req: Request, res: Response, next: NextFunction) {
-  // Cache static assets for 1 year
-  if (req.path.match(/\.(js|css|png|jpg|jpeg|gif|ico|svg|woff|woff2|ttf|eot)$/)) {
+  // Added 'i' flag for case-insensitive extension matching (.PNG, .JS, etc.)
+  if (req.path.match(/\.(js|css|png|jpg|jpeg|gif|ico|svg|woff|woff2|ttf|eot)$/i)) {
     res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
-  }
-  // Cache HTML for 5 minutes
-  else if (req.path.match(/\.html$/)) {
+  } else if (req.path.match(/\.html$/i)) {
     res.setHeader('Cache-Control', 'public, max-age=300');
   }
   next();
 }
 
 /**
- * API response caching middleware
- * Sets ETag for conditional requests
+ * API response caching headers (Delegates ETag to Express default)
  */
-export function apiCache(maxAge: number = 60) {
+export function apiCache(maxAge: number = 60, isPrivate: boolean = false) {
   return (req: Request, res: Response, next: NextFunction) => {
-    // Only cache GET requests
-    if (req.method !== 'GET') {
-      return next();
-    }
+    if (req.method !== 'GET') return next();
 
-    // Set cache control header
-    res.setHeader('Cache-Control', `public, max-age=${maxAge}`);
+    const visibility = isPrivate ? 'private' : 'public';
+    res.setHeader('Cache-Control', `${visibility}, max-age=${maxAge}`);
     
-    // Enable ETag for conditional requests
-    res.setHeader('ETag', `W/"${Date.now()}"`);
-
+    // Note: Express automatically generates valid ETags for res.send/res.json by default.
     next();
   };
 }
@@ -48,7 +39,7 @@ export function noCache(req: Request, res: Response, next: NextFunction) {
 }
 
 /**
- * In-memory cache for expensive operations
+ * In-memory cache with cleanup safety
  */
 class SimpleCache {
   private cache = new Map<string, { data: any; expires: number }>();
@@ -56,19 +47,21 @@ class SimpleCache {
 
   constructor(ttlSeconds: number = 300) {
     this.ttl = ttlSeconds * 1000;
-    // Clean up expired entries every 5 minutes
-    setInterval(() => this.cleanup(), 5 * 60 * 1000);
+    
+    // .unref() prevents timer from blocking process exit / Jest tests
+    const timer = setInterval(() => this.cleanup(), 5 * 60 * 1000);
+    if (timer.unref) timer.unref();
   }
 
   get(key: string): any | null {
     const entry = this.cache.get(key);
     if (!entry) return null;
-    
+
     if (Date.now() > entry.expires) {
       this.cache.delete(key);
       return null;
     }
-    
+
     return entry.data;
   }
 
@@ -76,7 +69,7 @@ class SimpleCache {
     const ttl = ttlSeconds ? ttlSeconds * 1000 : this.ttl;
     this.cache.set(key, {
       data,
-      expires: Date.now() + ttl
+      expires: Date.now() + ttl,
     });
   }
 
@@ -102,20 +95,21 @@ class SimpleCache {
   }
 }
 
-// Export singleton cache instance
-export const memoryCache = new SimpleCache(300); // 5 minutes default TTL
+export const memoryCache = new SimpleCache(300);
 
 /**
- * Middleware to cache API responses in memory
+ * Middleware to cache successful GET API responses in memory safely
  */
 export function memoryCacheMiddleware(ttlSeconds: number = 60) {
   return async (req: Request, res: Response, next: NextFunction) => {
-    // Only cache GET requests
     if (req.method !== 'GET') {
       return next();
     }
 
-    const cacheKey = `${req.method}:${req.originalUrl}`;
+    // Key includes user ID to avoid serving cached user data to the wrong person
+    const userId = (req as any).user?.id || 'anonymous';
+    const cacheKey = `${userId}:${req.method}:${req.originalUrl}`;
+
     const cachedResponse = memoryCache.get(cacheKey);
 
     if (cachedResponse) {
@@ -123,11 +117,15 @@ export function memoryCacheMiddleware(ttlSeconds: number = 60) {
       return res.json(cachedResponse);
     }
 
-    // Override res.json to cache the response
+    res.setHeader('X-Cache', 'MISS');
+
+    // Override res.json to capture response
     const originalJson = res.json.bind(res);
-    res.json = function(body: any) {
-      memoryCache.set(cacheKey, body, ttlSeconds);
-      res.setHeader('X-Cache', 'MISS');
+    res.json = function (body: any) {
+      // Only cache successful 2xx responses
+      if (res.statusCode >= 200 && res.statusCode < 300) {
+        memoryCache.set(cacheKey, body, ttlSeconds);
+      }
       return originalJson(body);
     };
 

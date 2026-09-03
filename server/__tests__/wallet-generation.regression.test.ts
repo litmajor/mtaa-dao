@@ -1,4 +1,163 @@
 import { describe, test, expect, beforeEach, vi, afterEach } from 'vitest';
+
+// Set environment variables FIRST, before any imports
+process.env.DATABASE_URL = 'postgresql://test:test@localhost:5432/test_db';
+process.env.JWT_SECRET = 'test-jwt-secret-this-is-long-enough-for-32-chars-requirement';
+process.env.JWT_REFRESH_SECRET = 'test-jwt-refresh-secret-this-is-long-enough-for-32-chars';
+process.env.SESSION_SECRET = 'test-session-secret-this-is-long-enough-for-32-chars';
+
+// Mock config AFTER setting env vars
+vi.mock('../../shared/config.ts', () => ({
+  env: {
+    JWT_SECRET: 'test-jwt-secret-this-is-long-enough-for-32-chars-requirement',
+    JWT_REFRESH_SECRET: 'test-jwt-refresh-secret-this-is-long-enough-for-32-chars',
+    DATABASE_URL: 'postgresql://test:test@localhost:5432/test_db',
+    NODE_ENV: 'test',
+    SESSION_SECRET: 'test-session-secret-this-is-long-enough-for-32-chars',
+  },
+}));
+
+// Mock logger
+vi.mock('../utils/logger', () => {
+  class MockLogger {
+    debug = vi.fn();
+    warn = vi.fn();
+    error = vi.fn();
+    info = vi.fn();
+  }
+  const defaultLogger = new MockLogger();
+  return { 
+    Logger: MockLogger,
+    logger: defaultLogger,
+    requestLogger: vi.fn(),
+  };
+});
+
+// In-memory test database
+const testDb = {
+  users: new Map(),
+  wallets: new Map(),
+  walletPublicKeys: new Map(),
+  walletSecuritySettings: new Map(),
+};
+
+const getTableName = (table) => {
+  if (!table) return '';
+  const symbol = Object.getOwnPropertySymbols(table).find((candidate) => candidate.toString() === 'Symbol(drizzle:Name)');
+  if (symbol) return String(table[symbol]);
+  if (table.name) return String(table.name);
+  if (table._?.name) return String(table._.name);
+  return '';
+};
+
+const getRowsForTable = (table) => {
+  const tableName = getTableName(table);
+  switch (tableName) {
+    case 'users':
+      return Array.from(testDb.users.values());
+    case 'wallets':
+      return Array.from(testDb.wallets.values());
+    case 'wallet_public_keys':
+      return Array.from(testDb.walletPublicKeys.values());
+    case 'wallet_security_settings':
+      return Array.from(testDb.walletSecuritySettings.values());
+    default:
+      return [];
+  }
+};
+
+const extractConditionPairs = (condition, pairs = []) => {
+  if (!condition) return pairs;
+
+  if (Array.isArray(condition)) {
+    condition.forEach((entry) => extractConditionPairs(entry, pairs));
+    return pairs;
+  }
+
+  if (condition.queryChunks) {
+    const chunks = Array.isArray(condition.queryChunks) ? condition.queryChunks : [condition.queryChunks];
+    let columnName;
+    let value;
+
+    for (const chunk of chunks) {
+      if (!chunk || typeof chunk !== 'object') continue;
+
+      if (chunk.queryChunks) {
+        extractConditionPairs(chunk, pairs);
+        continue;
+      }
+
+      if (chunk.name && chunk.table && chunk.config) {
+        columnName = chunk.name;
+      }
+
+      if (chunk.value !== undefined && !chunk.name && !chunk.table) {
+        value = chunk.value;
+      }
+    }
+
+    if (columnName && value !== undefined) {
+      pairs.push({ column: columnName, value });
+    }
+    return pairs;
+  }
+
+  if (condition.expressions) {
+    condition.expressions.forEach((entry) => extractConditionPairs(entry, pairs));
+    return pairs;
+  }
+
+  if (condition.column && Object.prototype.hasOwnProperty.call(condition, 'value')) {
+    pairs.push({ column: condition.column.name, value: condition.value });
+  }
+
+  return pairs;
+};
+
+const matchesCondition = (record, whereCondition) => {
+  if (!whereCondition) return true;
+
+  const pairs = extractConditionPairs(whereCondition);
+  if (pairs.length === 0) return true;
+
+  return pairs.every(({ column, value }) => record[column] === value);
+};
+
+// Mock db at the module level
+vi.mock('../db', () => {
+  const createQueryBuilder = (rows) => {
+    const builder = {
+      then: (resolve) => Promise.resolve(rows).then(resolve),
+      limit: vi.fn((limit) => Promise.resolve(rows.slice(0, limit))),
+    };
+    return builder;
+  };
+
+  const db = {
+    select: vi.fn(() => ({
+      from: vi.fn((table) => ({
+        where: vi.fn((whereCondition) => {
+          const rows = getRowsForTable(table).filter((record) => matchesCondition(record, whereCondition));
+          return createQueryBuilder(rows);
+        }),
+        limit: vi.fn((limit) => Promise.resolve(getRowsForTable(table).slice(0, limit))),
+      })),
+    })),
+    insert: vi.fn((table) => ({
+      values: vi.fn((values) => {
+        const tableName = getTableName(table);
+        if (tableName === 'users') testDb.users.set(values.id, values);
+        if (tableName === 'wallets') testDb.wallets.set(values.id, values);
+        if (tableName === 'wallet_public_keys') testDb.walletPublicKeys.set(values.id, values);
+        if (tableName === 'wallet_security_settings') testDb.walletSecuritySettings.set(values.id, values);
+        return Promise.resolve({ rowCount: 1 });
+      }),
+    })),
+  };
+
+  return { db };
+});
+
 import { db } from '../db';
 import { eq } from 'drizzle-orm';
 import { v4 as uuidv4 } from 'uuid';

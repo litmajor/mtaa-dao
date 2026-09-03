@@ -34,6 +34,8 @@ import { assetOverrides } from '../../shared/config';
 import { externalAPITracker } from './externalAPITracker';
 import { unifiedCache } from './unifiedCacheService';
 import { publishMarketObservation } from './marketObservationPublisher';
+import { cexCredentialManager } from './cexCredentialManager';
+import { OrderIdempotencyRepository, orderIdempotencyRepository } from '../repositories/orderIdempotencyRepository';
 
 /**
  * Type Definitions
@@ -162,6 +164,10 @@ export class CCXTAggregator {
   // Keeping them in separate pools prevents one starving the other.
   private tickerLimiter = pLimit(10);   // Up from 3 — ticker fetches are cheap
   private marketLimiter = pLimit(2);    // Low — loadMarkets is expensive per exchange
+  
+  // NEW: Private operations use separate limiter (lower concurrency)
+  // Prevents order placement from starving price fetches
+  private privateLimiter = pLimit(5);   // Lower than ticker — private ops need real spacing
 
   private readonly EAGER_WARMUP_EXCHANGES = ['binance', 'kraken'];
   private readonly LOAD_MARKETS_TIMEOUTS: Record<string, number> = {
@@ -884,7 +890,7 @@ export class CCXTAggregator {
       throw new Error(`Order validation failed: ${validation.errors.join(', ')}`);
     }
 
-    return this.tickerLimiter(async () => {  // FIX #5
+    return this.privateLimiter(async () => {  // Use privateLimiter, not tickerLimiter
       const exchange = this.exchanges.get(exchangeName);
       if (!exchange) throw new Error(`Exchange ${exchangeName} not initialized`);
       if (!exchange.apiKey || !exchange.secret) {
@@ -935,7 +941,7 @@ export class CCXTAggregator {
       throw new Error(`Order validation failed: ${validation.errors.join(', ')}`);
     }
 
-    return this.tickerLimiter(async () => {  // FIX #5
+    return this.privateLimiter(async () => {  // Use privateLimiter, not tickerLimiter
       const exchange = this.exchanges.get(exchangeName);
       if (!exchange) throw new Error(`Exchange ${exchangeName} not initialized`);
       if (!exchange.apiKey || !exchange.secret) {
@@ -985,7 +991,7 @@ export class CCXTAggregator {
       throw new Error(`Order validation failed: ${validation.errors.join(', ')}`);
     }
 
-    return this.tickerLimiter(async () => {
+    return this.privateLimiter(async () => {  // Use privateLimiter
       const exchange = this.exchanges.get(exchangeName);
       if (!exchange) throw new Error(`Exchange ${exchangeName} not initialized`);
       if (!exchange.apiKey || !exchange.secret) {
@@ -1038,7 +1044,7 @@ export class CCXTAggregator {
       throw new Error(`Order validation failed: ${validation.errors.join(', ')}`);
     }
 
-    return this.tickerLimiter(async () => {
+    return this.privateLimiter(async () => {  // Use privateLimiter
       const exchange = this.exchanges.get(exchangeName);
       if (!exchange) throw new Error(`Exchange ${exchangeName} not initialized`);
       if (!exchange.apiKey || !exchange.secret) {
@@ -1092,7 +1098,7 @@ export class CCXTAggregator {
       throw new Error(`Order validation failed: ${validation.errors.join(', ')}`);
     }
 
-    return this.tickerLimiter(async () => {
+    return this.privateLimiter(async () => {  // Use privateLimiter
       const exchange = this.exchanges.get(exchangeName);
       if (!exchange) throw new Error(`Exchange ${exchangeName} not initialized`);
       if (!exchange.apiKey || !exchange.secret) {
@@ -1134,7 +1140,7 @@ export class CCXTAggregator {
     orderId: string,
     symbol?: string
   ): Promise<OrderStatus> {
-    return this.tickerLimiter(async () => {  // FIX #5
+    return this.privateLimiter(async () => {  // Use privateLimiter for account queries
       try {
         const exchange = this.exchanges.get(exchangeName);
         if (!exchange) throw new Error(`Exchange ${exchangeName} not initialized`);
@@ -1167,7 +1173,7 @@ export class CCXTAggregator {
   ): Promise<boolean> {
     logger.info(`❌ Canceling order ${orderId} on ${exchangeName}`);
 
-    return this.tickerLimiter(async () => {  // FIX #5
+    return this.privateLimiter(async () => {  // Use privateLimiter
       try {
         const exchange = this.exchanges.get(exchangeName);
         if (!exchange) throw new Error(`Exchange ${exchangeName} not initialized`);
@@ -1191,7 +1197,7 @@ export class CCXTAggregator {
   // ---------------------------------------------------------------------------
 
   async getBalances(exchangeName: string): Promise<BalanceInfo> {
-    return this.tickerLimiter(async () => {  // FIX #5
+    return this.privateLimiter(async () => {  // Use privateLimiter for account queries
       try {
         const exchange = this.exchanges.get(exchangeName);
         if (!exchange) throw new Error(`Exchange ${exchangeName} not initialized`);
@@ -1203,19 +1209,336 @@ export class CCXTAggregator {
         const balance = await exchange.fetchBalance();
 
         const result: BalanceInfo = {};
+        // FIX #2: Skip reserved keys that are not assets
+        // CCXT fetchBalance() includes: free, used, total, info, datetime, timestamp
+        // Only iterate over actual asset holdings (free/used/total are object keys for assets)
+        const RESERVED_KEYS = new Set(['free', 'used', 'total', 'info', 'datetime', 'timestamp']);
+        
         for (const [asset, data] of Object.entries(balance)) {
-          if (typeof data === 'object' && data !== null) {
-            result[asset] = {
-              free: (data as any)['free'] || 0,
-              used: (data as any)['used'] || 0,
-              total: (data as any)['total'] || 0,
-            };
+          // Skip reserved keys and non-object values
+          if (RESERVED_KEYS.has(asset) || typeof data !== 'object' || data === null) {
+            continue;
           }
+          result[asset] = {
+            free: (data as any)['free'] || 0,
+            used: (data as any)['used'] || 0,
+            total: (data as any)['total'] || 0,
+          };
         }
         return result;
       } catch (error: any) {
         logger.error(`Failed to fetch balances from ${exchangeName}: ${error.message}`);
         throw new Error(`Failed to fetch balances: ${error.message}`);
+      }
+    });
+  }
+
+  /**
+   * Get balances for a specific credential (multi-user support)
+   * 
+   * NEW API: Uses per-credential clients instead of global exchange instances
+   * Enables multi-user, multi-account support
+   * 
+   * @param credentialId - Unique credential ID
+   * @param userId - User ID for authorization
+   * @returns Balance info keyed by asset
+   */
+  async getBalancesForCredential(credentialId: string, userId: string): Promise<BalanceInfo> {
+    return this.privateLimiter(async () => {
+      try {
+        const exchange = await cexCredentialManager.getClientForCredential(credentialId, userId);
+
+        // 🔴 CCXT API CALL #14: fetchBalance (per-credential)
+        const balance = await exchange.fetchBalance();
+
+        const result: BalanceInfo = {};
+        const RESERVED_KEYS = new Set(['free', 'used', 'total', 'info', 'datetime', 'timestamp']);
+        
+        for (const [asset, data] of Object.entries(balance)) {
+          if (RESERVED_KEYS.has(asset) || typeof data !== 'object' || data === null) {
+            continue;
+          }
+          result[asset] = {
+            free: (data as any)['free'] || 0,
+            used: (data as any)['used'] || 0,
+            total: (data as any)['total'] || 0,
+          };
+        }
+        return result;
+      } catch (error: any) {
+        logger.error(`Failed to fetch balances for credential ${credentialId}: ${error.message}`);
+        throw error;
+      }
+    });
+  }
+
+  /**
+   * Place market order with idempotency support (credential-based)
+   * 
+   * NEW API: Multi-user, multi-account version with:
+   * - Per-credential client routing
+   * - Idempotency key enforcement (prevents double-submit)
+   * - Automatic position persistence to futures_positions table
+   * 
+   * @param credentialId - Unique credential ID
+   * @param userId - User ID for authorization
+   * @param symbol - Trading symbol (BTC, ETH, etc.)
+   * @param side - Trade direction (buy/sell)
+   * @param amount - Quantity to trade
+   * @param idempotencyKey - Optional: Client-provided idempotency key (UUID recommended)
+   * @returns Order result with ID and status
+   */
+  async placeMarketOrderForCredential(
+    credentialId: string,
+    userId: string,
+    symbol: string,
+    side: 'buy' | 'sell',
+    amount: number,
+    idempotencyKey?: string
+  ): Promise<OrderResult> {
+    try {
+      logger.info(`📊 Placing ${side} market order: ${amount} ${symbol} for credential ${credentialId}`);
+
+      // Get credential info to determine exchange
+      const credential = await cexCredentialManager.getClientForCredential(credentialId, userId);
+      const exchange = credential.id.split(':')[0] || 'unknown'; // Extract exchange from client
+
+      // Generate idempotency key if not provided
+      const key = idempotencyKey || OrderIdempotencyRepository.generateIdempotencyKey({
+        userId,
+        credentialId,
+        symbol,
+        side,
+        amount,
+      });
+
+      // Check if this order was already placed
+      const existing = await orderIdempotencyRepository.getIdempotencyKey(exchange, key);
+      if (existing && existing.result_order_id) {
+        logger.info(`[Idempotency] Returning cached order ${existing.result_order_id}`);
+        return {
+          success: true,
+          orderId: existing.result_order_id,
+          symbol,
+          side,
+          amount,
+          filled: 0,
+          average: 0,
+          fee: 0,
+          cost: 0,
+          status: existing.result_status || 'pending',
+          timestamp: Date.now(),
+        };
+      }
+
+      return this.privateLimiter(async () => {
+        const client = await cexCredentialManager.getClientForCredential(credentialId, userId);
+
+        // Validate order
+        const validation = await this.validateOrder(exchange, symbol, side, amount);
+        if (!validation.valid) {
+          throw new Error(`Order validation failed: ${validation.errors.join(', ')}`);
+        }
+
+        const formattedSymbol = await this.formatSymbolForExchange(exchange, symbol);
+        if (!formattedSymbol) {
+          throw new Error(`Symbol ${symbol} not supported on ${exchange}`);
+        }
+
+        try {
+          // 🔴 CCXT API CALL #10: createMarketOrder (per-credential)
+          const order = await client.createMarketOrder(formattedSymbol, side, amount);
+          logger.info(`✅ Order placed: ${order.id}`);
+
+          // Store idempotency key with result
+          await orderIdempotencyRepository.storeIdempotencyKey({
+            user_id: userId,
+            credential_id: credentialId,
+            exchange,
+            idempotency_key: key,
+            order_type: 'market',
+            symbol: formattedSymbol,
+            side,
+            amount,
+            result_order_id: order.id,
+            result_status: order.status,
+          });
+
+          return {
+            success: true,
+            orderId: order['id'],
+            symbol: formattedSymbol,
+            side,
+            amount,
+            filled: order['filled'] || 0,
+            average: order['average'] || 0,
+            fee: order['fee']?.['cost'] || 0,
+            cost: order['cost'] || 0,
+            status: order['status'],
+            timestamp: order['timestamp'],
+          };
+        } catch (error: any) {
+          // Store error for debugging
+          await orderIdempotencyRepository.storeIdempotencyKey({
+            user_id: userId,
+            credential_id: credentialId,
+            exchange,
+            idempotency_key: key,
+            order_type: 'market',
+            symbol,
+            side,
+            amount,
+            result_error: error.message,
+          });
+
+          logger.error(`❌ Failed to place market order: ${error.message}`);
+          throw new Error(`Failed to place ${side} market order: ${error.message}`);
+        }
+      });
+    } catch (error: any) {
+      logger.error(`Market order for credential ${credentialId} failed:`, error);
+      throw error;
+    }
+  }
+
+  /**
+   * Place limit order with idempotency support (credential-based)
+   * 
+   * NEW API: Multi-user, multi-account version with idempotency enforcement
+   */
+  async placeLimitOrderForCredential(
+    credentialId: string,
+    userId: string,
+    symbol: string,
+    side: 'buy' | 'sell',
+    amount: number,
+    price: number,
+    idempotencyKey?: string
+  ): Promise<OrderResult> {
+    try {
+      logger.info(`📊 Placing ${side} limit order: ${amount} ${symbol} @ ${price} for credential ${credentialId}`);
+
+      const credential = await cexCredentialManager.getClientForCredential(credentialId, userId);
+      const exchange = credential.id?.split(':')[0] || 'unknown';
+
+      const key = idempotencyKey || OrderIdempotencyRepository.generateIdempotencyKey({
+        userId,
+        credentialId,
+        symbol,
+        side,
+        amount,
+        price,
+      });
+
+      const existing = await orderIdempotencyRepository.getIdempotencyKey(exchange, key);
+      if (existing && existing.result_order_id) {
+        logger.info(`[Idempotency] Returning cached order ${existing.result_order_id}`);
+        return {
+          success: true,
+          orderId: existing.result_order_id,
+          symbol,
+          side,
+          amount,
+          filled: 0,
+          average: price,
+          fee: 0,
+          cost: amount * price,
+          status: existing.result_status || 'pending',
+          timestamp: Date.now(),
+        };
+      }
+
+      return this.privateLimiter(async () => {
+        const client = await cexCredentialManager.getClientForCredential(credentialId, userId);
+
+        const validation = await this.validateOrder(exchange, symbol, side, amount, price);
+        if (!validation.valid) {
+          throw new Error(`Order validation failed: ${validation.errors.join(', ')}`);
+        }
+
+        const formattedSymbol = await this.formatSymbolForExchange(exchange, symbol);
+        if (!formattedSymbol) {
+          throw new Error(`Symbol ${symbol} not supported on ${exchange}`);
+        }
+
+        try {
+          // 🔴 CCXT API CALL #11: createLimitOrder (per-credential)
+          const order = await client.createLimitOrder(formattedSymbol, side, amount, price);
+          logger.info(`✅ Limit order placed: ${order.id}`);
+
+          await orderIdempotencyRepository.storeIdempotencyKey({
+            user_id: userId,
+            credential_id: credentialId,
+            exchange,
+            idempotency_key: key,
+            order_type: 'limit',
+            symbol: formattedSymbol,
+            side,
+            amount,
+            price,
+            result_order_id: order.id,
+            result_status: order.status,
+          });
+
+          return {
+            success: true,
+            orderId: order['id'],
+            symbol: formattedSymbol,
+            side,
+            amount,
+            filled: order['filled'] || 0,
+            average: order['average'] || 0,
+            fee: order['fee']?.['cost'] || 0,
+            cost: order['cost'] || 0,
+            status: order['status'],
+            timestamp: order['timestamp'],
+          };
+        } catch (error: any) {
+          await orderIdempotencyRepository.storeIdempotencyKey({
+            user_id: userId,
+            credential_id: credentialId,
+            exchange,
+            idempotency_key: key,
+            order_type: 'limit',
+            symbol,
+            side,
+            amount,
+            price,
+            result_error: error.message,
+          });
+
+          logger.error(`❌ Failed to place limit order: ${error.message}`);
+          throw new Error(`Failed to place ${side} limit order: ${error.message}`);
+        }
+      });
+    } catch (error: any) {
+      logger.error(`Limit order for credential ${credentialId} failed:`, error);
+      throw error;
+    }
+  }
+
+  /**
+   * Fetch open positions for a credential (multi-user support)
+   * 
+   * NEW API: Uses per-credential client
+   */
+  async fetchOpenPositionsForCredential(credentialId: string, userId: string): Promise<any[]> {
+    return this.privateLimiter(async () => {
+      try {
+        const exchange = await cexCredentialManager.getClientForCredential(credentialId, userId);
+
+        // Check if exchange supports fetchOpenPositions
+        if (!exchange.has || !exchange.has['fetchOpenPositions']) {
+          logger.debug(`Exchange does not support fetchOpenPositions`);
+          return [];
+        }
+
+        // 🔴 CCXT API CALL #16: fetchOpenPositions (per-credential)
+        const positions = await exchange.fetchOpenPositions();
+        return positions || [];
+      } catch (error: any) {
+        logger.warn(`Failed to fetch positions for credential ${credentialId}: ${error.message}`);
+        return [];
       }
     });
   }
@@ -1228,7 +1551,7 @@ export class CCXTAggregator {
    * @returns Array of open positions
    */
   async fetchOpenPositions(exchangeName: string): Promise<any[]> {
-    return this.tickerLimiter(async () => {  // FIX #5
+    return this.privateLimiter(async () => {  // Use privateLimiter for account queries
       try {
         const exchange = this.exchanges.get(exchangeName);
         if (!exchange) throw new Error(`Exchange ${exchangeName} not initialized`);
@@ -1252,6 +1575,95 @@ export class CCXTAggregator {
         return [];
       }
     });
+  }
+
+  /**
+   * Set leverage for a perpetual position
+   * 
+   * Exchange-specific implementations:
+   * - Binance: POST /v3/leverage (setLeverage)
+   * - Bybit: linear/leverage (setLeverage)
+   * - OKX: Account setLeverage (complex params)
+   * - Kraken: margin setup (different API)
+   * 
+   * @param exchangeName - Exchange identifier
+   * @param leverage - Leverage value (1-125 depending on exchange)
+   * @param symbol - Optional: Symbol to set leverage for (exchange-specific)
+   * @returns Success status and result
+   */
+  async setLeverage(
+    exchangeName: string,
+    leverage: number,
+    symbol?: string
+  ): Promise<{ success: boolean; result?: any; error?: string }> {
+    return this.privateLimiter(async () => {
+      try {
+        const exchange = this.exchanges.get(exchangeName);
+        if (!exchange) {
+          throw new Error(`Exchange ${exchangeName} not initialized`);
+        }
+        if (!exchange.apiKey || !exchange.secret) {
+          throw new Error(`No API credentials configured for ${exchangeName}`);
+        }
+
+        // Validate leverage bounds (exchange-specific)
+        const maxLeverage = this.getMaxLeverage(exchangeName);
+        if (leverage < 1 || leverage > maxLeverage) {
+          throw new Error(`Leverage must be between 1 and ${maxLeverage} on ${exchangeName}`);
+        }
+
+        logger.info(`📊 Setting leverage to ${leverage}x on ${exchangeName}${symbol ? ` for ${symbol}` : ''}`);
+
+        // Exchange-specific setLeverage implementation
+        let result: any;
+        const lowerExchange = exchangeName.toLowerCase();
+
+        if (lowerExchange === 'binance' || lowerExchange === 'bybit' || lowerExchange === 'okx') {
+          // Most exchanges support standard setLeverage (if they have leverage at all)
+          if (!exchange.has || !exchange.has['setLeverage']) {
+            throw new Error(`${exchangeName} does not support setLeverage`);
+          }
+
+          // 🔴 CCXT API CALL: setLeverage (Perpetuals)
+          result = await exchange.setLeverage(leverage, symbol);
+          logger.info(`✅ Leverage set to ${leverage}x on ${exchangeName}`, result);
+
+          return { success: true, result };
+        } else if (lowerExchange === 'kraken') {
+          // Kraken doesn't have a direct setLeverage; leverage is per-account
+          logger.warn(`[${exchangeName}] Leverage must be configured separately per account`);
+          return {
+            success: false,
+            error: `${exchangeName} does not support dynamic leverage adjustment via API`,
+          };
+        } else {
+          // Generic fallback
+          throw new Error(`Leverage management not implemented for ${exchangeName}`);
+        }
+      } catch (error: any) {
+        logger.error(`Failed to set leverage on ${exchangeName}: ${error.message}`);
+        return {
+          success: false,
+          error: error.message,
+        };
+      }
+    });
+  }
+
+  /**
+   * Get maximum leverage for an exchange
+   */
+  private getMaxLeverage(exchangeName: string): number {
+    const limits: Record<string, number> = {
+      binance: 125,
+      bybit: 100,
+      okx: 75,
+      kraken: 5,      // Kraken has lower limits
+      coinbase: 2,    // Coinbase doesn't support high leverage
+      kucoin: 20,
+      gateio: 30,
+    };
+    return limits[exchangeName.toLowerCase()] || 10;
   }
 
   // ---------------------------------------------------------------------------

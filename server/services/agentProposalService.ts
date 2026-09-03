@@ -1,7 +1,8 @@
 import { db } from '../db';
 import { v4 as uuid } from 'uuid';
 import { sql } from 'drizzle-orm';
-import proposalRiskAnalyzer, { RiskAnalysisResult } from './proposalRiskAnalyzer';
+import proposalRiskAnalyzer from './proposalRiskAnalyzer';
+import type { RiskAnalysisResult } from './proposalRiskAnalyzer';
 
 export interface CreateProposalDTO {
   agentId: string;
@@ -43,7 +44,7 @@ export class AgentProposalService {
     const expiresAt = this.calculateExpirationTime(now);
 
     // Analyze risk
-    const riskAnalysis = await proposalRiskAnalyzer.analyzeRisk(
+    const riskAnalysis: RiskAnalysisResult = await proposalRiskAnalyzer.analyzeRisk(
       dto.agentId,
       dto.actionType,
       dto.proposedArgs,
@@ -148,12 +149,44 @@ export class AgentProposalService {
   /**
    * Approve a proposal
    */
+  async countProposals(options: {
+    status?: 'PENDING' | 'APPROVED' | 'REJECTED' | 'EXECUTED' | 'EXPIRED';
+    agentId?: string;
+  } = {}): Promise<number> {
+    let query = sql`SELECT COUNT(*)::int AS count FROM agent_proposals`;
+    const clauses: any[] = [];
+
+    if (options.status) {
+      clauses.push(sql`status = ${options.status}`);
+    }
+
+    if (options.agentId) {
+      clauses.push(sql`agent_id = ${options.agentId}`);
+    }
+
+    if (clauses.length > 0) {
+      query = sql`SELECT COUNT(*)::int AS count FROM agent_proposals WHERE ${sql.join(clauses, sql` AND `)}`;
+    }
+
+    const result = await db.execute(query);
+    const count = Number(result.rows?.[0]?.count ?? 0);
+    return Number.isFinite(count) ? count : 0;
+  }
+
   async approveProposal(
     proposalId: string,
     approvedBy: string,
     reason: string
   ): Promise<AgentProposal> {
     const now = new Date();
+    const current = await this.getProposal(proposalId);
+    if (!current) {
+      throw new Error(`Proposal ${proposalId} not found`);
+    }
+
+    if (current.status !== 'PENDING') {
+      throw new Error(`Proposal ${proposalId} cannot be approved from status ${current.status}`);
+    }
 
     const result = await db.execute(sql`
       UPDATE agent_proposals
@@ -179,6 +212,14 @@ export class AgentProposalService {
     reason: string
   ): Promise<AgentProposal> {
     const now = new Date();
+    const current = await this.getProposal(proposalId);
+    if (!current) {
+      throw new Error(`Proposal ${proposalId} not found`);
+    }
+
+    if (current.status !== 'PENDING') {
+      throw new Error(`Proposal ${proposalId} cannot be rejected from status ${current.status}`);
+    }
 
     const result = await db.execute(sql`
       UPDATE agent_proposals
@@ -200,6 +241,18 @@ export class AgentProposalService {
    */
   async markExecuted(proposalId: string, executionHash?: string): Promise<AgentProposal> {
     const now = new Date();
+    const current = await this.getProposal(proposalId);
+    if (!current) {
+      throw new Error(`Proposal ${proposalId} not found`);
+    }
+
+    if (current.status !== 'APPROVED') {
+      throw new Error(`Proposal ${proposalId} cannot be marked executed from status ${current.status}`);
+    }
+
+    if (executionHash && !/^0x[a-fA-F0-9]{64}$/.test(executionHash.trim())) {
+      throw new Error('executionHash must be a valid 32-byte hex transaction hash');
+    }
 
     const result = await db.execute(sql`
       UPDATE agent_proposals

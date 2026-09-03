@@ -23,16 +23,15 @@ export interface OptimizedVaultData {
   vaultType: string;
   userId: string | null;
   daoId: string | null;
-  primaryCurrency: string;
+  currency: string;
   balance: string;
-  totalValue: string;
+  totalValueLocked: string;
   createdAt: Date;
   updatedAt: Date;
   holdings: Array<{
     tokenSymbol: string;
-    amount: string;
-    amountWei: bigint;
-    usdValue: string;
+    balance: string;
+    valueUSD: string;
   }>;
 }
 
@@ -104,26 +103,25 @@ export class DatabaseOptimizationLayer {
       // Transform the result
       const vaultData = result[0].vault;
       const holdings = result
-        .filter(r => r.holdings)
-        .map(r => r.holdings);
+        .filter((r: any) => r.holdings)
+        .map((r: any) => r.holdings);
 
       const optimized: OptimizedVaultData = {
         id: vaultData.id,
-        name: vaultData.name,
+        name: vaultData.name || '',
         description: vaultData.description || '',
-        vaultType: vaultData.vaultType,
+        vaultType: vaultData.vaultType || 'regular',
         userId: vaultData.userId,
         daoId: vaultData.daoId,
-        primaryCurrency: vaultData.primaryCurrency,
+        currency: vaultData.currency || 'KES',
         balance: vaultData.balance || '0',
-        totalValue: vaultData.totalValue || '0',
-        createdAt: vaultData.createdAt!,
-        updatedAt: vaultData.updatedAt!,
-        holdings: holdings.map(h => ({
+        totalValueLocked: vaultData.totalValueLocked || '0',
+        createdAt: vaultData.createdAt || new Date(),
+        updatedAt: vaultData.updatedAt || new Date(),
+        holdings: holdings.map((h: any) => ({
           tokenSymbol: h.tokenSymbol,
-          amount: h.amount,
-          amountWei: h.amountWei,
-          usdValue: h.usdValue || '0',
+          balance: h.balance,
+          valueUSD: h.valueUSD || '0',
         })),
       };
 
@@ -163,21 +161,21 @@ export class DatabaseOptimizationLayer {
       // Group by vault ID
       const vaultMap = new Map<string, OptimizedVaultData>();
       
-      for (const row of results) {
+      for (const row of results as any[]) {
         const vaultId = row.vault.id;
         if (!vaultMap.has(vaultId)) {
           vaultMap.set(vaultId, {
             id: row.vault.id,
-            name: row.vault.name,
+            name: row.vault.name || '',
             description: row.vault.description || '',
-            vaultType: row.vault.vaultType,
+            vaultType: row.vault.vaultType || 'regular',
             userId: row.vault.userId,
             daoId: row.vault.daoId,
-            primaryCurrency: row.vault.primaryCurrency,
+            currency: row.vault.currency || 'KES',
             balance: row.vault.balance || '0',
-            totalValue: row.vault.totalValue || '0',
-            createdAt: row.vault.createdAt!,
-            updatedAt: row.vault.updatedAt!,
+            totalValueLocked: row.vault.totalValueLocked || '0',
+            createdAt: row.vault.createdAt || new Date(),
+            updatedAt: row.vault.updatedAt || new Date(),
             holdings: [],
           });
         }
@@ -185,9 +183,8 @@ export class DatabaseOptimizationLayer {
         if (row.holding) {
           vaultMap.get(vaultId)!.holdings.push({
             tokenSymbol: row.holding.tokenSymbol,
-            amount: row.holding.amount,
-            amountWei: row.holding.amountWei,
-            usdValue: row.holding.usdValue || '0',
+            balance: row.holding.balance,
+            valueUSD: row.holding.valueUSD || '0',
           });
         }
       }
@@ -235,53 +232,25 @@ export class DatabaseOptimizationLayer {
         .where(eq(investmentPools.id, poolId))
         .limit(1);
 
-      if (!result || result.length === 0) {
-        return { tier: 'community' };
-      }
-
-      const { pool, subscription, dao } = result[0];
-      const tier = subscription?.plan || dao?.plan || 'community';
-
-      const platformFees: Record<string, any> = {
-        community: {
-          tier: 'community',
-          transactionFeePercent: 2.0,
-          performanceFeePercent: 8.0,
-          managementFeePercent: 1.0,
-        },
-        growth: {
-          tier: 'growth',
-          transactionFeePercent: 1.5,
-          performanceFeePercent: 8.0,
-          managementFeePercent: 1.0,
-        },
-        professional: {
-          tier: 'professional',
-          transactionFeePercent: 1.0,
-          performanceFeePercent: 8.0,
-          managementFeePercent: 1.0,
-        },
-        enterprise: {
-          tier: 'enterprise',
-          transactionFeePercent: 0.75,
-          performanceFeePercent: 8.0,
-          managementFeePercent: 1.0,
-        },
+      const flatFeeStructure = {
+        tier: 'placeholder',
+        transactionFeePercent: 2.0,
+        performanceFeePercent: 8.0,
+        managementFeePercent: 1.0,
       };
 
-      const feeStructure = platformFees[tier] || platformFees.community;
-
-      // Cache for 5 minutes (subscription tier rarely changes)
+      // TODO: replace with volume-based fee ladder once real transaction data exists — see pricing.md §6.4.
+      // Flat rate is a placeholder, not a design decision.
       await cacheService.set(
         cacheKey,
-        feeStructure,
+        flatFeeStructure,
         this.CACHE_TTL.daoSubscription
       );
 
-      return feeStructure;
+      return flatFeeStructure;
     } catch (error) {
       logger.error(`[DB Opt] Error fetching pool fee ${poolId}:`, error);
-      return { tier: 'community' };
+      return { tier: 'placeholder', transactionFeePercent: 2.0, performanceFeePercent: 8.0, managementFeePercent: 1.0 };
     }
   }
 
@@ -295,59 +264,20 @@ export class DatabaseOptimizationLayer {
     }
 
     try {
-      // Single query for all pools
-      const results = await db
-        .select({
-          poolId: investmentPools.id,
-          tier: sql`COALESCE(${subscriptions.plan}, ${daos.plan}, 'community')`,
-        })
-        .from(investmentPools)
-        .leftJoin(
-          subscriptions,
-          and(
-            eq(subscriptions.daoId, investmentPools.daoId),
-            eq(subscriptions.status, 'active')
-          )
-        )
-        .leftJoin(
-          daos,
-          eq(daos.id, investmentPools.daoId)
-        )
-        .where(inArray(investmentPools.id, poolIds));
-
-      const platformFees: Record<string, any> = {
-        community: {
-          tier: 'community',
-          transactionFeePercent: 2.0,
-          performanceFeePercent: 8.0,
-          managementFeePercent: 1.0,
-        },
-        growth: {
-          tier: 'growth',
-          transactionFeePercent: 1.5,
-          performanceFeePercent: 8.0,
-          managementFeePercent: 1.0,
-        },
-        professional: {
-          tier: 'professional',
-          transactionFeePercent: 1.0,
-          performanceFeePercent: 8.0,
-          managementFeePercent: 1.0,
-        },
-        enterprise: {
-          tier: 'enterprise',
-          transactionFeePercent: 0.75,
-          performanceFeePercent: 8.0,
-          managementFeePercent: 1.0,
-        },
+      const flatFeeStructure = {
+        tier: 'placeholder',
+        transactionFeePercent: 2.0,
+        performanceFeePercent: 8.0,
+        managementFeePercent: 1.0,
       };
 
       const feeMap = new Map<string, any>();
-      for (const result of results) {
-        const tier = (result.tier as string) || 'community';
-        feeMap.set(result.poolId, platformFees[tier] || platformFees.community);
+      for (const poolId of poolIds) {
+        feeMap.set(poolId, flatFeeStructure);
       }
 
+      // TODO: replace with volume-based fee ladder once real transaction data exists — see pricing.md §6.4.
+      // Flat rate is a placeholder, not a design decision.
       return feeMap;
     } catch (error) {
       logger.error(`[DB Opt] Error fetching pool fees:`, error);
@@ -366,7 +296,7 @@ export class DatabaseOptimizationLayer {
     ];
 
     for (const key of keysToDelete) {
-      await cacheService.del(key);
+      await cacheService.delete(key);
     }
     logger.debug(`[DB Opt] Invalidated cache for vault ${vaultId}`);
   }
@@ -375,7 +305,7 @@ export class DatabaseOptimizationLayer {
    * Invalidate pool fee cache after subscription update
    */
   static async invalidatePoolFeeCache(poolId: string): Promise<void> {
-    await cacheService.del(this.CACHE_KEYS.poolFee(poolId));
+    await cacheService.delete(this.CACHE_KEYS.poolFee(poolId));
     logger.debug(`[DB Opt] Invalidated fee cache for pool ${poolId}`);
   }
 

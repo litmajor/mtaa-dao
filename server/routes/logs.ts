@@ -1,4 +1,6 @@
-import { Router, Request, Response } from 'express';
+import { Router } from 'express';
+import type { Request, Response } from 'express';
+import path from 'node:path';
 import { getConsoleLogger } from '../utils/console-logger';
 import { isAuthenticated } from '../auth';
 import { requireRole } from '../middleware/rbac';
@@ -55,10 +57,11 @@ router.get('/tail', isAuthenticated, requireRole('super_admin'), (req: Request, 
     const logger = getConsoleLogger();
     const lines = Math.min(parseInt(req.query.lines as string) || 50, 200); // Max 200 lines
     const tail = logger.getTailOfCurrentLog(lines);
+    const tailLines = tail.length > 0 ? tail.split(/\r?\n/).filter((line) => line.length > 0) : [];
 
     res.json({
       success: true,
-      lines: tail.split('\n').length - 1,
+      lines: tailLines.length,
       tail,
       timestamp: new Date().toISOString(),
     });
@@ -114,7 +117,7 @@ router.get('/stats', isAuthenticated, requireRole('super_admin'), (req: Request,
     res.json({
       success: true,
       bootMetadata,
-      logsDirectory: logger.getCurrentLogPath().split('\\').slice(0, -1).join('\\'),
+      logsDirectory: path.dirname(logger.getCurrentLogPath()),
       timestamp: new Date().toISOString(),
     });
   } catch (error) {
@@ -135,8 +138,9 @@ router.get('/stats', isAuthenticated, requireRole('super_admin'), (req: Request,
 router.get('/stream', isAuthenticated, requireRole('super_admin'), (req: Request, res: Response) => {
   try {
     res.setHeader('Content-Type', 'text/event-stream');
-    res.setHeader('Cache-Control', 'no-cache');
+    res.setHeader('Cache-Control', 'no-cache, no-transform');
     res.setHeader('Connection', 'keep-alive');
+    res.setHeader('X-Accel-Buffering', 'no');
 
     const logger = getConsoleLogger();
     const initialLines = 20;
@@ -146,7 +150,7 @@ router.get('/stream', isAuthenticated, requireRole('super_admin'), (req: Request
     res.write(
       `data: ${JSON.stringify({
         type: 'initial',
-        lines: tail.split('\n'),
+        lines: tail.split(/\r?\n/).filter((line) => line.length > 0),
         timestamp: new Date().toISOString(),
       })}\n\n`
     );
@@ -178,7 +182,6 @@ router.get('/stream', isAuthenticated, requireRole('super_admin'), (req: Request
     req.on('close', () => {
       clearInterval(interval);
       clearTimeout(timeout);
-      res.end();
     });
   } catch (error) {
     res.status(500).json({

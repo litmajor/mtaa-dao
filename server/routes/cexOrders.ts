@@ -12,7 +12,8 @@
  * - POST /api/orders/:orderId/close - Close order manually
  */
 
-import { Router, Request, Response } from 'express';
+import { Router } from 'express';
+import type { Request, Response } from 'express';
 import { CEXOrderExecutor } from '../services/cexOrderExecutor';
 import { CEXOrderManager } from '../services/cexOrderManager';
 import { Pool } from 'pg';
@@ -34,7 +35,11 @@ const requireAuth = (req: Request, res: Response, next: Function) => {
 router.post('/', requireAuth, async (req: Request, res: Response) => {
   try {
     const { pair, amount, type, orderType, price, stopLoss, takeProfit, exchange } = req.body;
-    const userId = req.user.id;
+    const user = req.user;
+    if (!user || !user.id) {
+      return res.status(401).json({ error: 'Unauthorized' });
+    }
+    const userId = user.id;
 
     // Validation
     if (!pair || !amount || !type || !orderType) {
@@ -109,7 +114,11 @@ router.get('/:orderId', requireAuth, async (req: Request, res: Response) => {
   try {
     const { orderId } = req.params;
     const { exchange = 'binance' } = req.query;
-    const userId = req.user.id;
+    const user = req.user;
+    if (!user || !user.id) {
+      return res.status(401).json({ error: 'Unauthorized' });
+    }
+    const userId = user.id;
 
     const db = (req as any).db as Pool;
     const executor = new CEXOrderExecutor(db);
@@ -143,7 +152,11 @@ router.delete('/:orderId', requireAuth, async (req: Request, res: Response) => {
   try {
     const { orderId } = req.params;
     const { exchange = 'binance' } = req.query;
-    const userId = req.user.id;
+    const user = req.user;
+    if (!user || !user.id) {
+      return res.status(401).json({ error: 'Unauthorized' });
+    }
+    const userId = user.id;
 
     const db = (req as any).db as Pool;
     const executor = new CEXOrderExecutor(db);
@@ -170,7 +183,11 @@ router.delete('/:orderId', requireAuth, async (req: Request, res: Response) => {
 router.get('/', requireAuth, async (req: Request, res: Response) => {
   try {
     const { exchange } = req.query;
-    const userId = req.user.id;
+    const user = req.user;
+    if (!user || !user.id) {
+      return res.status(401).json({ error: 'Unauthorized' });
+    }
+    const userId = user.id;
 
     const db = (req as any).db as Pool;
     const executor = new CEXOrderExecutor(db);
@@ -198,7 +215,11 @@ router.get('/', requireAuth, async (req: Request, res: Response) => {
 router.get('/history', requireAuth, async (req: Request, res: Response) => {
   try {
     const { exchange, pair, status, limit = '50', offset = '0' } = req.query;
-    const userId = req.user.id;
+    const user = req.user;
+    if (!user || !user.id) {
+      return res.status(401).json({ error: 'Unauthorized' });
+    }
+    const userId = user.id;
 
     const db = (req as any).db as Pool;
     const manager = CEXOrderManager.getInstance(db);
@@ -231,7 +252,11 @@ router.get('/history', requireAuth, async (req: Request, res: Response) => {
  */
 router.get('/metrics', requireAuth, async (req: Request, res: Response) => {
   try {
-    const userId = req.user.id;
+    const user = req.user;
+    if (!user || !user.id) {
+      return res.status(401).json({ error: 'Unauthorized' });
+    }
+    const userId = user.id;
 
     const db = (req as any).db as Pool;
     const manager = CEXOrderManager.getInstance(db);

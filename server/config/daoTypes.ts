@@ -1,6 +1,5 @@
 export const DAO_TYPE_CONFIG: Record<string, any> = {
   harambee: {
-    requiredTier: 'free',
     label: 'Harambee / Emergency Fund',
     description: 'Collect fast for an urgent need, pay out once, then close',
     modules: ['basic-treasury'],
@@ -11,7 +10,6 @@ export const DAO_TYPE_CONFIG: Record<string, any> = {
     features: { autoClose: true, singleDisbursement: true, urgencyMode: true }
   },
   shortTerm: {
-    requiredTier: 'free',
     label: 'Short-Term Savings',
     description: 'Save toward a goal over 1-3 months',
     modules: ['basic-treasury', 'milestones'],
@@ -22,7 +20,6 @@ export const DAO_TYPE_CONFIG: Record<string, any> = {
     features: { milestones: true, progressTracking: true, partialWithdrawal: true }
   },
   savings: {
-    requiredTier: 'free',
     label: 'Savings Group',
     description: 'Ongoing contributions and withdrawals',
     modules: ['basic-treasury'],
@@ -32,7 +29,6 @@ export const DAO_TYPE_CONFIG: Record<string, any> = {
     features: { recurringDeposits: true, withdrawalRequests: true }
   },
   merryGoRound: {
-    requiredTier: 'growth',
     label: 'Merry-Go-Round',
     description: 'Rotate payouts in a fixed order (rotating savings)',
     modules: ['rotation', 'basic-treasury'],
@@ -42,7 +38,6 @@ export const DAO_TYPE_CONFIG: Record<string, any> = {
     features: { rotationSchedule: true, payoutOrder: true }
   },
   community: {
-    requiredTier: 'growth',
     label: 'Community Group',
     description: 'Governance and treasury for ongoing decisions',
     modules: ['basic-treasury', 'governance'],
@@ -52,7 +47,6 @@ export const DAO_TYPE_CONFIG: Record<string, any> = {
     features: { proposals: true, elections: true, committees: true }
   },
   investment: {
-    requiredTier: 'professional',
     label: 'Investment Club',
     description: 'Weighted stakes, returns tracking, reporting',
     modules: ['basic-treasury', 'investments', 'reporting'],

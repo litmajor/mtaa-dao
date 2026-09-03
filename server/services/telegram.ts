@@ -2,35 +2,53 @@ import axios from 'axios';
 import { Logger } from '../utils/logger';
 
 const logger = Logger.getLogger();
-const TELEGRAM_BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN?.trim();
-const TELEGRAM_API_URL = TELEGRAM_BOT_TOKEN ? `https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}` : '';
 
-function ensureToken(): void {
-  if (!TELEGRAM_BOT_TOKEN) {
+function getTelegramConfig() {
+  const token = process.env.TELEGRAM_BOT_TOKEN?.trim();
+  if (!token) {
     throw new Error('TELEGRAM_BOT_TOKEN is not configured');
   }
+  return {
+    token,
+    apiUrl: `https://api.telegram.org/bot${token}`,
+  };
+}
+
+/** Escapes special HTML characters for Telegram HTML parse_mode */
+function escapeHtml(text: string): string {
+  return text
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;');
 }
 
 function safeNumber(value: unknown): string {
-  if (typeof value === 'number') return value.toFixed(2);
-  if (typeof value === 'string' && value !== '') return value;
-  return 'N/A';
+  const num = typeof value === 'number' ? value : parseFloat(String(value));
+  return Number.isFinite(num) ? num.toFixed(2) : 'N/A';
 }
 
-async function doSendMessage(chatId: number | string, text: string, replyMarkup?: Record<string, unknown>) {
-  ensureToken();
+async function doSendMessage(
+  chatId: number | string,
+  htmlText: string,
+  replyMarkup?: Record<string, unknown>
+) {
+  const { apiUrl } = getTelegramConfig();
 
   try {
-    const response = await axios.post(`${TELEGRAM_API_URL}/sendMessage`, {
+    const response = await axios.post(`${apiUrl}/sendMessage`, {
       chat_id: String(chatId),
-      text,
-      parse_mode: 'Markdown',
+      text: htmlText,
+      parse_mode: 'HTML',
       disable_web_page_preview: true,
       reply_markup: replyMarkup,
     });
     return response.data;
-  } catch (error: unknown) {
-    logger.error('[Telegram] Failed to send message', { error });
+  } catch (error: any) {
+    // Prevent token leakage by logging response data/message instead of raw Axios error
+    logger.error('[Telegram] Failed to send message', {
+      message: error?.message,
+      responseData: error?.response?.data,
+    });
     throw error;
   }
 }
@@ -47,20 +65,23 @@ export async function notifyBacktestComplete(
   chatId: number,
   strategyName: string,
   metrics: Record<string, unknown> | null,
-  context?: string,
+  context?: string
 ) {
-  const header = `✅ Backtest complete for *${strategyName}*`;
-  const lines = [header];
-  if (context) lines.push(`Context: \`${context}\``);
+  const lines = [`✅ Backtest complete for <b>${escapeHtml(strategyName)}</b>`];
+  
+  if (context) {
+    lines.push(`Context: <code>${escapeHtml(context)}</code>`);
+  }
+  
   if (metrics) {
     lines.push(
-      `*Profit:* ${safeNumber(metrics['totalProfitPercent'])}%`,
-      `*Sharpe:* ${safeNumber(metrics['sharpeRatio'])}`,
-      `*Win Rate:* ${safeNumber(metrics['winRatePercent'])}%`,
-      `*Max Drawdown:* ${safeNumber(metrics['maxDrawdownPercent'])}%`,
+      `<b>Profit:</b> ${safeNumber(metrics['totalProfitPercent'])}%`,
+      `<b>Sharpe:</b> ${safeNumber(metrics['sharpeRatio'])}`,
+      `<b>Win Rate:</b> ${safeNumber(metrics['winRatePercent'])}%`,
+      `<b>Max Drawdown:</b> ${safeNumber(metrics['maxDrawdownPercent'])}%`
     );
   } else {
-    lines.push('*Metrics:* not available');
+    lines.push('<b>Metrics:</b> not available');
   }
 
   return doSendMessage(chatId, lines.join('\n'));
@@ -70,23 +91,24 @@ export async function notifyOptimizationComplete(
   chatId: number,
   strategyName: string,
   metrics: Record<string, unknown> | null,
-  bestParameters: Record<string, unknown> | null,
+  bestParameters: Record<string, unknown> | null
 ) {
-  const header = `🚀 Optimization complete for *${strategyName}*`;
-  const lines = [header];
+  const lines = [`🚀 Optimization complete for <b>${escapeHtml(strategyName)}</b>`];
+  
   if (metrics) {
     lines.push(
-      `*Sharpe:* ${safeNumber(metrics['sharpeRatio'])}`,
-      `*Profit:* ${safeNumber(metrics['totalProfitPercent'])}%`,
-      `*Drawdown:* ${safeNumber(metrics['maxDrawdownPercent'])}%`,
+      `<b>Sharpe:</b> ${safeNumber(metrics['sharpeRatio'])}`,
+      `<b>Profit:</b> ${safeNumber(metrics['totalProfitPercent'])}%`,
+      `<b>Drawdown:</b> ${safeNumber(metrics['maxDrawdownPercent'])}%`
     );
   } else {
-    lines.push('*Metrics:* not available');
+    lines.push('<b>Metrics:</b> not available');
   }
+
   if (bestParameters && Object.keys(bestParameters).length > 0) {
-    lines.push('\n*Best parameters:*');
+    lines.push('\n<b>Best parameters:</b>');
     for (const [key, value] of Object.entries(bestParameters)) {
-      lines.push(`• ${key}: ${String(value)}`);
+      lines.push(`• ${escapeHtml(key)}: ${escapeHtml(String(value))}`);
     }
   }
 
@@ -94,5 +116,5 @@ export async function notifyOptimizationComplete(
 }
 
 export async function notifyError(chatId: number, message: string) {
-  return doSendMessage(chatId, `⚠️ *Error:* ${message}`);
+  return doSendMessage(chatId, `⚠️ <b>Error:</b> ${escapeHtml(message)}`);
 }

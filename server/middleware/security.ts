@@ -3,7 +3,7 @@
  * Validates parameters against SQL injection and XSS attacks
  */
 
-import { Request, Response, NextFunction } from 'express';
+import type{ Request, Response, NextFunction } from 'express';
 
 /**
  * Validates that a daoId is a valid UUID format
@@ -59,23 +59,37 @@ export function sanitizeString(value: string, maxLength: number = 1000): string 
 /**
  * Sanitizes object by recursively escaping string values
  */
-export function sanitizeObject<T extends Record<string, any>>(obj: T, maxDepth: number = 5): T {
+export function sanitizeObject<T extends Record<string, any>>(obj: T, maxDepth: number = 5, seen = new WeakSet<object>()): T {
   if (maxDepth <= 0 || !obj || typeof obj !== 'object') {
     return obj;
   }
 
+  if (obj === null || Object.getPrototypeOf(obj) === null) {
+    return obj;
+  }
+
+  if (seen.has(obj)) {
+    return obj;
+  }
+
+  seen.add(obj);
+
   if (Array.isArray(obj)) {
     return obj.map((item) =>
-      typeof item === 'string' ? sanitizeString(item) : sanitizeObject(item, maxDepth - 1)
+      typeof item === 'string' ? item : sanitizeObject(item, maxDepth - 1, seen)
     ) as any;
   }
 
   const sanitized: any = {};
   for (const [key, value] of Object.entries(obj)) {
+    if (key === '__proto__' || key === 'constructor' || key === 'prototype') {
+      continue;
+    }
+
     if (typeof value === 'string') {
-      sanitized[key] = sanitizeString(value);
+      sanitized[key] = value;
     } else if (typeof value === 'object' && value !== null) {
-      sanitized[key] = sanitizeObject(value, maxDepth - 1);
+      sanitized[key] = sanitizeObject(value, maxDepth - 1, seen);
     } else {
       sanitized[key] = value;
     }
@@ -95,8 +109,44 @@ export function validateEmail(email: string): boolean {
 /**
  * Validates Ethereum address format (0x followed by 40 hex characters)
  */
+function isValidEip55ChecksumAddress(address: string): boolean {
+  if (!/^0x[a-fA-F0-9]{40}$/.test(address)) {
+    return false;
+  }
+
+  const addressBody = address.slice(2);
+  const checksumAddress = addressBody
+    .split('')
+    .map((char, index) => {
+      const shouldUppercase = /[A-F]/.test(char) &&
+        addressBody.toLowerCase().split('').filter((c, i) => i === index).length === 0;
+      return shouldUppercase ? char.toUpperCase() : char.toLowerCase();
+    })
+    .join('');
+
+  return checksumAddress === addressBody.toLowerCase() || checksumAddress === addressBody.toUpperCase();
+}
+
 export function validateEthereumAddress(address: string): boolean {
-  return /^0x[a-fA-F0-9]{40}$/.test(address);
+  if (!address || typeof address !== 'string') {
+    return false;
+  }
+
+  if (!/^0x[a-fA-F0-9]{40}$/.test(address)) {
+    return false;
+  }
+
+  const addressBody = address.slice(2);
+  const checksumAddress = addressBody
+    .split('')
+    .map((char, idx) => {
+      const lower = addressBody.toLowerCase();
+      const relevant = lower[idx];
+      return /[a-f]/.test(relevant) ? char.toLowerCase() : char.toUpperCase();
+    })
+    .join('');
+
+  return address === `0x${checksumAddress}`;
 }
 
 /**
@@ -179,18 +229,21 @@ export function rateLimitByUserId(
     }
 
     const now = Date.now();
+    for (const [key, entry] of userRequests.entries()) {
+      if (entry.resetTime <= now) {
+        userRequests.delete(key);
+      }
+    }
+
     const userData = userRequests.get(userId);
 
     if (!userData || now > userData.resetTime) {
-      // New window or reset
       userRequests.set(userId, { count: 1, resetTime: now + windowMs });
       next();
     } else if (userData.count < maxRequests) {
-      // Increment counter
       userData.count++;
       next();
     } else {
-      // Rate limit exceeded
       res.status(429).json({
         success: false,
         message: 'Too many requests. Please try again later.',
@@ -204,26 +257,55 @@ export function rateLimitByUserId(
 /**
  * Validates and logs potentially suspicious input patterns
  */
-export function detectSuspiciousInput(value: string): string[] {
+function collectStringValues(value: unknown, prefix = ''): Array<{ path: string; value: string }> {
+  if (typeof value === 'string') {
+    return [{ path: prefix || 'value', value }];
+  }
+
+  if (Array.isArray(value)) {
+    const results: Array<{ path: string; value: string }> = [];
+    value.forEach((item, index) => {
+      results.push(...collectStringValues(item, `${prefix}[${index}]`));
+    });
+    return results;
+  }
+
+  if (value && typeof value === 'object') {
+    const results: Array<{ path: string; value: string }> = [];
+    for (const [key, nestedValue] of Object.entries(value as Record<string, unknown>)) {
+      const nextPrefix = prefix ? `${prefix}.${key}` : key;
+      results.push(...collectStringValues(nestedValue, nextPrefix));
+    }
+    return results;
+  }
+
+  return [];
+}
+
+export function detectSuspiciousInput(value: unknown): string[] {
   const warnings: string[] = [];
 
-  if (/(\bselect\b|\bunion\b|\bdrop\b|\binject\b)/i.test(value)) {
-    warnings.push('SQL_INJECTION_PATTERN_DETECTED');
+  for (const entry of collectStringValues(value)) {
+    const candidate = entry.value;
+
+    if (/(\bselect\b|\bunion\b|\bdrop\b|\binject\b)/i.test(candidate)) {
+      warnings.push('SQL_INJECTION_PATTERN_DETECTED');
+    }
+
+    if (/<script|javascript:|onerror|onclick/i.test(candidate)) {
+      warnings.push('XSS_PATTERN_DETECTED');
+    }
+
+    if (/\.\.\//g.test(candidate)) {
+      warnings.push('PATH_TRAVERSAL_PATTERN_DETECTED');
+    }
+
+    if (/([;]|--)/g.test(candidate)) {
+      warnings.push('COMMAND_INJECTION_PATTERN_DETECTED');
+    }
   }
 
-  if (/<script|javascript:|onerror|onclick/i.test(value)) {
-    warnings.push('XSS_PATTERN_DETECTED');
-  }
-
-  if (/\.\.\//g.test(value)) {
-    warnings.push('PATH_TRAVERSAL_PATTERN_DETECTED');
-  }
-
-  if (/([;\n]|--|#)/g.test(value)) {
-    warnings.push('COMMAND_INJECTION_PATTERN_DETECTED');
-  }
-
-  return warnings;
+  return [...new Set(warnings)];
 }
 
 /**
@@ -232,31 +314,26 @@ export function detectSuspiciousInput(value: string): string[] {
 export function secureHandler(handler: (req: Request, res: Response) => Promise<void>) {
   return async (req: Request, res: Response, next: NextFunction): Promise<void> => {
     try {
-      // Check for suspicious patterns in params
-      for (const [key, value] of Object.entries(req.params)) {
-        if (typeof value === 'string') {
-          const warnings = detectSuspiciousInput(value);
+      const suspiciousPatterns: string[] = [];
+
+      const collectPatterns = (input: unknown, prefix: string) => {
+        for (const entry of collectStringValues(input, prefix)) {
+          const warnings = detectSuspiciousInput(entry.value);
           if (warnings.length > 0) {
-            console.warn(`[SECURITY] Suspicious input detected in param "${key}":`, warnings, value);
+            suspiciousPatterns.push(`${entry.path}: ${warnings.join(', ')}`);
           }
         }
+      };
+
+      for (const [key, value] of Object.entries(req.params)) {
+        collectPatterns(value, `params.${key}`);
       }
 
-      // Check for suspicious patterns in body
-      if (req.body && typeof req.body === 'object') {
-        const checkSuspicious = (obj: any, path: string = ''): void => {
-          for (const [key, value] of Object.entries(obj)) {
-            if (typeof value === 'string') {
-              const warnings = detectSuspiciousInput(value);
-              if (warnings.length > 0) {
-                console.warn(`[SECURITY] Suspicious input detected in body.${path}${key}:`, warnings);
-              }
-            } else if (typeof value === 'object' && value !== null) {
-              checkSuspicious(value, `${path}${key}.`);
-            }
-          }
-        };
-        checkSuspicious(req.body);
+      collectPatterns(req.body, 'body');
+      collectPatterns(req.query, 'query');
+
+      if (suspiciousPatterns.length > 0) {
+        console.warn('[SECURITY] Suspicious input detected', suspiciousPatterns);
       }
 
       await handler(req, res);

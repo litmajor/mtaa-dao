@@ -1,100 +1,116 @@
 /**
  * POST /api/simulate - Simulator Execution Endpoint
- * 
- * Exposes all 23 simulators via REST API
- * Validates input parameters and returns standardized SimulationResult
- * Integrates with audit logging for compliance tracking
+ *
+ * Exposes all supported simulators via REST API.
+ * Validates input parameters and returns standardized SimulationResult.
+ * Integrates with non-blocking audit logging for compliance tracking.
  */
 
-import { Request, Response } from 'express';
+import { randomUUID } from 'node:crypto';
+import { performance } from 'node:perf_hooks';
+import type { Request, Response } from 'express';
 import { getSimulator, listAvailableSimulators } from '../services/simulatorIndex';
-import { SimulationResult, SimulationStatus } from '../services/simulationFramework';
+import type { SimulationResult } from '../services/simulationFramework';
 import { auditLog } from '../services/auditLogger';
 
-/**
- * Request body schema for simulation
- */
 interface SimulateRequest {
-  simulatorType: string;              // Key from SimulatorRegistry (e.g., 'SPOT_TRADE')
-  params: Record<string, any>;        // Simulator-specific parameters
-  userId?: string;                    // Optional user context for audit trail
-  metadata?: Record<string, any>;     // Optional additional context
+  simulatorType: string;
+  params: Record<string, any>;
+  userId?: string;
+  metadata?: Record<string, any>;
 }
 
-/**
- * Response schema for simulation result
- */
-interface SimulateResponse {
-  success: boolean;
-  simulationId: string;
-  result?: SimulationResult;
-  error?: string;
-  timestamp: number;
-  executionTimeMs: number;
+const SENSITIVE_KEYWORDS = [
+  'password',
+  'secret',
+  'token',
+  'apiKey',
+  'apikey',
+  'privateKey',
+  'privatekey',
+  'authorization',
+  'session',
+  'signature',
+  'seed',
+  'mnemonic',
+  'key',
+  'passphrase',
+  'wallet',
+];
+
+function getEffectiveUserId(req: Request): string {
+  const authenticatedUserId = (req as any).user?.id;
+  if (typeof authenticatedUserId === 'string' && authenticatedUserId.trim() !== '') {
+    return authenticatedUserId;
+  }
+  return 'anonymous';
 }
 
-/**
- * POST /api/simulate
- * Execute a simulator and return results
- * 
- * Request Body:
- * {
- *   "simulatorType": "SPOT_TRADE",
- *   "params": {
- *     "userId": "user123",
- *     "side": "BUY",
- *     "symbol": "BTC/USDT",
- *     "quantity": 0.5,
- *     "currentPrice": 45000
- *   },
- *   "userId": "user123"
- * }
- * 
- * Success Response (200):
- * {
- *   "success": true,
- *   "simulationId": "sim-abc123",
- *   "result": {
- *     "status": "SUCCESS",
- *     "depth": "INTERMEDIATE",
- *     "riskLevel": "MEDIUM",
- *     "riskFactors": ["high-volatility"],
- *     ...
- *   },
- *   "timestamp": 1234567890,
- *   "executionTimeMs": 145
- * }
- * 
- * Error Response (400/500):
- * {
- *   "success": false,
- *   "error": "Invalid simulator type: UNKNOWN_TYPE",
- *   "timestamp": 1234567890,
- *   "executionTimeMs": 5
- * }
- */
+function sanitizeSimulationValue(value: unknown, seen = new WeakSet<object>()): unknown {
+  if (value === null || value === undefined) return value;
+  if (typeof value === 'string') return value;
+  if (typeof value === 'number' || typeof value === 'boolean') return value;
+
+  if (typeof value === 'object') {
+    if (seen.has(value as object)) return '[Circular]';
+    seen.add(value as object);
+
+    if (Array.isArray(value)) {
+      return value.map((item) => sanitizeSimulationValue(item, seen));
+    }
+
+    const sanitized: Record<string, unknown> = {};
+    for (const [key, nestedValue] of Object.entries(value as Record<string, unknown>)) {
+      if (SENSITIVE_KEYWORDS.some((keyword) => key.toLowerCase().includes(keyword))) {
+        sanitized[key] = '[REDACTED]';
+        continue;
+      }
+      sanitized[key] = sanitizeSimulationValue(nestedValue, seen);
+    }
+    return sanitized;
+  }
+
+  return String(value);
+}
+
+async function safeAuditLog(entry: {
+  userId: string;
+  action: string;
+  resource: string;
+  status: string;
+  details?: Record<string, any>;
+  timestamp: Date;
+}): Promise<void> {
+  try {
+    await auditLog(entry);
+  } catch {
+    // Intentionally non-blocking; audit failures must not break simulation execution.
+  }
+}
+
 export async function simulateHandler(
   req: Request,
   res: Response
 ): Promise<void> {
-  const startTime = Date.now();
-  const simulationId = `sim-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+  const startTime = performance.now();
+  const simulationId = `sim-${randomUUID()}`;
+  const requestUserId = getEffectiveUserId(req);
 
   try {
-    const { simulatorType, params, userId, metadata } = req.body as SimulateRequest;
+    const { simulatorType, params, metadata } = req.body as Partial<SimulateRequest>;
+    const sanitizedParams = sanitizeSimulationValue(params ?? {});
+    const sanitizedMetadata = sanitizeSimulationValue(metadata ?? {});
 
-    // ============================================================================
-    // Validation
-    // ============================================================================
-
-    // Check required fields
     if (!simulatorType) {
-      await auditLog({
-        userId: userId || 'anonymous',
+      await safeAuditLog({
+        userId: requestUserId,
         action: 'SIMULATION_FAILED',
         resource: 'simulator',
         status: 'VALIDATION_ERROR',
-        details: { error: 'simulatorType is required' },
+        details: {
+          error: 'simulatorType is required',
+          metadata: sanitizedMetadata,
+        },
         timestamp: new Date(),
       });
 
@@ -103,18 +119,21 @@ export async function simulateHandler(
         simulationId,
         error: 'simulatorType is required',
         timestamp: Date.now(),
-        executionTimeMs: Date.now() - startTime,
+        executionTimeMs: performance.now() - startTime,
       });
       return;
     }
 
-    if (!params || typeof params !== 'object') {
-      await auditLog({
-        userId: userId || 'anonymous',
+    if (!params || typeof params !== 'object' || Array.isArray(params)) {
+      await safeAuditLog({
+        userId: requestUserId,
         action: 'SIMULATION_FAILED',
         resource: 'simulator',
         status: 'VALIDATION_ERROR',
-        details: { error: 'params must be an object' },
+        details: {
+          error: 'params must be an object',
+          metadata: sanitizedMetadata,
+        },
         timestamp: new Date(),
       });
 
@@ -123,29 +142,26 @@ export async function simulateHandler(
         simulationId,
         error: 'params must be an object',
         timestamp: Date.now(),
-        executionTimeMs: Date.now() - startTime,
+        executionTimeMs: performance.now() - startTime,
       });
       return;
     }
 
-    // ============================================================================
-    // Get Simulator
-    // ============================================================================
-
-    let simulator;
+    let simulator: { simulate: (params: Record<string, any>) => Promise<SimulationResult> };
     try {
-      simulator = getSimulator(simulatorType);
-    } catch (error) {
+      simulator = await getSimulator(simulatorType);
+    } catch {
       const availableSimulators = listAvailableSimulators();
 
-      await auditLog({
-        userId: userId || 'anonymous',
+      await safeAuditLog({
+        userId: requestUserId,
         action: 'SIMULATION_FAILED',
         resource: 'simulator',
         status: 'INVALID_TYPE',
         details: {
           requestedType: simulatorType,
           availableCount: availableSimulators.length,
+          metadata: sanitizedMetadata,
         },
         timestamp: new Date(),
       });
@@ -155,30 +171,27 @@ export async function simulateHandler(
         simulationId,
         error: `Unknown simulator type: ${simulatorType}. Available: ${availableSimulators.join(', ')}`,
         timestamp: Date.now(),
-        executionTimeMs: Date.now() - startTime,
+        executionTimeMs: performance.now() - startTime,
       });
       return;
     }
 
-    // ============================================================================
-    // Execute Simulation
-    // ============================================================================
-
     let simulationResult: SimulationResult;
     try {
-      simulationResult = await simulator.simulate(params);
+      simulationResult = await simulator.simulate(sanitizedParams as Record<string, any>);
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : String(error);
 
-      await auditLog({
-        userId: userId || 'anonymous',
+      await safeAuditLog({
+        userId: requestUserId,
         action: 'SIMULATION_ERROR',
         resource: 'simulator',
         status: 'EXECUTION_ERROR',
         details: {
           simulatorType,
           error: errorMessage,
-          paramKeys: Object.keys(params),
+          paramKeys: Object.keys(sanitizedParams as Record<string, any>),
+          metadata: sanitizedMetadata,
         },
         timestamp: new Date(),
       });
@@ -188,19 +201,15 @@ export async function simulateHandler(
         simulationId,
         error: `Simulation execution failed: ${errorMessage}`,
         timestamp: Date.now(),
-        executionTimeMs: Date.now() - startTime,
+        executionTimeMs: performance.now() - startTime,
       });
       return;
     }
 
-    // ============================================================================
-    // Audit Success
-    // ============================================================================
+    const executionTimeMs = performance.now() - startTime;
 
-    const executionTime = Date.now() - startTime;
-
-    await auditLog({
-      userId: userId || 'anonymous',
+    await safeAuditLog({
+      userId: requestUserId,
       action: 'SIMULATION_SUCCESS',
       resource: 'simulator',
       status: simulationResult.status,
@@ -208,35 +217,32 @@ export async function simulateHandler(
         simulatorType,
         riskLevel: simulationResult.riskLevel,
         depth: simulationResult.depth,
-        executionTimeMs: executionTime,
+        executionTimeMs,
         hasWarnings: simulationResult.warnings.length > 0,
         hasErrors: simulationResult.errors.length > 0,
+        metadata: sanitizedMetadata,
       },
       timestamp: new Date(),
     });
-
-    // ============================================================================
-    // Return Result
-    // ============================================================================
 
     res.status(200).json({
       success: true,
       simulationId,
       result: simulationResult,
       timestamp: Date.now(),
-      executionTimeMs: executionTime,
+      executionTimeMs,
     });
   } catch (error) {
-    // Unexpected error
     const errorMessage = error instanceof Error ? error.message : 'Unknown error';
 
-    await auditLog({
-      userId: req.body?.userId || 'anonymous',
+    await safeAuditLog({
+      userId: requestUserId,
       action: 'SIMULATION_FATAL',
       resource: 'simulator',
       status: 'UNEXPECTED_ERROR',
       details: {
         error: errorMessage,
+        metadata: sanitizeSimulationValue(req.body?.metadata ?? {}),
       },
       timestamp: new Date(),
     });
@@ -246,15 +252,11 @@ export async function simulateHandler(
       simulationId,
       error: `Unexpected error: ${errorMessage}`,
       timestamp: Date.now(),
-      executionTimeMs: Date.now() - startTime,
+      executionTimeMs: performance.now() - startTime,
     });
   }
 }
 
-/**
- * GET /api/simulate/available
- * List all available simulators
- */
 export async function listSimulatorsHandler(
   req: Request,
   res: Response
@@ -277,16 +279,6 @@ export async function listSimulatorsHandler(
   }
 }
 
-/**
- * Express Route Setup
- * 
- * Usage in main server file:
- * 
- * import { simulateHandler, listSimulatorsHandler } from '@/server/api/simulate';
- * 
- * app.post('/api/simulate', simulateHandler);
- * app.get('/api/simulate/available', listSimulatorsHandler);
- */
 export const simulationRoutes = {
   'POST /api/simulate': simulateHandler,
   'GET /api/simulate/available': listSimulatorsHandler,

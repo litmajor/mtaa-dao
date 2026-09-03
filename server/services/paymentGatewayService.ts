@@ -648,6 +648,16 @@ export class PaymentGatewayService {
       }
       const formattedPhone = rawPhone.startsWith('254') ? rawPhone : `254${rawPhone.slice(-9)}`;
 
+      const [user] = await db.select().from(users).where(eq(users.id, request.userId)).limit(1);
+      const userPhone = user?.phone?.replace(/\D/g, '');
+      if (!userPhone || userPhone.slice(-9) !== rawPhone.slice(-9)) {
+        throw PaymentErrorHandler.createError(
+          PaymentErrorCode.VALIDATION_ERROR,
+          'phone number does not match verified account',
+          { operation: 'mpesaDeposit', service: 'gateway', expected: userPhone }
+        );
+      }
+
       const shortcode = process.env.MPESA_SHORTCODE;
       const passkey = process.env.MPESA_PASSKEY;
       if (!shortcode || !passkey) {
@@ -838,11 +848,12 @@ export class PaymentGatewayService {
         async () => {
           // 1. Dispatch CreatePayment to get it into the system initially
           // (if it already exists, idempotency in the handler handles it)
+          const correlationId = crypto.randomUUID();
           const createResult = await commandBus.dispatch({
             id: crypto.randomUUID(),
             type: PaymentCommandTypes.CreatePayment,
             actor: userId,
-            correlationId: crypto.randomUUID(),
+            correlationId,
             timestamp: new Date(),
             payload: {
               reference,
@@ -866,7 +877,7 @@ export class PaymentGatewayService {
               id: crypto.randomUUID(),
               type: PaymentCommandTypes.CompletePayment,
               actor: userId,
-              correlationId: createResult.correlationId || crypto.randomUUID(),
+              correlationId,
               timestamp: new Date(),
               payload: { reference, providerMetadata: additionalMetadata }
             });
@@ -875,7 +886,7 @@ export class PaymentGatewayService {
               id: crypto.randomUUID(),
               type: PaymentCommandTypes.FailPayment,
               actor: userId,
-              correlationId: createResult.correlationId || crypto.randomUUID(),
+              correlationId,
               timestamp: new Date(),
               payload: { reference, reason: additionalMetadata.error || 'Payment initialization failed', providerData: additionalMetadata }
             });

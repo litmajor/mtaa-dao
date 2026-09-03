@@ -9,13 +9,32 @@
  * - Historical execution trends
  */
 
-import { Router, Request, Response } from 'express';
-import { authenticateToken } from '../middleware/auth';
+import { Router } from 'express';
+import type { Request, Response, NextFunction } from 'express';
+import { authenticateToken, isSuperUser } from '../middleware/auth';
 import { executionTracking } from '../services/executionTrackingService';
 import { createApiResponse, createApiError, ApiErrorCode } from '../types/ApiResponse';
 import { logger } from '../utils/logger';
 
 const router = Router();
+
+const asyncHandler = (fn: (req: Request, res: Response, next: NextFunction) => Promise<any>) => {
+  return (req: Request, res: Response, next: NextFunction) => {
+    Promise.resolve(fn(req, res, next)).catch((error) => {
+      logger.error('Unhandled async route error:', { error, path: req.path, method: req.method });
+      next(error);
+    });
+  };
+};
+
+const parseBoundedHours = (value: unknown, fallback = 24, max = 168): number => {
+  const parsed = Number.parseInt(String(value ?? ''), 10);
+  if (!Number.isFinite(parsed) || parsed <= 0) {
+    return fallback;
+  }
+
+  return Math.min(Math.max(parsed, 1), max);
+};
 
 /**
  * GET /api/v1/execution/quality/:symbol
@@ -28,11 +47,10 @@ const router = Router();
  * 
  * Returns: Execution quality metrics per venue
  */
-router.get('/quality/:symbol', async (req: Request, res: Response) => {
-  try {
+router.get('/quality/:symbol', asyncHandler(async (req: Request, res: Response) => {
     const { symbol } = req.params;
     const exchange = (req.query.exchange as string) || '';
-    const hours = Math.min(parseInt(req.query.hours as string) || 24, 168); // Max 7 days
+    const hours = parseBoundedHours(req.query.hours, 24, 168);
 
     if (exchange) {
       // Single exchange quality
@@ -118,17 +136,7 @@ router.get('/quality/:symbol', async (req: Request, res: Response) => {
 
       res.json(createApiResponse(data));
     }
-  } catch (error: any) {
-    logger.error('Error fetching execution quality:', error);
-    res.status(500).json(
-      createApiError(
-        ApiErrorCode.INTERNAL_ERROR,
-        'Failed to fetch execution quality metrics',
-        500
-      )
-    );
-  }
-});
+}));
 
 /**
  * GET /api/v1/execution/slippage-analysis/:symbol
@@ -140,45 +148,34 @@ router.get('/quality/:symbol', async (req: Request, res: Response) => {
  * 
  * Returns: Slippage comparison and trends
  */
-router.get('/slippage-analysis/:symbol', async (req: Request, res: Response) => {
-  try {
-    const { symbol } = req.params;
-    const hours = Math.min(parseInt(req.query.hours as string) || 24, 168);
+router.get('/slippage-analysis/:symbol', asyncHandler(async (req: Request, res: Response) => {
+  const { symbol } = req.params;
+  const hours = parseBoundedHours(req.query.hours, 24, 168);
 
-    const analysis = await executionTracking.getSlippageAnalysis(symbol, hours);
+  const analysis = await executionTracking.getSlippageAnalysis(symbol, hours);
+  const byExchange = analysis?.byExchange || {};
 
-    // Enhance with recommendations
-    const data = {
-      ...analysis,
-      summary: {
-        exchanges: Object.keys(analysis.byExchange).length,
-        dataPoints: Object.values(analysis.byExchange).reduce(
-          (sum: number, v: any) => sum + v.totalExecutions,
-          0
-        ),
-        bestPerformer: analysis.bestPerformer,
-        worstPerformer: analysis.worstPerformer,
-        recommendations: [
-          `Use ${analysis.bestPerformer} for lower slippage`,
-          `Avoid ${analysis.worstPerformer} if better alternatives available`,
-          'Large orders may experience worse slippage',
-          'Monitor slippage during high volatility periods',
-        ],
-      },
-    };
+  const data = {
+    ...analysis,
+    summary: {
+      exchanges: Object.keys(byExchange).length,
+      dataPoints: Object.values(byExchange).reduce(
+        (sum: number, v: any) => sum + (Number(v?.totalExecutions) || 0),
+        0
+      ),
+      bestPerformer: analysis?.bestPerformer || 'N/A',
+      worstPerformer: analysis?.worstPerformer || 'N/A',
+      recommendations: [
+        `Use ${analysis?.bestPerformer || 'the best available venue'} for lower slippage`,
+        `Avoid ${analysis?.worstPerformer || 'the weakest venue'} if better alternatives are available`,
+        'Large orders may experience worse slippage',
+        'Monitor slippage during high volatility periods',
+      ],
+    },
+  };
 
-    res.json(createApiResponse(data));
-  } catch (error: any) {
-    logger.error('Error analyzing slippage:', error);
-    res.status(500).json(
-      createApiError(
-        ApiErrorCode.INTERNAL_ERROR,
-        'Failed to analyze slippage',
-        500
-      )
-    );
-  }
-});
+  res.json(createApiResponse(data));
+}));
 
 /**
  * GET /api/v1/execution/venue-ranking/:symbol
@@ -191,11 +188,10 @@ router.get('/slippage-analysis/:symbol', async (req: Request, res: Response) => 
  * 
  * Returns: Ranked venues with detailed metrics
  */
-router.get('/venue-ranking/:symbol', async (req: Request, res: Response) => {
-  try {
+router.get('/venue-ranking/:symbol', asyncHandler(async (req: Request, res: Response) => {
     const { symbol } = req.params;
     const metric = (req.query.metric as string) || 'overall';
-    const hours = Math.min(parseInt(req.query.hours as string) || 24, 168);
+    const hours = parseBoundedHours(req.query.hours, 24, 168);
 
     const performance = await executionTracking.getVenuePerformance(symbol, hours);
 
@@ -259,13 +255,7 @@ router.get('/venue-ranking/:symbol', async (req: Request, res: Response) => {
     };
 
     res.json(createApiResponse(data));
-  } catch (error: any) {
-    logger.error('Error ranking venues:', error);
-    res.status(500).json(
-      createApiError(ApiErrorCode.INTERNAL_ERROR, 'Failed to rank venues', 500)
-    );
-  }
-});
+}));
 
 /**
  * GET /api/v1/execution/history
@@ -280,92 +270,73 @@ router.get('/venue-ranking/:symbol', async (req: Request, res: Response) => {
  * 
  * Returns: Array of execution records with quality analysis
  */
-router.get('/history', [authenticateToken as any], async (req: Request, res: Response) => {
-  try {
-    const exchange = (req.query.exchange as string) || '';
-    const symbol = (req.query.symbol as string) || '';
-    const hours = Math.min(parseInt(req.query.hours as string) || 24, 168);
-    const limit = Math.min(parseInt(req.query.limit as string) || 100, 1000);
+router.get('/history', authenticateToken, asyncHandler(async (req: Request, res: Response) => {
+  const exchange = (req.query.exchange as string) || '';
+  const symbol = (req.query.symbol as string) || '';
+  const hours = parseBoundedHours(req.query.hours, 24, 168);
+  const limit = Math.min(Number.parseInt(String(req.query.limit ?? '100'), 10) || 100, 1000);
 
-    const history = await executionTracking.getExecutionHistory(
-      exchange || undefined,
-      symbol || undefined,
-      hours
-    );
+  const history = await executionTracking.getExecutionHistory(
+    exchange || undefined,
+    symbol || undefined,
+    hours
+  );
 
-    // Limit results
-    const limited = history.slice(0, limit);
+  const limited = history.slice(0, Math.max(1, limit));
+  const records = limited.map((record) => ({
+    id: record.id,
+    symbol: record.symbol,
+    exchange: record.exchange,
+    side: record.side,
+    inputAmount: record.inputAmount,
+    estimatedOutput: record.estimatedOutput,
+    actualOutput: record.actualOutput,
+    slippageRealization: record.slippageRealization
+      ? `${(record.slippageRealization * 100).toFixed(3)}%`
+      : 'N/A',
+    feeEfficiency: record.feeEfficiency
+      ? `${(record.feeEfficiency * 100).toFixed(2)}%`
+      : 'N/A',
+    executionQualityScore: record.executionQualityScore || 'N/A',
+    status: record.status,
+    executedAt: record.executedAt,
+    executionTime: record.executionTime ? `${record.executionTime}ms` : 'N/A',
+    txHash: record.txHash,
+  }));
 
-    // Add quality analysis to each record
-    const records = limited.map((record) => ({
-      id: record.id,
-      symbol: record.symbol,
-      exchange: record.exchange,
-      side: record.side,
-      inputAmount: record.inputAmount,
-      estimatedOutput: record.estimatedOutput,
-      actualOutput: record.actualOutput,
-      slippageRealization: record.slippageRealization
-        ? `${(record.slippageRealization * 100).toFixed(3)}%`
-        : 'N/A',
-      feeEfficiency: record.feeEfficiency
-        ? `${(record.feeEfficiency * 100).toFixed(2)}%`
-        : 'N/A',
-      executionQualityScore: record.executionQualityScore || 'N/A',
-      status: record.status,
-      executedAt: record.executedAt,
-      executionTime: record.executionTime ? `${record.executionTime}ms` : 'N/A',
-      txHash: record.txHash,
-    }));
+  const numericScores = history
+    .map((record) => Number(record.executionQualityScore))
+    .filter((score) => Number.isFinite(score));
 
-    const data = {
-      symbol: symbol || 'all',
-      exchange: exchange || 'all',
-      timeWindow: `${hours}h`,
-      timestamp: Date.now(),
-      totalRecords: history.length,
-      returned: records.length,
-      records,
-      summary: {
-        avgQualityScore:
-          records.length > 0
-            ? (
-                records.reduce(
-                  (sum, r) =>
-                    sum +
-                    (typeof r.executionQualityScore === 'number'
-                      ? r.executionQualityScore
-                      : 0),
-                  0
-                ) / records.length
-              ).toFixed(2)
-            : 'N/A',
-        bestExecution: records[0]?.executionQualityScore,
-        worstExecution: records[records.length - 1]?.executionQualityScore,
+  const data = {
+    symbol: symbol || 'all',
+    exchange: exchange || 'all',
+    timeWindow: `${hours}h`,
+    timestamp: Date.now(),
+    totalRecords: history.length,
+    returned: records.length,
+    records,
+    summary: {
+      avgQualityScore:
+        numericScores.length > 0
+          ? (numericScores.reduce((sum, score) => sum + score, 0) / numericScores.length).toFixed(2)
+          : 'N/A',
+      bestExecution: numericScores.length > 0 ? Math.max(...numericScores) : 'N/A',
+      worstExecution: numericScores.length > 0 ? Math.min(...numericScores) : 'N/A',
+    },
+  };
+
+  res.json(
+    createApiResponse(data, {
+      pagination: {
+        limit,
+        offset: 0,
+        total: history.length,
+        hasMore: history.length > limit,
       },
-    };
-
-    res.json(
-      createApiResponse(data, {
-        pagination: {
-          limit,
-          offset: 0,
-          total: history.length,
-          hasMore: history.length > limit,
-        },
-      })
-    );
-  } catch (error: any) {
-    logger.error('Error fetching execution history:', error);
-    res.status(500).json(
-      createApiError(
-        ApiErrorCode.INTERNAL_ERROR,
-        'Failed to fetch execution history',
-        500
-      )
-    );
-  }
-});
+    })
+  );
+}));
 
 /**
  * POST /api/v1/execution/record-quote
@@ -378,42 +349,35 @@ router.get('/history', [authenticateToken as any], async (req: Request, res: Res
  *   estimatedPrice, estimatedOutput, estimatedFee, estimatedSlippage
  * }
  */
-router.post('/record-quote', async (req: Request, res: Response) => {
-  try {
-    const {
-      symbol,
-      exchange,
-      side,
-      inputAmount,
-      inputToken,
-      outputToken,
-      estimatedPrice,
-      estimatedOutput,
-      estimatedFee,
-      estimatedSlippage,
-    } = req.body;
+router.post('/record-quote', authenticateToken, isSuperUser, asyncHandler(async (req: Request, res: Response) => {
+  const {
+    symbol,
+    exchange,
+    side,
+    inputAmount,
+    inputToken,
+    outputToken,
+    estimatedPrice,
+    estimatedOutput,
+    estimatedFee,
+    estimatedSlippage,
+  } = req.body;
 
-    const record = await executionTracking.recordQuote(
-      symbol,
-      exchange,
-      side,
-      inputAmount,
-      inputToken,
-      outputToken,
-      estimatedPrice,
-      estimatedOutput,
-      estimatedFee,
-      estimatedSlippage
-    );
+  const record = await executionTracking.recordQuote(
+    symbol,
+    exchange,
+    side,
+    inputAmount,
+    inputToken,
+    outputToken,
+    estimatedPrice,
+    estimatedOutput,
+    estimatedFee,
+    estimatedSlippage
+  );
 
-    res.json(createApiResponse({ quoteId: record.id }));
-  } catch (error: any) {
-    logger.error('Error recording quote:', error);
-    res.status(500).json(
-      createApiError(ApiErrorCode.INTERNAL_ERROR, 'Failed to record quote', 500)
-    );
-  }
-});
+  res.json(createApiResponse({ quoteId: record.id }));
+}));
 
 /**
  * POST /api/v1/execution/record-execution
@@ -426,45 +390,38 @@ router.post('/record-quote', async (req: Request, res: Response) => {
  *   executionTime, txHash, status, failureReason?
  * }
  */
-router.post('/record-execution', async (req: Request, res: Response) => {
-  try {
-    const {
-      quoteId,
-      actualPrice,
-      actualOutput,
-      actualFee,
-      actualSlippage,
-      executionTime,
-      txHash,
-      status = 'filled',
-      failureReason,
-    } = req.body;
+router.post('/record-execution', authenticateToken, isSuperUser, asyncHandler(async (req: Request, res: Response) => {
+  const {
+    quoteId,
+    actualPrice,
+    actualOutput,
+    actualFee,
+    actualSlippage,
+    executionTime,
+    txHash,
+    status = 'filled',
+    failureReason,
+  } = req.body;
 
-    const record = await executionTracking.recordExecution(
-      quoteId,
-      actualPrice,
-      actualOutput,
-      actualFee,
-      actualSlippage,
-      executionTime,
-      txHash,
-      status,
-      failureReason
-    );
+  const record = await executionTracking.recordExecution(
+    quoteId,
+    actualPrice,
+    actualOutput,
+    actualFee,
+    actualSlippage,
+    executionTime,
+    txHash,
+    status,
+    failureReason
+  );
 
-    res.json(
-      createApiResponse({
-        executionId: record.id,
-        qualityScore: record.executionQualityScore,
-        slippageRealization: record.slippageRealization,
-      })
-    );
-  } catch (error: any) {
-    logger.error('Error recording execution:', error);
-    res.status(500).json(
-      createApiError(ApiErrorCode.INTERNAL_ERROR, 'Failed to record execution', 500)
-    );
-  }
-});
+  res.json(
+    createApiResponse({
+      executionId: record.id,
+      qualityScore: record.executionQualityScore,
+      slippageRealization: record.slippageRealization,
+    })
+  );
+}));
 
 export default router;

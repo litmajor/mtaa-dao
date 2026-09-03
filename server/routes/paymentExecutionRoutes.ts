@@ -1,4 +1,5 @@
-import { Router, Request, Response } from 'express';
+import { Router } from 'express';
+import type { Request, Response } from 'express';
 import { PaymentExecutionService } from '../services/paymentExecutionService';
 import {
   DepositExecutionHandler,
@@ -13,6 +14,9 @@ import { notificationService } from '../notificationService';
 import { isAuthenticated, requireAdmin } from '../auth';
 import { requirePINVerification, optionalPINVerification, checkAmountThreshold } from '../middleware/pin-verification';
 import { db } from '../db';
+import { Logger } from '../utils/logger';
+
+const logger = new Logger('payment-execution');
 
 const router = Router();
 const reversibilityService = new ReversibilityService(db as any);
@@ -69,7 +73,7 @@ router.post('/deposit', isAuthenticated, async (req: Request, res: Response) => 
         persist: true,
       });
     } catch (wsError) {
-      console.warn('Failed to emit WebSocket event for deposit execution', wsError);
+      logger.warn('Failed to emit WebSocket event for deposit execution', { error: wsError instanceof Error ? wsError.message : String(wsError) });
     }
 
     return res.json({
@@ -90,7 +94,7 @@ router.post('/deposit', isAuthenticated, async (req: Request, res: Response) => 
       ],
     });
   } catch (error) {
-    console.error('Deposit execution error:', error);
+    logger.error('Deposit execution error', { error: error instanceof Error ? error.message : String(error) });
     return res.status(500).json({ error: 'Deposit execution failed', message: error instanceof Error ? error.message : 'Unknown error' });
   }
 });
@@ -135,7 +139,7 @@ router.post('/withdraw', isAuthenticated, requirePINVerification, async (req: Re
         persist: true,
       });
     } catch (wsError) {
-      console.warn('Failed to emit WebSocket event for withdrawal execution', wsError);
+      logger.warn('Failed to emit WebSocket event for withdrawal execution', { error: wsError instanceof Error ? wsError.message : String(wsError) });
     }
 
     return res.json({
@@ -155,7 +159,7 @@ router.post('/withdraw', isAuthenticated, requirePINVerification, async (req: Re
       ],
     });
   } catch (error) {
-    console.error('Withdrawal execution error:', error);
+    logger.error('Withdrawal execution error', { error: error instanceof Error ? error.message : String(error) });
     return res.status(500).json({ error: 'Withdrawal execution failed', message: error instanceof Error ? error.message : 'Unknown error' });
   }
 });
@@ -201,7 +205,7 @@ router.post('/transfer-p2p', isAuthenticated, requirePINVerification, checkAmoun
         persist: true,
       });
     } catch (wsError) {
-      console.warn('Failed to emit WebSocket event for P2P transfer execution', wsError);
+      logger.warn('Failed to emit WebSocket event for P2P transfer execution', { error: wsError instanceof Error ? wsError.message : String(wsError) });
     }
 
     return res.json({
@@ -220,7 +224,7 @@ router.post('/transfer-p2p', isAuthenticated, requirePINVerification, checkAmoun
       ],
     });
   } catch (error) {
-    console.error('P2P transfer execution error:', error);
+    logger.error('P2P transfer execution error', { error: error instanceof Error ? error.message : String(error) });
     return res.status(500).json({ error: 'P2P transfer execution failed', message: error instanceof Error ? error.message : 'Unknown error' });
   }
 });
@@ -259,7 +263,7 @@ router.post('/setup-recurring', isAuthenticated, async (req: Request, res: Respo
       ],
     });
   } catch (error) {
-    console.error('Recurring payment setup error:', error);
+    logger.error('Recurring payment setup error', { error: error instanceof Error ? error.message : String(error) });
     return res.status(500).json({ error: 'Recurring payment setup failed', message: error instanceof Error ? error.message : 'Unknown error' });
   }
 });
@@ -298,7 +302,7 @@ router.post('/settle', isAuthenticated, requirePINVerification, async (req: Requ
       ],
     });
   } catch (error) {
-    console.error('Settlement execution error:', error);
+    logger.error('Settlement execution error', { error: error instanceof Error ? error.message : String(error) });
     return res.status(500).json({ error: 'Settlement execution failed', message: error instanceof Error ? error.message : 'Unknown error' });
   }
 });
@@ -351,12 +355,12 @@ router.post('/reverse/:actionId', isAuthenticated, optionalPINVerification, asyn
       },
     });
   } catch (error) {
-    console.error('Payment reversal error:', error);
+    logger.error('Payment reversal error', { error: error instanceof Error ? error.message : String(error) });
     return res.status(500).json({ error: 'Payment reversal failed', message: error instanceof Error ? error.message : 'Unknown error' });
   }
 });
 
-router.get('/pending-actions', async (req: Request, res: Response) => {
+router.get('/pending-actions', isAuthenticated, async (req: Request, res: Response) => {
   try {
     const userId = req.user?.id;
     if (!userId) {
@@ -369,6 +373,7 @@ router.get('/pending-actions', async (req: Request, res: Response) => {
       const deadline = new Date(action.gracePeriodEndsAt);
       const now = Date.now();
       const hoursRemaining = Math.max(0, (deadline.getTime() - now) / (1000 * 60 * 60));
+      const durationHours = action.gracePeriodConfig?.durationHours || 1;
 
       return {
         id: action.id,
@@ -378,8 +383,8 @@ router.get('/pending-actions', async (req: Request, res: Response) => {
         createdAt: action.initiatedAt,
         gracePeriodEndsAt: action.gracePeriodEndsAt,
         hoursRemaining: Math.ceil(hoursRemaining),
-        percentRemaining: Math.round((hoursRemaining / action.gracePeriodConfig.durationHours) * 100),
-        canReverse: hoursRemaining > 0 && action.reversibilityScope.initiatorCanReverse,
+        percentRemaining: Math.round((hoursRemaining / durationHours) * 100),
+        canReverse: hoursRemaining > 0 && Boolean(action.reversibilityScope?.initiatorCanReverse),
         reverseEndpoint: `/api/payments/reverse/${action.id}`,
         beforeState: action.beforeState,
         afterState: action.afterState,
@@ -395,7 +400,7 @@ router.get('/pending-actions', async (req: Request, res: Response) => {
       },
     });
   } catch (error) {
-    console.error('Error fetching pending actions:', error);
+    logger.error('Error fetching pending actions', { error: error instanceof Error ? error.message : String(error) });
     return res.status(500).json({ error: 'Failed to fetch pending actions', message: error instanceof Error ? error.message : 'Unknown error' });
   }
 });
@@ -408,7 +413,7 @@ router.get('/pending-actions', async (req: Request, res: Response) => {
  * If admins/support need to view others' actions, that needs an explicit
  * role check added here, not silent open access.
  */
-router.get('/action/:actionId', async (req: Request, res: Response) => {
+router.get('/action/:actionId', isAuthenticated, async (req: Request, res: Response) => {
   try {
     const userId = req.user?.id;
     if (!userId) {
@@ -422,13 +427,17 @@ router.get('/action/:actionId', async (req: Request, res: Response) => {
       return res.status(404).json({ error: 'Action not found' });
     }
 
-    if (action.initiator.id !== userId) {
+    // Safely check initiator ownership using optional chaining
+    const initiatorId = action.initiator?.id;
+    if (!initiatorId || initiatorId !== userId) {
       return res.status(403).json({ error: 'Access denied' });
     }
 
     const deadline = new Date(action.gracePeriodEndsAt || new Date());
     const now = Date.now();
     const hoursRemaining = Math.max(0, (deadline.getTime() - now) / (1000 * 60 * 60));
+    const durationHours = action.gracePeriodConfig?.durationHours || 1;
+    const percentRemaining = Math.round((hoursRemaining / durationHours) * 100);
 
     return res.json({
       action: {
@@ -436,7 +445,7 @@ router.get('/action/:actionId', async (req: Request, res: Response) => {
         type: action.actionType,
         status: action.status,
         severity: action.severity,
-        initiatorId: action.initiator?.id,
+        initiatorId,
         createdAt: action.initiatedAt,
         executedAt: action.executedAt,
         reversedAt: action.reversedAt,
@@ -444,8 +453,8 @@ router.get('/action/:actionId', async (req: Request, res: Response) => {
       reversibility: {
         gracePeriodEndsAt: action.gracePeriodEndsAt,
         hoursRemaining: Math.ceil(hoursRemaining),
-        percentRemaining: Math.round((hoursRemaining / action.gracePeriodConfig.durationHours) * 100),
-        canReverse: hoursRemaining > 0 && action.reversibilityScope.initiatorCanReverse,
+        percentRemaining,
+        canReverse: hoursRemaining > 0 && action.reversibilityScope?.initiatorCanReverse,
       },
       state: { beforeState: action.beforeState, afterState: action.afterState },
       approval: action.confirmationRequirement?.type === 'MULTI_SIG'
@@ -453,7 +462,7 @@ router.get('/action/:actionId', async (req: Request, res: Response) => {
         : null,
     });
   } catch (error) {
-    console.error('Error fetching action:', error);
+    logger.error('Error fetching action', { error: error instanceof Error ? error.message : String(error), actionId: req.params.actionId });
     return res.status(500).json({ error: 'Failed to fetch action details', message: error instanceof Error ? error.message : 'Unknown error' });
   }
 });
@@ -526,7 +535,7 @@ router.post('/approve/:actionId', isAuthenticated, requireAdmin, async (req: Req
       })),
     });
   } catch (error) {
-    console.error('Approval recording error:', error);
+    logger.error('Approval recording error', { error: error instanceof Error ? error.message : String(error), actionId: req.params.actionId });
     return res.status(500).json({ error: 'Failed to record approval', message: error instanceof Error ? error.message : 'Unknown error' });
   }
 });

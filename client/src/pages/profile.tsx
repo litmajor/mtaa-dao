@@ -24,6 +24,7 @@ interface VaultData {
 interface ProfileData {
   user: {
     id: string;
+    username?: string | null;
     firstName: string;
     lastName: string;
     email: string | null;
@@ -31,6 +32,9 @@ interface ProfileData {
     joinedAt: string;
     profilePicture?: string | null;
     profileImageUrl?: string | null;
+    authProviders?: string[];
+    signInMethod?: string | null;
+    telegramUsername?: string | null;
   };
   contributionStats: {
     totalContributions: number;
@@ -110,7 +114,7 @@ export default function Profile() {
               <Settings className="mr-2 h-4 w-4" />
               Settings
             </Button>
-            <Button variant="destructive" onClick={() => logout()}>
+            <Button variant="danger" onClick={() => logout()}>
               <LogOut className="mr-2 h-4 w-4" />
               Logout
             </Button>
@@ -136,7 +140,24 @@ export default function Profile() {
                   {getRoleBadge(safeUser.role || "member")}
                 </div>
 
-                <p className="text-muted-foreground mb-4">{safeUser.email}</p>
+                <p className="text-muted-foreground mb-2">{safeUser.email}</p>
+
+                <div className="flex flex-wrap items-center gap-2 mb-4">
+                  {safeUser.username ? (
+                    <Badge variant="secondary">@{safeUser.username}</Badge>
+                  ) : null}
+                  {safeUser.signInMethod ? (
+                    <Badge variant="outline">Sign in: {safeUser.signInMethod}</Badge>
+                  ) : null}
+                  {(safeUser.authProviders || []).map((provider) => (
+                    <Badge key={provider} variant="outline" className="capitalize">
+                      {provider}
+                    </Badge>
+                  ))}
+                  {safeUser.telegramUsername ? (
+                    <Badge variant="outline">Telegram: @{safeUser.telegramUsername}</Badge>
+                  ) : null}
+                </div>
 
                 <div className="flex items-center space-x-6 text-sm text-muted-foreground">
                   <div className="flex items-center space-x-2">

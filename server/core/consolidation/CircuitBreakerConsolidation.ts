@@ -384,6 +384,26 @@ export class CircuitBreakerConsolidated extends EventEmitter {
     } as CircuitBreakerEvent);
   }
 
+  setState(state: CircuitBreakerState, reason: string): void {
+    if (state === 'CLOSED') {
+      this.reset();
+      return;
+    }
+    if (state === 'OPEN') {
+      this.forceOpen(reason);
+      return;
+    }
+    this.state = 'HALF_OPEN';
+    this.halfOpenAttempts = 0;
+    this.emit('half_open', {
+      type: 'half_open',
+      name: this.config.name,
+      domain: this.config.domain,
+      timestamp: new Date(),
+      details: { reason, forced: true },
+    } as CircuitBreakerEvent);
+  }
+
   // ===== Utility Methods =====
 
   getMetrics(): CircuitBreakerMetrics {

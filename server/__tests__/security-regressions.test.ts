@@ -1,10 +1,55 @@
-import { beforeAll, describe, expect, it } from 'vitest';
+import { beforeAll, describe, expect, it, vi } from 'vitest';
+
+// Mock config FIRST with proper length secrets (min 32 chars)
+vi.mock('../../shared/config.ts', () => ({
+  env: {
+    JWT_SECRET: 'test-jwt-secret-this-is-long-enough-for-32-chars-requirement',
+    JWT_REFRESH_SECRET: 'test-jwt-refresh-secret-this-is-long-enough-for-32-chars',
+    DATABASE_URL: 'postgresql://test:test@localhost:5432/test_db',
+    NODE_ENV: 'test',
+    FLUTTERWAVE_SECRET_KEY: 'flutterwave-secret',
+    PAYSTACK_SECRET_KEY: 'paystack-secret',
+  },
+}));
+
+// Mock logger
+vi.mock('../utils/logger', () => {
+  class MockLogger {
+    debug = vi.fn();
+    warn = vi.fn();
+    error = vi.fn();
+    info = vi.fn();
+  }
+  const defaultLogger = new MockLogger();
+  return { 
+    Logger: MockLogger,
+    logger: defaultLogger,
+    requestLogger: vi.fn(),
+  };
+});
+
+// Mock database
+vi.mock('../db', () => {
+  return {
+    db: {
+      select: vi.fn(() => ({
+        from: vi.fn(() => ({
+          where: vi.fn(() => ({
+            limit: vi.fn(() => Promise.resolve([])),
+          })),
+          limit: vi.fn(() => Promise.resolve([])),
+        })),
+      })),
+    },
+  };
+});
 
 beforeAll(() => {
-  process.env.JWT_SECRET = 'test-jwt-secret';
-  process.env.JWT_REFRESH_SECRET = 'test-jwt-refresh-secret';
+  process.env.JWT_SECRET = 'test-jwt-secret-this-is-long-enough-for-32-chars-requirement';
+  process.env.JWT_REFRESH_SECRET = 'test-jwt-refresh-secret-this-is-long-enough-for-32-chars';
   process.env.FLUTTERWAVE_SECRET_KEY = 'flutterwave-secret';
   process.env.PAYSTACK_SECRET_KEY = 'paystack-secret';
+  process.env.DATABASE_URL = 'postgresql://test:test@localhost:5432/test_db';
 });
 
 describe('webhook signature verification', () => {

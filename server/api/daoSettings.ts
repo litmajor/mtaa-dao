@@ -1,4 +1,4 @@
-import { Request, Response } from 'express';
+import type { Request, Response } from 'express';
 import { db } from '../storage';
 import { daos, daoMemberships, proposals } from '../../shared/schema';
 import { eq, and } from 'drizzle-orm';

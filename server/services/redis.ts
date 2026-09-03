@@ -397,6 +397,52 @@ export class UnifiedRedisService {
     }
   }
 
+  // Backward-compatible alias for legacy callers using ioredis-style naming.
+  async increment(key: string, ttlSeconds?: number): Promise<number> {
+    if (ttlSeconds !== undefined) {
+      return this.incrWithExpiry(key, ttlSeconds);
+    }
+    return this.incr(key);
+  }
+
+  async decrement(key: string): Promise<number> {
+    await this.ensureConnected();
+    try {
+      if (this.fallbackMode || !this.client) {
+        if (this.isSecuritySensitiveKey(key)) {
+          throw new Error(`[UnifiedRedis] Redis unavailable for security-sensitive key ${key}`);
+        }
+        const entry = this.memoryCache.get(key);
+        const num = entry ? parseInt(String(entry.data), 10) || 0 : 0;
+        const newVal = num - 1;
+        this.memoryCache.set(key, {
+          data: newVal as any,
+          timestamp: Date.now(),
+          ttl: entry?.ttl ?? Number.MAX_SAFE_INTEGER,
+          hits: 0,
+        });
+        return newVal;
+      }
+      return Number(await this.client.decr(key));
+    } catch (error: any) {
+      logger.warn('[UnifiedRedis] DECR error', { key, message: error.message });
+      this.fallbackMode = true;
+      if (this.isSecuritySensitiveKey(key)) {
+        throw error;
+      }
+      const entry = this.memoryCache.get(key);
+      const num = entry ? parseInt(String(entry.data), 10) || 0 : 0;
+      const newVal = num - 1;
+      this.memoryCache.set(key, {
+        data: newVal as any,
+        timestamp: Date.now(),
+        ttl: entry?.ttl ?? Number.MAX_SAFE_INTEGER,
+        hits: 0,
+      });
+      return newVal;
+    }
+  }
+
   async incrWithExpiry(key: string, seconds: number): Promise<number> {
     await this.ensureConnected();
     try {

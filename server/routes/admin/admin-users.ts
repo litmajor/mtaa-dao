@@ -1,4 +1,5 @@
-import { Router, Request, Response } from 'express';
+import { Router } from 'express';
+import type { Request, Response } from 'express';
 import { db } from '../../db';
 import { logger } from '../../utils/logger';
 import { users, daoMemberships, userActivities } from '../../../shared/schema';
@@ -436,24 +437,25 @@ router.delete('/users/:userId', requireSuperAdmin, async (req: Request, res: Res
       reason: reason || 'Admin deletion',
     });
 
-    // Log audit event using new service
-    await auditLoggingService.logAction({
+    // Log audit event using consolidated audit service
+    await logConsolidatedAuditEvent({
       actorId: adminId,
       actorType: 'admin',
       actorRole: 'admin',
-      actionType: 'user_deleted',
+      actionType: AuditEventType.ADMIN_SETTINGS_CHANGED,
       actionCategory: 'admin',
       targetType: 'user',
       targetId: userId,
       targetName: user[0].email || undefined,
       result: 'success',
-      reversible: true,
+      severity: 'medium',
+      endpoint: '/api/admin/users/:userId/delete',
       metadata: {
-        deletionReason: reason,
-        recoveryWindowDays: 30,
         targetEmail: user[0].email,
+        deletionReason: reason || 'Admin deletion',
+        recoveryWindowDays: 30,
       },
-    }).catch(err => console.error('Audit log failed:', err));
+    }).catch((err: any) => console.error('Audit log failed:', err));
 
     logger.warn('User soft-deleted by admin', { 
       userId, 

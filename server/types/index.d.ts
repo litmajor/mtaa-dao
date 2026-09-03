@@ -39,6 +39,9 @@ declare module 'express' {
         role?: string;
         roles?: string | string[];
         daos?: string[];
+        isSuperUser?: boolean;
+        isSuperuser?: boolean;
+        isAdmin?: boolean;
         claims?: any;
       };
     }

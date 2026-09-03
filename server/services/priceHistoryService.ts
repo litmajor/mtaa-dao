@@ -12,7 +12,7 @@
  */
 
 import { logger } from '../utils/logger';
-import { DataSourceResponse } from './dataSourceManager';
+import type { DataSourceResponse } from './dataSourceManager';
 import { externalAPITracker } from './externalAPITracker';
 
 export interface PricePoint {
@@ -65,7 +65,8 @@ class CoinGeckoClient {
     coinId: string,
     days: number = 30,
     currency: string = 'usd'
-  ): Promise<any[]> {
+  ): Promise<DataSourceResponse<any[]>> {
+    const startedAt = Date.now();
     try {
       // Rate limiting: wait until enough time has passed
       const now = Date.now();
@@ -108,7 +109,15 @@ class CoinGeckoClient {
       
       logger.info(`✓ CoinGecko: ${coinId} (${prices.length} candles)`);
       
-      return prices;
+      return {
+        data: prices,
+        source: 'coingecko',
+        timestamp: new Date(),
+        latency: Date.now() - startedAt,
+        cached: false,
+        fallbackUsed: false,
+        retries: 0,
+      };
     } catch (error) {
       logger.error(`CoinGecko request failed for ${coinId}:`, error);
       throw error;
@@ -122,10 +131,10 @@ class CoinGeckoClient {
   ): Promise<any> {
     try {
       // Fetch base prices
-      const prices = await this.getHistoricalData(coinId, days, currency);
+      const response = await this.getHistoricalData(coinId, days, currency);
       
       // Aggregate into daily OHLCV format
-      const dailyData = this.aggregateDailyData(prices);
+      const dailyData = this.aggregateDailyData(response.data);
       
       return dailyData;
     } catch (error) {
@@ -308,8 +317,9 @@ export class PriceHistoryService {
       let prices: any[];
       try {
         const startTime = Date.now();
-        prices = await this.coinGecko.getHistoricalData(coinId, days, currency);
-        const duration = Date.now() - startTime;
+        const response = await this.coinGecko.getHistoricalData(coinId, days, currency);
+        prices = response.data;
+        const duration = response.latency || Date.now() - startTime;
         
         // Track external API call
         externalAPITracker.recordCall({
@@ -337,7 +347,9 @@ export class PriceHistoryService {
           error: error instanceof Error ? error.message : String(error)
         });
         
-        logger.warn(`CoinGecko failed for ${symbol}, trying CCXT...`, error);
+        logger.warn(`CoinGecko failed for ${symbol}, trying CCXT...`, {
+          error: error instanceof Error ? error.message : String(error),
+        });
         
         // Fallback: CCXT
         try {

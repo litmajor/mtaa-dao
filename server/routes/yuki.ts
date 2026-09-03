@@ -1878,7 +1878,7 @@ router.get('/exchanges/:id/balances', [authenticateToken], async (req: Request, 
     let gasCost = 0;
     try {
       const gasData = await gasPriceOracle.getCurrentGasPrices(undefined as any, 'ethereum');
-      gasCost = parseFloat(gasData.standard) / 1e9;
+      gasCost = parseFloat(gasData.baseFee) / 1e9;
     } catch (gasError) {
       logger.warn('[YUKI-EXCHANGES] Failed to fetch gas prices', { error: gasError });
     }
@@ -1977,7 +1977,7 @@ router.get('/exchanges/:id/positions', [authenticateToken], async (req: Request,
     let executionGasCost = 0;
     try {
       const gasData = await gasPriceOracle.getCurrentGasPrices(undefined as any, 'ethereum');
-      executionGasCost = parseFloat(gasData.standard) / 1e9;
+      executionGasCost = parseFloat(gasData.baseFee) / 1e9;
     } catch (gasError) {
       logger.warn('[YUKI-EXCHANGES] Could not fetch gas price for positions', { error: gasError });
     }

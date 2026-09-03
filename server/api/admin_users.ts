@@ -1,15 +1,23 @@
-
-import { Request, Response } from 'express';
+import type { Request, Response } from 'express';
 import { db } from '../storage';
 import { users } from '../../shared/schema';
-import { eq, like, and, or } from 'drizzle-orm';
+import { eq, ilike, and, or, count, desc } from 'drizzle-orm';
 import { Logger } from '../utils/logger';
 import { ValidationError, AppError } from '../middleware/errorHandler';
 
 const logger = new Logger('admin-users');
 
+const VALID_ROLES = ['user', 'moderator', 'admin', 'super_admin', 'manager', 'rebalancer', 'elder'] as const;
+
+/**
+ * Safely escape SQL LIKE pattern wildcards (% and _)
+ */
+function escapeLikeString(str: string): string {
+  return str.replace(/[%_]/g, '\\$&');
+}
+
 // Get all users (admin only)
-export async function getUsersHandler(req: Request, res: Response) {
+export async function getUsersHandler(req: Request, res: Response): Promise<void> {
   try {
     const { 
       page = '1', 
@@ -19,73 +27,79 @@ export async function getUsersHandler(req: Request, res: Response) {
       status = '' 
     } = req.query;
 
-    const offset = (parseInt(page as string) - 1) * parseInt(limit as string);
-    const searchTerm = search as string;
-    const roleFilter = role as string;
-    const statusFilter = status as string;
+    // Parse & sanitize pagination safely
+    const parsedPage = Math.max(1, parseInt(String(page), 10) || 1);
+    const parsedLimit = Math.min(100, Math.max(1, parseInt(String(limit), 10) || 20));
+    const offset = (parsedPage - 1) * parsedLimit;
 
-    // Build where conditions
+    const rawSearch = String(search).trim();
+    const roleFilter = String(role).trim();
+    const statusFilter = String(status).trim();
+
     const conditions = [];
 
-    if (searchTerm) {
+    // Case-insensitive search with escaped wildcards
+    if (rawSearch) {
+      const escaped = `%${escapeLikeString(rawSearch)}%`;
       conditions.push(
         or(
-          like(users.email, `%${searchTerm}%`),
-          like(users.firstName, `%${searchTerm}%`),
-          like(users.lastName, `%${searchTerm}%`)
+          ilike(users.email, escaped),
+          ilike(users.firstName, escaped),
+          ilike(users.lastName, escaped)
         )
       );
     }
 
-    if (roleFilter) {
-  conditions.push(eq(users.roles, roleFilter));
+    if (roleFilter && VALID_ROLES.includes(roleFilter as any)) {
+      conditions.push(eq(users.roles, roleFilter));
     }
 
     if (statusFilter === 'active') {
-  conditions.push(eq(users.isBanned, false));
+      conditions.push(eq(users.isBanned, false));
     } else if (statusFilter === 'inactive') {
-  conditions.push(eq(users.isBanned, true));
+      conditions.push(eq(users.isBanned, true));
     }
 
     const whereClause = conditions.length > 0 ? and(...conditions) : undefined;
 
-    // Get users with pagination
-    const usersResult = await db
-      .select({
-        id: users.id,
-        email: users.email,
-        firstName: users.firstName,
-        lastName: users.lastName,
-        roles: users.roles,
-        isBanned: users.isBanned,
-        isEmailVerified: users.isEmailVerified,
-        walletAddress: users.walletAddress,
-        createdAt: users.createdAt,
-        lastLoginAt: users.lastLoginAt,
-      })
-      .from(users)
-      .where(whereClause)
-      .limit(parseInt(limit as string))
-      .offset(offset)
-      .orderBy(users.createdAt);
+    // Execute paginated user retrieval and DB aggregate count in parallel
+    const [usersResult, totalResult] = await Promise.all([
+      db
+        .select({
+          id: users.id,
+          email: users.email,
+          firstName: users.firstName,
+          lastName: users.lastName,
+          roles: users.roles,
+          isBanned: users.isBanned,
+          isEmailVerified: users.isEmailVerified,
+          walletAddress: users.walletAddress,
+          createdAt: users.createdAt,
+          lastLoginAt: users.lastLoginAt,
+        })
+        .from(users)
+        .where(whereClause)
+        .limit(parsedLimit)
+        .offset(offset)
+        .orderBy(desc(users.createdAt)),
 
-    // Get total count
-    const totalResult = await db
-  .select({ count: users.id })
-      .from(users)
-      .where(whereClause);
+      db
+        .select({ total: count() })
+        .from(users)
+        .where(whereClause),
+    ]);
 
-    const total = totalResult.length;
+    const total = totalResult[0]?.total ?? 0;
 
     res.json({
       success: true,
       data: {
         users: usersResult,
         pagination: {
-          page: parseInt(page as string),
-          limit: parseInt(limit as string),
+          page: parsedPage,
+          limit: parsedLimit,
           total,
-          totalPages: Math.ceil(total / parseInt(limit as string)),
+          totalPages: Math.ceil(total / parsedLimit),
         },
       },
     });
@@ -96,36 +110,35 @@ export async function getUsersHandler(req: Request, res: Response) {
 }
 
 // Update user role (super admin only)
-export async function updateUserRoleHandler(req: Request, res: Response) {
+export async function updateUserRoleHandler(req: Request, res: Response): Promise<void> {
   try {
     const { userId } = req.params;
     const { role } = req.body;
-    const adminUserId = (req as any).user?.userId || (req as any).user?.claims?.sub;
+    const adminUserId = req.user?.id || req.user?.claims?.sub;
 
     if (!userId || !role) {
       throw new ValidationError('User ID and role are required');
     }
 
-    const validRoles = ['user', 'moderator', 'admin', 'super_admin'];
-    if (!validRoles.includes(role)) {
-      throw new ValidationError('Invalid role');
+    if (!VALID_ROLES.includes(role)) {
+      throw new ValidationError('Invalid role selection');
     }
 
     // Prevent self-demotion from super_admin
     if (userId === adminUserId && role !== 'super_admin') {
-      const currentUser = await db
+      const [currentUser] = await db
         .select({ roles: users.roles })
         .from(users)
         .where(eq(users.id, adminUserId))
         .limit(1);
 
-  if (currentUser.length > 0 && currentUser[0].roles === 'super_admin') {
+      if (currentUser?.roles === 'super_admin') {
         throw new ValidationError('Cannot demote yourself from super_admin role');
       }
     }
 
-    // Update user role
-    const updatedUser = await db
+    // Update user role safely
+    const [updatedUser] = await db
       .update(users)
       .set({
         roles: role,
@@ -140,11 +153,8 @@ export async function updateUserRoleHandler(req: Request, res: Response) {
         roles: users.roles,
       });
 
-    if (updatedUser.length === 0) {
-      return res.status(404).json({
-        success: false,
-        error: { message: 'User not found' },
-      });
+    if (!updatedUser) {
+      throw new AppError('User not found', 404);
     }
 
     logger.info('User role updated', { 
@@ -155,11 +165,11 @@ export async function updateUserRoleHandler(req: Request, res: Response) {
 
     res.json({
       success: true,
-      data: { user: updatedUser[0] },
+      data: { user: updatedUser },
     });
   } catch (error) {
     logger.error('Failed to update user role', error);
-    if (error instanceof ValidationError) {
+    if (error instanceof ValidationError || error instanceof AppError) {
       throw error;
     }
     throw new AppError('Failed to update user role', 500);

@@ -1,4 +1,4 @@
-import { Request, Response, NextFunction } from 'express';
+import type { Request, Response, NextFunction } from 'express';
 import { db } from '../storage';
 import { daoMemberships } from '../../shared/schema';
 import { eq, and } from 'drizzle-orm';
@@ -7,132 +7,117 @@ import { AppError } from './errorHandler';
 
 const logger = new Logger('dao-permissions-middleware');
 
-/**
- * Middleware to verify user is a DAO admin (owner or admin role)
- * Requires: req.params.daoId
- * Sets: req.daoRole, req.userPermissions (merged)
- */
-export const requireDAOAdmin = async (req: Request, res: Response, next: NextFunction) => {
-  try {
-    const userId = (req as any).user?.userId || (req as any).user?.claims?.sub;
-    const daoId = req.params.daoId;
-
-    if (!userId) {
-      logger.warn('Missing authentication for DAO admin check');
-      return res.status(401).json({
-        success: false,
-        error: { message: 'Authentication required' },
-      });
-    }
-
-    if (!daoId) {
-      logger.warn('Missing daoId parameter for DAO admin check', { userId });
-      return res.status(400).json({
-        success: false,
-        error: { message: 'DAO ID required' },
-      });
-    }
-
-    // Check DAO membership and verify admin role
-    const membershipResult = await db
-      .select({ role: daoMemberships.role })
-      .from(daoMemberships)
-      .where(and(
-        eq(daoMemberships.userId, userId),
-        eq(daoMemberships.daoId, daoId)
-      ))
-      .limit(1);
-
-    if (membershipResult.length === 0) {
-      logger.warn('User not a member of DAO', { userId, daoId });
-      return res.status(403).json({
-        success: false,
-        error: { message: 'Not a member of this DAO' },
-      });
-    }
-
-    const daoRole = membershipResult[0].role || 'member';
-    
-    // Only owner or admin can perform sensitive operations
-    if (!['owner', 'admin'].includes(daoRole)) {
-      logger.warn('User lacks admin role for DAO', { userId, daoId, daoRole });
-      return res.status(403).json({
-        success: false,
-        error: { message: 'DAO admin role required for this operation' },
-      });
-    }
-
-    // Store role info on request for downstream handlers
-    req.daoRole = daoRole;
-    
-    logger.info('DAO admin check passed', { userId, daoId, daoRole });
-    next();
-  } catch (error) {
-    logger.error('DAO admin permission check failed', error);
-    next(new AppError('DAO authorization check failed', 500));
-  }
+// Role hierarchy rank mapping
+const ROLE_HIERARCHY: Record<string, number> = {
+  owner: 5,
+  admin: 4,
+  elder: 3,
+  moderator: 2,
+  member: 1,
 };
 
-/**
- * Middleware to verify user is a DAO member
- * Requires: req.params.daoId
- * Sets: req.daoRole
- */
-export const requireDAOMember = async (req: Request, res: Response, next: NextFunction) => {
-  try {
-    const userId = (req as any).user?.userId || (req as any).user?.claims?.sub;
-    const daoId = req.params.daoId;
-
-    if (!userId) {
-      logger.warn('Missing authentication for DAO member check');
-      return res.status(401).json({
-        success: false,
-        error: { message: 'Authentication required' },
-      });
-    }
-
-    if (!daoId) {
-      logger.warn('Missing daoId parameter for DAO member check', { userId });
-      return res.status(400).json({
-        success: false,
-        error: { message: 'DAO ID required' },
-      });
-    }
-
-    // Check DAO membership
-    const membershipResult = await db
-      .select({ role: daoMemberships.role })
-      .from(daoMemberships)
-      .where(and(
-        eq(daoMemberships.userId, userId),
-        eq(daoMemberships.daoId, daoId)
-      ))
-      .limit(1);
-
-    if (membershipResult.length === 0) {
-      logger.warn('User not a member of DAO', { userId, daoId });
-      return res.status(403).json({
-        success: false,
-        error: { message: 'Not a member of this DAO' },
-      });
-    }
-
-    const daoRole = membershipResult[0].role || 'member';
-    req.daoRole = daoRole;
-    
-    logger.info('DAO member check passed', { userId, daoId, daoRole });
-    next();
-  } catch (error) {
-    logger.error('DAO member permission check failed', error);
-    next(new AppError('DAO authorization check failed', 500));
-  }
-};
-
-// Extend Express Request type
-declare global {
-  namespace Express {
-    interface Request {
-      daoRole?: string;
-    }
-  }
+export interface DAOPermissionOptions {
+  /** Minimum role required based on hierarchy (e.g. 'admin' allows 'admin' and 'owner') */
+  minRole?: 'owner' | 'admin' | 'moderator' | 'member';
+  /** Explicit list of acceptable roles */
+  allowedRoles?: string[];
+  /** Custom function to resolve daoId from the request */
+  getDaoId?: (req: Request) => string | undefined;
 }
+
+/**
+ * Safely extracts user ID from common passport/jwt request payload shapes
+ */
+function extractUserId(req: Request): string | undefined {
+  const user = req.user;
+  return user?.userId || user?.claims?.sub || user?.id;
+}
+
+/**
+ * Unified DAO Permission Factory
+ */
+export function requireDAOPermission(options: DAOPermissionOptions = {}) {
+  return async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const userId = extractUserId(req);
+      const getDaoId =
+        options.getDaoId || ((r) => r.params.daoId || (r.query.daoId as string));
+      const daoId = getDaoId(req);
+
+      if (!userId) {
+        logger.warn('Missing authentication for DAO permission check');
+        return next(new AppError('Authentication required', 401));
+      }
+
+      if (!daoId) {
+        logger.warn('Missing daoId parameter for DAO permission check', { userId });
+        return next(new AppError('DAO ID required', 400));
+      }
+
+      // Fetch member role in single optimized query
+      const [membership] = await db
+        .select({ role: daoMemberships.role })
+        .from(daoMemberships)
+        .where(
+          and(
+            eq(daoMemberships.userId, userId),
+            eq(daoMemberships.daoId, daoId),
+            eq(daoMemberships.status, 'approved'),
+            eq(daoMemberships.isBanned, false)
+          )
+        )
+        .limit(1);
+
+      if (!membership) {
+        logger.warn('User not a member of DAO', { userId, daoId });
+        return next(new AppError('Not a member of this DAO', 403));
+      }
+
+      const daoRole = membership.role || 'member';
+
+      // 1. Check explicit allowed roles if provided
+      if (options.allowedRoles && !options.allowedRoles.includes(daoRole)) {
+        logger.warn('User lacks required role for DAO', {
+          userId,
+          daoId,
+          daoRole,
+          required: options.allowedRoles,
+        });
+        return next(new AppError('DAO role permission denied for this operation', 403));
+      }
+
+      // 2. Check minimum role hierarchy if provided
+      if (options.minRole) {
+        const userRank = ROLE_HIERARCHY[daoRole] ?? 0;
+        const requiredRank = ROLE_HIERARCHY[options.minRole] ?? 0;
+
+        if (userRank < requiredRank) {
+          logger.warn('User role below minimum threshold', {
+            userId,
+            daoId,
+            daoRole,
+            minRole: options.minRole,
+          });
+          return next(
+            new AppError(`DAO ${options.minRole} role or higher required`, 403)
+          );
+        }
+      }
+
+      // Store verified role on request context
+      req.daoRole = daoRole;
+
+      logger.info('DAO permission check passed', { userId, daoId, daoRole });
+      next();
+    } catch (error) {
+      logger.error('DAO permission check failed unexpectedly', error);
+      next(new AppError('DAO authorization check failed', 500));
+    }
+  };
+}
+
+/**
+ * Pre-configured Middleware Exports
+ */
+export const requireDAOAdmin = requireDAOPermission({ minRole: 'admin' });
+export const requireDAOMember = requireDAOPermission({ minRole: 'member' });

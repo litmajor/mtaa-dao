@@ -308,6 +308,12 @@ router.post(
       if (!recipient) {
         return res.status(400).json({ error: 'Recipient required' });
       }
+      if (await TreasuryService.isFrozen(daoId)) {
+        return res.status(423).json({
+          error: 'Treasury is frozen',
+          message: 'New treasury withdrawals are temporarily blocked.',
+        });
+      }
 
       const multisigConfig = await db.query.daoMultisigConfig.findFirst({
         where: eq(daoMultisigConfig.daoId, daoId),
@@ -396,6 +402,13 @@ router.post(
       const { daoId } = req.params;
       const userId = req.user?.id ?? 'system';
       const { withdrawalId, approved, approverComment } = req.body;
+
+      if (await TreasuryService.isFrozen(daoId)) {
+        return res.status(423).json({
+          error: 'Treasury is frozen',
+          message: 'Treasury withdrawal approvals are temporarily blocked.',
+        });
+      }
 
       if (!withdrawalId) {
         return res.status(400).json({ error: 'Withdrawal ID required' });

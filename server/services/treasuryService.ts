@@ -17,6 +17,7 @@ import { logger } from '../utils/logger';
 import { 
   walletTransactions, 
   daos, 
+  daoSettings,
   treasuryPositions,
   daoContributionTypes, 
   daoContributions,
@@ -148,6 +149,18 @@ export interface DaoTreasuryConfig {
 }
 
 export class TreasuryService {
+  static async isFrozen(daoId: string): Promise<boolean> {
+    const [setting] = await db.select({ settingValue: daoSettings.settingValue })
+      .from(daoSettings)
+      .where(and(
+        eq(daoSettings.daoId, daoId),
+        eq(daoSettings.settingKey, 'treasury_frozen'),
+      ))
+      .limit(1);
+
+    return setting?.settingValue === true || setting?.settingValue === 'true';
+  }
+
   /**
    * Get treasury balance for a DAO - Real database query
    */

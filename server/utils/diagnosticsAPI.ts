@@ -1,27 +1,23 @@
-/**
- * EXECUTION DIAGNOSTICS API
- *
- * Provides real-time visibility into:
- * - Job execution patterns
- * - Event loop saturation
- * - System health trends
- * - Resource constraints
- *
- * Integrate into admin dashboard to diagnose production issues
- */
-
-import { Router, Request, Response } from 'express';
+import { Router } from 'express';
+import type { Request, Response } from 'express';
+import { authenticate } from '../auth';
+import { requireRole } from '../middleware/rbac';
 import { JobExecutionRegistry } from './jobExecutionGuard';
 import { SystemHealthMonitor } from './systemHealthMonitor';
+
+// Require authenticated super-admin access for all diagnostics endpoints.
+const requireAdmin = [authenticate, requireRole('super_admin')];
 
 export const createDiagnosticsRouter = () => {
   const router = Router();
 
+  // Enforce auth across all diagnostics routes
+  router.use(requireAdmin);
+
   /**
    * GET /diagnostics/jobs
-   * Returns job execution statistics
    */
-  router.get('/diagnostics/jobs', (req: Request, res: Response) => {
+  router.get('/diagnostics/jobs', (_req: Request, res: Response) => {
     try {
       const stats = JobExecutionRegistry.getAllStats();
       const diagnostics = JobExecutionRegistry.getDiagnostics();
@@ -33,15 +29,14 @@ export const createDiagnosticsRouter = () => {
         interpretation: interpretJobDiagnostics(diagnostics, stats),
       });
     } catch (error) {
-      res.status(500).json({ error: String(error) });
+      res.status(500).json({ error: error instanceof Error ? error.message : String(error) });
     }
   });
 
   /**
    * GET /diagnostics/system
-   * Returns system health metrics
    */
-  router.get('/diagnostics/system', (req: Request, res: Response) => {
+  router.get('/diagnostics/system', (_req: Request, res: Response) => {
     try {
       const metrics = SystemHealthMonitor.getMetrics();
       const history = SystemHealthMonitor.getHistory();
@@ -54,19 +49,18 @@ export const createDiagnosticsRouter = () => {
         saturated,
         history: {
           count: history.length,
-          last5min: history.slice(-10), // Last ~5 minutes at 30s intervals
+          last5min: history.slice(-10),
         },
       });
     } catch (error) {
-      res.status(500).json({ error: String(error) });
+      res.status(500).json({ error: error instanceof Error ? error.message : String(error) });
     }
   });
 
   /**
    * GET /diagnostics/full
-   * Complete system diagnosis
    */
-  router.get('/diagnostics/full', (req: Request, res: Response) => {
+  router.get('/diagnostics/full', (_req: Request, res: Response) => {
     try {
       const jobStats = JobExecutionRegistry.getAllStats();
       const jobDiagnostics = JobExecutionRegistry.getDiagnostics();
@@ -91,13 +85,12 @@ export const createDiagnosticsRouter = () => {
 
       res.json(diagnosis);
     } catch (error) {
-      res.status(500).json({ error: String(error) });
+      res.status(500).json({ error: error instanceof Error ? error.message : String(error) });
     }
   });
 
   /**
    * GET /diagnostics/job/:name
-   * Detailed metrics for a specific job
    */
   router.get('/diagnostics/job/:name', (req: Request, res: Response) => {
     try {
@@ -109,7 +102,6 @@ export const createDiagnosticsRouter = () => {
         return res.status(404).json({ error: `Job not found: ${jobName}` });
       }
 
-      // Analyze execution pattern
       const pattern = analyzeExecutionPattern(metrics);
 
       res.json({
@@ -122,12 +114,14 @@ export const createDiagnosticsRouter = () => {
         pattern,
         analysis: {
           isHealthy: stats.errorCount === 0 && stats.skipCount === 0,
-          shouldSlowDown: stats.avgDuration > 5000 || stats.skipCount > stats.executionCount * 0.1,
+          shouldSlowDown:
+            stats.avgDuration > 5000 ||
+            (stats.executionCount > 0 && stats.skipCount > stats.executionCount * 0.1),
           avgTimeOverInterval: stats.avgDuration,
         },
       });
     } catch (error) {
-      res.status(500).json({ error: String(error) });
+      res.status(500).json({ error: error instanceof Error ? error.message : String(error) });
     }
   });
 
@@ -135,28 +129,24 @@ export const createDiagnosticsRouter = () => {
 };
 
 /**
- * Helper: Interpret job diagnostics in human-readable terms
+ * Helper: Interpret job diagnostics
  */
 function interpretJobDiagnostics(
   diagnostics: ReturnType<typeof JobExecutionRegistry.getDiagnostics>,
-  stats: Record<string, any>
+  _stats: Record<string, any>
 ): string {
   if (diagnostics.saturated.length > 0) {
     return `🔴 CRITICAL: Event loop stuck - ${diagnostics.saturated.join(', ')}. Likely deadlock or infinite loop.`;
   }
-
   if (diagnostics.frequentSkips.length > 0) {
     return `🟠 OVERLOAD: System too busy - ${diagnostics.frequentSkips.join(', ')}. Reduce job frequency or increase resources.`;
   }
-
   if (diagnostics.slowJobs.length > 0) {
     return `🟡 SLOW JOBS: Execution time exceeding safe thresholds - ${diagnostics.slowJobs.join(', ')}. Check DB/API latency.`;
   }
-
   if (diagnostics.highErrorRate.length > 0) {
     return `🟡 ERRORS: High failure rate - ${diagnostics.highErrorRate.join(', ')}. Check logs for root cause.`;
   }
-
   return '🟢 HEALTHY: All jobs executing normally.';
 }
 
@@ -165,7 +155,7 @@ function interpretJobDiagnostics(
  */
 function diagnoseSystemStatus(
   metrics: ReturnType<typeof SystemHealthMonitor.getMetrics>,
-  jobStats: Record<string, any>
+  _jobStats: Record<string, any>
 ): string {
   const cpu = metrics.cpu.user + metrics.cpu.system;
   const heap = metrics.heap.usagePercent;
@@ -173,38 +163,33 @@ function diagnoseSystemStatus(
   if (heap > 85 || cpu > 80 || metrics.jobs.runningJobs > 5) {
     return 'CRITICAL - Immediate action needed';
   }
-
   if (heap > 70 || cpu > 60 || metrics.jobs.runningJobs > 3) {
     return 'WARNING - System approaching limits';
   }
-
   if (metrics.jobs.skippedRecently > 5) {
     return 'DEGRADED - Overload detected, jobs being skipped';
   }
-
   return 'HEALTHY - Normal operation';
 }
 
 /**
- * Analyze execution pattern from metrics history
+ * Safely analyze execution pattern from metrics history
  */
 function analyzeExecutionPattern(metrics: any[]): string {
-  if (metrics.length < 2) return 'INSUFFICIENT_DATA';
+  if (!Array.isArray(metrics) || metrics.length < 2) return 'INSUFFICIENT_DATA';
 
   const recentCount = metrics.filter((m) => !m.skipped).length;
   const skippedCount = metrics.filter((m) => m.skipped).length;
   const errorCount = metrics.filter((m) => m.error).length;
 
-  if (skippedCount > recentCount) {
-    return 'FREQUENTLY_SKIPPED';
-  }
+  if (skippedCount > recentCount) return 'FREQUENTLY_SKIPPED';
+  if (recentCount > 0 && errorCount > recentCount * 0.1) return 'HIGH_ERROR_RATE';
 
-  if (errorCount > recentCount * 0.1) {
-    return 'HIGH_ERROR_RATE';
-  }
+  const validDurations = metrics.map((m) => m.duration).filter((d) => typeof d === 'number' && !isNaN(d));
+  if (validDurations.length === 0) return 'INSUFFICIENT_DATA';
 
-  const avgDuration = metrics.reduce((sum, m) => sum + m.duration, 0) / metrics.length;
-  const maxDuration = Math.max(...metrics.map((m) => m.duration));
+  const avgDuration = validDurations.reduce((sum, d) => sum + d, 0) / validDurations.length;
+  const maxDuration = Math.max(...validDurations);
 
   if (maxDuration > avgDuration * 3) {
     return 'ERRATIC_EXECUTION';
@@ -214,28 +199,25 @@ function analyzeExecutionPattern(metrics: any[]): string {
 }
 
 /**
- * Analyze trend in system health
+ * Safely analyze trend in system health
  */
 function analyzeTrend(history: any[]): string {
-  if (history.length < 2) return 'INSUFFICIENT_DATA';
+  if (!Array.isArray(history) || history.length < 10) return 'INSUFFICIENT_DATA';
 
   const recent = history.slice(-5);
   const older = history.slice(-10, -5);
 
-  if (recent.length === 0 || older.length === 0) {
-    return 'INSUFFICIENT_DATA';
-  }
+  const calcAvg = (arr: any[], fn: (m: any) => number) => arr.reduce((sum, item) => sum + fn(item), 0) / arr.length;
 
-  const recentHeap = recent.reduce((sum, m) => sum + m.heap.usagePercent, 0) / recent.length;
-  const olderHeap = older.reduce((sum, m) => sum + m.heap.usagePercent, 0) / older.length;
+  const recentHeap = calcAvg(recent, (m) => m.heap.usagePercent);
+  const olderHeap = calcAvg(older, (m) => m.heap.usagePercent);
 
-  const recentCpu = recent.reduce((sum, m) => sum + (m.cpu.user + m.cpu.system), 0) / recent.length;
-  const olderCpu = older.reduce((sum, m) => sum + (m.cpu.user + m.cpu.system), 0) / older.length;
+  const recentCpu = calcAvg(recent, (m) => m.cpu.user + m.cpu.system);
+  const olderCpu = calcAvg(older, (m) => m.cpu.user + m.cpu.system);
 
   if (recentHeap > olderHeap + 10 || recentCpu > olderCpu + 15) {
     return 'DEGRADING - Resource usage increasing';
   }
-
   if (recentHeap < olderHeap - 10 || recentCpu < olderCpu - 15) {
     return 'IMPROVING - Resource usage decreasing';
   }
@@ -249,7 +231,7 @@ function analyzeTrend(history: any[]): string {
 function generateRecommendations(
   metrics: ReturnType<typeof SystemHealthMonitor.getMetrics>,
   jobDiagnostics: ReturnType<typeof JobExecutionRegistry.getDiagnostics>,
-  jobStats: Record<string, any>
+  _jobStats: Record<string, any>
 ): string[] {
   const recommendations: string[] = [];
 
@@ -270,8 +252,7 @@ function generateRecommendations(
 
   if (jobDiagnostics.frequentSkips.length > 0) {
     recommendations.push('📉 REDUCE: Cut job frequency temporarily to confirm saturation');
-    const jobsSkipped = jobDiagnostics.frequentSkips;
-    recommendations.push(`   Affected: ${jobsSkipped.join(', ')}`);
+    recommendations.push(`   Affected: ${jobDiagnostics.frequentSkips.join(', ')}`);
   }
 
   if (jobDiagnostics.slowJobs.length > 0) {

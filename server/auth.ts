@@ -61,7 +61,15 @@ export interface AuthRequest extends Request {
     role?: string;
     roles?: string | string[];
     daos?: string[];
-    claims?: TokenPayload;
+    isSuperUser?: boolean;
+    isSuperuser?: boolean;
+    isAdmin?: boolean;
+    claims?: TokenPayload & {
+      sub?: string;
+      isSuperUser?: boolean;
+      isSuperuser?: boolean;
+      isAdmin?: boolean;
+    };
   };
 }
 

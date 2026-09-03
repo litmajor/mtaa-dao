@@ -9,7 +9,7 @@ const pbkdf2Async = promisify(crypto.pbkdf2);
 const ENCRYPTION_ALGORITHM = 'aes-256-gcm';
 const SALT_LENGTH = 16;
 const IV_LENGTH = 12;
-const PBKDF2_ITERATIONS = 600000; // OWASP 2026 Security Standard
+const PBKDF2_ITERATIONS = 600000; // OWASP recommendation for PBKDF2-HMAC-SHA256
 const KEY_LENGTH = 32;
 const DIGEST = 'sha256';
 
@@ -30,14 +30,32 @@ export interface EncryptedWallet {
 }
 
 /**
- * Normalizes and validates a private key string.
- * Returns a 0x-prefixed 64-character hex string or null.
+ * Normalizes and validates a private key string's FORMAT ONLY (64 hex
+ * chars). This does not guarantee the value is a valid secp256k1 scalar —
+ * a well-formatted key can still be out of curve range (e.g. all zeros,
+ * or >= curve order n). Callers that construct an ethers.Wallet from the
+ * result must still handle that case; see safeWalletFromKey below.
  */
 export function normalizePrivateKey(key: string | undefined | null): string | null {
   if (!key) return null;
   let pk = String(key).trim();
   if (!pk.startsWith('0x')) pk = `0x${pk}`;
   return /^0x[0-9a-fA-F]{64}$/.test(pk) ? pk : null;
+}
+
+/**
+ * Constructs an ethers.Wallet from a normalized key, catching the
+ * curve-range validation ethers itself performs (throws on keys that are
+ * zero or >= secp256k1's order). Returns null on any failure instead of
+ * throwing, so every caller in this file has one consistent contract:
+ * invalid key in, null out — never an uncaught exception.
+ */
+function safeWalletFromKey(normalizedKey: string, provider?: ethers.Provider): ethers.Wallet | null {
+  try {
+    return provider ? new ethers.Wallet(normalizedKey, provider) : new ethers.Wallet(normalizedKey);
+  } catch {
+    return null;
+  }
 }
 
 /**
@@ -54,7 +72,7 @@ export function isValidMnemonic(mnemonic: string | undefined | null): boolean {
 export function generateWalletFromMnemonic(wordCount: 12 | 24 = 12): WalletCredentials {
   const entropyLength = wordCount === 12 ? 16 : 32;
   const entropy = crypto.randomBytes(entropyLength);
-  
+
   // Create phrase directly from secure entropy source
   const mnemonicPhrase = ethers.Mnemonic.entropyToPhrase(entropy);
   const mnemonicInstance = ethers.Mnemonic.fromPhrase(mnemonicPhrase);
@@ -63,7 +81,7 @@ export function generateWalletFromMnemonic(wordCount: 12 | 24 = 12): WalletCrede
   return {
     address: hdNode.address,
     privateKey: hdNode.privateKey,
-    mnemonic: mnemonicPhrase
+    mnemonic: mnemonicPhrase,
   };
 }
 
@@ -82,12 +100,17 @@ export function recoverWalletFromMnemonic(mnemonic: string, path = DEFAULT_DERIV
   return {
     address: hdNode.address,
     privateKey: hdNode.privateKey,
-    mnemonic: cleanedMnemonic
+    mnemonic: cleanedMnemonic,
   };
 }
 
 /**
  * Import a wallet from a raw private key string.
+ * FIX: previously called `new ethers.Wallet(normalizedKey)` unguarded —
+ * a regex-valid but curve-invalid key (e.g. all zeros) threw an
+ * undocumented ethers-native error instead of the documented
+ * WalletImportError. Now routed through safeWalletFromKey so the
+ * documented contract actually holds.
  */
 export function importWalletFromPrivateKey(privateKey: string): WalletCredentials {
   const normalizedKey = normalizePrivateKey(privateKey);
@@ -95,11 +118,14 @@ export function importWalletFromPrivateKey(privateKey: string): WalletCredential
     throw new Error('WalletImportError: Invalid private key format. Must be a 32-byte hex string.');
   }
 
-  const wallet = new ethers.Wallet(normalizedKey);
+  const wallet = safeWalletFromKey(normalizedKey);
+  if (!wallet) {
+    throw new Error('WalletImportError: Private key is not a valid secp256k1 scalar.');
+  }
 
   return {
     address: wallet.address,
-    privateKey: wallet.privateKey
+    privateKey: wallet.privateKey,
   };
 }
 
@@ -108,16 +134,16 @@ export function importWalletFromPrivateKey(privateKey: string): WalletCredential
  */
 export async function encryptWallet(walletData: WalletCredentials, password: string): Promise<EncryptedWallet> {
   const salt = crypto.randomBytes(SALT_LENGTH);
-  
+
   // Offloads expensive key derivation math to the libuv thread pool
   const key = await pbkdf2Async(password, salt, PBKDF2_ITERATIONS, KEY_LENGTH, DIGEST);
   const iv = crypto.randomBytes(IV_LENGTH);
-  
+
   const cipher = crypto.createCipheriv(ENCRYPTION_ALGORITHM, key, iv);
-  
+
   const dataToEncrypt = JSON.stringify({
     privateKey: walletData.privateKey,
-    mnemonic: walletData.mnemonic
+    mnemonic: walletData.mnemonic,
   });
 
   let encrypted = cipher.update(dataToEncrypt, 'utf8', 'hex');
@@ -128,7 +154,7 @@ export async function encryptWallet(walletData: WalletCredentials, password: str
     encryptedData: encrypted,
     salt: salt.toString('hex'),
     iv: iv.toString('hex'),
-    authTag: authTag.toString('hex')
+    authTag: authTag.toString('hex'),
   };
 }
 
@@ -137,7 +163,7 @@ export async function encryptWallet(walletData: WalletCredentials, password: str
  */
 export async function decryptWallet(encryptedWallet: EncryptedWallet, password: string): Promise<WalletCredentials> {
   const salt = Buffer.from(encryptedWallet.salt, 'hex');
-  
+
   // Offloads expensive key derivation math to the libuv thread pool
   const key = await pbkdf2Async(password, salt, PBKDF2_ITERATIONS, KEY_LENGTH, DIGEST);
   const iv = Buffer.from(encryptedWallet.iv, 'hex');
@@ -150,32 +176,39 @@ export async function decryptWallet(encryptedWallet: EncryptedWallet, password: 
   try {
     decrypted = decipher.update(encryptedWallet.encryptedData, 'hex', 'utf8');
     decrypted += decipher.final('utf8');
-  } catch (error) {
+  } catch {
     throw new Error('WalletDecryptionError: Failed to decrypt wallet. Invalid password or tampered data.');
   }
 
   const walletData = JSON.parse(decrypted);
   const normalizedKey = normalizePrivateKey(walletData.privateKey);
-  
+
   if (!normalizedKey) {
     throw new Error('WalletDecryptionError: Decrypted private key is malformed or corrupted.');
   }
 
-  const wallet = new ethers.Wallet(normalizedKey);
+  const wallet = safeWalletFromKey(normalizedKey);
+  if (!wallet) {
+    throw new Error('WalletDecryptionError: Decrypted private key is not a valid secp256k1 scalar.');
+  }
 
   return {
     address: wallet.address,
     privateKey: wallet.privateKey,
-    mnemonic: walletData.mnemonic
+    mnemonic: walletData.mnemonic,
   };
 }
 
 /**
- * Helper to safely instantiate an Ethers wallet instance for on-chain interactions.
+ * Helper to safely instantiate an Ethers wallet instance for on-chain
+ * interactions. FIX: previously threw uncaught on a regex-valid but
+ * curve-invalid key, contradicting its own name/contract ("IfValid").
+ * Now genuinely returns null for any invalid key, never throws.
  */
 export function createWalletInstance(key: string | undefined | null, provider?: ethers.Provider): ethers.Wallet | null {
   const normalizedKey = normalizePrivateKey(key);
   if (!normalizedKey) return null;
-  return provider ? new ethers.Wallet(normalizedKey, provider) : new ethers.Wallet(normalizedKey);
+  return safeWalletFromKey(normalizedKey, provider);
 }
+
 export const createWalletIfValid = createWalletInstance; // Alias for clarity in context of private key usage

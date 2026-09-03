@@ -1,12 +1,64 @@
-import { Router, Request, Response } from 'express';
+import { Router } from 'express';
+import type { Request, Response } from 'express';
 import { db } from '../../db';
 import { logger } from '../../utils/logger';
 import { daos, daoMemberships, auditLogs } from '../../../shared/schema';
-import { eq, desc, sql, and, or, inArray, gt, lt, like } from 'drizzle-orm';
+import { eq, desc, sql, and, or, gt, like, ilike } from 'drizzle-orm';
 import { requireRole } from '../../middleware/rbac';
 import { logConsolidatedAuditEvent, AuditEventType } from '../../services/auditConsolidated';
+import crypto from 'crypto';
 
 const router = Router();
+const requireRiskAdmin = requireRole('admin', 'super_admin');
+router.use(requireRiskAdmin);
+
+function getActorId(req: Request): string | null {
+  return req.user?.userId || req.user?.claims?.sub || req.user?.id || null;
+}
+
+async function requireDaoAdminScope(req: Request, res: Response, next: () => void) {
+  const actorId = getActorId(req);
+  const { daoId } = req.params;
+  if (!actorId) return res.status(401).json({ error: 'Authentication required' });
+  const dao = await db.select({ id: daos.id }).from(daos).where(eq(daos.id, daoId)).limit(1);
+  if (!dao.length) return res.status(404).json({ error: 'DAO not found' });
+  if (req.userRole === 'super_admin') return next();
+  const membership = await db.select({ id: daoMemberships.id }).from(daoMemberships).where(and(
+    eq(daoMemberships.daoId, daoId), eq(daoMemberships.userId, actorId), eq(daoMemberships.role, 'admin'),
+    eq(daoMemberships.status, 'approved'), eq(daoMemberships.isBanned, false),
+  )).limit(1);
+  if (!membership.length) return res.status(403).json({ error: 'DAO administrator access required' });
+  next();
+}
+
+router.use('/daos/:daoId/risk', requireDaoAdminScope);
+
+function parsePagination(query: Request['query']): { page: number; limit: number; offset: number } | null {
+  const pageValue = String(query.page ?? '1');
+  const limitValue = String(query.limit ?? '20');
+  if (!/^\d+$/.test(pageValue) || !/^\d+$/.test(limitValue)) return null;
+  const page = Number(pageValue);
+  const limit = Number(limitValue);
+  const offset = (page - 1) * limit;
+  if (!Number.isSafeInteger(page) || page < 1 || !Number.isSafeInteger(limit) || limit < 1 || limit > 100 || !Number.isSafeInteger(offset)) return null;
+  return { page, limit, offset };
+}
+
+async function auditRiskAccess(req: Request, actionType: AuditEventType, daoId: string): Promise<void> {
+  const actorId = getActorId(req);
+  if (!actorId) return;
+  try {
+    await logConsolidatedAuditEvent({ actorId, actorType: 'admin', actorRole: req.userRole || 'admin', actionType,
+      actionCategory: 'security', targetType: 'dao_risk', targetId: daoId, endpoint: req.originalUrl,
+      ipAddress: req.ip, userAgent: req.get('user-agent'), result: 'success', severity: 'low' });
+  } catch (error) {
+    logger.error('Risk access audit failed:', error);
+  }
+}
+
+function activeMembershipPredicate(daoId: string) {
+  return and(eq(daoMemberships.daoId, daoId), eq(daoMemberships.status, 'approved'), eq(daoMemberships.isBanned, false));
+}
 
 /**
  * Risk Assessment Routes
@@ -46,8 +98,8 @@ interface ComplianceItem {
 router.get('/daos/:daoId/risk/score', async (req: Request, res: Response) => {
   try {
     const { daoId } = req.params;
-    const adminId = (req.user as any)?.id;
-    const userRole = (req.user as any)?.roles;
+    const adminId = getActorId(req);
+    if (!adminId) return res.status(401).json({ error: 'Authentication required' });
 
     // Verify DAO exists
     const dao = await db.select().from(daos).where(eq(daos.id, daoId));
@@ -55,22 +107,6 @@ router.get('/daos/:daoId/risk/score', async (req: Request, res: Response) => {
       return res.status(404).json({ error: 'DAO not found' });
     }
 
-    // Check permissions
-    if (userRole !== 'super_admin') {
-      const isMember = await db
-        .select()
-        .from(daoMemberships)
-        .where(and(
-          eq(daoMemberships.daoId, daoId),
-          eq(daoMemberships.userId, adminId)
-        ));
-
-      if (!isMember.length) {
-        return res.status(403).json({ error: 'Access denied' });
-      }
-    }
-
-    // Calculate risk factors
     const members = await db
       .select({ count: sql<number>`count(*)` })
       .from(daoMemberships)
@@ -80,16 +116,14 @@ router.get('/daos/:daoId/risk/score', async (req: Request, res: Response) => {
       .select({ count: sql<number>`count(*)` })
       .from(daoMemberships)
       .where(and(
-        eq(daoMemberships.daoId, daoId),
-        eq(daoMemberships.isActive, true)
+        eq(daoMemberships.daoId, daoId), eq(daoMemberships.status, 'approved'), eq(daoMemberships.isBanned, false)
       ));
 
     const admins = await db
       .select({ count: sql<number>`count(*)` })
       .from(daoMemberships)
       .where(and(
-        eq(daoMemberships.daoId, daoId),
-        eq(daoMemberships.role, 'admin')
+        eq(daoMemberships.daoId, daoId), eq(daoMemberships.role, 'admin'), eq(daoMemberships.status, 'approved'), eq(daoMemberships.isBanned, false)
       ));
 
     // Assess risks
@@ -97,8 +131,10 @@ router.get('/daos/:daoId/risk/score', async (req: Request, res: Response) => {
     let totalScore = 0;
 
     // Risk: Low member participation
-    const participationRate = (activeMembers[0]?.count || 0) / (members[0]?.count || 1);
-    if (participationRate < 0.5) {
+    const memberCount = Number(members[0]?.count || 0);
+    const activeMemberCount = Number(activeMembers[0]?.count || 0);
+    const participationRate = memberCount > 0 ? activeMemberCount / memberCount : 0;
+    if (memberCount > 0 && participationRate < 0.5) {
       riskFactors.push({
         category: 'Member Participation',
         score: 30,
@@ -143,16 +179,13 @@ router.get('/daos/:daoId/risk/score', async (req: Request, res: Response) => {
     }
 
     // Audit trail risk
-    const recentLogs = await db
-      .select()
-      .from(auditLogs)
-      .where(and(
-        eq(auditLogs.endpoint, 'admin'),
-        gt(auditLogs.timestamp, new Date(Date.now() - 7 * 24 * 60 * 60 * 1000))
-      ))
-      .limit(100);
+    const [failedResult] = await db.select({ count: sql<number>`count(*)` }).from(auditLogs).where(and(
+      or(eq(auditLogs.resourceId, daoId), ilike(auditLogs.endpoint, `%${daoId}%`)),
+      gt(auditLogs.timestamp, new Date(Date.now() - 7 * 24 * 60 * 60 * 1000)),
+      sql`${auditLogs.status} >= 400`,
+    ));
 
-    const failedAttempts = recentLogs.filter(log => (log.statusCode || 0) >= 400).length;
+    const failedAttempts = Number(failedResult?.count || 0);
     if (failedAttempts > 20) {
       riskFactors.push({
         category: 'Security Risk',
@@ -173,7 +206,7 @@ router.get('/daos/:daoId/risk/score', async (req: Request, res: Response) => {
       overallScore >= 40 ? 'medium' :
       'low';
 
-    res.json({
+    const response = {
       score: overallScore,
       severity: overallSeverity,
       factors: riskFactors,
@@ -184,7 +217,9 @@ router.get('/daos/:daoId/risk/score', async (req: Request, res: Response) => {
         failedOperations: failedAttempts,
       },
       lastAssessed: new Date(),
-    });
+    };
+    await auditRiskAccess(req, AuditEventType.ADMIN_RISK_SCORE_ACCESSED, daoId);
+    res.json(response);
   } catch (error) {
     logger.error('Error calculating risk score:', error);
     res.status(500).json({ error: 'Failed to calculate risk score' });
@@ -195,63 +230,56 @@ router.get('/daos/:daoId/risk/score', async (req: Request, res: Response) => {
 router.get('/daos/:daoId/risk/factors', async (req: Request, res: Response) => {
   try {
     const { daoId } = req.params;
-    const adminId = (req.user as any)?.id;
-    const userRole = (req.user as any)?.roles;
+    const adminId = getActorId(req);
+    if (!adminId) return res.status(401).json({ error: 'Authentication required' });
 
-    // Check permissions
-    if (userRole !== 'super_admin') {
-      const isMember = await db
-        .select()
-        .from(daoMemberships)
-        .where(and(
-          eq(daoMemberships.daoId, daoId),
-          eq(daoMemberships.userId, adminId)
-        ));
-
-      if (!isMember.length) {
-        return res.status(403).json({ error: 'Access denied' });
-      }
-    }
-
-    // Detailed risk analysis
+    const [memberResult, adminResult] = await Promise.all([
+      db.select({ count: sql<number>`count(*)` }).from(daoMemberships).where(activeMembershipPredicate(daoId)),
+      db.select({ count: sql<number>`count(*)` }).from(daoMemberships).where(and(
+        activeMembershipPredicate(daoId), eq(daoMemberships.role, 'admin'),
+      )),
+    ]);
+    const memberCount = Number(memberResult[0]?.count || 0);
+    const adminCount = Number(adminResult[0]?.count || 0);
     const factors: RiskFactor[] = [
       {
         category: 'Governance Structure',
-        score: 25,
-        severity: 'medium',
-        description: 'Voting participation below target threshold',
-        mitigation: 'Implement member incentives, host voting campaigns'
+        score: memberCount < 5 ? 25 : 0,
+        severity: memberCount < 5 ? 'medium' : 'low',
+        description: `${memberCount} approved, non-banned members currently govern this DAO`,
+        mitigation: memberCount < 5 ? 'Recruit new members and increase community participation' : 'Continue monitoring participation',
       },
       {
         category: 'Financial Management',
-        score: 15,
+        score: 0,
         severity: 'low',
-        description: 'Treasury allocation tracking in progress',
-        mitigation: 'Continue monitoring spending limits'
+        description: 'Financial risk requires current treasury and withdrawal telemetry',
+        mitigation: 'Review treasury activity and spending limits',
       },
       {
         category: 'Member Compliance',
-        score: 20,
+        score: 0,
         severity: 'low',
-        description: 'All members in good standing',
-        mitigation: 'Continue regular compliance reviews'
+        description: 'Membership status is evaluated from approved and non-banned records',
+        mitigation: 'Continue regular compliance reviews',
       },
       {
         category: 'Admin Activity',
-        score: 10,
-        severity: 'low',
-        description: 'Normal admin operation patterns',
-        mitigation: 'Continue monitoring for anomalies'
+        score: adminCount < 2 ? 40 : 0,
+        severity: adminCount < 2 ? 'high' : 'low',
+        description: `${adminCount} approved, non-banned DAO administrators are configured`,
+        mitigation: adminCount < 2 ? 'Promote an additional trusted administrator' : 'Continue monitoring for anomalies',
       },
       {
         category: 'Protocol Adherence',
-        score: 30,
-        severity: 'medium',
-        description: 'Some voting procedures not followed recently',
-        mitigation: 'Review and reinforce governance protocols'
+        score: 0,
+        severity: 'low',
+        description: 'Protocol adherence requires persisted governance assessment data',
+        mitigation: 'Review and reinforce governance protocols',
       },
     ];
 
+    await auditRiskAccess(req, AuditEventType.ADMIN_RISK_FACTORS_ACCESSED, daoId);
     res.json({
       factors,
       totalRisk: factors.reduce((sum, f) => sum + f.score, 0),
@@ -268,66 +296,12 @@ router.get('/daos/:daoId/risk/factors', async (req: Request, res: Response) => {
 router.get('/daos/:daoId/risk/alerts', async (req: Request, res: Response) => {
   try {
     const { daoId } = req.params;
-    const adminId = (req.user as any)?.id;
-    const userRole = (req.user as any)?.roles;
+    const adminId = getActorId(req);
+    if (!adminId) return res.status(401).json({ error: 'Authentication required' });
 
-    // Check permissions
-    if (userRole !== 'super_admin') {
-      const isMember = await db
-        .select()
-        .from(daoMemberships)
-        .where(and(
-          eq(daoMemberships.daoId, daoId),
-          eq(daoMemberships.userId, adminId)
-        ));
-
-      if (!isMember.length) {
-        return res.status(403).json({ error: 'Access denied' });
-      }
-    }
-
-    // Mock alerts based on risk factors
-    const alerts = [
-      {
-        id: 'alert_1',
-        severity: 'high',
-        type: 'member_participation',
-        title: 'Low Member Participation',
-        description: 'Only 40% of members have participated in voting',
-        createdAt: new Date(Date.now() - 3 * 24 * 60 * 60 * 1000),
-        acknowledged: false,
-      },
-      {
-        id: 'alert_2',
-        severity: 'medium',
-        type: 'admin_activity',
-        title: 'Unusual Admin Activity',
-        description: 'Admin operations increased by 200% this week',
-        createdAt: new Date(Date.now() - 1 * 24 * 60 * 60 * 1000),
-        acknowledged: false,
-      },
-      {
-        id: 'alert_3',
-        severity: 'medium',
-        type: 'governance',
-        title: 'Voting Protocol Deviation',
-        description: 'Recent proposal did not follow standard voting procedure',
-        createdAt: new Date(Date.now() - 6 * 60 * 60 * 1000),
-        acknowledged: true,
-      },
-    ];
-
-    const unacknowledged = alerts.filter(a => !a.acknowledged);
-
-    res.json({
-      alerts,
-      summary: {
-        critical: alerts.filter(a => a.severity === 'critical').length,
-        high: alerts.filter(a => a.severity === 'high').length,
-        medium: alerts.filter(a => a.severity === 'medium').length,
-        unacknowledged: unacknowledged.length,
-      }
-    });
+    await auditRiskAccess(req, AuditEventType.ADMIN_RISK_ALERTS_ACCESSED, daoId);
+    res.json({ alerts: [], summary: { critical: 0, high: 0, medium: 0, unacknowledged: 0 }, available: false,
+      message: 'Risk alerts are unavailable until a persistent alert source is configured' });
   } catch (error) {
     logger.error('Error fetching alerts:', error);
     res.status(500).json({ error: 'Failed to fetch alerts' });
@@ -339,52 +313,9 @@ router.post('/daos/:daoId/risk/alerts/:alertId/acknowledge', async (req: Request
   try {
     const { daoId, alertId } = req.params;
     const { notes } = req.body;
-    const adminId = (req.user as any).id;
-    const userRole = (req.user as any).roles;
-
-    // Check permissions - DAO Admin only
-    if (userRole !== 'super_admin') {
-      const isDaoAdmin = await db
-        .select()
-        .from(daoMemberships)
-        .where(and(
-          eq(daoMemberships.daoId, daoId),
-          eq(daoMemberships.userId, adminId),
-          eq(daoMemberships.role, 'admin')
-        ));
-
-      if (!isDaoAdmin.length) {
-        return res.status(403).json({ error: 'Only DAO admin can acknowledge alerts' });
-      }
-    }
-
-    // Log audit event
-    await logAuditEvent({
-      eventType: AuditEventType.RISK_ALERT_ACKNOWLEDGED,
-      userId: adminId,
-      action: `Risk alert acknowledged: ${alertId}`,
-      severity: 'low',
-      endpoint: `/api/admin/daos/:daoId/risk/alerts/:alertId/acknowledge`,
-      method: 'POST',
-      ipAddress: req.ip,
-      userAgent: req.get('user-agent'),
-      statusCode: 200,
-      metadata: {
-        daoId,
-        alertId,
-        notes,
-      }
-    }).catch(err => console.error('Audit log failed:', err));
-
-    logger.info('Alert acknowledged', { daoId, alertId });
-
-    res.json({
-      success: true,
-      message: 'Alert acknowledged',
-      acknowledgedAt: new Date(),
-      acknowledgedBy: adminId,
-      notes,
-    });
+    const adminId = getActorId(req);
+    if (!adminId) return res.status(401).json({ error: 'Authentication required' });
+    return res.status(501).json({ error: 'Risk alerts are not backed by a persistent source' });
   } catch (error) {
     logger.error('Error acknowledging alert:', error);
     res.status(500).json({ error: 'Failed to acknowledge alert' });
@@ -395,68 +326,25 @@ router.post('/daos/:daoId/risk/alerts/:alertId/acknowledge', async (req: Request
 router.get('/daos/:daoId/risk/compliance', async (req: Request, res: Response) => {
   try {
     const { daoId } = req.params;
-    const adminId = (req.user as any)?.id;
-    const userRole = (req.user as any)?.roles;
+    const adminId = getActorId(req);
+    if (!adminId) return res.status(401).json({ error: 'Authentication required' });
 
-    // Check permissions
-    if (userRole !== 'super_admin') {
-      const isMember = await db
-        .select()
-        .from(daoMemberships)
-        .where(and(
-          eq(daoMemberships.daoId, daoId),
-          eq(daoMemberships.userId, adminId)
-        ));
-
-      if (!isMember.length) {
-        return res.status(403).json({ error: 'Access denied' });
-      }
-    }
-
-    const complianceItems: ComplianceItem[] = [
-      {
-        requirement: 'Audit Logging Enabled',
-        status: 'compliant',
-        lastChecked: new Date(Date.now() - 1 * 60 * 60 * 1000),
-        notes: 'All admin actions logged'
-      },
-      {
-        requirement: 'Multi-Sig Required for Treasury',
-        status: 'at-risk',
-        lastChecked: new Date(Date.now() - 2 * 24 * 60 * 60 * 1000),
-        notes: 'Only single signature currently required'
-      },
-      {
-        requirement: 'Member Voting Rights Verified',
-        status: 'compliant',
-        lastChecked: new Date(),
-        notes: 'All members have appropriate voting rights'
-      },
-      {
-        requirement: 'Role Permissions Enforced',
-        status: 'compliant',
-        lastChecked: new Date(Date.now() - 1 * 24 * 60 * 60 * 1000),
-        notes: 'RBAC working as expected'
-      },
-      {
-        requirement: 'Password Policy Compliance',
-        status: 'non-compliant',
-        lastChecked: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000),
-        notes: 'Some users have weak passwords'
-      },
-    ];
+    const complianceItems: ComplianceItem[] = [];
 
     const compliantCount = complianceItems.filter(c => c.status === 'compliant').length;
     const atRiskCount = complianceItems.filter(c => c.status === 'at-risk').length;
     const nonCompliantCount = complianceItems.filter(c => c.status === 'non-compliant').length;
 
+    await auditRiskAccess(req, AuditEventType.ADMIN_RISK_COMPLIANCE_ACCESSED, daoId);
     res.json({
       items: complianceItems,
       summary: {
         compliant: compliantCount,
         atRisk: atRiskCount,
         nonCompliant: nonCompliantCount,
-        complianceRate: parseFloat(((compliantCount / complianceItems.length) * 100).toFixed(2)),
+        complianceRate: 0,
+        available: false,
+        message: 'Compliance checks are unavailable until a persistent compliance source is configured',
       }
     });
   } catch (error) {
@@ -469,32 +357,24 @@ router.get('/daos/:daoId/risk/compliance', async (req: Request, res: Response) =
 router.get('/daos/:daoId/risk/audit-trail', async (req: Request, res: Response) => {
   try {
     const { daoId } = req.params;
-    const { page = '1', limit = '20', severity = 'all' } = req.query;
-    const adminId = (req.user as any)?.id;
-    const userRole = (req.user as any)?.roles;
+    const { severity = 'all' } = req.query;
+    const pagination = parsePagination(req.query);
+    const adminId = getActorId(req);
+    if (!adminId) return res.status(401).json({ error: 'Authentication required' });
+    if (!pagination) return res.status(400).json({ error: 'page must be >= 1 and limit must be between 1 and 100' });
 
-    // Check permissions
-    if (userRole !== 'super_admin') {
-      const isMember = await db
-        .select()
-        .from(daoMemberships)
-        .where(and(
-          eq(daoMemberships.daoId, daoId),
-          eq(daoMemberships.userId, adminId)
-        ));
-
-      if (!isMember.length) {
-        return res.status(403).json({ error: 'Access denied' });
-      }
-    }
-
-    const offset = (parseInt(page as string) - 1) * parseInt(limit as string);
+    const { page, limit, offset } = pagination;
 
     // Get high-severity audit logs
-    let whereClause = like(auditLogs.endpoint, `%${daoId}%`);
+    let whereClause = or(eq(auditLogs.resourceId, daoId), like(auditLogs.endpoint, `%${daoId}%`));
+    if (!whereClause) return res.status(500).json({ error: 'Failed to build audit filter' });
     
     if (severity !== 'all') {
-      whereClause = and(whereClause, eq(auditLogs.severity, severity as any));
+      if (!['low', 'medium', 'high', 'critical'].includes(String(severity))) {
+        return res.status(400).json({ error: 'Invalid severity' });
+      }
+      const severityClause = and(whereClause, eq(auditLogs.severity, String(severity)));
+      if (severityClause) whereClause = severityClause;
     }
 
     const logs = await db
@@ -502,14 +382,19 @@ router.get('/daos/:daoId/risk/audit-trail', async (req: Request, res: Response) 
       .from(auditLogs)
       .where(whereClause)
       .orderBy(desc(auditLogs.timestamp))
-      .limit(parseInt(limit as string))
+      .limit(limit)
       .offset(offset);
 
+    const [{ count: total }] = await db.select({ count: sql<number>`count(*)` }).from(auditLogs).where(whereClause);
+
+    await auditRiskAccess(req, AuditEventType.ADMIN_RISK_AUDIT_TRAIL_ACCESSED, daoId);
     res.json({
       logs,
       pagination: {
-        page: parseInt(page as string),
-        limit: parseInt(limit as string),
+        page,
+        limit,
+        total: Number(total || 0),
+        hasMore: offset + logs.length < Number(total || 0),
       }
     });
   } catch (error) {
@@ -523,42 +408,20 @@ router.post('/daos/:daoId/risk/assessment', async (req: Request, res: Response) 
   try {
     const { daoId } = req.params;
     const { assessment, notes } = req.body;
-    const adminId = (req.user as any).id;
-    const userRole = (req.user as any).roles;
+    const adminId = getActorId(req);
+    if (!adminId) return res.status(401).json({ error: 'Authentication required' });
+    const actorId = adminId;
+    if ((typeof assessment !== 'string' && (typeof assessment !== 'object' || assessment === null)) || typeof notes !== 'undefined' && (typeof notes !== 'string' || notes.length > 5000)) {
+      return res.status(400).json({ error: 'Assessment must be an object or string and notes must be at most 5000 characters' });
+    }
+    const assessmentId = crypto.randomUUID();
 
     // Check permissions - DAO Admin only
-    if (userRole !== 'super_admin') {
-      const isDaoAdmin = await db
-        .select()
-        .from(daoMemberships)
-        .where(and(
-          eq(daoMemberships.daoId, daoId),
-          eq(daoMemberships.userId, adminId),
-          eq(daoMemberships.role, 'admin')
-        ));
-
-      if (!isDaoAdmin.length) {
-        return res.status(403).json({ error: 'Only DAO admin can create assessments' });
-      }
-    }
-
     // Log audit event
-    await logAuditEvent({
-      eventType: AuditEventType.RISK_ASSESSMENT_CREATED,
-      userId: adminId,
-      action: 'Manual risk assessment created',
-      severity: 'medium',
-      endpoint: `/api/admin/daos/:daoId/risk/assessment`,
-      method: 'POST',
-      ipAddress: req.ip,
-      userAgent: req.get('user-agent'),
-      statusCode: 201,
-      metadata: {
-        daoId,
-        assessment,
-        notes,
-      }
-    }).catch(err => console.error('Audit log failed:', err));
+    await logConsolidatedAuditEvent({ actorId, actorType: 'admin', actorRole: req.userRole || 'admin',
+      actionType: AuditEventType.RISK_ASSESSMENT_CREATED, actionCategory: 'security', targetType: 'risk_assessment', targetId: daoId,
+      endpoint: req.originalUrl, ipAddress: req.ip, userAgent: req.get('user-agent'), result: 'success', severity: 'medium',
+      metadata: { assessment, notes, assessmentId, persistedAs: 'audit_event' } });
 
     logger.info('Risk assessment created', { daoId });
 
@@ -566,12 +429,13 @@ router.post('/daos/:daoId/risk/assessment', async (req: Request, res: Response) 
       success: true,
       message: 'Risk assessment recorded',
       assessment: {
-        id: `assessment_${Date.now()}`,
+        id: assessmentId,
         daoId,
         createdBy: adminId,
         assessment,
         notes,
         createdAt: new Date(),
+        persistedAs: 'audit_event',
       }
     });
   } catch (error) {

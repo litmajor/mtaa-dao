@@ -1,4 +1,6 @@
-import { Router, Request, Response } from 'express';
+import { Router } from 'express';
+import type { Request, Response } from 'express';
+import { isAuthenticated } from '../auth';
 import { volatilityMetricsService } from '../services/volatilityMetricsService';
 import { marketAnalyticsService } from '../services/marketAnalyticsService';
 import { smartRetryLogicService } from '../services/smartRetryLogicService';
@@ -248,24 +250,30 @@ router.get('/microstructure/:symbol', async (req: Request, res: Response) => {
  * POST /api/v1/execution/smart-retry
  * Execute order with smart retry logic and partial fill handling
  */
-router.post('/smart-retry', async (req: Request, res: Response) => {
+router.post('/smart-retry', isAuthenticated, async (req: Request, res: Response) => {
   try {
     const { symbol, side, amount, expectedPrice, exchange, strategy } = req.body;
+    const normalizedSymbol = typeof symbol === 'string' ? symbol.trim() : '';
+    const normalizedSide = typeof side === 'string' ? side.trim().toLowerCase() : '';
+    const numericAmount = Number(amount);
+    const numericExpectedPrice = Number(expectedPrice);
+    const validSide: 'buy' | 'sell' | undefined =
+      normalizedSide === 'buy' || normalizedSide === 'sell' ? normalizedSide : undefined;
 
-    if (!symbol || !side || !amount || !expectedPrice) {
+    if (!normalizedSymbol || !validSide || !Number.isFinite(numericAmount) || numericAmount <= 0 || !Number.isFinite(numericExpectedPrice) || numericExpectedPrice <= 0) {
       return res.status(400).json(
         ApiResponse.error(
-          'Missing required fields: symbol, side, amount, expectedPrice',
+          'Invalid input: symbol, side (buy/sell), amount, and expectedPrice must be positive numbers',
           'INVALID_INPUT'
         )
       );
     }
 
     const result = await smartRetryLogicService.executeWithSmartRetry(
-      symbol,
-      side,
-      amount,
-      expectedPrice,
+      normalizedSymbol,
+      validSide,
+      numericAmount,
+      numericExpectedPrice,
       exchange || 'binance',
       strategy
     );
@@ -340,12 +348,13 @@ router.get('/retry-history/:orderId', async (req: Request, res: Response) => {
  * POST /api/v1/execution/complete-order/:orderId
  * Manually complete or abandon an order
  */
-router.post('/complete-order/:orderId', async (req: Request, res: Response) => {
+router.post('/complete-order/:orderId', isAuthenticated, async (req: Request, res: Response) => {
   try {
     const { orderId } = req.params;
     const { status, reason } = req.body;
+    const normalizedStatus = typeof status === 'string' ? status.trim().toLowerCase() : '';
 
-    if (!status || !['completed', 'abandoned'].includes(status)) {
+    if (!normalizedStatus || !['completed', 'abandoned'].includes(normalizedStatus)) {
       return res.status(400).json(
         ApiResponse.error('Invalid status. Must be "completed" or "abandoned"', 'INVALID_STATUS')
       );
@@ -353,7 +362,7 @@ router.post('/complete-order/:orderId', async (req: Request, res: Response) => {
 
     const result = await smartRetryLogicService.completeOrder(
       orderId,
-      status as 'completed' | 'abandoned',
+      normalizedStatus as 'completed' | 'abandoned',
       reason
     );
 
@@ -456,13 +465,17 @@ router.get('/market-health/:symbol', async (req: Request, res: Response) => {
     const { symbol } = req.params;
     const exchange = (req.query.exchange || 'binance') as string;
 
-    // Fetch all analytics in parallel
-    const [volatility, depth, spread, microstructure] = await Promise.all([
+    const [volatilityResult, depthResult, spreadResult, microstructureResult] = await Promise.allSettled([
       volatilityMetricsService.calculateVolatility(symbol, '24h', exchange),
       marketAnalyticsService.analyzeDepthTrends(symbol, exchange),
       marketAnalyticsService.analyzeSpreadTrends(symbol, exchange),
       marketAnalyticsService.analyzeMarketMicrostructure(symbol, exchange)
     ]);
+
+    const volatility: any = volatilityResult.status === 'fulfilled' && volatilityResult.value ? volatilityResult.value : { volatilityIndex: 50, riskLevel: 'moderate' };
+    const depth: any = depthResult.status === 'fulfilled' && depthResult.value ? depthResult.value : { liquidityHealth: 50 };
+    const spread: any = spreadResult.status === 'fulfilled' && spreadResult.value ? spreadResult.value : { currentSpread: 0.1 };
+    const microstructure: any = microstructureResult.status === 'fulfilled' && microstructureResult.value ? microstructureResult.value : { microstructureQuality: 'fair' };
 
     const healthScore =
       (100 - volatility.volatilityIndex) * 0.3 +
@@ -488,7 +501,7 @@ router.get('/market-health/:symbol', async (req: Request, res: Response) => {
         healthScore > 60 ? 'Good' :
         healthScore > 40 ? 'Fair' :
         'Poor',
-      recommendations: this.generateMarketHealthRecommendations(
+      recommendations: generateMarketHealthRecommendations(
         volatility,
         depth,
         spread,

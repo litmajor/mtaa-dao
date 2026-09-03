@@ -3,25 +3,47 @@
  * Exposes gateway functionality via REST endpoints
  */
 
-import { Router, Request, Response } from 'express';
+import { Router } from 'express';
+import type { Request, Response, NextFunction } from 'express';
 import { GatewayService } from './gateway';
-import { GatewayQuoteRequest } from './types';
+import type { GatewayQuoteRequest } from './types';
 import { authenticateToken } from '../../middleware/auth';
 import { rateLimitPerUser } from '../../middleware/rateLimit';
 
 const gatewayRateLimiter = rateLimitPerUser(
   'gateway-data-plane',
   Number(process.env.GATEWAY_RATE_LIMIT_MAX || 60),
-  process.env.GATEWAY_RATE_LIMIT_WINDOW || '1min',
+  process.env.GATEWAY_RATE_LIMIT_WINDOW || '1min'
 );
+
+/**
+ * Helper to safely parse integer route parameters
+ */
+function parseChainId(param: string): number | null {
+  const parsed = parseInt(param, 10);
+  return Number.isNaN(parsed) || parsed <= 0 ? null : parsed;
+}
+
+/**
+ * Helper to handle errors without leaking internal stack or system details
+ */
+function handleError(res: Response, error: unknown, fallbackMessage: string): Response {
+  // In production, log error details to your logging service (e.g., Pino/Winston)
+  // console.error(error);
+  return res.status(500).json({
+    success: false,
+    error: fallbackMessage,
+  });
+}
 
 export function createGatewayRoutes(gateway: GatewayService): Router {
   const router = Router();
 
+  // Apply optional global auth and rate limiting
   if (process.env.GATEWAY_REQUIRE_AUTH !== 'false') {
-    router.use(authenticateToken as any);
+    router.use(authenticateToken as unknown as (req: Request, res: Response, next: NextFunction) => void);
   }
-  router.use(gatewayRateLimiter as any);
+  router.use(gatewayRateLimiter as unknown as (req: Request, res: Response, next: NextFunction) => void);
 
   // ============================================================================
   // PRICE ENDPOINTS
@@ -29,73 +51,77 @@ export function createGatewayRoutes(gateway: GatewayService): Router {
 
   /**
    * GET /api/gateway/price/:token/:chainId
-   * Get current token price
    */
   router.get('/price/:token/:chainId', async (req: Request, res: Response) => {
     try {
-      const { token, chainId } = req.params;
-      const price = await gateway.getTokenPrice(token, parseInt(chainId));
+      const { token, chainId: rawChainId } = req.params;
+      const chainId = parseChainId(rawChainId);
 
-      if (!price) {
-        return res.status(404).json({ error: 'Price not found' });
+      if (!chainId || !token) {
+        return res.status(400).json({ success: false, error: 'Invalid token or chainId parameter' });
       }
 
-      res.json({
+      const price = await gateway.getTokenPrice(token, chainId);
+
+      if (!price) {
+        return res.status(404).json({ success: false, error: 'Price not found' });
+      }
+
+      return res.json({
         success: true,
         data: price,
       });
     } catch (error) {
-      res.status(500).json({ 
-        error: error instanceof Error ? error.message : 'Failed to get price' 
-      });
+      return handleError(res, error, 'Failed to get price');
     }
   });
 
   /**
-   * GET /api/gateway/prices
+   * POST /api/gateway/prices
    * Get prices for multiple tokens
    */
   router.post('/prices', async (req: Request, res: Response) => {
     try {
       const { tokens, chainId } = req.body;
 
-      if (!Array.isArray(tokens) || !chainId) {
-        return res.status(400).json({ error: 'tokens and chainId required' });
+      if (!Array.isArray(tokens) || tokens.length === 0 || typeof chainId !== 'number') {
+        return res.status(400).json({ success: false, error: 'Valid tokens array and numeric chainId are required' });
       }
 
       const prices = await gateway.getPricesForTokens(tokens, chainId);
-      res.json({
+      return res.json({
         success: true,
         data: prices,
       });
     } catch (error) {
-      res.status(500).json({ 
-        error: error instanceof Error ? error.message : 'Failed to get prices' 
-      });
+      return handleError(res, error, 'Failed to get prices');
     }
   });
 
   /**
    * GET /api/gateway/price/:token/:chainId/aggregated
-   * Get aggregated price from multiple sources
    */
   router.get('/price/:token/:chainId/aggregated', async (req: Request, res: Response) => {
     try {
-      const { token, chainId } = req.params;
-      const price = await gateway.getAggregatedPrice(token, parseInt(chainId));
+      const { token, chainId: rawChainId } = req.params;
+      const chainId = parseChainId(rawChainId);
 
-      if (!price) {
-        return res.status(404).json({ error: 'Price not found' });
+      if (!chainId || !token) {
+        return res.status(400).json({ success: false, error: 'Invalid token or chainId parameter' });
       }
 
-      res.json({
+      const price = await gateway.getAggregatedPrice(token, chainId);
+
+      if (!price) {
+        return res.status(404).json({ success: false, error: 'Price not found' });
+      }
+
+      return res.json({
         success: true,
         data: price,
       });
     } catch (error) {
-      res.status(500).json({ 
-        error: error instanceof Error ? error.message : 'Failed to get aggregated price' 
-      });
+      return handleError(res, error, 'Failed to get aggregated price');
     }
   });
 
@@ -105,65 +131,70 @@ export function createGatewayRoutes(gateway: GatewayService): Router {
 
   /**
    * GET /api/gateway/liquidity/:tokenA/:tokenB/:chainId
-   * Get liquidity info for token pair
    */
   router.get('/liquidity/:tokenA/:tokenB/:chainId', async (req: Request, res: Response) => {
     try {
-      const { tokenA, tokenB, chainId } = req.params;
-      const liquidity = await gateway.getLiquidityInfo(tokenA, tokenB, parseInt(chainId));
+      const { tokenA, tokenB, chainId: rawChainId } = req.params;
+      const chainId = parseChainId(rawChainId);
 
-      if (!liquidity) {
-        return res.status(404).json({ error: 'Liquidity info not found' });
+      if (!chainId || !tokenA || !tokenB) {
+        return res.status(400).json({ success: false, error: 'Invalid tokens or chainId parameter' });
       }
 
-      res.json({
+      const liquidity = await gateway.getLiquidityInfo(tokenA, tokenB, chainId);
+
+      if (!liquidity) {
+        return res.status(404).json({ success: false, error: 'Liquidity info not found' });
+      }
+
+      return res.json({
         success: true,
         data: liquidity,
       });
     } catch (error) {
-      res.status(500).json({ 
-        error: error instanceof Error ? error.message : 'Failed to get liquidity' 
-      });
+      return handleError(res, error, 'Failed to get liquidity');
     }
   });
 
   /**
    * POST /api/gateway/liquidity/depth-analysis
-   * Analyze liquidity depth for different amounts
    */
   router.post('/liquidity/depth-analysis', async (req: Request, res: Response) => {
     try {
       const { tokenA, tokenB, chainId, amounts } = req.body;
 
+      if (!tokenA || !tokenB || typeof chainId !== 'number' || !Array.isArray(amounts)) {
+        return res.status(400).json({ success: false, error: 'Invalid parameters for depth analysis' });
+      }
+
       const analysis = await gateway.analyzeLiquidityDepth(tokenA, tokenB, chainId, amounts);
-      res.json({
+      return res.json({
         success: true,
         data: analysis,
       });
     } catch (error) {
-      res.status(500).json({ 
-        error: error instanceof Error ? error.message : 'Failed to analyze liquidity' 
-      });
+      return handleError(res, error, 'Failed to analyze liquidity');
     }
   });
 
   /**
    * POST /api/gateway/liquidity/health-check
-   * Check if liquidity is healthy for operation
    */
   router.post('/liquidity/health-check', async (req: Request, res: Response) => {
     try {
       const { tokenA, tokenB, chainId, minLiquidity } = req.body;
 
+      if (!tokenA || !tokenB || typeof chainId !== 'number') {
+        return res.status(400).json({ success: false, error: 'Invalid parameters for liquidity health check' });
+      }
+
       const health = await gateway.checkLiquidityHealth(tokenA, tokenB, chainId, minLiquidity);
-      res.json({
+      return res.json({
         success: true,
         data: health,
       });
     } catch (error) {
-      res.status(500).json({ 
-        error: error instanceof Error ? error.message : 'Failed to check liquidity health' 
-      });
+      return handleError(res, error, 'Failed to check liquidity health');
     }
   });
 
@@ -173,35 +204,41 @@ export function createGatewayRoutes(gateway: GatewayService): Router {
 
   /**
    * GET /api/gateway/gas/:chainId
-   * Get gas prices for chain
    */
   router.get('/gas/:chainId', async (req: Request, res: Response) => {
     try {
-      const { chainId } = req.params;
-      const gasPrices = await gateway.getGasPrices(parseInt(chainId));
+      const { chainId: rawChainId } = req.params;
+      const chainId = parseChainId(rawChainId);
 
-      if (!gasPrices) {
-        return res.status(404).json({ error: 'Gas prices not found' });
+      if (!chainId) {
+        return res.status(400).json({ success: false, error: 'Invalid chainId parameter' });
       }
 
-      res.json({
+      const gasPrices = await gateway.getGasPrices(chainId);
+
+      if (!gasPrices) {
+        return res.status(404).json({ success: false, error: 'Gas prices not found' });
+      }
+
+      return res.json({
         success: true,
         data: gasPrices,
       });
     } catch (error) {
-      res.status(500).json({ 
-        error: error instanceof Error ? error.message : 'Failed to get gas prices' 
-      });
+      return handleError(res, error, 'Failed to get gas prices');
     }
   });
 
   /**
    * POST /api/gateway/gas/estimate
-   * Estimate gas cost for transaction
    */
   router.post('/gas/estimate', async (req: Request, res: Response) => {
     try {
       const { chainId, gasLimit, speedLevel } = req.body;
+
+      if (typeof chainId !== 'number' || !gasLimit) {
+        return res.status(400).json({ success: false, error: 'chainId and gasLimit required' });
+      }
 
       const estimate = await gateway.getEstimatedGasCost(
         chainId,
@@ -210,37 +247,36 @@ export function createGatewayRoutes(gateway: GatewayService): Router {
       );
 
       if (!estimate) {
-        return res.status(404).json({ error: 'Cannot estimate gas' });
+        return res.status(404).json({ success: false, error: 'Cannot estimate gas' });
       }
 
-      res.json({
+      return res.json({
         success: true,
         data: estimate,
       });
     } catch (error) {
-      res.status(500).json({ 
-        error: error instanceof Error ? error.message : 'Failed to estimate gas' 
-      });
+      return handleError(res, error, 'Failed to estimate gas');
     }
   });
 
   /**
    * POST /api/gateway/gas/compare
-   * Compare gas costs across chains
    */
   router.post('/gas/compare', async (req: Request, res: Response) => {
     try {
       const { chainIds, gasLimit } = req.body;
 
+      if (!Array.isArray(chainIds) || !gasLimit) {
+        return res.status(400).json({ success: false, error: 'chainIds array and gasLimit required' });
+      }
+
       const comparison = await gateway.compareGasAcrossChains(chainIds, gasLimit);
-      res.json({
+      return res.json({
         success: true,
         data: comparison,
       });
     } catch (error) {
-      res.status(500).json({ 
-        error: error instanceof Error ? error.message : 'Failed to compare gas' 
-      });
+      return handleError(res, error, 'Failed to compare gas');
     }
   });
 
@@ -250,52 +286,56 @@ export function createGatewayRoutes(gateway: GatewayService): Router {
 
   /**
    * GET /api/gateway/volume/:pair/:chainId
-   * Get trading volume for pair
    */
   router.get('/volume/:pair/:chainId', async (req: Request, res: Response) => {
     try {
-      const { pair, chainId } = req.params;
-      const timeframe = req.query.timeframe as '24h' | '7d' | 'monthly' || '24h';
+      const { pair, chainId: rawChainId } = req.params;
+      const chainId = parseChainId(rawChainId);
 
-      const volume = await gateway.getVolumeData(pair, parseInt(chainId), timeframe);
-
-      if (!volume) {
-        return res.status(404).json({ error: 'Volume data not found' });
+      if (!chainId || !pair) {
+        return res.status(400).json({ success: false, error: 'Invalid pair or chainId parameter' });
       }
 
-      res.json({
+      const timeframe = (req.query.timeframe as '24h' | '7d' | 'monthly') || '24h';
+      const volume = await gateway.getVolumeData(pair, chainId, timeframe);
+
+      if (!volume) {
+        return res.status(404).json({ success: false, error: 'Volume data not found' });
+      }
+
+      return res.json({
         success: true,
         data: volume,
       });
     } catch (error) {
-      res.status(500).json({ 
-        error: error instanceof Error ? error.message : 'Failed to get volume' 
-      });
+      return handleError(res, error, 'Failed to get volume');
     }
   });
 
   /**
    * GET /api/gateway/market-activity/:chainId
-   * Analyze market activity on chain
    */
   router.get('/market-activity/:chainId', async (req: Request, res: Response) => {
     try {
-      const { chainId } = req.params;
+      const { chainId: rawChainId } = req.params;
+      const chainId = parseChainId(rawChainId);
 
-      const activity = await gateway.analyzeMarketActivity(parseInt(chainId));
-
-      if (!activity) {
-        return res.status(404).json({ error: 'Market activity not found' });
+      if (!chainId) {
+        return res.status(400).json({ success: false, error: 'Invalid chainId parameter' });
       }
 
-      res.json({
+      const activity = await gateway.analyzeMarketActivity(chainId);
+
+      if (!activity) {
+        return res.status(404).json({ success: false, error: 'Market activity not found' });
+      }
+
+      return res.json({
         success: true,
         data: activity,
       });
     } catch (error) {
-      res.status(500).json({ 
-        error: error instanceof Error ? error.message : 'Failed to analyze market activity' 
-      });
+      return handleError(res, error, 'Failed to analyze market activity');
     }
   });
 
@@ -305,51 +345,53 @@ export function createGatewayRoutes(gateway: GatewayService): Router {
 
   /**
    * POST /api/gateway/quote
-   * Get optimal route quote
    */
   router.post('/quote', async (req: Request, res: Response) => {
     try {
       const request: GatewayQuoteRequest = req.body;
 
+      if (!request || !request.tokenIn || !request.tokenOut) {
+        return res.status(400).json({ success: false, error: 'Invalid quote request payload' });
+      }
+
       const response = await gateway.getOptimalRoute(request);
 
       if (!response) {
-        return res.status(404).json({ error: 'No route found' });
+        return res.status(404).json({ success: false, error: 'No route found' });
       }
 
-      res.json({
+      return res.json({
         success: true,
         data: response,
       });
     } catch (error) {
-      res.status(500).json({ 
-        error: error instanceof Error ? error.message : 'Failed to get quote' 
-      });
+      return handleError(res, error, 'Failed to get quote');
     }
   });
 
   /**
    * POST /api/gateway/recommendation
-   * Get route recommendation
    */
   router.post('/recommendation', async (req: Request, res: Response) => {
     try {
       const request: GatewayQuoteRequest = req.body;
 
+      if (!request || !request.tokenIn || !request.tokenOut) {
+        return res.status(400).json({ success: false, error: 'Invalid route recommendation payload' });
+      }
+
       const recommendation = await gateway.getRouteRecommendation(request);
 
       if (!recommendation) {
-        return res.status(404).json({ error: 'No recommendation available' });
+        return res.status(404).json({ success: false, error: 'No recommendation available' });
       }
 
-      res.json({
+      return res.json({
         success: true,
         data: recommendation,
       });
     } catch (error) {
-      res.status(500).json({ 
-        error: error instanceof Error ? error.message : 'Failed to get recommendation' 
-      });
+      return handleError(res, error, 'Failed to get recommendation');
     }
   });
 
@@ -359,41 +401,43 @@ export function createGatewayRoutes(gateway: GatewayService): Router {
 
   /**
    * POST /api/gateway/validate-route
-   * Validate route for security
    */
   router.post('/validate-route', async (req: Request, res: Response) => {
     try {
       const route = req.body;
 
+      if (!route || typeof route !== 'object') {
+        return res.status(400).json({ success: false, error: 'Route payload required' });
+      }
+
       const audit = await gateway.validateRoute(route);
-      res.json({
+      return res.json({
         success: true,
         data: audit,
       });
     } catch (error) {
-      res.status(500).json({ 
-        error: error instanceof Error ? error.message : 'Failed to validate route' 
-      });
+      return handleError(res, error, 'Failed to validate route');
     }
   });
 
   /**
    * POST /api/gateway/validate-operation
-   * Validate operation parameters
    */
   router.post('/validate-operation', async (req: Request, res: Response) => {
     try {
       const { operation, params } = req.body;
 
+      if (!operation || !params) {
+        return res.status(400).json({ success: false, error: 'Operation and params are required' });
+      }
+
       const validation = await gateway.validateOperation(operation, params);
-      res.json({
+      return res.json({
         success: true,
         data: validation,
       });
     } catch (error) {
-      res.status(500).json({ 
-        error: error instanceof Error ? error.message : 'Failed to validate operation' 
-      });
+      return handleError(res, error, 'Failed to validate operation');
     }
   });
 
@@ -403,19 +447,16 @@ export function createGatewayRoutes(gateway: GatewayService): Router {
 
   /**
    * GET /api/gateway/market-snapshot
-   * Get current market snapshot
    */
-  router.get('/market-snapshot', async (req: Request, res: Response) => {
+  router.get('/market-snapshot', async (_req: Request, res: Response) => {
     try {
       const snapshot = await gateway.getMarketSnapshot();
-      res.json({
+      return res.json({
         success: true,
         data: snapshot,
       });
     } catch (error) {
-      res.status(500).json({ 
-        error: error instanceof Error ? error.message : 'Failed to get market snapshot' 
-      });
+      return handleError(res, error, 'Failed to get market snapshot');
     }
   });
 
@@ -425,19 +466,16 @@ export function createGatewayRoutes(gateway: GatewayService): Router {
 
   /**
    * GET /api/gateway/health
-   * Get gateway health status
    */
-  router.get('/health', async (req: Request, res: Response) => {
+  router.get('/health', async (_req: Request, res: Response) => {
     try {
       const health = await gateway.getHealthStatus();
-      res.json({
+      return res.json({
         success: true,
         data: health,
       });
     } catch (error) {
-      res.status(500).json({ 
-        error: error instanceof Error ? error.message : 'Failed to get health status' 
-      });
+      return handleError(res, error, 'Failed to get health status');
     }
   });
 

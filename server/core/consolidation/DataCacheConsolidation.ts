@@ -17,6 +17,7 @@
 
 import { Logger } from '../../utils/logger';
 import { redis } from '../../services/redis';
+import { gzipSync, gunzipSync } from 'node:zlib';
 
 export type CacheLevel = 'memory' | 'redis' | 'both';
 export type CacheInvalidationStrategy = 'ttl' | 'event-driven' | 'lru' | 'manual';
@@ -117,7 +118,10 @@ export class DataCache<T = any> {
         try {
           const redisValue = await redis.get(this.redisKeyPrefix + fullKey);
           if (redisValue) {
-            const value = this.config.compress ? JSON.parse(redisValue) : JSON.parse(redisValue);
+            const serialized = this.config.compress
+              ? gunzipSync(Buffer.from(redisValue, 'base64')).toString('utf8')
+              : redisValue;
+            const value = JSON.parse(serialized);
             
             // Populate memory cache if hybrid
             if (this.config.level === 'both') {
@@ -131,7 +135,7 @@ export class DataCache<T = any> {
             return value;
           }
         } catch (error) {
-          this.logger.warn(`[DataCache] Redis get failed for ${key}:`, error);
+          this.logger.warn(`[DataCache] Redis get failed for ${key}:`, { error: error instanceof Error ? error.message : String(error) });
           // Fall through to miss
         }
       }
@@ -162,14 +166,17 @@ export class DataCache<T = any> {
       if (this.config.level !== 'memory') {
         try {
           const serialized = JSON.stringify(value);
+          const redisPayload = this.config.compress
+            ? gzipSync(serialized).toString('base64')
+            : serialized;
           const ttlSeconds = Math.ceil(this.config.ttl / 1000);
           await redis.setex(
             this.redisKeyPrefix + fullKey,
             ttlSeconds,
-            serialized
+            redisPayload
           );
         } catch (error) {
-          this.logger.warn(`[DataCache] Redis set failed for ${key}:`, error);
+          this.logger.warn(`[DataCache] Redis set failed for ${key}:`, { error: error instanceof Error ? error.message : String(error) });
         }
       }
 
@@ -206,7 +213,7 @@ export class DataCache<T = any> {
         try {
           await Promise.resolve(this.config.onEvict(key, entry.value));
         } catch (error) {
-          this.logger.warn(`[DataCache] onEvict callback failed:`, error);
+          this.logger.warn(`[DataCache] onEvict callback failed:`, { error: error instanceof Error ? error.message : String(error) });
         }
       }
     }
@@ -223,7 +230,7 @@ export class DataCache<T = any> {
       try {
         await redis.del(this.redisKeyPrefix + fullKey);
       } catch (error) {
-        this.logger.warn(`[DataCache] Redis delete failed for ${key}:`, error);
+        this.logger.warn(`[DataCache] Redis delete failed for ${key}:`, { error: error instanceof Error ? error.message : String(error) });
       }
     }
 
@@ -250,7 +257,7 @@ export class DataCache<T = any> {
           await redis.delMany(keys);
         }
       } catch (error) {
-        this.logger.warn(`[DataCache] Redis clear failed:`, error);
+        this.logger.warn(`[DataCache] Redis clear failed:`, { error: error instanceof Error ? error.message : String(error) });
       }
     }
 
@@ -326,7 +333,7 @@ export class DataCache<T = any> {
           count += keys.length;
         }
       } catch (error) {
-        this.logger.warn(`[DataCache] Redis pattern invalidation failed:`, error);
+        this.logger.warn(`[DataCache] Redis pattern invalidation failed:`, { error: error instanceof Error ? error.message : String(error) });
       }
     }
 
@@ -433,7 +440,7 @@ export class DataCache<T = any> {
 
       if (this.config.onEvict) {
         Promise.resolve(this.config.onEvict(victimKey, entry.value)).catch(error => {
-          this.logger.warn(`[DataCache] onEvict callback failed:`, error);
+          this.logger.warn(`[DataCache] onEvict callback failed:`, { error: error instanceof Error ? error.message : String(error) });
         });
       }
 

@@ -7,7 +7,7 @@
 import { describe, it, expect, beforeAll, afterAll, vi } from 'vitest';
 import { initializeGatewayService, getGatewayService, GatewayService } from '../services/gateway';
 import { createGatewayRoutes } from '../services/gateway/api';
-import { Express } from 'express';
+import type { Express } from 'express';
 import express from 'express';
 import request from 'supertest';
 import jwt from 'jsonwebtoken';

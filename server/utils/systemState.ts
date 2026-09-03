@@ -36,11 +36,7 @@
 import { db } from '../db';
 import { Logger } from './logger';
 import { healthTelemetry } from './healthTelemetry';
-import { circuitBreakerRegistry } from './circuitBreaker';
-// ⚠️ TODO: Use circuitBreakerRegistry from consolidation instead (Phase 5)
-// Old:  import { circuitBreakerRegistry } from './circuitBreaker'
-// New:  import { circuitBreakerRegistry } from '../core/consolidation/CircuitBreakerConsolidation'
-// See deprecation notice in circuitBreaker.ts for migration guide
+import { circuitBreakerRegistry } from '../core/consolidation/CircuitBreakerConsolidation';
 import { sql } from 'drizzle-orm';
 
 export interface SystemStateSnapshot {
@@ -422,8 +418,7 @@ export class SystemStateService {
    * Get circuit breaker statuses
    */
   private getCircuitBreakerStatuses(): CircuitBreakerStatus[] {
-    const allStatuses = circuitBreakerRegistry.getAllStatuses();
-    return Object.values(allStatuses).map((status) => ({
+    return circuitBreakerRegistry.getAllMetrics().map((status) => ({
       name: status.name,
       state: status.state,
       isHealthy: status.state === 'CLOSED',

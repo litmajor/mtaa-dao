@@ -7,16 +7,17 @@
  * These are CRITICAL system-state mutating operations
  */
 
-import { Router, Request, Response, NextFunction } from 'express';
+import { Router } from 'express';
+import type { Request, Response, NextFunction } from 'express';
 import { getOperationalFramework, initializeOperationalFramework } from '../../services/operational/index';
 import { getDiscovery } from '../../services/operational/discovery/discovery';
 import { getAuditLogger } from '../../services/operational/audit/logger';
 import { getVault } from '../../services/operational/vault/manager';
 import { getRemediation } from '../../services/operational/remediation/executor';
-import { OperationalFrameworkConfig } from '../../services/operational/types';
+import type { OperationalFrameworkConfig } from '../../services/operational/types';
 import { requireRole } from '../../middleware/rbac';
 import { createRateLimiter } from '../../middleware/rateLimiting';
-import { auditConsolidated } from '../../services/auditConsolidated';
+import { auditConsolidated, logConsolidatedAuditEvent } from '../../services/auditConsolidated';
 import { Logger } from '../../utils/logger';
 
 const router = Router();
@@ -71,15 +72,17 @@ async function auditOperationalAction(
   const userId = (req as any).user?.id || 'unknown';
   
   try {
-    await auditConsolidated.logConsolidatedAuditEvent({
-      userId,
-      action,
-      resourceId,
-      status,
-      details: {
+    await logConsolidatedAuditEvent({
+      actorId: String(userId),
+      actionType: action,
+      targetType: 'operational_framework',
+      targetId: resourceId,
+      result: status === 'success' ? 'success' : status === 'denied' ? 'failed' : 'partial',
+      metadata: {
         ...details,
         ip: req.ip,
-        userAgent: req.get('user-agent')
+        userAgent: req.get('user-agent'),
+        status,
       },
       severity: status === 'denied' ? 'high' : 'medium'
     });

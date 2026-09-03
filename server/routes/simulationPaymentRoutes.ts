@@ -1,17 +1,12 @@
 /**
  * Payment Flow Simulation Routes
  * 
- * Endpoints for simulating destructive payment actions before execution
- * Each endpoint accepts simulation parameters and returns before/after state
- * 
- * Integration:
- * - Simulation result populates ReversibleAction.beforeState/afterState
- * - User reviews simulation before confirming execution
- * - On confirmation, ReversibilityService.createReversibleAction() called
- * - Action enters PENDING_CONFIRMATION state with simulation snapshot
+ * Endpoints for simulating destructive payment actions before execution.
+ * Each endpoint accepts simulation parameters and returns before/after state.
  */
 
-import { Router, Request, Response } from 'express';
+import { Router } from 'express';
+import type { Request, Response } from 'express';
 import {
   PaymentDepositSimulator,
   PaymentWithdrawalSimulator,
@@ -19,65 +14,60 @@ import {
   RecurringPaymentSetupSimulator,
   PaymentSettlementSimulator,
 } from '../services/paymentFlowSimulator';
-import { ReversibilityService } from '../services/reversibilityService';
-import { SimulationStatus } from '../services/simulationFramework';
 
 const router = Router();
+
 const depositSimulator = new PaymentDepositSimulator();
 const withdrawalSimulator = new PaymentWithdrawalSimulator();
 const p2pTransferSimulator = new PaymentP2PTransferSimulator();
 const recurringSimulator = new RecurringPaymentSetupSimulator();
 const settlementSimulator = new PaymentSettlementSimulator();
 
-// Assuming these are available from your project
-const reversibilityService = new ReversibilityService();
+// Helper to convert hours to Date expiry
+const getExpiryDate = (hours: number): Date => new Date(Date.now() + hours * 60 * 60 * 1000);
+
+/**
+ * Helper to ensure strictly authenticated user context
+ */
+const getAuthUserId = (req: Request, res: Response): string | null => {
+  if (!req.user?.id) {
+    res.status(401).json({ error: 'Unauthorized context' });
+    return null;
+  }
+  return req.user.id;
+};
 
 /**
  * POST /api/simulation/payment-deposit
- * 
- * Simulate a deposit of funds into the platform
- * 
- * Body params:
- * - amount: number
- * - currency: 'USD' | 'EUR' | 'BTC' | 'ETH' | 'MTAA'
- * - paymentMethod: 'bank_transfer' | 'card' | 'wallet'
- * - exchangeRate?: number (default: 1.0)
- * 
- * Response:
- * - status: 'SUCCESS' | 'WARNING' | 'ERROR'
- * - beforeState: Platform state before deposit
- * - afterState: Platform state after deposit
- * - delta: Changes
- * - riskLevel: 'LOW' | 'MEDIUM' | 'HIGH' | 'CRITICAL'
- * - reversibilityWindow: Grace period options
- * - warnings: Any warnings about this deposit
  */
 router.post('/payment-deposit', async (req: Request, res: Response) => {
   try {
-    const userId = req.user?.id || req.body.userId; // From auth context or body
-    if (!userId) {
-      return res.status(401).json({ error: 'User ID required' });
-    }
+    const userId = getAuthUserId(req, res);
+    if (!userId) return;
+
+    const { amount, currency, paymentMethod, exchangeRate } = req.body;
 
     const simulationResult = await depositSimulator.simulate({
       userId,
-      ...req.body,
+      amount,
+      currency,
+      paymentMethod,
+      exchangeRate,
     });
 
-    // Add action reference if user wants to proceed
+    const gracePeriodHours = simulationResult.reversibilityWindow.recommendedGracePeriodHours;
+
     const actionInitiation = {
       actionType: 'PAYMENT_DEPOSIT',
-      severity: 'LOW', // Deposits are low risk
+      severity: 'LOW',
       reversibilityScope: {
         initiatorCanReverse: true,
         adminCanReverse: true,
         governanceCanReverse: true,
       },
-      gracePeriodHours: simulationResult.reversibilityWindow.recommendedGracePeriodHours,
-      requiresApproval: false, // Low risk = no approval needed
-      estimatedIrreversibleAt: new Date(
-        Date.now() + simulationResult.reversibilityWindow.recommendedGracePeriodHours * 60 * 60 * 1000
-      ),
+      gracePeriodHours,
+      requiresApproval: false,
+      estimatedIrreversibleAt: getExpiryDate(gracePeriodHours),
     };
 
     return res.json({
@@ -99,36 +89,27 @@ router.post('/payment-deposit', async (req: Request, res: Response) => {
 
 /**
  * POST /api/simulation/payment-withdrawal
- * 
- * Simulate withdrawal of funds from the platform
- * 
- * Body params:
- * - amount: number (in MTAA)
- * - currency: 'USD' | 'EUR' | 'BTC' | 'ETH'
- * - destination: 'bank' | 'wallet' | 'card'
- * - userBalance: number (current balance)
- * 
- * Response: Same as deposit, but with withdrawal-specific warnings
  */
 router.post('/payment-withdrawal', async (req: Request, res: Response) => {
   try {
-    const userId = req.user?.id || req.body.userId;
-    if (!userId) {
-      return res.status(401).json({ error: 'User ID required' });
-    }
+    const userId = getAuthUserId(req, res);
+    if (!userId) return;
+
+    const { amount, currency, destination } = req.body;
 
     const simulationResult = await withdrawalSimulator.simulate({
       userId,
-      ...req.body,
+      amount,
+      currency,
+      destination,
     });
 
-    // Determine if approval is needed based on simulation
     const requiresApproval = simulationResult.riskLevel === 'HIGH' || simulationResult.riskLevel === 'CRITICAL';
     const gracePeriodHours = requiresApproval ? 48 : 24;
 
     const actionInitiation = {
       actionType: 'PAYMENT_WITHDRAWAL',
-      severity: 'MEDIUM', // Withdrawals are riskier than deposits
+      severity: 'MEDIUM',
       reversibilityScope: {
         initiatorCanReverse: true,
         adminCanReverse: true,
@@ -136,7 +117,7 @@ router.post('/payment-withdrawal', async (req: Request, res: Response) => {
       },
       gracePeriodHours,
       requiresApproval,
-      estimatedIrreversibleAt: new Date(Date.now() + gracePeriodHours * 60 * 60 * 1000),
+      estimatedIrreversibleAt: getExpiryDate(gracePeriodHours),
     };
 
     return res.json({
@@ -158,30 +139,21 @@ router.post('/payment-withdrawal', async (req: Request, res: Response) => {
 
 /**
  * POST /api/simulation/payment-p2p
- * 
- * Simulate P2P transfer between two users
- * 
- * Body params:
- * - recipientId: string
- * - amount: number (in MTAA)
- * - memo?: string
- * - userBalance: number
- * 
- * Response: Transfer simulation with impact on both accounts
  */
 router.post('/payment-p2p', async (req: Request, res: Response) => {
   try {
-    const userId = req.user?.id || req.body.userId;
-    if (!userId) {
-      return res.status(401).json({ error: 'User ID required' });
-    }
+    const userId = getAuthUserId(req, res);
+    if (!userId) return;
+
+    const { recipientId, amount, memo } = req.body;
 
     const simulationResult = await p2pTransferSimulator.simulate({
       userId,
-      ...req.body,
+      recipientId,
+      amount,
+      memo,
     });
 
-    // Check if memo suggests unregistered securities
     const hasConcerns = simulationResult.riskFactors.includes('potential-securities');
 
     const actionInitiation = {
@@ -194,7 +166,7 @@ router.post('/payment-p2p', async (req: Request, res: Response) => {
       },
       gracePeriodHours: 48,
       requiresApproval: hasConcerns,
-      estimatedIrreversibleAt: new Date(Date.now() + 48 * 60 * 60 * 1000),
+      estimatedIrreversibleAt: getExpiryDate(48),
     };
 
     return res.json({
@@ -216,33 +188,24 @@ router.post('/payment-p2p', async (req: Request, res: Response) => {
 
 /**
  * POST /api/simulation/recurring-payment-setup
- * 
- * Simulate setup of recurring/scheduled payments
- * 
- * Body params:
- * - recipientId: string
- * - amount: number (per cycle)
- * - frequency: 'weekly' | 'biweekly' | 'monthly' | 'quarterly' | 'annual'
- * - startDate: number (unix timestamp, must be future)
- * - cycles?: number (undefined = perpetual)
- * - userBalance: number
- * 
- * Response: Setup impact and projected annual burden
  */
 router.post('/recurring-payment-setup', async (req: Request, res: Response) => {
   try {
-    const userId = req.user?.id || req.body.userId;
-    if (!userId) {
-      return res.status(401).json({ error: 'User ID required' });
-    }
+    const userId = getAuthUserId(req, res);
+    if (!userId) return;
+
+    const { recipientId, amount, frequency, startDate, cycles } = req.body;
 
     const simulationResult = await recurringSimulator.simulate({
       userId,
-      ...req.body,
+      recipientId,
+      amount,
+      frequency,
+      startDate,
+      cycles,
     });
 
-    // Perpetual payments require approval
-    const isPerpetual = !req.body.cycles;
+    const isPerpetual = !cycles;
     const highBurden = simulationResult.riskFactors.includes('high-commitment');
     const requiresApproval = isPerpetual || highBurden;
 
@@ -250,13 +213,13 @@ router.post('/recurring-payment-setup', async (req: Request, res: Response) => {
       actionType: 'RECURRING_PAYMENT_SETUP',
       severity: highBurden ? 'HIGH' : 'MEDIUM',
       reversibilityScope: {
-        initiatorCanReverse: true, // Can cancel anytime
+        initiatorCanReverse: true,
         adminCanReverse: true,
         governanceCanReverse: true,
       },
       gracePeriodHours: 48,
       requiresApproval,
-      estimatedIrreversibleAt: new Date(Date.now() + 48 * 60 * 60 * 1000),
+      estimatedIrreversibleAt: getExpiryDate(48),
     };
 
     return res.json({
@@ -279,27 +242,19 @@ router.post('/recurring-payment-setup', async (req: Request, res: Response) => {
 
 /**
  * POST /api/simulation/payment-settlement
- * 
- * Simulate settlement of a pending payment request
- * 
- * Body params:
- * - requestId: string
- * - senderId: string (who requested payment)
- * - amount: number
- * - userBalance: number
- * 
- * Response: Settlement impact and resolution
  */
 router.post('/payment-settlement', async (req: Request, res: Response) => {
   try {
-    const userId = req.user?.id || req.body.userId;
-    if (!userId) {
-      return res.status(401).json({ error: 'User ID required' });
-    }
+    const userId = getAuthUserId(req, res);
+    if (!userId) return;
+
+    const { requestId, senderId, amount } = req.body;
 
     const simulationResult = await settlementSimulator.simulate({
       userId,
-      ...req.body,
+      requestId,
+      senderId,
+      amount,
     });
 
     const actionInitiation = {
@@ -308,11 +263,11 @@ router.post('/payment-settlement', async (req: Request, res: Response) => {
       reversibilityScope: {
         initiatorCanReverse: true,
         adminCanReverse: true,
-        governanceCanReverse: false, // Can't override payment settlements
+        governanceCanReverse: false,
       },
       gracePeriodHours: 24,
       requiresApproval: false,
-      estimatedIrreversibleAt: new Date(Date.now() + 24 * 60 * 60 * 1000),
+      estimatedIrreversibleAt: getExpiryDate(24),
     };
 
     return res.json({
@@ -334,11 +289,8 @@ router.post('/payment-settlement', async (req: Request, res: Response) => {
 
 /**
  * GET /api/simulation/summary
- * 
- * Get summary of all payment flow simulators available
- * Useful for frontend to discover available simulations
  */
-router.get('/summary', (req: Request, res: Response) => {
+router.get('/summary', (_req: Request, res: Response) => {
   return res.json({
     simulators: [
       {
@@ -356,7 +308,7 @@ router.get('/summary', (req: Request, res: Response) => {
         description: 'Simulate fund withdrawals from platform',
         severity: 'MEDIUM',
         depth: 'BASIC',
-        requiredParams: ['amount', 'currency', 'destination', 'userBalance'],
+        requiredParams: ['amount', 'currency', 'destination'],
         optionalParams: [],
       },
       {
@@ -365,7 +317,7 @@ router.get('/summary', (req: Request, res: Response) => {
         description: 'Simulate direct user-to-user transfers',
         severity: 'LOW',
         depth: 'BASIC',
-        requiredParams: ['recipientId', 'amount', 'userBalance'],
+        requiredParams: ['recipientId', 'amount'],
         optionalParams: ['memo'],
       },
       {
@@ -374,7 +326,7 @@ router.get('/summary', (req: Request, res: Response) => {
         description: 'Simulate setup of scheduled recurring payments',
         severity: 'MEDIUM',
         depth: 'BASIC',
-        requiredParams: ['recipientId', 'amount', 'frequency', 'startDate', 'userBalance'],
+        requiredParams: ['recipientId', 'amount', 'frequency', 'startDate'],
         optionalParams: ['cycles'],
       },
       {
@@ -383,7 +335,7 @@ router.get('/summary', (req: Request, res: Response) => {
         description: 'Simulate settlement of pending payment requests',
         severity: 'LOW',
         depth: 'BASIC',
-        requiredParams: ['requestId', 'senderId', 'amount', 'userBalance'],
+        requiredParams: ['requestId', 'senderId', 'amount'],
         optionalParams: [],
       },
     ],

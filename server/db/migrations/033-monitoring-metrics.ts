@@ -183,15 +183,33 @@ export async function migrateMonitoringMetricsTables() {
     await pool.query(`
       CREATE TABLE IF NOT EXISTS support_ticket_metrics (
         id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-        date TEXT NOT NULL,
+        date TIMESTAMP NOT NULL DEFAULT NOW(),
         total_tickets INTEGER NOT NULL DEFAULT 0,
         open_tickets INTEGER NOT NULL DEFAULT 0,
+        in_progress_tickets INTEGER NOT NULL DEFAULT 0,
         resolved_tickets INTEGER NOT NULL DEFAULT 0,
-        average_resolution_time NUMERIC(10,2) DEFAULT 0,
-        customer_satisfaction NUMERIC(5,2) DEFAULT 0,
+        closed_tickets INTEGER NOT NULL DEFAULT 0,
+        avg_first_response_time NUMERIC(10,2) DEFAULT 0,
+        avg_resolution_time NUMERIC(10,2) DEFAULT 0,
+        resolution_rate NUMERIC(5,2) DEFAULT 0,
+        satisfaction_score NUMERIC(3,1) DEFAULT 0,
         created_at TIMESTAMP DEFAULT NOW(),
         updated_at TIMESTAMP DEFAULT NOW()
       );
+    `);
+
+    await pool.query(`
+      ALTER TABLE support_ticket_metrics
+        ADD COLUMN IF NOT EXISTS in_progress_tickets INTEGER NOT NULL DEFAULT 0,
+        ADD COLUMN IF NOT EXISTS closed_tickets INTEGER NOT NULL DEFAULT 0,
+        ADD COLUMN IF NOT EXISTS avg_first_response_time NUMERIC(10,2) DEFAULT 0,
+        ADD COLUMN IF NOT EXISTS avg_resolution_time NUMERIC(10,2) DEFAULT 0,
+        ADD COLUMN IF NOT EXISTS resolution_rate NUMERIC(5,2) DEFAULT 0,
+        ADD COLUMN IF NOT EXISTS satisfaction_score NUMERIC(3,1) DEFAULT 0;
+    `);
+    await pool.query(`
+      ALTER TABLE support_ticket_metrics
+        ALTER COLUMN date TYPE TIMESTAMP USING date::timestamp;
     `);
 
     await pool.query(`

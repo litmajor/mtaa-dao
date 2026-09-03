@@ -5,12 +5,16 @@ import "./ChamaTreasury.sol";
 import "@openzeppelin/contracts/access/Ownable.sol";
 import "@openzeppelin/contracts/utils/Pausable.sol";
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+import "@openzeppelin/contracts/proxy/Clones.sol";
 
 /**
  * @title ChamaTreasuryFactory
  * @notice Deploys and registers ChamaTreasury instances — one per chama
  */
 contract ChamaTreasuryFactory is Ownable, Pausable {
+    using Clones for address;
+
+    address public immutable treasuryImplementation;
 
     // =========================================================================
     // ENUMS & STRUCTS
@@ -85,6 +89,7 @@ contract ChamaTreasuryFactory is Ownable, Pausable {
     event FeeTierUpdated(DAOType indexed daoType, uint256 newFee, uint256 timestamp);
     event PlatformTreasuryUpdated(address indexed oldTreasury, address indexed newTreasury);
     event DefaultTimelockUpdated(uint256 smallLimit, uint256 smallDelay, uint256 largeDelay);
+    event ConfigUpdated(string indexed configName, address indexed value);
 
     // =========================================================================
     // ERRORS
@@ -100,6 +105,7 @@ contract ChamaTreasuryFactory is Ownable, Pausable {
     error DeploymentFailed();
     error EmptyDaoId();
     error EmptyChamaName();
+    error InvalidTimelockConfig();
 
     // =========================================================================
     // CONSTRUCTOR
@@ -107,12 +113,14 @@ contract ChamaTreasuryFactory is Ownable, Pausable {
 
     constructor(
         address _stablecoin,
-        address _platformTreasury
+        address _platformTreasury,
+        address _treasuryImplementation
     ) Ownable(msg.sender) {
-        if (_stablecoin == address(0) || _platformTreasury == address(0)) revert InvalidAddress();
+        if (_stablecoin == address(0) || _platformTreasury == address(0) || _treasuryImplementation == address(0)) revert InvalidAddress();
 
         stablecoin = _stablecoin;
         platformTreasury = _platformTreasury;
+        treasuryImplementation = _treasuryImplementation;
 
         defaultSmallTransferLimit = 50 * 1e18; // 50 cUSD
         defaultSmallTransferDelay = 1 hours;
@@ -134,13 +142,22 @@ contract ChamaTreasuryFactory is Ownable, Pausable {
         string calldata _chamaName,
         string calldata _daoId,
         address[] calldata _signers,
+        string[] calldata _signerNames,
         uint256 _requiredSignatures
     ) internal view {
         if (bytes(_daoId).length == 0) revert EmptyDaoId();
         if (bytes(_chamaName).length == 0) revert EmptyChamaName();
         if (treasuryByDaoId[_daoId] != address(0)) revert DaoIdAlreadyRegistered(_daoId);
         if (_signers.length < 2 || _signers.length > 10) revert InvalidSignerConfig();
+        if (_signers.length != _signerNames.length) revert InvalidSignerConfig();
         if (_requiredSignatures < 2 || _requiredSignatures > _signers.length) revert InvalidThreshold();
+
+        for (uint256 signerIndex = 0; signerIndex < _signers.length; signerIndex++) {
+            if (_signers[signerIndex] == address(0)) revert InvalidSignerConfig();
+            for (uint256 otherIndex = signerIndex + 1; otherIndex < _signers.length; otherIndex++) {
+                if (_signers[signerIndex] == _signers[otherIndex]) revert InvalidSignerConfig();
+            }
+        }
     }
 
     function _incrementCounters(DAOType _daoType) internal {
@@ -165,7 +182,7 @@ contract ChamaTreasuryFactory is Ownable, Pausable {
         uint256 _requiredSignatures,
         DAOType _daoType
     ) external whenNotPaused returns (address treasury) {
-        _validateDeployment(_chamaName, _daoId, _signers, _requiredSignatures);
+        _validateDeployment(_chamaName, _daoId, _signers, _signerNames, _requiredSignatures);
 
         FeeTier memory tier = feeTiers[_daoType];
         if (!tier.active) revert FeeTierNotActive();
@@ -175,20 +192,28 @@ contract ChamaTreasuryFactory is Ownable, Pausable {
             if (!ok) revert InsufficientFee(0, tier.fee);
         }
 
-        try new ChamaTreasury(
-            _chamaName, _daoId, _signers, _signerNames, _requiredSignatures, stablecoin, defaultSmallTransferLimit
-        ) returns (ChamaTreasury deployed) {
-            treasury = address(deployed);
+        address clone = treasuryImplementation.clone();
+        try ChamaTreasury(clone).initialize(
+            _chamaName,
+            _daoId,
+            _signers,
+            _signerNames,
+            _requiredSignatures,
+            stablecoin,
+            defaultSmallTransferLimit,
+            msg.sender
+        ) {
+            treasury = clone;
             // If factory has a registry configured, set it on the deployed treasury
             if (strategyRegistry != address(0)) {
-                deployed.setRegistry(strategyRegistry);
+                ChamaTreasury(payable(clone)).setRegistry(strategyRegistry);
             }
             // If factory has an APY calculator configured, set it on the deployed treasury
             if (apyCalculator != address(0)) {
-                deployed.setApyCalculator(apyCalculator);
+                ChamaTreasury(payable(clone)).setApyCalculator(apyCalculator);
             }
             if (platformFeeCollector != address(0) || subscriptionManager != address(0)) {
-                deployed.setPlatformWallets(platformFeeCollector, subscriptionManager);
+                ChamaTreasury(payable(clone)).setPlatformWallets(platformFeeCollector, subscriptionManager);
             }
         } catch {
             revert DeploymentFailed();
@@ -209,8 +234,8 @@ contract ChamaTreasuryFactory is Ownable, Pausable {
         uint256 _smallTransferDelay,
         uint256 _largeTransferDelay
     ) external whenNotPaused returns (address treasury) {
-        _validateDeployment(_chamaName, _daoId, _signers, _requiredSignatures);
-        require(_largeTransferDelay >= _smallTransferDelay, "Invalid timelock config");
+        _validateDeployment(_chamaName, _daoId, _signers, _signerNames, _requiredSignatures);
+        if (_largeTransferDelay < _smallTransferDelay) revert InvalidTimelockConfig();
 
         FeeTier memory tier = feeTiers[_daoType];
         if (!tier.active) revert FeeTierNotActive();
@@ -220,19 +245,27 @@ contract ChamaTreasuryFactory is Ownable, Pausable {
             if (!ok) revert InsufficientFee(0, tier.fee);
         }
 
-        try new ChamaTreasury(
-            _chamaName, _daoId, _signers, _signerNames, _requiredSignatures, stablecoin, _smallTransferLimit
-        ) returns (ChamaTreasury deployed) {
-            treasury = address(deployed);
-            deployed.updateTimelocks(_smallTransferLimit, _smallTransferDelay, _largeTransferDelay);
+        address clone = treasuryImplementation.clone();
+        try ChamaTreasury(clone).initialize(
+            _chamaName,
+            _daoId,
+            _signers,
+            _signerNames,
+            _requiredSignatures,
+            stablecoin,
+            _smallTransferLimit,
+            msg.sender
+        ) {
+            treasury = clone;
+            ChamaTreasury(payable(clone)).updateTimelocks(_smallTransferLimit, _smallTransferDelay, _largeTransferDelay);
             if (strategyRegistry != address(0)) {
-                deployed.setRegistry(strategyRegistry);
+                ChamaTreasury(payable(clone)).setRegistry(strategyRegistry);
             }
             if (apyCalculator != address(0)) {
-                deployed.setApyCalculator(apyCalculator);
+                ChamaTreasury(payable(clone)).setApyCalculator(apyCalculator);
             }
             if (platformFeeCollector != address(0) || subscriptionManager != address(0)) {
-                deployed.setPlatformWallets(platformFeeCollector, subscriptionManager);
+                ChamaTreasury(payable(clone)).setPlatformWallets(platformFeeCollector, subscriptionManager);
             }
         } catch {
             revert DeploymentFailed();
@@ -302,7 +335,7 @@ contract ChamaTreasuryFactory is Ownable, Pausable {
     }
 
     function setDefaultTimelocks(uint256 _smallLimit, uint256 _smallDelay, uint256 _largeDelay) external onlyOwner {
-        require(_largeDelay >= _smallDelay, "Invalid timelock config");
+        if (_largeDelay < _smallDelay) revert InvalidTimelockConfig();
         defaultSmallTransferLimit = _smallLimit;
         defaultSmallTransferDelay = _smallDelay;
         defaultLargeTransferDelay = _largeDelay;

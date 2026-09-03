@@ -43,12 +43,14 @@ export class SurveillanceEngine {
 
 export interface HealthForecast {
   daoId: string;
-  predictedState: string;
+  predictedState?: string;
+  timeframeHours?: number;
+  predictedScore?: number;
   confidence: number;
   timestamp: Date;
   riskFactors?: RiskFactor[];
   earlyWarnings?: EarlyWarning[];
-  predictedScore?: number;
+  interventionRecommendations?: string[];
 }
 
 export interface RiskFactor {
@@ -73,6 +75,7 @@ export class ThreatPredictor {
 export interface ScryStatus {
   status: 'idle' | 'monitoring' | 'analyzing' | 'forecasting';
   lastAnalysis: Date;
+  analysisInterval?: NodeJS.Timeout | null;
   daoMetrics: Map<string, ScryDAOMetrics>;
   detectedThreats: Map<string, DetectedPattern[]>;
   forecasts: Map<string, HealthForecast>;

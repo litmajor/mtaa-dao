@@ -75,6 +75,23 @@ export interface PaymentSAGAState {
   metadata?: Record<string, any>;
 }
 
+export interface ProviderFallbackConfig {
+  provider: string;
+  operation: string;
+  isAvailable: boolean;
+  failureRate: number;
+}
+
+export interface PaymentSAGAStats {
+  total: number;
+  succeeded: number;
+  failed: number;
+  processing: number;
+  compensating: number;
+  abandoned: number;
+  averageDurationMs: number;
+}
+
 export interface PaymentTransaction {
   userId: string;
   amount: number;
@@ -93,6 +110,7 @@ export class PaymentRecoverySAGAOrchestrator extends EventEmitter {
   private maxRetries = 5;
   private baseRetryDelay = 1000;
   private processingTimeoutMs = 5 * 60 * 1000; // 5 minutes
+  private providerFallbacks = new Map<string, ProviderFallbackConfig>();
 
   constructor() {
     super();
@@ -853,6 +871,92 @@ export class PaymentRecoverySAGAOrchestrator extends EventEmitter {
     const res = await pool.query(`SELECT * FROM payment_sagas WHERE id = $1`, [sagaId]);
     if (!res.rows || res.rows.length === 0) return undefined;
     return this.mapRowToState(res.rows[0]);
+  }
+
+  async getAllSAGAs(options: { fromDate?: Date } = {}): Promise<PaymentSAGAState[]> {
+    const values: Date[] = [];
+    const whereClause = options.fromDate ? 'WHERE created_at >= $1' : '';
+    if (options.fromDate) values.push(options.fromDate);
+
+    const res = await pool.query(
+      `SELECT * FROM payment_sagas ${whereClause} ORDER BY created_at DESC`,
+      values
+    );
+    return res.rows.map(row => this.mapRowToState(row));
+  }
+
+  async getSAGAStats(fromDate: Date): Promise<PaymentSAGAStats> {
+    const res = await pool.query(
+      `SELECT COUNT(*)::int AS total,
+              COUNT(*) FILTER (WHERE status = 'succeeded')::int AS succeeded,
+              COUNT(*) FILTER (WHERE status = 'failed')::int AS failed,
+              COUNT(*) FILTER (WHERE status = 'processing')::int AS processing,
+              COUNT(*) FILTER (WHERE status = 'compensating')::int AS compensating,
+              COUNT(*) FILTER (WHERE status = 'abandoned')::int AS abandoned,
+              COALESCE(AVG(EXTRACT(EPOCH FROM (updated_at - created_at)) * 1000)
+                FILTER (WHERE status IN ('succeeded', 'failed', 'abandoned')), 0)::float AS average_duration_ms
+       FROM payment_sagas WHERE created_at >= $1`,
+      [fromDate]
+    );
+    const row = res.rows[0];
+    return {
+      total: Number(row.total),
+      succeeded: Number(row.succeeded),
+      failed: Number(row.failed),
+      processing: Number(row.processing),
+      compensating: Number(row.compensating),
+      abandoned: Number(row.abandoned),
+      averageDurationMs: Math.round(Number(row.average_duration_ms)),
+    };
+  }
+
+  getTotalExecutionSteps(saga: PaymentSAGAState): number {
+    return saga.vaultId ? 4 : 3;
+  }
+
+  async getSAGAEvents(sagaId: string): Promise<PaymentSAGAEvent[]> {
+    const res = await pool.query(
+      `SELECT e.id, e.saga_id, e.step, e.success, e.data, e.error, e.attempt_number, e.created_at,
+          s.user_id, s.payment_id, s.amount, s.currency
+       FROM payment_saga_events e
+       JOIN payment_sagas s ON s.id = e.saga_id
+       WHERE e.saga_id = $1 ORDER BY e.created_at ASC`,
+      [sagaId]
+    );
+    return res.rows.map(row => ({
+      id: row.id,
+      sagaId: row.saga_id,
+      timestamp: row.created_at,
+      step: row.step,
+      userId: row.user_id,
+      paymentId: row.payment_id,
+      amount: Number(row.amount),
+      currency: row.currency,
+      success: row.success,
+      data: typeof row.data === 'string' ? JSON.parse(row.data || '{}') : row.data,
+      error: row.error,
+      attemptNumber: row.attempt_number,
+      totalRetries: this.maxRetries,
+    }));
+  }
+
+  getProviderConfig(): { providers: ProviderFallbackConfig[]; maxRetries: number; timeout: number; enableCompensation: boolean } {
+    return {
+      providers: Array.from(this.providerFallbacks.values()),
+      maxRetries: this.maxRetries,
+      timeout: this.stepTimeout,
+      enableCompensation: true,
+    };
+  }
+
+  async updateProviderConfig(config: ProviderFallbackConfig): Promise<void> {
+    if (!config.provider || !config.operation) {
+      throw new Error('Provider and operation are required');
+    }
+    if (typeof config.isAvailable !== 'boolean' || !Number.isFinite(config.failureRate) || config.failureRate < 0 || config.failureRate > 100) {
+      throw new Error('Invalid provider fallback configuration');
+    }
+    this.providerFallbacks.set(`${config.operation}:${config.provider}`, { ...config });
   }
 
   async abandonSAGA(sagaId: string, reason: string): Promise<void> {

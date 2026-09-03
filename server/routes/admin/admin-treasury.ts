@@ -1,16 +1,88 @@
 import { DaoStorage } from '../../storage/storage-dao';
-import { Router, Request, Response } from 'express';
+import { Router } from 'express';
+import type { Request, Response } from 'express';
 import { db } from '../../db';
 import { logger } from '../../utils/logger';
-import { daos, daoMemberships, vaults, vaultTransactions } from '../../../shared/schema';
-import { eq, desc, sql, and } from 'drizzle-orm';
+import { daos, daoMemberships, daoSettings, vaults, vaultTransactions } from '../../../shared/schema';
+import { eq, desc, sql, and, inArray, gte } from 'drizzle-orm';
 import { requireRole } from '../../middleware/rbac';
 import featureGate from '../../middleware/featureGate';
 import { logAuditEvent, AuditEventType } from '../../services/auditLogging';
+import { TreasuryService } from '../../services/treasuryService';
 
 const router = Router();
 const daoStorage = new DaoStorage();
 const requireSuperAdmin = requireRole('super_admin');
+
+function parsePagination(query: Request['query']): { page: number; limit: number; offset: number } | null {
+  const pageValue = String(query.page ?? '1');
+  const limitValue = String(query.limit ?? '20');
+  if (!/^\d+$/.test(pageValue) || !/^\d+$/.test(limitValue)) return null;
+
+  const page = Number(pageValue);
+  const limit = Number(limitValue);
+  const offset = (page - 1) * limit;
+  if (!Number.isSafeInteger(page) || page < 1 || !Number.isSafeInteger(limit) || limit < 1 || limit > 100 || !Number.isSafeInteger(offset)) {
+    return null;
+  }
+
+  return { page, limit, offset };
+}
+
+function getUserRoles(req: Request): string[] {
+  const user = req.user as { role?: string; roles?: string[] } | undefined;
+  return Array.from(new Set([...(user?.roles || []), ...(user?.role ? [user.role] : [])]));
+}
+
+function hasSuperAdminRole(req: Request): boolean {
+  return getUserRoles(req).includes('super_admin');
+}
+
+function getAuthenticatedUserId(req: Request): string | null {
+  const userId = (req.user as { id?: unknown } | undefined)?.id;
+  return typeof userId === 'string' && userId.trim() ? userId.trim() : null;
+}
+
+async function canAccessDao(daoId: string, userId: string, req: Request): Promise<boolean> {
+  if (hasSuperAdminRole(req)) return true;
+
+  const membership = await db
+    .select({ id: daoMemberships.id })
+    .from(daoMemberships)
+    .where(and(
+      eq(daoMemberships.daoId, daoId),
+      eq(daoMemberships.userId, userId),
+      inArray(daoMemberships.role, ['admin', 'owner', 'elder']),
+      eq(daoMemberships.status, 'approved'),
+      eq(daoMemberships.isBanned, false)
+    ));
+
+  return membership.length > 0;
+}
+
+async function getTreasuryFrozen(daoId: string): Promise<boolean> {
+  return TreasuryService.isFrozen(daoId);
+}
+
+function validateReason(reason: unknown): string | null {
+  if (typeof reason !== 'string') return null;
+  const trimmed = reason.trim();
+  return trimmed.length >= 10 && trimmed.length <= 1000 ? trimmed : null;
+}
+
+function getBalanceHealth(balance: unknown): 'at_risk' | 'stable' | 'healthy' | 'unknown' {
+  const parsed = Number.parseFloat(String(balance ?? ''));
+  if (!Number.isFinite(parsed)) return 'unknown';
+  if (parsed <= 1000) return 'at_risk';
+  if (parsed > 100000) return 'healthy';
+  return 'stable';
+}
+
+function parseBalance(balance: unknown): number {
+  const parsed = Number.parseFloat(String(balance ?? '0'));
+  if (!Number.isFinite(parsed)) throw new Error('Invalid treasury balance');
+  return parsed;
+}
 
 /**
  * Treasury Management Routes with Role-Based Access Control
@@ -33,8 +105,9 @@ const requireSuperAdmin = requireRole('super_admin');
 router.get('/daos/:daoId/treasury', featureGate('treasury.view'), async (req: Request, res: Response) => {
   try {
     const { daoId } = req.params;
-    const adminId = (req.user as any)?.id;
-    const userRole = (req.user as any)?.roles;
+    const adminId = getAuthenticatedUserId(req);
+    if (!adminId) return res.status(401).json({ error: 'Authentication required' });
+    const userRole = getUserRoles(req);
 
     // Verify DAO exists
     const dao = await db.select().from(daos).where(eq(daos.id, daoId));
@@ -43,18 +116,8 @@ router.get('/daos/:daoId/treasury', featureGate('treasury.view'), async (req: Re
     }
 
     // Check permissions
-    if (userRole !== 'super_admin') {
-      const isDAOAdmin = await db
-        .select()
-        .from(daoMemberships)
-        .where(and(
-          eq(daoMemberships.daoId, daoId),
-          eq(daoMemberships.userId, adminId)
-        ));
-      
-      if (!isDAOAdmin.length) {
-        return res.status(403).json({ error: 'Access denied to this DAO' });
-      }
+    if (!(await canAccessDao(daoId, adminId, req))) {
+      return res.status(403).json({ error: 'Access denied to this DAO' });
     }
 
     // Get vault info
@@ -69,10 +132,10 @@ router.get('/daos/:daoId/treasury', featureGate('treasury.view'), async (req: Re
       .where(eq(vaults.daoId, daoId));
 
     // Calculate total value (simplified - would need oracle for real prices)
-    const totalBalance = vaultList.reduce((sum: number, v: any) => sum + parseFloat((v.balance || '0').toString()), 0);
+    const totalBalance = vaultList.reduce((sum: number, v: any) => sum + parseBalance(v.balance), 0);
 
     // Get recent transactions
-    const recentTransactions = await db
+    const recentTransactions = vaultList.length === 0 ? [] : await db
       .select({
         id: vaultTransactions.id,
         transactionType: vaultTransactions.transactionType,
@@ -82,7 +145,7 @@ router.get('/daos/:daoId/treasury', featureGate('treasury.view'), async (req: Re
         status: vaultTransactions.status,
       })
       .from(vaultTransactions)
-      .where(eq(vaultTransactions.vaultId, vaultList[0]?.id || ''))
+      .where(inArray(vaultTransactions.vaultId, vaultList.map(vault => vault.id)))
       .orderBy(desc(vaultTransactions.createdAt))
       .limit(10);
 
@@ -90,17 +153,8 @@ router.get('/daos/:daoId/treasury', featureGate('treasury.view'), async (req: Re
       dao: {
         id: dao[0].id,
         name: dao[0].name,
-        treasuryHealth: (() => {
-          try {
-            const bal = parseFloat((dao[0].treasuryBalance ?? '0').toString());
-            if (bal <= 1000) return 'at_risk';
-            if (bal > 100000) return 'healthy';
-            return 'stable';
-          } catch (e) {
-            return 'healthy';
-          }
-        })(),
-        isFrozen: !!(await daoStorage.getDaoSetting(daoId, 'treasury_frozen'))?.settingValue,
+        treasuryHealth: getBalanceHealth(dao[0].treasuryBalance),
+        isFrozen: await getTreasuryFrozen(daoId),
       },
       vaults: vaultList,
       summary: {
@@ -110,7 +164,7 @@ router.get('/daos/:daoId/treasury', featureGate('treasury.view'), async (req: Re
       },
       recentTransactions: recentTransactions.slice(0, 5),
       userRole,
-      isSuperAdmin: userRole === 'super_admin',
+      isSuperAdmin: hasSuperAdminRole(req),
     });
   } catch (error) {
     logger.error('Error fetching treasury overview:', error);
@@ -122,9 +176,15 @@ router.get('/daos/:daoId/treasury', featureGate('treasury.view'), async (req: Re
 router.get('/daos/:daoId/treasury/transactions', featureGate('treasury.view'), async (req: Request, res: Response) => {
   try {
     const { daoId } = req.params;
-    const { page = '1', limit = '20', type = '', status = '' } = req.query;
-    const adminId = (req.user as any)?.id;
-    const userRole = (req.user as any)?.roles;
+    const { type = '', status = '' } = req.query;
+    const adminId = getAuthenticatedUserId(req);
+    if (!adminId) return res.status(401).json({ error: 'Authentication required' });
+    const userRole = getUserRoles(req);
+
+    const pagination = parsePagination(req.query);
+    if (!pagination) {
+      return res.status(400).json({ error: 'page must be >= 1 and limit must be between 1 and 100' });
+    }
 
     // Verify DAO exists
     const dao = await db.select().from(daos).where(eq(daos.id, daoId));
@@ -133,18 +193,8 @@ router.get('/daos/:daoId/treasury/transactions', featureGate('treasury.view'), a
     }
 
     // Check permissions
-    if (userRole !== 'super_admin') {
-      const isDAOAdmin = await db
-        .select()
-        .from(daoMemberships)
-        .where(and(
-          eq(daoMemberships.daoId, daoId),
-          eq(daoMemberships.userId, adminId)
-        ));
-      
-      if (!isDAOAdmin.length) {
-        return res.status(403).json({ error: 'Access denied to this DAO' });
-      }
+    if (!(await canAccessDao(daoId, adminId, req))) {
+      return res.status(403).json({ error: 'Access denied to this DAO' });
     }
 
     // Get vaults for this DAO
@@ -157,12 +207,11 @@ router.get('/daos/:daoId/treasury/transactions', featureGate('treasury.view'), a
     if (vaultIds.length === 0) {
       return res.json({
         transactions: [],
-        pagination: { page: 1, limit: parseInt(limit as string), total: 0, pages: 0 },
+        pagination: { page: pagination.page, limit: pagination.limit, total: 0, pages: 0 },
       });
     }
 
-    const offset = (parseInt(page as string) - 1) * parseInt(limit as string);
-    const conditions: any[] = [];
+    const conditions: any[] = [inArray(vaultTransactions.vaultId, vaultIds)];
 
     // Filter by type if provided
     if (type && typeof type === 'string' && type !== 'all') {
@@ -186,8 +235,8 @@ router.get('/daos/:daoId/treasury/transactions', featureGate('treasury.view'), a
       .from(vaultTransactions)
       .where(conditions.length > 0 ? and(...conditions) : undefined)
       .orderBy(desc(vaultTransactions.createdAt))
-      .limit(parseInt(limit as string))
-      .offset(offset);
+      .limit(pagination.limit)
+      .offset(pagination.offset);
 
     const totalCount = await db
       .select({ count: sql<number>`count(*)` })
@@ -201,10 +250,10 @@ router.get('/daos/:daoId/treasury/transactions', featureGate('treasury.view'), a
         name: dao[0].name,
       },
       pagination: {
-        page: parseInt(page as string),
-        limit: parseInt(limit as string),
+        page: pagination.page,
+        limit: pagination.limit,
         total: totalCount[0].count,
-        pages: Math.ceil(totalCount[0].count / parseInt(limit as string)),
+        pages: Math.ceil(totalCount[0].count / pagination.limit),
       },
       userRole,
     });
@@ -218,8 +267,10 @@ router.get('/daos/:daoId/treasury/transactions', featureGate('treasury.view'), a
 router.post('/daos/:daoId/treasury/freeze', requireSuperAdmin, featureGate('treasury.view'), async (req: Request, res: Response) => {
   try {
     const { daoId } = req.params;
-    const { reason } = req.body;
-    const adminId = (req.user as any).id;
+    const reason = validateReason(req.body?.reason);
+    if (!reason) return res.status(400).json({ error: 'reason must be between 10 and 1000 characters' });
+    const adminId = getAuthenticatedUserId(req);
+    if (!adminId) return res.status(401).json({ error: 'Authentication required' });
 
     const dao = await db.select().from(daos).where(eq(daos.id, daoId));
     if (!dao.length) {
@@ -244,13 +295,14 @@ router.post('/daos/:daoId/treasury/freeze', requireSuperAdmin, featureGate('trea
         daoId,
         reason,
       }
-    }).catch(err => console.error('Audit log failed:', err));
+    });
 
     logger.warn('Treasury frozen by super admin', { daoId, adminId, reason });
 
     res.json({
       success: true,
-      message: 'Treasury frozen successfully',
+      message: 'Backend treasury withdrawal proposals are now blocked',
+      scope: 'backend_proposals_only',
       dao: {
         id: daoId,
         treasuryFrozen: true,
@@ -266,8 +318,10 @@ router.post('/daos/:daoId/treasury/freeze', requireSuperAdmin, featureGate('trea
 router.post('/daos/:daoId/treasury/unfreeze', requireSuperAdmin, featureGate('treasury.view'), async (req: Request, res: Response) => {
   try {
     const { daoId } = req.params;
-    const { reason } = req.body;
-    const adminId = (req.user as any).id;
+    const reason = validateReason(req.body?.reason);
+    if (!reason) return res.status(400).json({ error: 'reason must be between 10 and 1000 characters' });
+    const adminId = getAuthenticatedUserId(req);
+    if (!adminId) return res.status(401).json({ error: 'Authentication required' });
 
     const dao = await db.select().from(daos).where(eq(daos.id, daoId));
     if (!dao.length) {
@@ -292,13 +346,14 @@ router.post('/daos/:daoId/treasury/unfreeze', requireSuperAdmin, featureGate('tr
         daoId,
         reason,
       }
-    }).catch(err => console.error('Audit log failed:', err));
+    });
 
     logger.info('Treasury unfrozen by super admin', { daoId, adminId, reason });
 
     res.json({
       success: true,
-      message: 'Treasury unfrozen successfully',
+      message: 'Backend treasury withdrawal proposals are now allowed',
+      scope: 'backend_proposals_only',
       dao: {
         id: daoId,
         treasuryFrozen: false,
@@ -314,8 +369,9 @@ router.post('/daos/:daoId/treasury/unfreeze', requireSuperAdmin, featureGate('tr
 router.get('/daos/:daoId/treasury/health', featureGate('treasury.view'), async (req: Request, res: Response) => {
   try {
     const { daoId } = req.params;
-    const adminId = (req.user as any)?.id;
-    const userRole = (req.user as any)?.roles;
+    const adminId = getAuthenticatedUserId(req);
+    if (!adminId) return res.status(401).json({ error: 'Authentication required' });
+    const userRole = getUserRoles(req);
 
     const dao = await db.select().from(daos).where(eq(daos.id, daoId));
     if (!dao.length) {
@@ -323,18 +379,8 @@ router.get('/daos/:daoId/treasury/health', featureGate('treasury.view'), async (
     }
 
     // Check permissions
-    if (userRole !== 'super_admin') {
-      const isDAOAdmin = await db
-        .select()
-        .from(daoMemberships)
-        .where(and(
-          eq(daoMemberships.daoId, daoId),
-          eq(daoMemberships.userId, adminId)
-        ));
-      
-      if (!isDAOAdmin.length) {
-        return res.status(403).json({ error: 'Access denied to this DAO' });
-      }
+    if (!(await canAccessDao(daoId, adminId, req))) {
+      return res.status(403).json({ error: 'Access denied to this DAO' });
     }
 
     // Get treasury metrics
@@ -346,25 +392,24 @@ router.get('/daos/:daoId/treasury/health', featureGate('treasury.view'), async (
       .from(vaults)
       .where(eq(vaults.daoId, daoId));
 
-    const totalBalance = vaultList.reduce((sum: number, v: any) => sum + parseFloat((v.balance || '0').toString()), 0);
+    const totalBalance = vaultList.reduce((sum: number, v: any) => sum + parseBalance(v.balance), 0);
 
     // Get transaction volume (last 30 days)
     const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
-    const recentTransactions = await db
+    const recentTransactions = vaultList.length === 0 ? [] : await db
       .select({
         count: sql<number>`count(*)`,
         totalAmount: sql<number>`COALESCE(SUM(CAST(amount AS numeric)), 0)`,
       })
       .from(vaultTransactions)
       .where(and(
-        eq(vaultTransactions.vaultId, vaultList[0]?.id || ''),
-        // @ts-ignore
-        sql`createdAt >= ${thirtyDaysAgo}`
+        inArray(vaultTransactions.vaultId, vaultList.map(vault => vault.id)),
+        gte(vaultTransactions.createdAt, thirtyDaysAgo)
       ));
 
     const health = {
-      status: dao[0].treasuryHealth || 'healthy',
-      isFrozen: dao[0].treasuryFrozen || false,
+      status: dao[0].treasuryHealth || 'unknown',
+      isFrozen: await getTreasuryFrozen(daoId),
       totalBalance,
       vaultCount: vaultList.length,
       recentActivity: {
@@ -384,8 +429,10 @@ router.get('/daos/:daoId/treasury/health', featureGate('treasury.view'), async (
 // GET /api/admin/treasury/status - Get all DAOs treasury status (Super Admin only)
 router.get('/treasury/status', requireSuperAdmin, featureGate('treasury.view'), async (req: Request, res: Response) => {
   try {
-    const { page = '1', limit = '20' } = req.query;
-    const offset = (parseInt(page as string) - 1) * parseInt(limit as string);
+    const pagination = parsePagination(req.query);
+    if (!pagination) {
+      return res.status(400).json({ error: 'page must be >= 1 and limit must be between 1 and 100' });
+    }
 
     const daoTreasuryStatus = await db
       .select({
@@ -396,27 +443,39 @@ router.get('/treasury/status', requireSuperAdmin, featureGate('treasury.view'), 
       })
       .from(daos)
       .orderBy(desc(daos.updatedAt))
-      .limit(parseInt(limit as string))
-      .offset(offset);
+      .limit(pagination.limit)
+      .offset(pagination.offset);
 
     const totalCount = await db
       .select({ count: sql<number>`count(*)` })
       .from(daos);
 
-    const daosWithFlags = await Promise.all(daoTreasuryStatus.map(async (d: any) => {
-      const frozen = !!(await daoStorage.getDaoSetting(d.id, 'treasury_frozen'))?.settingValue;
-      const bal = parseFloat((d.treasuryBalance ?? '0').toString());
-      const health = bal <= 1000 ? 'at_risk' : (bal > 100000 ? 'healthy' : 'stable');
+    const daoIds = daoTreasuryStatus.map((dao: any) => dao.id);
+    const frozenSettings = daoIds.length === 0 ? [] : await db
+      .select({ daoId: daoSettings.daoId, settingValue: daoSettings.settingValue })
+      .from(daoSettings)
+      .where(and(
+        inArray(daoSettings.daoId, daoIds),
+        eq(daoSettings.settingKey, 'treasury_frozen')
+      ));
+    const frozenByDaoId = new Map(frozenSettings.map(setting => [
+      setting.daoId,
+      setting.settingValue === true || setting.settingValue === 'true'
+    ]));
+
+    const daosWithFlags = daoTreasuryStatus.map((d: any) => {
+      const frozen = frozenByDaoId.get(d.id) || false;
+      const health = getBalanceHealth(d.treasuryBalance);
       return { id: d.id, name: d.name, treasuryBalance: d.treasuryBalance, treasuryHealth: health, isFrozen: frozen, updatedAt: d.updatedAt };
-    }));
+    });
 
     res.json({
       daos: daosWithFlags,
       pagination: {
-        page: parseInt(page as string),
-        limit: parseInt(limit as string),
+        page: pagination.page,
+        limit: pagination.limit,
         total: totalCount[0].count,
-        pages: Math.ceil(totalCount[0].count / parseInt(limit as string)),
+        pages: Math.ceil(totalCount[0].count / pagination.limit),
       }
     });
   } catch (error) {

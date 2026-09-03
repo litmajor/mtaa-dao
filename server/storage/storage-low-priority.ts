@@ -10,16 +10,10 @@ import {
   activityFeed,
   // notificationHistory already in schema
   notificationHistory,
-  sessionAuditLogs,
   auditLogs,
   systemLogs,
   // API Keys for Developer Integration
   apiKeys,
-  // User Preferences for Different Features
-  featurePreferences,
-  // Users and DAOs
-  users,
-  daos
 } from '../../shared/schema';
 
 /**
@@ -81,13 +75,12 @@ export class LowPriorityStorage {
       userId: feedData.userId,
       daoId: feedData.daoId,
       activityType: feedData.activityType,
-      entityType: feedData.entityType,
-      entityId: feedData.entityId,
-      entityTitle: feedData.entityTitle,
+      relatedEntityType: feedData.entityType,
+      relatedEntityId: feedData.entityId,
       actorId: feedData.actorId,
       description: feedData.description,
       metadata: feedData.metadata,
-      isPublic: feedData.isPublic !== false,
+      visibility: feedData.isPublic === false ? 'private' : 'public',
       createdAt: new Date(),
     }).returning();
     return result[0];
@@ -339,17 +332,13 @@ export class LowPriorityStorage {
     }
     const result = await this.db.insert(apiKeys).values({
       userId: keyData.userId,
-      keyName: keyData.keyName,
+      name: keyData.keyName,
       keyPrefix: keyData.keyPrefix,
       keyHash: keyData.keyHash,
       permissions: keyData.permissions,
-      allowedIps: keyData.allowedIps,
-      allowedOrigins: keyData.allowedOrigins,
-      rateLimitRequests: keyData.rateLimitRequests,
-      rateLimitWindow: keyData.rateLimitWindow || 3600,
+      ipWhitelist: keyData.allowedIps,
+      rateLimit: keyData.rateLimitRequests || 1000,
       expiresAt: keyData.expiresAt,
-      description: keyData.description,
-      metadata: keyData.metadata,
       createdAt: new Date(),
       updatedAt: new Date(),
     }).returning();
@@ -358,7 +347,22 @@ export class LowPriorityStorage {
 
   async getApiKeysByUser(userId: string): Promise<any[]> {
     if (!userId) throw new Error('User ID required');
-    return await this.db.select().from(apiKeys)
+    return await this.db.select({
+      id: apiKeys.id,
+      userId: apiKeys.userId,
+      name: apiKeys.name,
+      keyPrefix: apiKeys.keyPrefix,
+      permissions: apiKeys.permissions,
+      rateLimit: apiKeys.rateLimit,
+      ipWhitelist: apiKeys.ipWhitelist,
+      enabled: apiKeys.enabled,
+      lastUsedAt: apiKeys.lastUsedAt,
+      expiresAt: apiKeys.expiresAt,
+      revokedAt: apiKeys.revokedAt,
+      revokedReason: apiKeys.revokedReason,
+      createdAt: apiKeys.createdAt,
+      updatedAt: apiKeys.updatedAt,
+    }).from(apiKeys)
       .where(eq(apiKeys.userId, userId))
       .orderBy(desc(apiKeys.createdAt));
   }
@@ -367,7 +371,6 @@ export class LowPriorityStorage {
     if (!keyId) throw new Error('Key ID required');
     const result = await this.db.update(apiKeys)
       .set({
-        usageCount: sql`${apiKeys.usageCount} + 1`,
         lastUsedAt: new Date(),
         updatedAt: new Date(),
       })

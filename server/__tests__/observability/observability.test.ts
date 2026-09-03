@@ -2,7 +2,7 @@ import { describe, it, expect, vi } from 'vitest';
 import { CorrelationContext } from '../../observability/CorrelationContext';
 import { correlationMiddleware } from '../../observability/middleware';
 import { runWorkerTask } from '../../observability/workerContext';
-import { Request, Response, NextFunction } from 'express';
+import type { Request, Response, NextFunction } from 'express';
 
 describe('Phase 0: Observability & Safety', () => {
 

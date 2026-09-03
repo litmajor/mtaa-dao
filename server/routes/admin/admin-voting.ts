@@ -1,80 +1,95 @@
-import { Router, Request, Response } from 'express';
+import { Router } from 'express';
+import type { Request, Response } from 'express';
 import { db } from '../../db';
 import { logger } from '../../utils/logger';
 import { daos, daoMemberships, proposals, votes } from '../../../shared/schema';
-import { eq, desc, sql, and, or, like, inArray } from 'drizzle-orm';
-import { requireRole } from '../../middleware/rbac';
+import { eq, desc, sql, and, inArray } from 'drizzle-orm';
 import { logConsolidatedAuditEvent, AuditEventType } from '../../services/auditConsolidated';
 
 const router = Router();
-const requireSuperAdmin = requireRole('super_admin');
+
+// Express User Type Interface
+interface AuthenticatedUser {
+  id: string;
+  roles?: string | string[];
+}
 
 /**
- * Voting Management Routes with Role-Based Access Control
- * 
- * SUPER ADMIN (Platform Admin):
- * - Can VIEW voting settings of any DAO
- * - Can VIEW voting analytics
- * - CANNOT change voting settings directly
- * 
- * DAO ADMIN (DAO Creator/Elder):
- * - Can configure voting parameters
- * - Can set voting period
- * - Can set voting threshold
- * - Can set voting weight rules
- * - Can pause/resume voting
- * - Limited to their own DAO
+ * Helper to verify DAO existence and validate caller permissions.
  */
+async function verifyDaoAccess(daoId: string, userId?: string, userRole?: string, allowedRoles: string[] = ['admin']) {
+  const daoRecords = await db.select().from(daos).where(eq(daos.id, daoId));
+  if (!daoRecords.length) {
+    return { error: 'DAO not found', statusCode: 404, dao: null, isAuthorized: false };
+  }
+
+  const dao = daoRecords[0];
+
+  if (userRole === 'super_admin') {
+    return { error: null, statusCode: 200, dao, isAuthorized: true };
+  }
+
+  if (!userId) {
+    return { error: 'Unauthorized access', statusCode: 401, dao: null, isAuthorized: false };
+  }
+
+  const membership = await db
+    .select()
+    .from(daoMemberships)
+    .where(
+      and(
+        eq(daoMemberships.daoId, daoId),
+        eq(daoMemberships.userId, userId),
+        inArray(daoMemberships.role, allowedRoles)
+      )
+    );
+
+  if (!membership.length) {
+    return { error: 'Access denied to this DAO', statusCode: 403, dao, isAuthorized: false };
+  }
+
+  return { error: null, statusCode: 200, dao, isAuthorized: true };
+}
 
 // GET /api/admin/daos/:daoId/voting/config - Get voting configuration
 router.get('/daos/:daoId/voting/config', async (req: Request, res: Response) => {
   try {
     const { daoId } = req.params;
-    const adminId = (req.user as any)?.id;
-    const userRole = (req.user as any)?.roles;
+    const user = req.user as AuthenticatedUser | undefined;
+    const adminId = user?.id;
+    const userRole = typeof user?.roles === 'string'
+      ? user.roles
+      : Array.isArray(user?.roles)
+        ? user.roles[0]
+        : undefined;
 
-    // Verify DAO exists
-    const dao = await db.select().from(daos).where(eq(daos.id, daoId));
-    if (!dao.length) {
-      return res.status(404).json({ error: 'DAO not found' });
+    const { error, statusCode, dao } = await verifyDaoAccess(daoId, adminId, userRole, ['admin', 'elder', 'member']);
+    if (error || !dao) {
+      return res.status(statusCode).json({ error });
     }
 
-    // Check permissions - Super Admin or DAO Admin
-    if (userRole !== 'super_admin') {
-      const isDaoAdmin = await db
-        .select()
-        .from(daoMemberships)
-        .where(and(
-          eq(daoMemberships.daoId, daoId),
-          eq(daoMemberships.userId, adminId),
-          inArray(daoMemberships.role, ['admin', 'elder'])
-        ));
-
-      if (!isDaoAdmin.length) {
-        return res.status(403).json({ error: 'Access denied to this DAO' });
-      }
-    }
-
-    // Get voting config from DAO record (stored in votingConfig JSON field)
+    const votingPeriodHours = dao.votingPeriod ?? 72;
     const votingConfig = {
-      votingPeriodDays: dao[0].votingPeriodDays || 7,
-      approvalThreshold: dao[0].approvalThreshold || 0.5, // 50%
-      minimumParticipation: dao[0].minimumParticipation || 0.2, // 20%
-      votingWeightType: dao[0].votingWeightType || 'equal', // equal, stake-based, reputation-based
-      votingPaused: dao[0].votingPaused || false,
+      votingPeriodDays: Math.max(1, Math.round(votingPeriodHours / 24)),
+      approvalThreshold: 0.51,
+      minimumParticipation: (dao.quorumPercentage ?? 20) / 100,
+      votingWeightType: 'equal',
+      votingPaused: dao.status === 'suspended',
       allowAbstain: true,
       requireSignature: true,
-      delayExecutionDays: 1,
+      delayExecutionDays: Math.max(1, Math.round((dao.executionDelay ?? 24) / 24)),
     };
+
+    const isDaoAdmin = userRole === 'super_admin' ? false : true; // Per JSDoc: Super admin views; DAO admin manages
 
     res.json({
       config: votingConfig,
       dao: {
-        id: dao[0].id,
-        name: dao[0].name,
+        id: dao.id,
+        name: dao.name,
       },
       userRole,
-      canModify: userRole === 'super_admin' || true, // DAO admin can modify
+      canModify: isDaoAdmin,
     });
   } catch (error) {
     logger.error('Error fetching voting config:', error);
@@ -86,83 +101,72 @@ router.get('/daos/:daoId/voting/config', async (req: Request, res: Response) => 
 router.put('/daos/:daoId/voting/config', async (req: Request, res: Response) => {
   try {
     const { daoId } = req.params;
-    const {
-      votingPeriodDays,
-      approvalThreshold,
-      minimumParticipation,
-      votingWeightType,
-    } = req.body;
-    const adminId = (req.user as any).id;
-    const userRole = (req.user as any).roles;
+    const { votingPeriodDays, approvalThreshold, minimumParticipation, votingWeightType } = req.body;
+    const user = req.user as AuthenticatedUser | undefined;
+    const adminId = user?.id;
+    const userRole = Array.isArray(user?.roles) ? user.roles[0] : user?.roles;
 
-    // Verify DAO exists
-    const dao = await db.select().from(daos).where(eq(daos.id, daoId));
-    if (!dao.length) {
-      return res.status(404).json({ error: 'DAO not found' });
+    const { error, statusCode, dao } = await verifyDaoAccess(daoId, adminId, userRole, ['admin']);
+    if (error || !dao) {
+      return res.status(statusCode).json({ error });
     }
 
-    // Check permissions - DAO Admin only
-    if (userRole !== 'super_admin') {
-      const isDaoAdmin = await db
-        .select()
-        .from(daoMemberships)
-        .where(and(
-          eq(daoMemberships.daoId, daoId),
-          eq(daoMemberships.userId, adminId),
-          eq(daoMemberships.role, 'admin')
-        ));
-
-      if (!isDaoAdmin.length) {
-        return res.status(403).json({ error: 'Only DAO admin can modify voting settings' });
-      }
-    }
-
-    // Validate inputs
-    if (votingPeriodDays && (votingPeriodDays < 1 || votingPeriodDays > 90)) {
+    // Input Validation
+    if (votingPeriodDays !== undefined && (Number(votingPeriodDays) < 1 || Number(votingPeriodDays) > 90)) {
       return res.status(400).json({ error: 'Voting period must be between 1 and 90 days' });
     }
 
-    if (approvalThreshold && (approvalThreshold < 0 || approvalThreshold > 1)) {
+    if (approvalThreshold !== undefined && (Number(approvalThreshold) < 0 || Number(approvalThreshold) > 1)) {
       return res.status(400).json({ error: 'Approval threshold must be between 0 and 1' });
     }
 
-    if (minimumParticipation && (minimumParticipation < 0 || minimumParticipation > 1)) {
+    if (minimumParticipation !== undefined && (Number(minimumParticipation) < 0 || Number(minimumParticipation) > 1)) {
       return res.status(400).json({ error: 'Minimum participation must be between 0 and 1' });
     }
 
-    // Update DAO voting settings
+    const nextVotingPeriodHours = votingPeriodDays !== undefined
+      ? Math.max(1, Math.min(90, Number(votingPeriodDays))) * 24
+      : dao.votingPeriod ?? 72;
+
+    const nextQuorumPercentage = minimumParticipation !== undefined
+      ? Math.max(0, Math.min(100, Number(minimumParticipation) * 100))
+      : dao.quorumPercentage ?? 20;
+
     await db
       .update(daos)
       .set({
-        votingPeriodDays: votingPeriodDays || dao[0].votingPeriodDays,
-        approvalThreshold: approvalThreshold || dao[0].approvalThreshold,
-        minimumParticipation: minimumParticipation || dao[0].minimumParticipation,
-        votingWeightType: votingWeightType || dao[0].votingWeightType,
+        votingPeriod: nextVotingPeriodHours,
+        quorumPercentage: nextQuorumPercentage,
         updatedAt: new Date(),
       })
       .where(eq(daos.id, daoId));
 
-    // Log audit event
-    await logAuditEvent({
-      eventType: AuditEventType.VOTING_CONFIG_UPDATED,
-      userId: adminId,
-      action: `Voting configuration updated`,
-      severity: 'medium',
-      endpoint: `/api/admin/daos/:daoId/voting/config`,
-      method: 'PUT',
-      ipAddress: req.ip,
-      userAgent: req.get('user-agent'),
-      statusCode: 200,
-      metadata: {
-        daoId,
-        changes: {
-          votingPeriodDays,
-          approvalThreshold,
-          minimumParticipation,
-          votingWeightType,
+    if (adminId) {
+      await logConsolidatedAuditEvent({
+        actorId: adminId,
+        actorType: 'admin',
+        actorRole: typeof userRole === 'string' ? userRole : 'admin',
+        actionType: AuditEventType.ADMIN_SETTINGS_CHANGED,
+        actionCategory: 'admin',
+        targetType: 'dao',
+        targetId: daoId,
+        targetName: dao.name || undefined,
+        result: 'success',
+        severity: 'medium',
+        endpoint: '/api/admin/daos/:daoId/voting/config',
+        ipAddress: req.ip,
+        userAgent: req.get('user-agent'),
+        metadata: {
+          daoId,
+          changes: {
+            votingPeriodDays: votingPeriodDays ?? Math.max(1, Math.round((dao.votingPeriod ?? 72) / 24)),
+            approvalThreshold: approvalThreshold ?? 0.51,
+            minimumParticipation: minimumParticipation ?? (dao.quorumPercentage ?? 20) / 100,
+            votingWeightType: votingWeightType ?? 'equal',
+          },
         },
-      }
-    }).catch(err => console.error('Audit log failed:', err));
+      }).catch((err: unknown) => logger.error('Audit log failed:', err));
+    }
 
     logger.info('Voting config updated', { daoId, adminId, ...req.body });
 
@@ -170,11 +174,11 @@ router.put('/daos/:daoId/voting/config', async (req: Request, res: Response) => 
       success: true,
       message: 'Voting configuration updated successfully',
       config: {
-        votingPeriodDays,
-        approvalThreshold,
-        minimumParticipation,
-        votingWeightType,
-      }
+        votingPeriodDays: votingPeriodDays ?? Math.max(1, Math.round(nextVotingPeriodHours / 24)),
+        approvalThreshold: approvalThreshold ?? 0.51,
+        minimumParticipation: minimumParticipation ?? (nextQuorumPercentage / 100),
+        votingWeightType: votingWeightType ?? 'equal',
+      },
     });
   } catch (error) {
     logger.error('Error updating voting config:', error);
@@ -187,63 +191,48 @@ router.post('/daos/:daoId/voting/pause', async (req: Request, res: Response) => 
   try {
     const { daoId } = req.params;
     const { reason } = req.body;
-    const adminId = (req.user as any).id;
-    const userRole = (req.user as any).roles;
+    const user = req.user as AuthenticatedUser | undefined;
+    const adminId = user?.id;
+    const userRole = Array.isArray(user?.roles) ? user.roles[0] : user?.roles;
 
-    // Verify DAO exists
-    const dao = await db.select().from(daos).where(eq(daos.id, daoId));
-    if (!dao.length) {
-      return res.status(404).json({ error: 'DAO not found' });
+    const { error, statusCode, dao } = await verifyDaoAccess(daoId, adminId, userRole, ['admin']);
+    if (error || !dao) {
+      return res.status(statusCode).json({ error });
     }
 
-    // Check permissions - DAO Admin only
-    if (userRole !== 'super_admin') {
-      const isDaoAdmin = await db
-        .select()
-        .from(daoMemberships)
-        .where(and(
-          eq(daoMemberships.daoId, daoId),
-          eq(daoMemberships.userId, adminId),
-          eq(daoMemberships.role, 'admin')
-        ));
-
-      if (!isDaoAdmin.length) {
-        return res.status(403).json({ error: 'Only DAO admin can pause voting' });
-      }
-    }
-
-    // Update DAO - pause voting
     await db
       .update(daos)
       .set({
-        votingPaused: true,
+        status: 'suspended',
         updatedAt: new Date(),
       })
       .where(eq(daos.id, daoId));
 
-    // Log audit event
-    await logAuditEvent({
-      eventType: AuditEventType.VOTING_PAUSED,
-      userId: adminId,
-      action: `Voting paused for DAO`,
-      severity: 'high',
-      endpoint: `/api/admin/daos/:daoId/voting/pause`,
-      method: 'POST',
-      ipAddress: req.ip,
-      userAgent: req.get('user-agent'),
-      statusCode: 200,
-      metadata: {
-        daoId,
-        reason,
-      }
-    }).catch(err => console.error('Audit log failed:', err));
+    if (adminId) {
+      await logConsolidatedAuditEvent({
+        actorId: adminId,
+        actorType: 'admin',
+        actorRole: typeof userRole === 'string' ? userRole : 'admin',
+        actionType: AuditEventType.ADMIN_SETTINGS_CHANGED,
+        actionCategory: 'admin',
+        targetType: 'dao',
+        targetId: daoId,
+        targetName: dao.name || undefined,
+        result: 'success',
+        severity: 'high',
+        endpoint: '/api/admin/daos/:daoId/voting/pause',
+        ipAddress: req.ip,
+        userAgent: req.get('user-agent'),
+        metadata: { daoId, reason, votingStatus: 'paused' },
+      }).catch((err: unknown) => logger.error('Audit log failed:', err));
+    }
 
     logger.warn('Voting paused', { daoId, adminId, reason });
 
     res.json({
       success: true,
       message: 'Voting paused successfully',
-      dao: { id: daoId, votingPaused: true }
+      dao: { id: daoId, votingStatus: 'paused' },
     });
   } catch (error) {
     logger.error('Error pausing voting:', error);
@@ -255,62 +244,48 @@ router.post('/daos/:daoId/voting/pause', async (req: Request, res: Response) => 
 router.post('/daos/:daoId/voting/resume', async (req: Request, res: Response) => {
   try {
     const { daoId } = req.params;
-    const adminId = (req.user as any).id;
-    const userRole = (req.user as any).roles;
+    const user = req.user as AuthenticatedUser | undefined;
+    const adminId = user?.id;
+    const userRole = Array.isArray(user?.roles) ? user.roles[0] : user?.roles;
 
-    // Verify DAO exists
-    const dao = await db.select().from(daos).where(eq(daos.id, daoId));
-    if (!dao.length) {
-      return res.status(404).json({ error: 'DAO not found' });
+    const { error, statusCode, dao } = await verifyDaoAccess(daoId, adminId, userRole, ['admin']);
+    if (error || !dao) {
+      return res.status(statusCode).json({ error });
     }
 
-    // Check permissions - DAO Admin only
-    if (userRole !== 'super_admin') {
-      const isDaoAdmin = await db
-        .select()
-        .from(daoMemberships)
-        .where(and(
-          eq(daoMemberships.daoId, daoId),
-          eq(daoMemberships.userId, adminId),
-          eq(daoMemberships.role, 'admin')
-        ));
-
-      if (!isDaoAdmin.length) {
-        return res.status(403).json({ error: 'Only DAO admin can resume voting' });
-      }
-    }
-
-    // Update DAO - resume voting
     await db
       .update(daos)
       .set({
-        votingPaused: false,
+        status: 'active',
         updatedAt: new Date(),
       })
       .where(eq(daos.id, daoId));
 
-    // Log audit event
-    await logAuditEvent({
-      eventType: AuditEventType.VOTING_RESUMED,
-      userId: adminId,
-      action: `Voting resumed for DAO`,
-      severity: 'high',
-      endpoint: `/api/admin/daos/:daoId/voting/resume`,
-      method: 'POST',
-      ipAddress: req.ip,
-      userAgent: req.get('user-agent'),
-      statusCode: 200,
-      metadata: {
-        daoId,
-      }
-    }).catch(err => console.error('Audit log failed:', err));
+    if (adminId) {
+      await logConsolidatedAuditEvent({
+        actorId: adminId,
+        actorType: 'admin',
+        actorRole: typeof userRole === 'string' ? userRole : 'admin',
+        actionType: AuditEventType.ADMIN_SETTINGS_CHANGED,
+        actionCategory: 'admin',
+        targetType: 'dao',
+        targetId: daoId,
+        targetName: dao.name || undefined,
+        result: 'success',
+        severity: 'medium',
+        endpoint: '/api/admin/daos/:daoId/voting/resume',
+        ipAddress: req.ip,
+        userAgent: req.get('user-agent'),
+        metadata: { daoId, votingStatus: 'active' },
+      }).catch((err: unknown) => logger.error('Audit log failed:', err));
+    }
 
     logger.info('Voting resumed', { daoId, adminId });
 
     res.json({
       success: true,
       message: 'Voting resumed successfully',
-      dao: { id: daoId, votingPaused: false }
+      dao: { id: daoId, votingStatus: 'active' },
     });
   } catch (error) {
     logger.error('Error resuming voting:', error);
@@ -322,68 +297,57 @@ router.post('/daos/:daoId/voting/resume', async (req: Request, res: Response) =>
 router.get('/daos/:daoId/voting/analytics', async (req: Request, res: Response) => {
   try {
     const { daoId } = req.params;
-    const adminId = (req.user as any)?.id;
-    const userRole = (req.user as any)?.roles;
+    const user = req.user as AuthenticatedUser | undefined;
+    const adminId = user?.id;
+    const userRole = typeof user?.roles === 'string'
+      ? user.roles
+      : Array.isArray(user?.roles)
+        ? user.roles[0]
+        : undefined;
 
-    // Verify DAO exists
-    const dao = await db.select().from(daos).where(eq(daos.id, daoId));
-    if (!dao.length) {
-      return res.status(404).json({ error: 'DAO not found' });
+    const { error, statusCode, dao } = await verifyDaoAccess(daoId, adminId, userRole, ['admin', 'elder', 'member']);
+    if (error || !dao) {
+      return res.status(statusCode).json({ error });
     }
 
-    // Check permissions
-    if (userRole !== 'super_admin') {
-      const isDaoAdmin = await db
-        .select()
-        .from(daoMemberships)
-        .where(and(
-          eq(daoMemberships.daoId, daoId),
-          eq(daoMemberships.userId, adminId)
-        ));
-
-      if (!isDaoAdmin.length) {
-        return res.status(403).json({ error: 'Access denied' });
-      }
-    }
-
-    // Get voting statistics
     const [
-      totalProposals,
-      passedProposals,
-      failedProposals,
-      totalVotes,
-      averageParticipation,
+      totalProposalsRes,
+      passedProposalsRes,
+      failedProposalsRes,
+      totalVotesRes,
+      averageParticipationRes,
     ] = await Promise.all([
-      db.select({ count: sql<number>`count(*)` })
-        .from(proposals)
+      db.select({ count: sql<string>`count(*)` }).from(proposals).where(eq(proposals.daoId, daoId)),
+      db.select({ count: sql<string>`count(*)` }).from(proposals).where(and(eq(proposals.daoId, daoId), eq(proposals.status, 'passed'))),
+      db.select({ count: sql<string>`count(*)` }).from(proposals).where(and(eq(proposals.daoId, daoId), eq(proposals.status, 'failed'))),
+      // FIXED: Scoped vote count to target DAO proposals
+      db.select({ count: sql<string>`count(*)` })
+        .from(votes)
+        .innerJoin(proposals, eq(votes.proposalId, proposals.id))
         .where(eq(proposals.daoId, daoId)),
-      db.select({ count: sql<number>`count(*)` })
+      db.select({ avg: sql<string>`AVG(CAST(participation AS numeric))` })
         .from(proposals)
-        .where(and(eq(proposals.daoId, daoId), eq(proposals.status, 'passed'))),
-      db.select({ count: sql<number>`count(*)` })
-        .from(proposals)
-        .where(and(eq(proposals.daoId, daoId), eq(proposals.status, 'failed'))),
-      db.select({ count: sql<number>`count(*)` })
-        .from(votes),
-      db.select({
-        avg: sql<number>`AVG(CAST(participation AS numeric))`
-      }).from(proposals)
         .where(eq(proposals.daoId, daoId)),
     ]);
 
-    const passRate = totalProposals[0].count > 0
-      ? (passedProposals[0].count / totalProposals[0].count) * 100
-      : 0;
+    const totalProposals = Number(totalProposalsRes[0]?.count ?? 0);
+    const passedProposals = Number(passedProposalsRes[0]?.count ?? 0);
+    const failedProposals = Number(failedProposalsRes[0]?.count ?? 0);
+    const totalVotes = Number(totalVotesRes[0]?.count ?? 0);
+    const averageParticipation = Number(averageParticipationRes[0]?.avg ?? 0);
+
+    const passRate = totalProposals > 0 ? (passedProposals / totalProposals) * 100 : 0;
 
     res.json({
       analytics: {
-        totalProposals: totalProposals[0].count,
-        passedProposals: passedProposals[0].count,
-        failedProposals: failedProposals[0].count,
-        passRate: parseFloat(passRate.toFixed(2)),
-        averageParticipation: averageParticipation[0]?.avg || 0,
-        votingStatus: dao[0].votingPaused ? 'paused' : 'active',
-      }
+        totalProposals,
+        passedProposals,
+        failedProposals,
+        totalVotes,
+        passRate: Number(passRate.toFixed(2)),
+        averageParticipation: Number(averageParticipation.toFixed(2)),
+        votingStatus: dao.status === 'suspended' ? 'paused' : 'active',
+      },
     });
   } catch (error) {
     logger.error('Error fetching voting analytics:', error);
@@ -395,57 +359,46 @@ router.get('/daos/:daoId/voting/analytics', async (req: Request, res: Response) 
 router.get('/daos/:daoId/voting/participation', async (req: Request, res: Response) => {
   try {
     const { daoId } = req.params;
-    const { page = '1', limit = '20' } = req.query;
-    const adminId = (req.user as any)?.id;
-    const userRole = (req.user as any)?.roles;
+    const page = Math.max(1, parseInt((req.query.page as string) || '1', 10));
+    const limit = Math.max(1, Math.min(100, parseInt((req.query.limit as string) || '20', 10)));
+    const offset = (page - 1) * limit;
 
-    // Verify DAO exists
-    const dao = await db.select().from(daos).where(eq(daos.id, daoId));
-    if (!dao.length) {
-      return res.status(404).json({ error: 'DAO not found' });
+    const user = req.user as AuthenticatedUser | undefined;
+    const adminId = user?.id;
+    const userRole = typeof user?.roles === 'string'
+      ? user.roles
+      : Array.isArray(user?.roles)
+        ? user.roles[0]
+        : undefined;
+
+    const { error, statusCode, dao } = await verifyDaoAccess(daoId, adminId, userRole, ['admin', 'elder', 'member']);
+    if (error || !dao) {
+      return res.status(statusCode).json({ error });
     }
 
-    // Check permissions
-    if (userRole !== 'super_admin') {
-      const isDaoAdmin = await db
-        .select()
-        .from(daoMemberships)
-        .where(and(
-          eq(daoMemberships.daoId, daoId),
-          eq(daoMemberships.userId, adminId)
-        ));
-
-      if (!isDaoAdmin.length) {
-        return res.status(403).json({ error: 'Access denied' });
-      }
-    }
-
-    const offset = (parseInt(page as string) - 1) * parseInt(limit as string);
-
-    // Get member voting participation
     const participation = await db
       .select({
         memberId: votes.userId,
-        totalVotes: sql<number>`count(*)`,
-        yesVotes: sql<number>`COUNT(CASE WHEN ${votes.voteType} = 'yes' THEN 1 END)`,
-        noVotes: sql<number>`COUNT(CASE WHEN ${votes.voteType} = 'no' THEN 1 END)`,
-        abstainVotes: sql<number>`COUNT(CASE WHEN ${votes.voteType} = 'abstain' THEN 1 END)`,
+        totalVotes: sql<number>`CAST(count(*) AS integer)`,
+        yesVotes: sql<number>`CAST(COUNT(CASE WHEN ${votes.voteType} = 'yes' THEN 1 END) AS integer)`,
+        noVotes: sql<number>`CAST(COUNT(CASE WHEN ${votes.voteType} = 'no' THEN 1 END) AS integer)`,
+        abstainVotes: sql<number>`CAST(COUNT(CASE WHEN ${votes.voteType} = 'abstain' THEN 1 END) AS integer)`,
       })
       .from(votes)
       .innerJoin(proposals, eq(votes.proposalId, proposals.id))
       .where(eq(proposals.daoId, daoId))
       .groupBy(votes.userId)
-      .orderBy(desc(sql<number>`count(*)`))
-      .limit(parseInt(limit as string))
+      .orderBy(desc(sql`count(*)`))
+      .limit(limit)
       .offset(offset);
 
     res.json({
       participation,
-      dao: { id: daoId, name: dao[0].name },
+      dao: { id: daoId, name: dao.name },
       pagination: {
-        page: parseInt(page as string),
-        limit: parseInt(limit as string),
-      }
+        page,
+        limit,
+      },
     });
   } catch (error) {
     logger.error('Error fetching participation:', error);

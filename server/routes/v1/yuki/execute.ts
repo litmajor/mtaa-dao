@@ -13,7 +13,8 @@
  * POST   /v1/yuki/execute/move                 - Move assets (simple transfer)
  */
 
-import express, { Request, Response } from 'express';
+import express from 'express';
+import type { Request, Response } from 'express'
 import { z } from 'zod';
 import { isAuthenticated } from '../../../auth';
 import { logger } from '../../../utils/logger';
@@ -21,7 +22,8 @@ import { db } from '../../../storage';
 import advancedModeGuard from '../../../middleware/advancedModeGuard';
 import { walletTransactions } from '../../../../shared/schema';
 import { dexService } from '../../../services/dexRoutingService';
-import { BridgeIntegration, BridgeProtocol } from '../../../services/bridgeIntegration';
+import { BridgeIntegration} from '../../../services/bridgeIntegration';
+import type { BridgeProtocol } from '../../../services/bridgeIntegration';
 import { FlashLoanSimulator } from '../../../services/tradingDexSimulator';
 import { gasPriceOracle } from '../../../services/gasPriceOracle';
 
@@ -736,7 +738,7 @@ router.post(
         // Get gas price from oracle
         const chainName = data.chainId === 42220 ? 'celo' : data.chainId === 1 ? 'ethereum' : data.chainId === 137 ? 'polygon' : data.chainId === 56 ? 'bsc' : data.chainId === 43114 ? 'avalanche' : 'ethereum';
         const gasPrices = await gasPriceOracle.getCurrentGasPrices(undefined as any, chainName);
-        gasPriceGwei = parseFloat(gasPrices.standard) / 1e9; // Convert from wei to gwei
+        gasPriceGwei = parseFloat(gasPrices.baseFee) / 1e9; // Convert from wei to gwei
       } catch (gasError) {
         logger.warn('[YUKI] Failed to fetch gas price, using fallback', { error: gasError });
         // Fallback gas prices (in gwei)

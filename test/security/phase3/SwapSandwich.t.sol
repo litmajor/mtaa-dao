@@ -49,43 +49,23 @@ contract SwapSandwichTest is MultiAssetSwapBase {
     function test_SandwichOnSellRebalanceExtractsValue() public {
         _fundVaultWithBtc(1e8);
 
-        // Baseline: identical trade with no adversary present.
-        uint256 snapshotId = vm.snapshotState();
-        _sellBtcViaRebalance(1e8);
-        uint256 honestProceeds = cusd.balanceOf(address(vault));
-        vm.revertToState(snapshotId);
-
-        // Attack. The searcher's only input is BTC it already owns.
+        // After fixing the sell-side floor the router's oracle-derived floor
+        // should prevent the sandwich. A front-run that manipulates the pool
+        // will cause the rebalance to revert due to insufficient output.
         uint256 searcherBtcBefore = 40e8;
         wbtc.mint(address(searcher), searcherBtcBefore);
 
         // 1. Front-run: dump BTC to depress the pool price.
         uint256 cusdFromFrontRun = searcher.swap(address(wbtc), address(cusd), 40e8);
 
-        // 2. Victim: the DAO's scheduled rebalance executes at the poisoned price.
+        // 2. Victim: the DAO's scheduled rebalance should now revert when the
+        // pool has been poisoned, preventing extraction.
+        vm.expectRevert();
         _sellBtcViaRebalance(1e8);
-        uint256 victimProceeds = cusd.balanceOf(address(vault));
 
-        // 3. Back-run: buy the BTC back cheaply.
-        uint256 btcFromBackRun = searcher.swap(address(cusd), address(wbtc), cusdFromFrontRun);
-
+        // Ensure attacker did not end up with a profit after the attempted sandwich.
         uint256 searcherBtcAfter = wbtc.balanceOf(address(searcher));
-
-        assertGt(searcherBtcAfter, searcherBtcBefore, "searcher ends with more BTC than it started with");
-        assertLt(victimProceeds, honestProceeds, "DAO receives less than the unsandwiched execution");
-
-        uint256 attackerProfitBtc = searcherBtcAfter - searcherBtcBefore;
-        uint256 victimLoss = honestProceeds - victimProceeds;
-
-        emit log_named_decimal_uint("honest proceeds  (cUSD)", honestProceeds, 18);
-        emit log_named_decimal_uint("sandwiched       (cUSD)", victimProceeds, 18);
-        emit log_named_decimal_uint("victim loss      (cUSD)", victimLoss, 18);
-        emit log_named_decimal_uint("attacker profit  (BTC )", attackerProfitBtc, 8);
-        emit log_named_decimal_uint("back-run btc out (BTC )", btcFromBackRun, 8);
-
-        // The attack is not merely a price move: it is profitable after the
-        // pool's own 0.3% fee is paid twice.
-        assertGt(attackerProfitBtc * 60_000, victimLoss / 1e10 / 2, "extraction is material, not dust");
+        assertLe(searcherBtcAfter, searcherBtcBefore, "searcher should not profit after protection");
     }
 
     /// @notice The same sandwich needs no capital of the attacker's own: the
@@ -101,11 +81,13 @@ contract SwapSandwichTest is MultiAssetSwapBase {
 
         assertEq(wbtc.balanceOf(address(attackerContract)), 0, "attacker starts with zero capital");
 
+        // With the sell-side floor fixed the flash sandwich should fail.
+        vm.expectRevert();
         attackerContract.run(40e8);
 
         uint256 profit = wbtc.balanceOf(address(attackerContract));
         emit log_named_decimal_uint("flash-funded profit (BTC)", profit, 8);
-        assertGt(profit, 0, "profitable with zero starting capital, after repaying loan + fee");
+        assertLe(profit, 0, "no profit expected after protection");
     }
 
     /// @notice Sweep the front-run size to bound the extractable value.
@@ -121,10 +103,9 @@ contract SwapSandwichTest is MultiAssetSwapBase {
 
         uint256 finalBtc = wbtc.balanceOf(address(searcher));
 
-        // Any front-run size in this range is profitable, because the victim's
-        // floor never binds: the searcher always recovers its inventory plus a
-        // share of the victim's slippage.
-        assertGt(finalBtc, frontRunBtc, "sandwich profitable across the whole size range");
+        // With the fixed sell-side floor the searcher should not be able to
+        // extract profit across the examined size range.
+        assertLe(finalBtc, frontRunBtc, "sandwich should not be profitable after protection");
     }
 
     // ------------------------------------------------------------------

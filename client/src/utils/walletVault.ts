@@ -14,6 +14,7 @@ import { Wallet, HDNodeWallet } from 'ethers';
 
 const SESSION_TIMEOUT_MS = 10 * 60 * 1000; // 10 min — tune based on your risk tolerance
 const LOCAL_KEYSTORE_KEY = 'mtaa_wallet_keystore';
+const BACKUP_ITERATIONS = 600000;
 
 type SessionSigner = Wallet | HDNodeWallet;
 
@@ -102,22 +103,23 @@ export async function createAndBackupWallet(
   // Now back up server-side. This can fail without the user being
   // functionally blocked — but they must be told clearly, not left assuming
   // they're covered when they're not.
-  const backupResp = await fetch('/api/v1/wallets/vault/backup', {
+  const backupBlob = await encryptMnemonicBackup(mnemonic, passphrase);
+  const backupResp = await fetch('/api/v1/wallets/setup/backup', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     credentials: 'include',
-    body: JSON.stringify({ walletId, encryptedBlob }),
+    body: JSON.stringify(backupBlob),
   });
 
   if (!backupResp.ok) {
     // Retry once — transient network failures are common enough on the
     // target market's connectivity to be worth one automatic retry before
     // surfacing this to the user as a real problem.
-    const retryResp = await fetch('/api/v1/wallets/vault/backup', {
+    const retryResp = await fetch('/api/v1/wallets/setup/backup', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       credentials: 'include',
-      body: JSON.stringify({ walletId, encryptedBlob }),
+      body: JSON.stringify(backupBlob),
     });
 
     if (!retryResp.ok) {
@@ -182,35 +184,24 @@ export async function unlockWallet(passphrase: string): Promise<{ address: strin
  * since local storage is precisely what's missing in this path.
  */
 export async function restoreFromServerBackup(
-  walletId: string,
   passphrase: string
 ): Promise<{ address: string }> {
-  const resp = await fetch(`/api/v1/wallets/vault/retrieve/${encodeURIComponent(walletId)}`, {
+  const resp = await fetch('/api/v1/wallets/setup/backup', {
     method: 'GET',
     credentials: 'include', // auth via session cookie, NOT a userId query param
   });
 
-  if (resp.status === 403) {
-    throw new Error('ACCESS_DENIED: this wallet does not belong to the current account');
-  }
   if (resp.status === 404) {
-    throw new Error('NO_BACKUP_FOUND: no server backup exists for this wallet');
+    throw new Error('NO_BACKUP_FOUND: no server backup exists for this account');
   }
   if (!resp.ok) {
     throw new Error(`RETRIEVAL_FAILED: ${resp.status}`);
   }
 
-  const { data } = await resp.json();
-
-  let wallet: SessionSigner;
-  try {
-    wallet = (await Wallet.fromEncryptedJson(JSON.stringify(data.encryptedBlob), passphrase)) as unknown as SessionSigner;
-  } catch {
-    throw new Error('INCORRECT_PASSPHRASE');
-  }
-
-  // Restore to local storage so we don't hit the network again this session.
-  await setStoredKeystore({ walletId, address: wallet.address, encryptedBlob: data.encryptedBlob });
+  const data = await resp.json();
+  if (!data.backupExists || !data.blob) throw new Error('NO_BACKUP_FOUND: no server backup exists for this account');
+  const mnemonic = await decryptMnemonicBackup(data.blob, passphrase);
+  const wallet = Wallet.fromPhrase(mnemonic) as unknown as SessionSigner;
 
   sessionSigner = wallet;
   armSessionTimeout();
@@ -247,4 +238,58 @@ export function lockWallet(): void {
 export async function forgetLocalWallet(): Promise<void> {
   clearSession();
   await deleteStoredKeystore();
+}
+
+function encodeBase64(value: ArrayBuffer): string {
+  const bytes = new Uint8Array(value);
+  let binary = '';
+  for (const byte of bytes) binary += String.fromCharCode(byte);
+  return btoa(binary);
+}
+
+function decodeBase64(value: string): ArrayBuffer {
+  const binary = atob(value);
+  const bytes = Uint8Array.from(binary, character => character.charCodeAt(0));
+  return bytes.buffer as ArrayBuffer;
+}
+
+async function encryptMnemonicBackup(mnemonic: string, passphrase: string) {
+  const encoder = new TextEncoder();
+  const salt = crypto.getRandomValues(new Uint8Array(16));
+  const iv = crypto.getRandomValues(new Uint8Array(12));
+  const baseKey = await crypto.subtle.importKey('raw', encoder.encode(passphrase), 'PBKDF2', false, ['deriveKey']);
+  const key = await crypto.subtle.deriveKey(
+    { name: 'PBKDF2', salt, iterations: BACKUP_ITERATIONS, hash: 'SHA-256' },
+    baseKey,
+    { name: 'AES-GCM', length: 256 },
+    false,
+    ['encrypt']
+  );
+  const ciphertext = await crypto.subtle.encrypt({ name: 'AES-GCM', iv }, key, encoder.encode(mnemonic));
+  return {
+    version: 1,
+    kdf: 'PBKDF2-SHA256',
+    iterations: BACKUP_ITERATIONS,
+    salt: encodeBase64(salt.buffer),
+    iv: encodeBase64(iv.buffer),
+    ciphertext: encodeBase64(ciphertext),
+  };
+}
+
+export async function decryptMnemonicBackup(blob: any, passphrase: string): Promise<string> {
+  const encoder = new TextEncoder();
+  const baseKey = await crypto.subtle.importKey('raw', encoder.encode(passphrase), 'PBKDF2', false, ['deriveKey']);
+  const key = await crypto.subtle.deriveKey(
+    { name: 'PBKDF2', salt: decodeBase64(blob.salt), iterations: blob.iterations, hash: 'SHA-256' },
+    baseKey,
+    { name: 'AES-GCM', length: 256 },
+    false,
+    ['decrypt']
+  );
+  try {
+    const plaintext = await crypto.subtle.decrypt({ name: 'AES-GCM', iv: decodeBase64(blob.iv) }, key, decodeBase64(blob.ciphertext));
+    return new TextDecoder().decode(plaintext);
+  } catch {
+    throw new Error('INCORRECT_PASSPHRASE');
+  }
 }

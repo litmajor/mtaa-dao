@@ -1,7 +1,8 @@
-import express, { Request, Response } from 'express';
+import express from 'express';
+import type { Request, Response } from 'express';
 import crypto from 'crypto';
 import { db } from '../../../../db';
-import { paymentTransactions, accounts } from '../../../../../shared/schema';
+import { paymentTransactions, accounts, users } from '../../../../../shared/schema';
 import { eq, sql, and } from 'drizzle-orm';
 import { paymentGatewayService } from '../../../../services/paymentGatewayService';
 import { paymentRecoverySAGA } from '../../../../services/PaymentRecoverySAGAOrchestrator';
@@ -18,6 +19,39 @@ import { rateLimitMiddleware, withdrawalLimits, depositLimits } from '../../../.
 import { getEventEmitter } from '../../../../middleware/websocket-event-emitter';
 
 const router = express.Router();
+
+async function verifyMpesaPhoneOwnership(req: Request, res: Response, next: express.NextFunction) {
+  if (req.body.provider === 'mpesa') {
+    const authReq = req as AuthenticatedRequest;
+    const userId = authReq.user?.claims?.id;
+    if (!userId) {
+      res.status(401).json({ success: false, message: 'Unauthorized' });
+      return;
+    }
+    
+    const requestPhone = req.body.metadata?.phone;
+    if (!requestPhone) {
+      res.status(400).json({ success: false, message: 'Phone number is required for M-Pesa deposit' });
+      return;
+    }
+
+    const [user] = await db.select().from(users).where(eq(users.id, userId)).limit(1);
+    const userPhone = user?.phone;
+    if (!userPhone) {
+      res.status(403).json({ success: false, message: 'User does not have a verified phone number' });
+      return;
+    }
+
+    const normReq = requestPhone.replace(/\D/g, '').slice(-9);
+    const normUser = userPhone.replace(/\D/g, '').slice(-9);
+
+    if (normReq !== normUser) {
+      res.status(403).json({ success: false, message: 'phone number does not match verified account' });
+      return;
+    }
+  }
+  next();
+}
 
 // ===== TYPES =====
 
@@ -175,7 +209,7 @@ async function processWebhook(
 
 // ===== DEPOSIT =====
 
-router.post('/deposit', [isAuthenticated, rateLimitMiddleware(depositLimits)], async (req: Request, res: Response) => {
+router.post('/deposit', [isAuthenticated, verifyMpesaPhoneOwnership, rateLimitMiddleware(depositLimits)], async (req: Request, res: Response) => {
   const traceId = PaymentErrorHandler.generateTraceId();
   try {
     const authReq = req as AuthenticatedRequest;

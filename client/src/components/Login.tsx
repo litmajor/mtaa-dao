@@ -3,6 +3,7 @@ import authChannel from '../utils/authChannel';
 import { Button } from '@/components/ui/button';
 import { Eye, EyeOff, Mail, Lock, AlertCircle, Phone, Send, Sparkles, Shield, ArrowRight, Star, Zap, Globe, Heart } from 'lucide-react';
 import { HeroLogo } from '@/components/ui/logo';
+import OAuthConfirmationDialog from './OAuthConfirmationDialog';
 
 export default function MtaaDAOLogin() {
   // OAuth handlers
@@ -23,6 +24,8 @@ export default function MtaaDAOLogin() {
   const [isLoading, setIsLoading] = useState(false);
   const [mousePosition, setMousePosition] = useState({ x: 0, y: 0 });
   const [isVisible, setIsVisible] = useState(false);
+  const [showOAuthConfirmation, setShowOAuthConfirmation] = useState(false);
+  const [oauthConfirmEmail, setOauthConfirmEmail] = useState('');
 
   useEffect(() => {
     setIsVisible(true);
@@ -32,6 +35,18 @@ export default function MtaaDAOLogin() {
     if (rememberedEmail) {
       setEmailOrPhone(rememberedEmail);
       setRememberMe(true);
+    }
+    
+    // Check for OAuth confirmation flow
+    const params = new URLSearchParams(window.location.search);
+    if (params.get('requireConfirmation') === 'true') {
+      const email = params.get('email');
+      if (email) {
+        setOauthConfirmEmail(decodeURIComponent(email));
+        setShowOAuthConfirmation(true);
+        // Clean up URL without reloading
+        window.history.replaceState({}, document.title, '/login');
+      }
     }
     
     const handleMouseMove = (e: MouseEvent) => {
@@ -373,6 +388,20 @@ export default function MtaaDAOLogin() {
           </div>
         </div>
       </div>
+
+      {/* OAuth Confirmation Dialog */}
+      {showOAuthConfirmation && (
+        <OAuthConfirmationDialog
+          email={oauthConfirmEmail}
+          onSuccess={() => {
+            // Dialog will redirect on success
+          }}
+          onCancel={() => {
+            setShowOAuthConfirmation(false);
+            // Reset state to show login form
+          }}
+        />
+      )}
     </div>
   );
 }

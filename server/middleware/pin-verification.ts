@@ -4,7 +4,7 @@
  * Works with existing wallet sessions
  */
 
-import { Request, Response, NextFunction } from 'express';
+import type { Request, Response, NextFunction } from 'express';
 import { verifySessionToken } from '../services/wallet-session-service';
 import { logger } from '../utils/logger';
 import { getRequestUserId } from '../utils/requestUser';
@@ -108,10 +108,21 @@ export async function optionalPINVerification(
 ) {
   try {
     const sessionToken = req.headers['x-wallet-session'] as string;
+    const requestUserId = getRequestUserId(req);
 
     if (sessionToken) {
       const sessionResult = await verifySessionToken(sessionToken);
+
       if (sessionResult.valid) {
+        if (!requestUserId || requestUserId !== sessionResult.userId) {
+          logger.warn(`Optional PIN request blocked for mismatched session owner: ${sessionResult.userId} vs ${requestUserId}`);
+          return res.status(403).json({
+            success: false,
+            error: 'Session does not belong to this user.',
+            code: 'UNAUTHORIZED_SESSION',
+          });
+        }
+
         req.walletSession = sessionResult;
       }
     }
@@ -119,8 +130,11 @@ export async function optionalPINVerification(
     next();
   } catch (error) {
     logger.error('Optional PIN verification error:', error);
-    // Continue anyway, session just won't be available
-    next();
+    return res.status(500).json({
+      success: false,
+      error: 'PIN verification failed',
+      code: 'PIN_VERIFICATION_ERROR',
+    });
   }
 }
 
@@ -178,15 +192,27 @@ export async function verifyWalletAccess(
  * Example: Transfers > $1000 might require PIN re-entry
  */
 export function checkAmountThreshold(thresholdAmount?: string | number) {
-  const threshold = thresholdAmount 
-    ? parseFloat(String(thresholdAmount))
-    : process.env.PIN_REQUIRED_THRESHOLD
-      ? parseFloat(process.env.PIN_REQUIRED_THRESHOLD)
+  const threshold = Number.isFinite(Number(thresholdAmount))
+    ? Number(thresholdAmount)
+    : Number.isFinite(Number(process.env.PIN_REQUIRED_THRESHOLD))
+      ? Number(process.env.PIN_REQUIRED_THRESHOLD)
       : 10000; // $10,000 default
 
   return (req: PINProtectedRequest, res: Response, next: NextFunction) => {
     try {
-      const amount = req.body?.amount ? parseFloat(req.body.amount) : 0;
+      const rawAmount = req.body?.amount;
+      const amount = rawAmount === undefined || rawAmount === null || rawAmount === ''
+        ? 0
+        : Number(rawAmount);
+
+      if (!Number.isFinite(amount)) {
+        logger.warn('Malformed transaction amount rejected by PIN threshold guard', { amount: rawAmount, threshold });
+        return res.status(400).json({
+          success: false,
+          error: 'Invalid amount provided.',
+          code: 'INVALID_AMOUNT',
+        });
+      }
 
       if (amount > threshold) {
         if (!req.walletSession?.valid) {
@@ -199,15 +225,19 @@ export function checkAmountThreshold(thresholdAmount?: string | number) {
           });
         }
 
-        // Log large transaction
         logger.info(`Large PIN-verified transaction: $${amount}`, {
           userId: req.walletSession.userId,
           walletId: req.walletSession.walletId,
         });
 
         const maxAgeMs = Number(process.env.PIN_LARGE_TRANSFER_MAX_AGE_MS) || 5 * 60 * 1000;
-        const verifiedAt = req.walletSession.connectedAt || req.walletSession.lastAccessedAt;
-        const sessionAgeMs = verifiedAt ? Date.now() - verifiedAt.getTime() : Number.POSITIVE_INFINITY;
+        const verifiedAt = req.walletSession.connectedAt ?? req.walletSession.lastAccessedAt;
+        const sessionAgeMs = (() => {
+          if (!verifiedAt) return Number.POSITIVE_INFINITY;
+          const parsed = verifiedAt instanceof Date ? verifiedAt : new Date(verifiedAt as string | number);
+          if (Number.isNaN(parsed.getTime())) return Number.POSITIVE_INFINITY;
+          return Date.now() - parsed.getTime();
+        })();
 
         if (sessionAgeMs > maxAgeMs) {
           return res.status(401).json({
@@ -223,7 +253,11 @@ export function checkAmountThreshold(thresholdAmount?: string | number) {
       next();
     } catch (error) {
       logger.error('Amount threshold check error:', error);
-      next(); // Continue even if check fails
+      return res.status(500).json({
+        success: false,
+        error: 'PIN amount validation failed',
+        code: 'PIN_VALIDATION_ERROR',
+      });
     }
   };
 }

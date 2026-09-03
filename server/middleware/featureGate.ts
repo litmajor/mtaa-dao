@@ -15,7 +15,7 @@
  * Also exports: buildManifestForUser() — used by GET /api/v1/features/manifest
  */
 
-import { Request, Response, NextFunction } from 'express';
+import type { Request, Response, NextFunction } from 'express';
 import { db } from '../storage';
 import { users } from '../../shared/schema';
 import { eq } from 'drizzle-orm';
@@ -26,7 +26,7 @@ import {
   buildFeatureManifest,
   type Persona,
 } from '../../shared/config/features';
-import { isFeatureEnabled } from '../services/featureVisibilityService';
+import { isFeatureEnabled } from '../services/featureService';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // TYPES
@@ -51,6 +51,22 @@ declare global {
 // INTERNAL: SHARED USER LOOKUP
 // ─────────────────────────────────────────────────────────────────────────────
 
+function getAuthenticatedUserId(req: Request): string | null {
+  const candidates = [
+    (req as any).user?.id,
+    (req as any).user?.userId,
+    (req as any).userId,
+  ];
+
+  for (const candidate of candidates) {
+    if (typeof candidate === 'string' && candidate.trim().length > 0) {
+      return candidate.trim();
+    }
+  }
+
+  return null;
+}
+
 /** Single DB read per request — returns persona + advancedMode */
 async function getUserAccessRecord(userId: string) {
   const rows = await db
@@ -63,6 +79,112 @@ async function getUserAccessRecord(userId: string) {
     .limit(1);
 
   return rows[0] ?? null;
+}
+
+async function evaluateFeatureAccess(req: Request, featureId: string) {
+  const userId = getAuthenticatedUserId(req);
+
+  if (!userId) {
+    return {
+      allowed: false,
+      status: 401,
+      body: { success: false, error: 'Authentication required' },
+    } as const;
+  }
+
+  const feature = FEATURES[featureId];
+  if (!feature) {
+    logger.error(`[FeatureGate] Registry miss: "${featureId}"`, { route: req.path });
+    return {
+      allowed: false,
+      status: 500,
+      body: { success: false, error: 'Unknown feature gate' },
+    } as const;
+  }
+
+  if (!checkGlobalFlag(featureId)) {
+    logger.info(`[FeatureGate] GLOBAL_OFF: ${featureId}`, { userId, route: req.path });
+    return {
+      allowed: false,
+      status: 503,
+      body: {
+        success: false,
+        error: 'Feature not yet available',
+        feature: featureId,
+        reason: 'feature_disabled',
+      },
+    } as const;
+  }
+
+  const record = await getUserAccessRecord(userId);
+  if (!record) {
+    logger.warn(`[FeatureGate] User not found: ${userId}`);
+    return {
+      allowed: false,
+      status: 403,
+      body: { success: false, error: 'Access denied' },
+    } as const;
+  }
+
+  const persona = (record.persona as Persona) ?? 'okedi';
+  const advancedMode = record.advancedMode === true;
+  const presentation = feature.presentation[persona];
+  const accessibility = isFeatureAccessible(featureId, persona, advancedMode);
+
+  if (presentation === 'hidden' || !accessibility.accessible) {
+    if (presentation === 'hidden') {
+      logger.info(`[FeatureGate] HIDDEN: ${featureId} / ${persona}`, { userId, route: req.path });
+      return {
+        allowed: false,
+        status: 404,
+        body: { success: false, error: 'Not found' },
+      } as const;
+    }
+
+    logger.info(`[FeatureGate] INACCESSIBLE: ${featureId} / ${persona}`, {
+      userId,
+      route: req.path,
+      reason: accessibility.reason,
+    });
+
+    return {
+      allowed: false,
+      status: 403,
+      body: {
+        success: false,
+        error: 'Feature not accessible',
+        feature: featureId,
+        reason: accessibility.reason,
+        unlock: feature.unlock,
+      },
+    } as const;
+  }
+
+  if (feature.requiresAdvancedMode && !advancedMode) {
+    logger.warn(`[FeatureGate] ADVANCED_REQUIRED: ${featureId}`, { userId, route: req.path });
+    return {
+      allowed: false,
+      status: 403,
+      body: {
+        success: false,
+        error: 'Advanced Mode required',
+        feature: featureId,
+        toggle: '/api/v1/settings/advanced-mode',
+        unlock: feature.unlock ?? {
+          action: 'toggle_advanced_mode',
+          label: 'Enable Advanced Mode',
+          href: '/api/v1/settings/advanced-mode',
+        },
+      },
+    } as const;
+  }
+
+  req.featureContext = { featureId, persona, advancedMode };
+  return {
+    allowed: true,
+    status: 200,
+    body: null,
+  } as const;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -103,91 +225,16 @@ export function featureGate(featureId: string) {
     next: NextFunction,
   ) {
     try {
-      const userId = (req as any).user?.id ?? (req as any).userId;
+      const result = await evaluateFeatureAccess(req, featureId);
 
-      if (!userId) {
-        return res.status(401).json({ success: false, error: 'Authentication required' });
+      if (!result.allowed) {
+        return res.status(result.status).json(result.body);
       }
-
-      const feature = FEATURES[featureId];
-      if (!feature) {
-        logger.error(`[FeatureGate] Registry miss: "${featureId}"`, { route: req.path });
-        return res.status(500).json({ success: false, error: 'Unknown feature gate' });
-      }
-
-      // ── GATE 1: Global flag ──────────────────────────────────────────────────
-      if (!checkGlobalFlag(featureId)) {
-        logger.info(`[FeatureGate] GLOBAL_OFF: ${featureId}`, { userId, route: req.path });
-        return res.status(503).json({
-          success: false,
-          error: 'Feature not yet available',
-          feature: featureId,
-          reason: 'feature_disabled',
-        });
-      }
-
-      // ── DB READ (single, covers gates 2 & 3) ────────────────────────────────
-      const record = await getUserAccessRecord(userId as string);
-      if (!record) {
-        logger.warn(`[FeatureGate] User not found: ${userId}`);
-        return res.status(403).json({ success: false, error: 'Access denied' });
-      }
-
-      const persona = (record.persona as Persona) ?? 'okedi';
-      const advancedMode = record.advancedMode === true;
-      const presentation = feature.presentation[persona];
-
-      // ── GATE 2: Persona presentation ─────────────────────────────────────────
-      // 'hidden' = feature does not exist for this persona → 404 not 403.
-      // We return a vague 404 so the route topology isn't leaked.
-      if (presentation === 'hidden') {
-        logger.info(`[FeatureGate] HIDDEN: ${featureId} / ${persona}`, { userId, route: req.path });
-        return res.status(404).json({ success: false, error: 'Not found' });
-      }
-
-      // 'locked' = feature exists in the persona's surface but access is gated.
-      // Still runs gate 3 — a locked feature may also require advanced mode.
-      if (presentation === 'locked') {
-        const { accessible, reason } = isFeatureAccessible(featureId, persona, advancedMode);
-        if (!accessible) {
-          logger.info(`[FeatureGate] LOCKED: ${featureId} / ${persona}`, { userId, route: req.path, reason });
-          return res.status(403).json({
-            success: false,
-            error: 'Feature not accessible',
-            feature: featureId,
-            reason,
-            unlock: feature.unlock,
-          });
-        }
-      }
-
-      // ── GATE 3: Advanced mode (hard gate, DB read already done) ─────────────
-      if (feature.requiresAdvancedMode && !advancedMode) {
-        logger.warn(`[FeatureGate] ADVANCED_REQUIRED: ${featureId}`, { userId, route: req.path });
-        return res.status(403).json({
-          success: false,
-          error: 'Advanced Mode required',
-          feature: featureId,
-          toggle: '/api/v1/settings/advanced-mode',
-          unlock: feature.unlock ?? {
-            action: 'toggle_advanced_mode',
-            label: 'Enable Advanced Mode',
-            href: '/api/v1/settings/advanced-mode',
-          },
-        });
-      }
-
-      if (feature.requiresAdvancedMode) {
-        logger.info(`[FeatureGate] ADVANCED_OK: ${featureId}`, { userId, route: req.path });
-      }
-
-      // Attach context so downstream handlers can read persona / advancedMode
-      req.featureContext = { featureId, persona, advancedMode };
 
       next();
     } catch (error) {
       logger.error(`[FeatureGate] Error on "${featureId}"`, {
-        userId: (req as any).user?.id,
+        userId: getAuthenticatedUserId(req),
         route: req.path,
         error,
       });
@@ -218,37 +265,14 @@ export function featureGateAny(...featureIds: string[]) {
     let lastBody: object = { success: false, error: 'Access denied' };
 
     for (const featureId of featureIds) {
-      let passed = false;
+      const result = await evaluateFeatureAccess(req, featureId);
 
-      await new Promise<void>((resolve) => {
-        const mw = featureGate(featureId);
-        // Override res.json temporarily to capture the rejection body
-        const origJson = res.json.bind(res);
-        const origStatus = res.status.bind(res);
-        let capturedStatus = 200;
+      if (result.allowed) {
+        return next();
+      }
 
-        res.status = (code: number) => {
-          capturedStatus = code;
-          return res;
-        };
-
-        mw(req, res, () => {
-          passed = true;
-          // Restore overrides
-          res.json = origJson;
-          res.status = origStatus;
-          resolve();
-        });
-
-        if (!passed) {
-          lastStatus = capturedStatus;
-          res.json = origJson;
-          res.status = origStatus;
-          resolve();
-        }
-      });
-
-      if (passed) return next();
+      lastStatus = result.status;
+      lastBody = result.body;
     }
 
     return res.status(lastStatus).json(lastBody);

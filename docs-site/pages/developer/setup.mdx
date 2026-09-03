@@ -98,10 +98,22 @@ Narrower test entry points exist: `test:server`, `test:shared-schema`, `test:cov
 
 ## Contracts
 
-```bash
-npm run contracts:compile          # hardhat compile
-npm run contracts:deploy           # hardhat run scripts/deploy.ts --network localhost
-```
+<Callout type="warning">
+  This repository intentionally splits the toolchains:
+
+  - Hardhat is the app toolchain for the production contracts in `contracts/`.
+  - Foundry is only for the local security harness under `test/security/` and is configured via `foundry.toml`.
+
+  Use these commands for the app stack:
+
+  ```bash
+  npm run contracts:compile          # hardhat compile
+  npm run contracts:deploy           # hardhat run scripts/deploy.ts --network localhost
+  ```
+
+  Do not run `forge build` or repo-root `forge` commands against the application contracts.
+  The repo's Foundry config is intentionally scoped to the security suite, not the app-wide contract set.
+</Callout>
 
 See [Smart contracts](/reference/contracts) for the generated inventory. Deployment
 addresses are **not** documented anywhere in this site, because the repository contains no

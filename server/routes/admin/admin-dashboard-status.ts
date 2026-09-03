@@ -6,49 +6,64 @@
  * Power Checklist: #4 Authority Transparency, #8 Post-Action Narrative
  */
 
-import { Router, Request, Response } from 'express';
+import { Router } from 'express';
+import type { Request, Response } from 'express';
 import softDeleteService from '../../services/softDeleteService';
 import auditLoggingService from '../../services/auditLoggingService';
+import { logger as dashboardLogger } from '../../utils/logger';
+import { requireRole } from '../../middleware/rbac';
 
 const router = Router();
+const requireSuperAdmin = requireRole('super_admin');
+
+function getAdminId(req: Request): string | null {
+  return req.user?.userId || req.user?.claims?.sub || req.user?.id || null;
+}
+
+function getAdminRole(req: Request): string {
+  if (req.userRole) return req.userRole;
+  if (req.user?.role) return req.user.role;
+  const roles = req.user?.roles;
+  return Array.isArray(roles) ? roles[0] || 'super_admin' : roles || 'super_admin';
+}
+
+function parsePagination(query: Request['query']): { limit: number; offset: number } | null {
+  const limitValue = String(query.limit ?? '50');
+  const offsetValue = String(query.offset ?? '0');
+  if (!/^\d+$/.test(limitValue) || !/^\d+$/.test(offsetValue)) return null;
+  const limit = Number(limitValue);
+  const offset = Number(offsetValue);
+  if (!Number.isSafeInteger(limit) || limit < 1 || limit > 100 || !Number.isSafeInteger(offset) || offset < 0) return null;
+  return { limit, offset };
+}
+
+async function auditDashboardAccess(req: Request, actionType: string, targetId: string): Promise<void> {
+  const actorId = getAdminId(req);
+  if (!actorId) return;
+  try {
+    await auditLoggingService.logAction({
+      actorId, actorType: 'super_admin', actorRole: getAdminRole(req), actionType,
+      actionCategory: 'admin', targetType: 'admin_dashboard', targetId, targetName: targetId,
+      result: 'success', reversible: false, endpoint: req.originalUrl,
+    });
+  } catch (error) {
+    dashboardLogger.error('Dashboard access audit failed:', error);
+  }
+}
 
 /**
  * GET /api/admin/dashboard/status
  * Get comprehensive dashboard status
  */
-router.get('/status', async (req: Request, res: Response) => {
+router.get('/status', requireSuperAdmin, async (req: Request, res: Response) => {
   try {
-    const adminId = (req as any).adminId;
+    const adminId = getAdminId(req);
     if (!adminId) {
-      return res.status(403).json({ error: 'Unauthorized' });
+      return res.status(401).json({ error: 'Authentication required' });
     }
 
     const now = new Date();
-
-    // Get soft-deleted items pending recovery
-    const [
-      deletedUsers,
-      deletedDAOs,
-      deletedAdmins,
-    ] = await Promise.all([
-      softDeleteService.listSoftDeleted('user', 100, 0),
-      softDeleteService.listSoftDeleted('dao', 100, 0),
-      softDeleteService.listSoftDeleted('admin_user', 100, 0),
-    ]);
-
-    // Filter for items still in recovery window (not expired)
-    const recoveryItems = {
-      users: deletedUsers.filter(u => u.daysRemaining > 0),
-      daos: deletedDAOs.filter(d => d.daysRemaining > 0),
-      admins: deletedAdmins.filter(a => a.daysRemaining > 0),
-    };
-
-    // Count items expiring soon (< 3 days)
-    const expiringItems = {
-      users: deletedUsers.filter(u => u.daysRemaining > 0 && u.daysRemaining <= 3).length,
-      daos: deletedDAOs.filter(d => d.daysRemaining > 0 && d.daysRemaining <= 3).length,
-      admins: deletedAdmins.filter(a => a.daysRemaining > 0 && a.daysRemaining <= 3).length,
-    };
+    const recoveryStats = await softDeleteService.getSoftDeletedStats();
 
     // Get recent audit activity (last 24 hours)
     const oneDayAgo = new Date(now.getTime() - 24 * 60 * 60 * 1000);
@@ -67,8 +82,8 @@ router.get('/status', async (req: Request, res: Response) => {
 
     // Count critical actions (deletions, permission changes)
     const criticalActions = recentLogs.filter(log =>
-      ['user_deleted', 'dao_deleted', 'admin_deleted', 'permission_changed', 'audit_override'].includes(
-        log.action_type
+      ['user_deleted', 'dao_deleted', 'admin_deleted', 'user_permanently_deleted', 'dao_permanently_deleted', 'admin_permanently_deleted', 'permission_changed', 'audit_override'].includes(
+        log.actionType
       )
     ).length;
 
@@ -80,16 +95,16 @@ router.get('/status', async (req: Request, res: Response) => {
         softDeleteRecoverySystem: {
           status: 'operational' as const,
           pendingRecoveryItems: {
-            users: recoveryItems.users.length,
-            daos: recoveryItems.daos.length,
-            admins: recoveryItems.admins.length,
-            total: recoveryItems.users.length + recoveryItems.daos.length + recoveryItems.admins.length,
+            users: recoveryStats.user.recoverable,
+            daos: recoveryStats.dao.recoverable,
+            admins: recoveryStats.admin.recoverable,
+            total: recoveryStats.user.recoverable + recoveryStats.dao.recoverable + recoveryStats.admin.recoverable,
           },
           expiringWithin3Days: {
-            users: expiringItems.users,
-            daos: expiringItems.daos,
-            admins: expiringItems.admins,
-            total: expiringItems.users + expiringItems.daos + expiringItems.admins,
+            users: recoveryStats.user.expiringSoon,
+            daos: recoveryStats.dao.expiringSoon,
+            admins: recoveryStats.admin.expiringSoon,
+            total: recoveryStats.user.expiringSoon + recoveryStats.dao.expiringSoon + recoveryStats.admin.expiringSoon,
           },
         },
         auditLoggingSystem: {
@@ -111,9 +126,10 @@ router.get('/status', async (req: Request, res: Response) => {
       },
     };
 
+    await auditDashboardAccess(req, 'ADMIN_DASHBOARD_STATUS_ACCESSED', 'status');
     res.json(systemStatus);
   } catch (error) {
-    console.error('Error getting dashboard status:', error);
+    dashboardLogger.error('Error getting dashboard status:', error);
     res.status(500).json({
       error: 'Internal server error',
       timestamp: new Date(),
@@ -125,82 +141,48 @@ router.get('/status', async (req: Request, res: Response) => {
  * GET /api/admin/dashboard/recovery-items
  * Get detailed recovery items list with filtering
  */
-router.get('/recovery-items', async (req: Request, res: Response) => {
+router.get('/recovery-items', requireSuperAdmin, async (req: Request, res: Response) => {
   try {
-    const adminId = (req as any).adminId;
+    const adminId = getAdminId(req);
     if (!adminId) {
-      return res.status(403).json({ error: 'Unauthorized' });
+      return res.status(401).json({ error: 'Authentication required' });
     }
 
-    const { type = 'all', limit = '50', offset = '0' } = req.query;
-
-    const items: any = {
-      total: 0,
-      items: [],
-    };
-
-    const pageLimit = Math.min(parseInt(limit as string), 100);
-    const pageOffset = parseInt(offset as string);
-
-    if (type === 'all' || type === 'user') {
-      const users = await softDeleteService.listSoftDeleted('user', pageLimit, pageOffset);
-      items.items.push(
-        ...users
-          .filter(u => u.daysRemaining > 0)
-          .map(u => ({
-            id: u.id,
-            type: 'user',
-            name: u.name,
-            deletedAt: u.deletedAt,
-            deletedBy: u.deletedBy,
-            reason: u.reason,
-            recoveryDeadline: u.recoveryDeadline,
-            daysRemaining: u.daysRemaining,
-          }))
-      );
+    const { type = 'all' } = req.query;
+    const pagination = parsePagination(req.query);
+    if (!pagination) return res.status(400).json({ error: 'limit must be between 1 and 100 and offset must be non-negative' });
+    if (type !== 'all' && type !== 'user' && type !== 'dao' && type !== 'admin') {
+      return res.status(400).json({ error: 'Invalid recovery item type' });
     }
 
-    if (type === 'all' || type === 'dao') {
-      const daos = await softDeleteService.listSoftDeleted('dao', pageLimit, pageOffset);
-      items.items.push(
-        ...daos
-          .filter(d => d.daysRemaining > 0)
-          .map(d => ({
-            id: d.id,
-            type: 'dao',
-            name: d.name,
-            deletedAt: d.deletedAt,
-            deletedBy: d.deletedBy,
-            reason: d.reason,
-            recoveryDeadline: d.recoveryDeadline,
-            daysRemaining: d.daysRemaining,
-          }))
-      );
+    const items = { total: 0 as number, items: [] as Array<Record<string, unknown>> };
+    const addItem = (item: Awaited<ReturnType<typeof softDeleteService.listSoftDeleted>>[number]) => items.items.push({
+      id: item.id, type: item.type, name: item.name, deletedAt: item.deletedAt, deletedBy: item.deletedBy,
+      reason: item.reason, recoveryDeadline: item.recoveryDeadline, daysRemaining: item.daysRemaining,
+    });
+
+    if (type === 'all') {
+      (await softDeleteService.listAllSoftDeleted(pagination.limit, pagination.offset)).forEach(addItem);
     }
 
-    if (type === 'all' || type === 'admin') {
-      const admins = await softDeleteService.listSoftDeleted('admin_user', pageLimit, pageOffset);
-      items.items.push(
-        ...admins
-          .filter(a => a.daysRemaining > 0)
-          .map(a => ({
-            id: a.id,
-            type: 'admin',
-            name: a.name,
-            deletedAt: a.deletedAt,
-            deletedBy: a.deletedBy,
-            reason: a.reason,
-            recoveryDeadline: a.recoveryDeadline,
-            daysRemaining: a.daysRemaining,
-          }))
-      );
+    if (type === 'user') {
+      (await softDeleteService.listSoftDeleted('user', pagination.limit, pagination.offset)).forEach(addItem);
+    }
+
+    if (type === 'dao') {
+      (await softDeleteService.listSoftDeleted('dao', pagination.limit, pagination.offset)).forEach(addItem);
+    }
+
+    if (type === 'admin') {
+      (await softDeleteService.listSoftDeleted('admin', pagination.limit, pagination.offset)).forEach(addItem);
     }
 
     items.total = items.items.length;
 
+    await auditDashboardAccess(req, 'ADMIN_DASHBOARD_RECOVERY_ITEMS_ACCESSED', String(type));
     res.json(items);
   } catch (error) {
-    console.error('Error getting recovery items:', error);
+    dashboardLogger.error('Error getting recovery items:', error);
     res.status(500).json({ error: 'Internal server error' });
   }
 });
@@ -209,11 +191,11 @@ router.get('/recovery-items', async (req: Request, res: Response) => {
  * GET /api/admin/dashboard/audit-summary
  * Get audit activity summary with trends
  */
-router.get('/audit-summary', async (req: Request, res: Response) => {
+router.get('/audit-summary', requireSuperAdmin, async (req: Request, res: Response) => {
   try {
-    const adminId = (req as any).adminId;
+    const adminId = getAdminId(req);
     if (!adminId) {
-      return res.status(403).json({ error: 'Unauthorized' });
+      return res.status(401).json({ error: 'Authentication required' });
     }
 
     const now = new Date();
@@ -232,7 +214,7 @@ router.get('/audit-summary', async (req: Request, res: Response) => {
       }),
     ]);
 
-    res.json({
+    const response = {
       periods: {
         last7Days: {
           stats: stats7Day,
@@ -241,9 +223,11 @@ router.get('/audit-summary', async (req: Request, res: Response) => {
           stats: stats30Day,
         },
       },
-    });
+    };
+    await auditDashboardAccess(req, 'ADMIN_DASHBOARD_AUDIT_SUMMARY_ACCESSED', 'audit-summary');
+    res.json(response);
   } catch (error) {
-    console.error('Error getting audit summary:', error);
+    dashboardLogger.error('Error getting audit summary:', error);
     res.status(500).json({ error: 'Internal server error' });
   }
 });

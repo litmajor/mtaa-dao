@@ -139,6 +139,22 @@ export function ProfileTab() {
             <div>
               <h3 className="text-lg font-medium text-white">{user?.firstName} {user?.lastName}</h3>
               <p className="text-sm text-gray-400 mb-2">{user?.email}</p>
+
+              <div className="flex flex-wrap items-center gap-2 mb-2">
+                {user?.username ? (
+                  <Badge variant="secondary" className="bg-white/10 text-white border-white/10">@{user.username}</Badge>
+                ) : null}
+                {user?.signInMethod ? (
+                  <Badge variant="outline" className="border-white/10 text-gray-200 capitalize">
+                    {user.signInMethod}
+                  </Badge>
+                ) : null}
+                {(user?.authProviders || []).map((provider: string) => (
+                  <Badge key={provider} variant="outline" className="border-white/10 text-gray-200 capitalize">
+                    {provider}
+                  </Badge>
+                ))}
+              </div>
               
               <div className="flex items-center gap-4 text-sm mt-1 mb-2">
                 <div className="flex items-center text-gray-300">

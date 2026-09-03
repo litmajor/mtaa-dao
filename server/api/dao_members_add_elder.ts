@@ -2,7 +2,7 @@
 import { db } from '../db';
 import { daos, daoMemberships } from '../../shared/schema';
 import { eq, and } from 'drizzle-orm';
-import { Request, Response } from 'express';
+import type { Request, Response } from 'express';
 
 export async function addElderToMultisigHandler(req: Request, res: Response) {
   const { daoId, userId } = req.body;

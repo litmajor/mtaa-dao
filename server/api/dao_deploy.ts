@@ -216,22 +216,6 @@ const TREASURY_CONFIG: Record<CanonicalDaoType, Record<string, TreasuryConfig>> 
 
 const isAddress = (v: string) => /^0x[a-fA-F0-9]{40}$/.test(v);
 
-function resolveUserTier(
-  userProfile: any
-): 'free' | 'growth' | 'professional' | 'enterprise' {
-  const raw = String(
-    userProfile?.subscriptionPlan ||
-    userProfile?.plan ||
-    userProfile?.billingStatus ||
-    'free'
-  ).toLowerCase().replace(/[\s-]/g, '_');
-
-  if (['enterprise', 'meta', 'metadao'].includes(raw)) return 'enterprise';
-  if (['professional', 'pro', 'business'].includes(raw)) return 'professional';
-  if (['growth', 'premium', 'starter_plus'].includes(raw)) return 'growth';
-  return 'free';
-}
-
 function formatErrorMeta(err: unknown): Record<string, unknown> {
   if (err instanceof Error) {
     return {
@@ -244,8 +228,6 @@ function formatErrorMeta(err: unknown): Record<string, unknown> {
   }
   return { error: String(err) };
 }
-
-const TIER_HIERARCHY = ['free', 'growth', 'professional', 'enterprise'];
 
 // ── Main handler ──────────────────────────────────────────────────────────────
 
@@ -269,21 +251,9 @@ export async function daoDeployHandler(req: Request, res: Response) {
     const userProfile = await db.query.users.findFirst({
       where: eq(users.id, founderWallet),
     });
-    const userTier = resolveUserTier(userProfile);
-    const requiredTier =
-      (DAO_TYPE_CONFIG[daoType]?.requiredTier as string) || 'free';
-
-    if (
-      TIER_HIERARCHY.indexOf(userTier) <
-      TIER_HIERARCHY.indexOf(requiredTier)
-    ) {
-      return res.status(403).json({
-        error: 'Insufficient subscription tier',
-        message: `${daoType} requires ${requiredTier} tier or higher`,
-        currentTier: userTier,
-        requiredTier,
-      });
-    }
+    // NOTE: DAO type tier gating removed per pricing.md § 3, § 7.
+    // No DAO type requires subscription tier to be created.
+    // Feature gating (if any) belongs in subscription upsell flow, not creation path.
 
     // Elder validation
     if (!selectedElders || selectedElders.length < 1) {

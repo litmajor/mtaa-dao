@@ -127,7 +127,7 @@ async function main() {
     .map(s => s.trim())
     .filter(s => ethers.isAddress(s));
 
-  if (protocolSigners.length < 5) {
+  if (protocolSigners.length !== 5) {
     throw new Error(
       `PLATFORM_TREASURY_SIGNERS must contain exactly 5 valid addresses. Got: ${protocolSigners.length}`
     );
@@ -176,6 +176,10 @@ async function main() {
   await mtaaToken.waitForDeployment();
   const mtaaAddress = await mtaaToken.getAddress();
   logAddress('MTAAToken', mtaaAddress);
+
+  const setMultiSigTokenTx = await multiSigTreasury.setMtaaToken(mtaaAddress);
+  await setMultiSigTokenTx.wait();
+  log(`  ✓ MultiSigTreasury.mtaaToken → ${mtaaAddress}`);
 
   // ── Step 4.5: TokenDistributionInitializer ────────────────────────────────
 
@@ -251,13 +255,36 @@ async function main() {
   // ── Step 6: ChamaTreasuryFactory ──────────────────────────────────────────
 
   log('Step 6: Deploying ChamaTreasuryFactory...');
+  const ChamaTreasury = await ethers.getContractFactory('ChamaTreasury');
+  const chamaImplementation = await ChamaTreasury.deploy();
+  await chamaImplementation.waitForDeployment();
+
+  log('Deploying UpgradeableBeacon (owned by protocol multisig)...');
+  const UpgradeableBeacon = await ethers.getContractFactory('UpgradeableBeacon');
+  const chamaBeacon = await UpgradeableBeacon.deploy(
+    await chamaImplementation.getAddress(),
+    await multiSigTreasury.getAddress()
+  );
+  await chamaBeacon.waitForDeployment();
+  logAddress('ChamaTreasuryBeacon', await chamaBeacon.getAddress());
+
   const ChamaTreasuryFactory = await ethers.getContractFactory('ChamaTreasuryFactory');
   const chamaTreasuryFactory = await ChamaTreasuryFactory.deploy(
     netAddresses.cUSD,
-    await multiSigTreasury.getAddress()
+    await multiSigTreasury.getAddress(),
+    await chamaImplementation.getAddress()
   );
   await chamaTreasuryFactory.waitForDeployment();
   logAddress('ChamaTreasuryFactory', await chamaTreasuryFactory.getAddress());
+
+  const ChamaTreasuryBeaconFactory = await ethers.getContractFactory('ChamaTreasuryBeaconFactory');
+  const chamaTreasuryBeaconFactory = await ChamaTreasuryBeaconFactory.deploy(
+    netAddresses.cUSD,
+    await multiSigTreasury.getAddress(),
+    await chamaBeacon.getAddress()
+  );
+  await chamaTreasuryBeaconFactory.waitForDeployment();
+  logAddress('ChamaTreasuryBeaconFactory', await chamaTreasuryBeaconFactory.getAddress());
 
   try {
     const setFactoryApyTx = await chamaTreasuryFactory.setApyCalculator(await floatingAPY.getAddress());
@@ -473,6 +500,8 @@ async function main() {
       MTAAToken:                     mtaaAddress,
       TokenDistributionInitializer:  await distributor.getAddress(),
       ChamaTreasuryFactory:          await chamaTreasuryFactory.getAddress(),
+      ChamaTreasuryBeacon:           await chamaBeacon.getAddress(),
+      ChamaTreasuryBeaconFactory:    await chamaTreasuryBeaconFactory.getAddress(),
       RotationModule:                await rotationModule.getAddress(),
       GovernanceAccessManager:       govAddress,
       AgentTreasury:                 agentTreasuryAddress,
@@ -488,6 +517,7 @@ async function main() {
     console.log('\n── Add to .env ──────────────────────────────────────');
     console.log(`MTAA_TOKEN_ADDRESS=${mtaaAddress}`);
     console.log(`CHAMA_FACTORY_CONTRACT_ADDRESS=${deployedAddresses.ChamaTreasuryFactory}`);
+    console.log(`CHAMA_BEACON_FACTORY_CONTRACT_ADDRESS=${deployedAddresses.ChamaTreasuryBeaconFactory}`);
     console.log(`GOVERNANCE_CONTRACT_ADDRESS=${govAddress}`);
     console.log(`AGENT_TREASURY_ADDRESS=${agentTreasuryAddress}`);
     console.log(`AGENT_PERMISSION_MANAGER_ADDRESS=${agentPermMgrAddress}`);

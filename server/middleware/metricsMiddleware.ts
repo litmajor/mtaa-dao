@@ -1,61 +1,55 @@
-/**
- * 📈 Endpoint Metrics Middleware
- * 
- * Transparently tracks metrics for every API request/response
- * - Minimal overhead (timing only)
- * - Ignores /api/docs* and health check endpoints
- * - Captures status codes and errors
- */
-
-import { Request, Response, NextFunction } from 'express';
+import type { Request, Response, NextFunction } from 'express';
 import { endpointMetricsCollector } from '../services/endpointMetricsCollector';
 import { Logger } from '../utils/logger';
 
 const logger = Logger.getLogger();
 
+const DEFAULT_IGNORED_PREFIXES = [
+  '/api/docs',
+  '/api/visibility',
+  '/health',
+  '/api/health',
+];
+
 /**
  * Middleware to collect endpoint metrics
  */
-export function metricsMiddleware() {
+export function metricsMiddleware(ignoredPrefixes: string[] = DEFAULT_IGNORED_PREFIXES) {
   return (req: Request, res: Response, next: NextFunction) => {
-    // Skip metrics collection for documentation and visibility endpoints
-    if (req.path.startsWith('/api/docs') || req.path.startsWith('/api/visibility')) {
+    // Skip metrics collection for ignored routes
+    if (ignoredPrefixes.some((prefix) => req.path.startsWith(prefix))) {
       return next();
     }
 
-    // Record start time
-    const startTime = Date.now();
+    // Monotonic high-resolution start time
+    const startTime = process.hrtime.bigint();
 
-    // Wrap response.send to capture when response actually completes
-    const originalSend = res.send;
-    res.send = function (data: any) {
-      const latency = Date.now() - startTime;
+    // Attach listener to response finish event
+    res.on('finish', () => {
+      const endTime = process.hrtime.bigint();
+      const latency = Number(endTime - startTime) / 1e6; // Convert nanoseconds to milliseconds
       const statusCode = res.statusCode;
-      const path = req.path;
       const method = req.method;
 
+      // Use parameterized route template (e.g., /api/users/:id) to prevent cardinality explosion
+      const routePath = req.route ? `${req.baseUrl || ''}${req.route.path}` : req.path;
+
       try {
-        // Record metrics
         if (statusCode >= 400) {
-          // Error response
-          const error = typeof data === 'string' ? data.substring(0, 100) : JSON.stringify(data).substring(0, 100);
-          endpointMetricsCollector.recordError(path, method, latency, statusCode, error);
+          const errorMessage = res.statusMessage || `HTTP ${statusCode}`;
+          endpointMetricsCollector.recordError(routePath, method, latency, statusCode, errorMessage);
         } else {
-          // Success response
-          endpointMetricsCollector.recordSuccess(path, method, latency, statusCode);
+          endpointMetricsCollector.recordSuccess(routePath, method, latency, statusCode);
         }
 
-        // Log slow requests (> 1s)
+        // Log slow requests (> 1000ms)
         if (latency > 1000) {
-          logger.warn(`[METRICS] Slow request: ${method} ${path} - ${latency}ms`);
+          logger.warn(`[METRICS] Slow request: ${method} ${routePath} - ${Math.round(latency)}ms`);
         }
       } catch (error) {
         logger.error('[METRICS] Error recording metrics:', error);
       }
-
-      // Call original send
-      return originalSend.call(this, data);
-    };
+    });
 
     next();
   };
@@ -64,28 +58,37 @@ export function metricsMiddleware() {
 /**
  * Report slow endpoints periodically
  */
-export function startMetricsReporting(intervalMs: number = 300000) {
-  // Report every 5 minutes by default
-  setInterval(() => {
-    const slowest = endpointMetricsCollector.getSlowestEndpoints(5);
-    const highErrors = endpointMetricsCollector.getHighestErrorRates(3);
+export function startMetricsReporting(intervalMs: number = 300000): NodeJS.Timeout {
+  const timer = setInterval(() => {
+    try {
+      const slowest = endpointMetricsCollector.getSlowestEndpoints(5);
+      const highErrors = endpointMetricsCollector.getHighestErrorRates(3);
 
-    if (slowest.length > 0) {
-      logger.info('[METRICS] Top 5 slowest endpoints:');
-      slowest.forEach((m) => {
-        logger.info(`  - ${m.method} ${m.path}: ${m.avgLatency}ms avg (${m.callCount} calls)`);
-      });
+      if (slowest.length > 0) {
+        logger.info('[METRICS] Top 5 slowest endpoints:');
+        slowest.forEach((m) => {
+          logger.info(`  - ${m.method} ${m.path}: ${Math.round(m.avgLatency)}ms avg (${m.callCount} calls)`);
+        });
+      }
+
+      if (highErrors.length > 0) {
+        logger.warn('[METRICS] Top 3 highest error rates:');
+        highErrors.forEach((m) => {
+          logger.warn(`  - ${m.method} ${m.path}: ${m.errorRate}% errors (${m.errorCount}/${m.callCount})`);
+        });
+      }
+
+      const summary = endpointMetricsCollector.getSummary();
+      logger.info(
+        `[METRICS] Summary: ${summary.totalEndpoints} endpoints, ${summary.totalCalls} total calls, ${summary.overallErrorRate}% error rate`
+      );
+    } catch (error) {
+      logger.error('[METRICS] Error reporting metrics:', error);
     }
-
-    if (highErrors.length > 0) {
-      logger.warn('[METRICS] Top 3 highest error rates:');
-      highErrors.forEach((m) => {
-        logger.warn(`  - ${m.method} ${m.path}: ${m.errorRate}% errors (${m.errorCount}/${m.callCount})`);
-      });
-    }
-
-    // Overall summary
-    const summary = endpointMetricsCollector.getSummary();
-    logger.info(`[METRICS] Summary: ${summary.totalEndpoints} endpoints, ${summary.totalCalls} total calls, ${summary.overallErrorRate}% error rate`);
   }, intervalMs);
+
+  // Allow Node process to exit gracefully if this timer is active
+  timer.unref();
+
+  return timer;
 }

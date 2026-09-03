@@ -1,8 +1,12 @@
-import { Router, Request, Response } from 'express';
-import agentProposalService, { CreateProposalDTO } from '../../services/agentProposalService';
+import { Router } from 'express';
+import type { Request, Response } from 'express';
+import { createRateLimiter } from '../../middleware/rateLimiting';
+import type { CreateProposalDTO } from '../../services/agentProposalService';
+import agentProposalService  from '../../services/agentProposalService';
 import adminAuthService from '../../services/adminAuthService';
 import adminAuditLogger from '../../services/adminAuditLogger';
 import { agentStatusService } from '../../services/agentStatusService';
+import { TreasuryService } from '../../services/treasuryService';
 import { circuitBreakerRegistry } from '../../core/consolidation/CircuitBreakerConsolidation';
 import { healthRegistry } from '../../core/consolidation/HealthRegistryConsolidation';
 // Migration Status (Phase 5):
@@ -11,6 +15,24 @@ import { healthRegistry } from '../../core/consolidation/HealthRegistryConsolida
 // See deprecation notice in agentStatusService.ts for details
 
 const router = Router();
+
+const adminProposalCreationLimiter = createRateLimiter({
+  windowMs: 60 * 60 * 1000,
+  maxRequests: 20,
+  keyGenerator: (req) => `admin-proposal:create:${req.user?.id || req.ip}`,
+});
+
+const adminProposalActionLimiter = createRateLimiter({
+  windowMs: 60 * 1000,
+  maxRequests: 30,
+  keyGenerator: (req) => `admin-proposal:action:${req.user?.id || req.ip}`,
+});
+
+const adminProposalReadLimiter = createRateLimiter({
+  windowMs: 60 * 1000,
+  maxRequests: 60,
+  keyGenerator: (req) => `admin-proposal:read:${req.user?.id || req.ip}`,
+});
 
 // Extend Express Request type to include authContext
 declare global {
@@ -42,8 +64,15 @@ const requireSuperuser = async (req: Request, res: Response, next: Function) => 
       return res.status(401).json({ error: 'Unauthorized', message: 'No auth token provided' });
     }
 
-    // Verify superuser status
-    const user = await adminAuthService.verifySuperuser(userId);
+    const user = await adminAuthService.getAdminUser(userId);
+    if (!user || !user.is_active) {
+      return res.status(403).json({ error: 'Forbidden', message: 'Admin user is not active' });
+    }
+
+    if (!user.is_superuser && !['admin', 'super_admin', 'approval_board'].includes((user.role || '').toLowerCase())) {
+      return res.status(403).json({ error: 'Forbidden', message: 'Admin privileges required' });
+    }
+
     req.authContext = adminAuthService.extractAuthContext(
       user.id,
       user.email,
@@ -59,11 +88,42 @@ const requireSuperuser = async (req: Request, res: Response, next: Function) => 
   }
 };
 
+const ensureProposalActionAllowed = async (req: Request, res: Response, action: string, resourceContext?: { agentId?: string; proposalId?: string; daoId?: string }) => {
+  if (!req.authContext?.userId) {
+    return res.status(401).json({ error: 'Unauthorized', message: 'Auth context required' });
+  }
+
+  const allowed = await adminAuthService.canPerformAction(req.authContext.userId, action, 'PROPOSAL', resourceContext);
+  if (!allowed) {
+    return res.status(403).json({ error: 'Forbidden', message: `User is not authorized to ${action.toLowerCase()}` });
+  }
+
+  return null;
+};
+
+const isValidExecutionHash = (value?: string): boolean => {
+  if (!value || typeof value !== 'string') return false;
+  return /^0x[a-fA-F0-9]{64}$/.test(value.trim());
+};
+
+const getProposalRouteHealth = (req: Request) => {
+  const snapshot = healthRegistry.getSnapshot();
+  const breakState = circuitBreakerRegistry.getHealth();
+  const agentId = req.params.agentId || req.params.proposalId;
+
+  return {
+    overallStatus: snapshot.overallStatus,
+    openCircuitCount: breakState.openCount,
+    agentId,
+    healthCheck: snapshot.agents.some((agent) => agent.agentId === agentId) ? 'registered' : 'unknown',
+  };
+};
+
 /**
  * POST /api/admin/agents/:agentId/propose
  * Agent proposes an action (via safe mode)
  */
-router.post('/agents/:agentId/propose', requireSuperuser, async (req: Request, res: Response) => {
+router.post('/agents/:agentId/propose', adminProposalCreationLimiter, requireSuperuser, async (req: Request, res: Response) => {
   try {
     if (!req.authContext) {
       return res.status(401).json({ error: 'Unauthorized', message: 'Auth context required' });
@@ -80,7 +140,6 @@ router.post('/agents/:agentId/propose', requireSuperuser, async (req: Request, r
       });
     }
 
-    // Get agent and treasury balance
     const agent = await agentStatusService.getAgent(agentId);
     if (!agent) {
       return res.status(404).json({
@@ -89,20 +148,26 @@ router.post('/agents/:agentId/propose', requireSuperuser, async (req: Request, r
       });
     }
 
-    // Mock treasury balance (in real world, fetch from treasury service)
-    const treasuryBalance = proposedArgs.treasuryBalance || 1000000;
+    const daoId = typeof proposedArgs?.daoId === 'string' && proposedArgs.daoId.trim() ? proposedArgs.daoId : null;
+    if (!daoId) {
+      return res.status(400).json({
+        error: 'Bad Request',
+        message: 'proposedArgs.daoId is required to compute the authoritative treasury balance',
+      });
+    }
 
-    // Create proposal (with risk analysis)
-    const proposal = await agentProposalService.createProposal(
-      {
-        agentId,
-        actionType,
-        proposedArgs,
-        ipAddress: req.ip,
-        userAgent: req.get('user-agent'),
-      },
-      treasuryBalance
-    );
+    const treasuryBalanceResult = await TreasuryService.getBalance(daoId);
+    const treasuryBalance = Number(treasuryBalanceResult.available || treasuryBalanceResult.total || 0);
+
+    const createPayload: CreateProposalDTO = {
+      agentId,
+      actionType,
+      proposedArgs,
+      ipAddress: req.ip,
+      userAgent: req.get('user-agent'),
+    };
+
+    const proposal = await agentProposalService.createProposal(createPayload, treasuryBalance);
 
     // Log audit
     await adminAuditLogger.logAction({
@@ -116,6 +181,8 @@ router.post('/agents/:agentId/propose', requireSuperuser, async (req: Request, r
       userAgent: req.get('user-agent'),
     });
 
+    const routeHealth = getProposalRouteHealth(req);
+
     return res.status(201).json({
       success: true,
       proposal,
@@ -124,6 +191,7 @@ router.post('/agents/:agentId/propose', requireSuperuser, async (req: Request, r
         category: proposal.risk_category,
         breakdown: proposal.risk_breakdown,
       },
+      health: routeHealth,
       nextAction: `/api/admin/proposals/${proposal.id}/approve`,
     });
   } catch (error: any) {
@@ -136,7 +204,7 @@ router.post('/agents/:agentId/propose', requireSuperuser, async (req: Request, r
  * GET /api/admin/proposals
  * List all proposals (with optional filtering)
  */
-router.get('/proposals', requireSuperuser, async (req: Request, res: Response) => {
+router.get('/proposals', adminProposalReadLimiter, requireSuperuser, async (req: Request, res: Response) => {
   try {
     const { status, agentId, limit = 20, offset = 0 } = req.query;
 
@@ -147,16 +215,12 @@ router.get('/proposals', requireSuperuser, async (req: Request, res: Response) =
       offset: parseInt(offset as string),
     });
 
-    // Count pending proposals
-    const pendingProposals = await agentProposalService.getProposals({
-      status: 'PENDING',
-      limit: 1000,
-    });
+    const pendingCount = await agentProposalService.countProposals({ status: 'PENDING' });
 
     return res.status(200).json({
       success: true,
       totalProposals: proposals.length,
-      pendingCount: pendingProposals.length,
+      pendingCount,
       proposals,
     });
   } catch (error: any) {
@@ -169,7 +233,7 @@ router.get('/proposals', requireSuperuser, async (req: Request, res: Response) =
  * GET /api/admin/proposals/:proposalId
  * Get single proposal details
  */
-router.get('/proposals/:proposalId', requireSuperuser, async (req: Request, res: Response) => {
+router.get('/proposals/:proposalId', adminProposalReadLimiter, requireSuperuser, async (req: Request, res: Response) => {
   try {
     const proposal = await agentProposalService.getProposal(req.params.proposalId);
 
@@ -198,7 +262,7 @@ router.get('/proposals/:proposalId', requireSuperuser, async (req: Request, res:
  * POST /api/admin/proposals/:proposalId/approve
  * Admin approves a proposal
  */
-router.post('/proposals/:proposalId/approve', requireSuperuser, async (req: Request, res: Response) => {
+router.post('/proposals/:proposalId/approve', adminProposalActionLimiter, requireSuperuser, async (req: Request, res: Response) => {
   try {
     if (!req.authContext) {
       return res.status(401).json({ error: 'Unauthorized', message: 'Auth context required' });
@@ -217,7 +281,6 @@ router.post('/proposals/:proposalId/approve', requireSuperuser, async (req: Requ
       });
     }
 
-    // Get proposal
     const beforeProposal = await agentProposalService.getProposal(proposalId);
     if (!beforeProposal) {
       return res.status(404).json({
@@ -226,7 +289,18 @@ router.post('/proposals/:proposalId/approve', requireSuperuser, async (req: Requ
       });
     }
 
-    // Approve proposal
+    if (beforeProposal.status !== 'PENDING') {
+      return res.status(409).json({
+        error: 'Conflict',
+        message: `Proposal ${proposalId} cannot be approved from status ${beforeProposal.status}`,
+      });
+    }
+
+    const actionCheck = await ensureProposalActionAllowed(req, res, 'APPROVE_PROPOSAL', { proposalId, agentId: beforeProposal.agent_id });
+    if (actionCheck) {
+      return actionCheck;
+    }
+
     const approvedProposal = await agentProposalService.approveProposal(
       proposalId,
       req.authContext.userId,
@@ -281,7 +355,7 @@ router.post('/proposals/:proposalId/approve', requireSuperuser, async (req: Requ
  * POST /api/admin/proposals/:proposalId/reject
  * Admin rejects a proposal
  */
-router.post('/proposals/:proposalId/reject', requireSuperuser, async (req: Request, res: Response) => {
+router.post('/proposals/:proposalId/reject', adminProposalActionLimiter, requireSuperuser, async (req: Request, res: Response) => {
   try {
     if (!req.authContext) {
       return res.status(401).json({ error: 'Unauthorized', message: 'Auth context required' });
@@ -300,7 +374,6 @@ router.post('/proposals/:proposalId/reject', requireSuperuser, async (req: Reque
       });
     }
 
-    // Get proposal
     const beforeProposal = await agentProposalService.getProposal(proposalId);
     if (!beforeProposal) {
       return res.status(404).json({
@@ -309,7 +382,18 @@ router.post('/proposals/:proposalId/reject', requireSuperuser, async (req: Reque
       });
     }
 
-    // Reject proposal
+    if (beforeProposal.status !== 'PENDING') {
+      return res.status(409).json({
+        error: 'Conflict',
+        message: `Proposal ${proposalId} cannot be rejected from status ${beforeProposal.status}`,
+      });
+    }
+
+    const actionCheck = await ensureProposalActionAllowed(req, res, 'REJECT_PROPOSAL', { proposalId, agentId: beforeProposal.agent_id });
+    if (actionCheck) {
+      return actionCheck;
+    }
+
     const rejectedProposal = await agentProposalService.rejectProposal(
       proposalId,
       req.authContext.userId,
@@ -352,7 +436,7 @@ router.post('/proposals/:proposalId/reject', requireSuperuser, async (req: Reque
  * POST /api/admin/proposals/:proposalId/execute
  * Mark proposal as executed (after on-chain execution)
  */
-router.post('/proposals/:proposalId/execute', requireSuperuser, async (req: Request, res: Response) => {
+router.post('/proposals/:proposalId/execute', adminProposalActionLimiter, requireSuperuser, async (req: Request, res: Response) => {
   try {
     if (!req.authContext) {
       return res.status(401).json({ error: 'Unauthorized', message: 'Auth context required' });
@@ -361,7 +445,6 @@ router.post('/proposals/:proposalId/execute', requireSuperuser, async (req: Requ
     const { executionHash } = req.body;
     const proposalId = req.params.proposalId;
 
-    // Get proposal
     const beforeProposal = await agentProposalService.getProposal(proposalId);
     if (!beforeProposal) {
       return res.status(404).json({
@@ -370,7 +453,25 @@ router.post('/proposals/:proposalId/execute', requireSuperuser, async (req: Requ
       });
     }
 
-    // Mark as executed
+    if (beforeProposal.status !== 'APPROVED') {
+      return res.status(409).json({
+        error: 'Conflict',
+        message: `Proposal ${proposalId} cannot be executed from status ${beforeProposal.status}`,
+      });
+    }
+
+    if (executionHash !== undefined && executionHash !== null && !isValidExecutionHash(executionHash)) {
+      return res.status(400).json({
+        error: 'Bad Request',
+        message: 'executionHash must be a valid 0x-prefixed 32-byte transaction hash',
+      });
+    }
+
+    const actionCheck = await ensureProposalActionAllowed(req, res, 'EXECUTE_PROPOSAL', { proposalId, agentId: beforeProposal.agent_id });
+    if (actionCheck) {
+      return actionCheck;
+    }
+
     const executedProposal = await agentProposalService.markExecuted(proposalId, executionHash);
 
     // Log audit

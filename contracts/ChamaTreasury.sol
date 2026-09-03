@@ -5,6 +5,7 @@ import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 import "@openzeppelin/contracts/utils/Pausable.sol";
+import "@openzeppelin/contracts/proxy/utils/Initializable.sol";
 
 // Minimal interface for notifying modules (implemented in RotationModule)
 interface IRotationModule {
@@ -46,7 +47,7 @@ interface IFloatingAPYCalculator {
  * 3. Timelock expires (small: 1h, large: 24h)
  * 4. Any signer executes
  */
-contract ChamaTreasury is ReentrancyGuard, Pausable {
+contract ChamaTreasury is ReentrancyGuard, Pausable, Initializable {
     using SafeERC20 for IERC20;
 
     // =========================================================================
@@ -252,6 +253,8 @@ contract ChamaTreasury is ReentrancyGuard, Pausable {
     error CannotRemoveSelf();
     error BelowMinSigners();
     error TransferFailed();
+    error NamesLengthMismatch();
+    error DuplicateSigner();
 
     // =========================================================================
     // MODIFIERS
@@ -281,25 +284,30 @@ contract ChamaTreasury is ReentrancyGuard, Pausable {
     // CONSTRUCTOR
     // =========================================================================
 
-    constructor(
-        string memory _chamaName,
-        string memory _daoId,
-        address[] memory _signers,
-        string[] memory _signerNames,
+    constructor() {
+        _disableInitializers();
+    }
+
+    function initialize(
+        string calldata _chamaName,
+        string calldata _daoId,
+        address[] calldata _signers,
+        string[] calldata _signerNames,
         uint256 _requiredSignatures,
         address _stablecoin,
-        uint256 _smallTransferLimit
-    ) {
+        uint256 _smallTransferLimit,
+        address _deployer
+    ) external initializer {
         if (_signers.length < MIN_SIGNERS || _signers.length > MAX_SIGNERS)
             revert InvalidSignerCount();
         if (_requiredSignatures < 2 || _requiredSignatures > _signers.length)
             revert InvalidThreshold();
-        if (_stablecoin == address(0)) revert ZeroAddress();
-        require(_signerNames.length == _signers.length, "Names length mismatch");
+        if (_stablecoin == address(0) || _deployer == address(0)) revert ZeroAddress();
+        if (_signerNames.length != _signers.length) revert NamesLengthMismatch();
 
         chamaName = _chamaName;
         daoId = _daoId;
-        deployer = msg.sender;
+        deployer = _deployer;
         stablecoin = IERC20(_stablecoin);
         requiredSignatures = _requiredSignatures;
 
@@ -312,7 +320,7 @@ contract ChamaTreasury is ReentrancyGuard, Pausable {
             if (s == address(0)) revert ZeroAddress();
 
             for (uint256 j = i + 1; j < _signers.length; j++) {
-                require(_signers[j] != s, "Duplicate signer");
+                if (_signers[j] == s) revert DuplicateSigner();
             }
 
             signers.push(s);

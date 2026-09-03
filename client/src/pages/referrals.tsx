@@ -1,6 +1,6 @@
 import { useQuery } from "@tanstack/react-query";
 // Referral page - with real blockchain data integration
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useEffect } from "react-router-dom";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -12,6 +12,7 @@ import { useState } from "react";
 import { useAuth } from "./hooks/useAuth";
 import { useToast } from "@/hooks/use-toast";
 import { authClient } from "@/utils/authClient";
+import OAuthConfirmationDialog from "@/components/OAuthConfirmationDialog";
 
 type LeaderboardEntry = {
   id: string;
@@ -27,6 +28,22 @@ export default function Referrals() {
   const { toast } = useToast();
   const navigate = useNavigate();
   const [activeTab, setActiveTab] = useState("overview");
+  const [showOAuthConfirmation, setShowOAuthConfirmation] = useState(false);
+  const [oauthConfirmEmail, setOauthConfirmEmail] = useState('');
+
+  // Check for OAuth confirmation flow on component mount
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    if (params.get('requireConfirmation') === 'true') {
+      const email = params.get('email');
+      if (email) {
+        setOauthConfirmEmail(decodeURIComponent(email));
+        setShowOAuthConfirmation(true);
+        // Clean up URL without reloading
+        window.history.replaceState({}, document.title, '/referrals');
+      }
+    }
+  }, []);
 
   // OAuth handlers
   const handleGoogleAuth = (mode: "login" | "register") => {
@@ -580,6 +597,21 @@ export default function Referrals() {
           </div>
         )}
       </div>
+
+      {/* OAuth Confirmation Dialog */}
+      {showOAuthConfirmation && (
+        <OAuthConfirmationDialog
+          email={oauthConfirmEmail}
+          onSuccess={() => {
+            // Redirect to dashboard after successful confirmation
+            window.location.href = '/dashboard';
+          }}
+          onCancel={() => {
+            setShowOAuthConfirmation(false);
+            window.location.href = '/referrals';
+          }}
+        />
+      )}
     </div>
   );
 }

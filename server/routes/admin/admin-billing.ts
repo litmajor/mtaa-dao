@@ -7,7 +7,8 @@
  * GET    /api/admin/billing/analytics/platform    Get platform financial analytics
  */
 
-import express, { Request, Response } from 'express';
+import express from 'express';
+import type { Request, Response } from 'express';
 import { isAuthenticated } from '../../auth';
 import { db } from '../../storage';
 import { users } from '../../../shared/schema';

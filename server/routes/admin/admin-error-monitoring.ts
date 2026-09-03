@@ -1,14 +1,10 @@
-import { Router, Request, Response } from 'express';
+import { Router } from 'express';
+import type { Request, Response } from 'express';
 import { logger } from '../../utils/logger';
 import { requireRole } from '../../middleware/rbac';
-import {
-  PaymentErrorMonitoringService,
-  PaymentErrorMetric,
-  ErrorAggregation,
-  ProviderErrorMetrics,
-} from '../../services/paymentErrorMonitoringService';
+import {PaymentErrorMonitoringService} from '../../services/paymentErrorMonitoringService';
 import { PaymentErrorAlertService, AlertSeverity } from '../../services/paymentErrorAlertService';
-
+import type {PaymentErrorMetric, ErrorAggregation} from '../../services/paymentErrorMonitoringService';
 const router = Router();
 const requireSuperAdmin = requireRole('super_admin');
 
@@ -23,10 +19,10 @@ const requireSuperAdmin = requireRole('super_admin');
  */
 router.get('/errors/dashboard', requireSuperAdmin, async (req: Request, res: Response) => {
   try {
-    const aggregation = PaymentErrorMonitoringService.getAggregation();
+    const aggregation: ErrorAggregation = PaymentErrorMonitoringService.getAggregation();
     const healthCheck = PaymentErrorMonitoringService.getHealthCheck();
     const allProviderMetrics = PaymentErrorMonitoringService.getAllProviderMetrics();
-    const recentErrors = PaymentErrorMonitoringService.getRecentErrors(10);
+    const recentErrors: PaymentErrorMetric[] = PaymentErrorMonitoringService.getRecentErrors(10);
 
     // Get alert status
     const activeAlerts = PaymentErrorAlertService.getAlertHistory(10);
@@ -83,7 +79,7 @@ router.get('/errors/dashboard', requireSuperAdmin, async (req: Request, res: Res
  */
 router.get('/errors/aggregation', requireSuperAdmin, async (req: Request, res: Response) => {
   try {
-    const aggregation = PaymentErrorMonitoringService.getAggregation();
+    const aggregation: ErrorAggregation = PaymentErrorMonitoringService.getAggregation();
 
     res.json({
       timestamp: new Date(),

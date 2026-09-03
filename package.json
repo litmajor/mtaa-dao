@@ -40,6 +40,7 @@
     "smoke:deployment": "tsx scripts/deployment-smoke.ts",
     "backfill:dao:treasury": "tsx scripts/backfill-dao-treasury-modes.ts",
     "gen:key": "node scripts/generate_platform_key.cjs",
+    "extract-env": "node scripts/extract_env_keys.js",
     "wire:peers-and-register": "npx hardhat run contracts/wire-peers-and-register.ts --network celo"
   },
   "dependencies": {
@@ -107,6 +108,7 @@
     "cmdk": "^1.1.1",
     "compression": "^1.8.1",
     "connect-pg-simple": "^10.0.0",
+    "cookie-parser": "^1.4.7",
     "cors": "^2.8.5",
     "crypto-js": "^4.2.0",
     "date-fns": "^3.0.0",
@@ -128,6 +130,7 @@
     "isomorphic-dompurify": "^2.26.0",
     "jsonwebtoken": "^9.0.2",
     "libphonenumber-js": "^1.13.9",
+    "libsodium-wrappers": "^0.7.13",
     "lightningcss": "^1.30.1",
     "lightweight-charts": "^5.2.0",
     "lucide-react": "^0.563.0",
@@ -192,6 +195,7 @@
     "@babel/preset-typescript": "^8.0.1",
     "@nomicfoundation/hardhat-ethers": "^4.0.0",
     "@nomicfoundation/hardhat-ethers-chai-matchers": "^3.0.0",
+    "@nomicfoundation/hardhat-foundry": "^3.0.4",
     "@nomicfoundation/hardhat-ignition": "^3.0.0",
     "@nomicfoundation/hardhat-ignition-ethers": "^3.0.0",
     "@nomicfoundation/hardhat-keystore": "^3.0.0",
@@ -237,6 +241,7 @@
     "cross-env": "^10.1.0",
     "drizzle-kit": "^0.31.10",
     "esbuild": "^0.28.0",
+    "forge-std": "^1.1.2",
     "glob": "^13.0.6",
     "hardhat": "^3.8.0",
     "hardhat-gas-reporter": "^2.3.0",
@@ -259,6 +264,6 @@
     "bufferutil": "^4.0.8"
   },
   "overrides": {
-  "@pancakeswap/infinity-stable-sdk": "1.0.1"
-}
+    "@pancakeswap/infinity-stable-sdk": "1.0.1"
+  }
 }

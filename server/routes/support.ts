@@ -5,16 +5,24 @@ import { eq, desc } from 'drizzle-orm';
 import { supportTickets } from '../../shared/schema';
 import { logger } from '../utils/logger';
 import { EmailService } from '../services/emailService';
+import { notificationService } from '../notificationService';
+import { authenticate } from '../auth';
 
 const router = Router();
 
 // Submit support ticket
-router.post('/tickets', async (req, res) => {
+router.post('/tickets', authenticate, async (req, res) => {
   try {
-    const { name, email, category, priority, subject, message, userId } = req.body;
+    const { name, email, category, subject, message } = req.body;
+    const priority = req.body.priority || 'medium';
+    const authenticatedUserId = String(req.user?.id || '');
 
     // Validate required fields
-    if (!name || !email || !category || !subject || !message) {
+    if (!authenticatedUserId) {
+      return res.status(401).json({ error: 'Authentication required' });
+    }
+    if (![name, email, category, subject, message].every(value => typeof value === 'string' && value.trim().length > 0) ||
+        !['low', 'medium', 'high', 'urgent'].includes(priority)) {
       return res.status(400).json({ error: 'Missing required fields' });
     }
 
@@ -22,7 +30,7 @@ router.post('/tickets', async (req, res) => {
     const [ticket] = await db
       .insert(supportTickets)
       .values({
-        userId: userId || null,
+        userId: authenticatedUserId,
         name,
         email,
         category,
@@ -32,11 +40,23 @@ router.post('/tickets', async (req, res) => {
         status: 'open',
       })
       .returning();
+    if (!ticket) {
+      return res.status(500).json({ error: 'Failed to create support ticket' });
+    }
 
     // Generate unique ticket number
-    const ticketNumber = `MTAA-${ticket.id?.toString().substring(0, 8).toUpperCase()}`;
+    const ticketNumber = `MTAA-${ticket.id.toString().substring(0, 8).toUpperCase()}`;
 
     logger.info(`Support ticket created: ${ticketNumber} by ${email}`);
+
+    await notificationService.createNotification({
+      userId: authenticatedUserId,
+      type: 'support_ticket_created',
+      title: 'Support ticket submitted',
+      message: `Your support ticket ${ticketNumber} was received.`,
+      priority: 'medium',
+      metadata: { ticketId: ticket.id, ticketNumber },
+    }).catch(error => logger.warn('Failed to create support ticket notification', { error }));
 
     // Send email notification to support team
     try {
@@ -46,12 +66,12 @@ router.post('/tickets', async (req, res) => {
         html: `
           <h2>New Support Ticket</h2>
           <p><strong>Ticket ID:</strong> ${ticketNumber}</p>
-          <p><strong>From:</strong> ${name} (${email})</p>
-          <p><strong>Category:</strong> ${category}</p>
+          <p><strong>From:</strong> ${escapeHtml(name)} (${escapeHtml(email)})</p>
+          <p><strong>Category:</strong> ${escapeHtml(category)}</p>
           <p><strong>Priority:</strong> ${priority}</p>
-          <p><strong>Subject:</strong> ${subject}</p>
+          <p><strong>Subject:</strong> ${escapeHtml(subject)}</p>
           <h3>Message:</h3>
-          <p>${message.replace(/\n/g, '<br>')}</p>
+          <p>${escapeHtml(message).replace(/\n/g, '<br>')}</p>
         `
       });
     } catch (err) {
@@ -72,9 +92,12 @@ router.post('/tickets', async (req, res) => {
 });
 
 // Get support ticket by ID
-router.get('/tickets/:ticketId', async (req, res) => {
+router.get('/tickets/:ticketId', authenticate, async (req, res) => {
   try {
     const { ticketId } = req.params;
+    const authenticatedUserId = String(req.user?.id || '');
+    if (!authenticatedUserId) return res.status(401).json({ error: 'Authentication required' });
+    if (!isUuid(ticketId)) return res.status(400).json({ error: 'Invalid ticket ID' });
 
     const ticket = await db
       .select()
@@ -82,7 +105,7 @@ router.get('/tickets/:ticketId', async (req, res) => {
       .where(eq(supportTickets.id, ticketId))
       .limit(1);
 
-    if (!ticket.length) {
+    if (!ticket.length || ticket[0].userId !== authenticatedUserId) {
       return res.status(404).json({ error: 'Ticket not found' });
     }
 
@@ -94,14 +117,15 @@ router.get('/tickets/:ticketId', async (req, res) => {
 });
 
 // Get user's support tickets
-router.get('/user/:userId', async (req, res) => {
+router.get('/user/:userId', authenticate, async (req, res) => {
   try {
-    const { userId } = req.params;
+    const authenticatedUserId = String(req.user?.id || '');
+    if (!authenticatedUserId) return res.status(401).json({ error: 'Authentication required' });
 
     const tickets = await db
       .select()
       .from(supportTickets)
-      .where(eq(supportTickets.userId, userId))
+      .where(eq(supportTickets.userId, authenticatedUserId))
       .orderBy(desc(supportTickets.createdAt));
 
     res.json({ success: true, tickets });
@@ -112,3 +136,17 @@ router.get('/user/:userId', async (req, res) => {
 });
 
 export default router;
+
+function escapeHtml(value: string): string {
+  return value.replace(/[&<>"']/g, character => ({
+    '&': '&amp;',
+    '<': '&lt;',
+    '>': '&gt;',
+    '"': '&quot;',
+    "'": '&#39;',
+  })[character] || character);
+}
+
+function isUuid(value: string): boolean {
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value);
+}

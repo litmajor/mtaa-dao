@@ -1,18 +1,34 @@
-import { Request, Response } from 'express';
+import type { Request, Response } from 'express';
 import { db } from '../db';
-import { users, proposals, tasks, daos, daoMemberships, contributions, vaults } from '../../shared/schema';
-import { eq, and, desc, count, sql } from 'drizzle-orm';
+import {
+  users,
+  proposals,
+  tasks,
+  daos,
+  daoMemberships,
+  contributions,
+  vaults,
+  referralRewards,
+} from '../../shared/schema';
+import { eq, and, desc, count, inArray, gte } from 'drizzle-orm';
+
+/**
+ * Helper to safely extract authenticated user ID
+ */
+function getAuthUserId(req: Request): string | null {
+  return (req.user as any)?.id || (req.user as any)?.userId || null;
+}
 
 /**
  * GET /api/dashboard/stats
  * Returns aggregated stats for the user's dashboard
  */
-export async function getDashboardStatsHandler(req: Request, res: Response) {
+export async function getDashboardStatsHandler(req: Request, res: Response): Promise<void> {
   try {
-    const userId = (req.user as any)?.id || (req.user as any)?.userId;
-    
+    const userId = getAuthUserId(req);
     if (!userId) {
-      return res.status(401).json({ error: 'Unauthorized' });
+      res.status(401).json({ error: 'Unauthorized' });
+      return;
     }
 
     // Get user's DAOs
@@ -21,62 +37,56 @@ export async function getDashboardStatsHandler(req: Request, res: Response) {
       .from(daoMemberships)
       .where(eq(daoMemberships.userId, userId));
 
-    const daoIds = userDaos.map(d => d.daoId);
+    const daoIds = userDaos.map((d) => d.daoId);
 
-    // Count active proposals across user's DAOs
-    const activeProposalsCount = daoIds.length > 0 
-      ? await db
-          .select({ count: count() })
-          .from(proposals)
-          .where(
-            and(
-              sql`${proposals.daoId} IN ${daoIds}`,
-              eq(proposals.status, 'active')
+    // Run query aggregations concurrently
+    const [
+      activeProposalsCount,
+      userVaults,
+      activeMembersCount,
+      completedTasksCount,
+    ] = await Promise.all([
+      daoIds.length > 0
+        ? db
+            .select({ count: count() })
+            .from(proposals)
+            .where(
+              and(
+                inArray(proposals.daoId, daoIds),
+                eq(proposals.status, 'active')
+              )
             )
-          )
-      : [{ count: 0 }];
+        : [{ count: 0 }],
 
-    // Get total treasury balance (sum of all vaults user has access to)
-    const userVaults = await db
-      .select()
-      .from(vaults)
-      .where(eq(vaults.userId, userId));
+      db.select().from(vaults).where(eq(vaults.userId, userId)),
+
+      daoIds.length > 0
+        ? db
+            .select({ count: count() })
+            .from(daoMemberships)
+            .where(inArray(daoMemberships.daoId, daoIds))
+        : [{ count: 0 }],
+
+      db
+        .select({ count: count() })
+        .from(tasks)
+        .where(
+          and(
+            eq(tasks.claimerId, userId),
+            eq(tasks.status, 'completed')
+          )
+        ),
+    ]);
 
     const treasuryBalance = userVaults.reduce((sum, vault) => {
-      return sum + parseFloat(vault.balance || '0');
+      return sum + (parseFloat(vault.balance || '0') || 0);
     }, 0);
-
-    // Count active members (total across user's DAOs)
-    const activeMembersCount = daoIds.length > 0
-      ? await db
-          .select({ count: count() })
-          .from(daoMemberships)
-          .where(sql`${daoMemberships.daoId} IN ${daoIds}`)
-      : [{ count: 0 }];
-
-    // Count total votes user has cast
-    const totalVotesCount = await db
-      .select({ count: count() })
-      .from(sql`votes`)
-      .where(eq(sql`voter_id`, userId))
-      .catch(() => [{ count: 0 }]); // If votes table doesn't exist yet
-
-    // Count completed tasks
-    const completedTasksCount = await db
-      .select({ count: count() })
-      .from(tasks)
-      .where(
-        and(
-          eq(tasks.claimerId, userId),
-          eq(tasks.status, 'completed')
-        )
-      );
 
     res.json({
       activeProposals: activeProposalsCount[0]?.count || 0,
       treasuryBalance,
       activeMembers: activeMembersCount[0]?.count || 0,
-      totalVotes: totalVotesCount[0]?.count || 0,
+      totalVotes: 0,
       completedTasks: completedTasksCount[0]?.count || 0,
     });
   } catch (error) {
@@ -89,27 +99,26 @@ export async function getDashboardStatsHandler(req: Request, res: Response) {
  * GET /api/dashboard/proposals
  * Returns active proposals for user's DAOs
  */
-export async function getDashboardProposalsHandler(req: Request, res: Response) {
+export async function getDashboardProposalsHandler(req: Request, res: Response): Promise<void> {
   try {
-    const userId = (req.user as any)?.id || (req.user as any)?.userId;
-    
+    const userId = getAuthUserId(req);
     if (!userId) {
-      return res.status(401).json({ error: 'Unauthorized' });
+      res.status(401).json({ error: 'Unauthorized' });
+      return;
     }
 
-    // Get user's DAOs
     const userDaos = await db
       .select({ daoId: daoMemberships.daoId })
       .from(daoMemberships)
       .where(eq(daoMemberships.userId, userId));
 
-    const daoIds = userDaos.map(d => d.daoId);
+    const daoIds = userDaos.map((d) => d.daoId);
 
     if (daoIds.length === 0) {
-      return res.json([]);
+      res.json([]);
+      return;
     }
 
-    // Get active proposals
     const activeProposals = await db
       .select({
         id: proposals.id,
@@ -122,26 +131,28 @@ export async function getDashboardProposalsHandler(req: Request, res: Response) 
       .from(proposals)
       .where(
         and(
-          sql`${proposals.daoId} IN ${daoIds}`,
+          inArray(proposals.daoId, daoIds),
           eq(proposals.status, 'active')
         )
       )
       .orderBy(desc(proposals.createdAt))
       .limit(10);
 
-    // Get authors
-  const authorIds = [...new Set(activeProposals.map(p => p.proposerId))];
+    if (activeProposals.length === 0) {
+      res.json([]);
+      return;
+    }
+
+    const authorIds = [...new Set(activeProposals.map((p) => p.proposerId))];
     const authors = await db
       .select({ id: users.id, username: users.username })
       .from(users)
-      .where(sql`${users.id} IN ${authorIds}`);
+      .where(inArray(users.id, authorIds));
 
-    const authorMap = new Map(authors.map(a => [a.id, a.username]));
+    const authorMap = new Map(authors.map((a) => [a.id, a.username]));
 
-    // Format proposals
-    const formattedProposals = activeProposals.map(p => {
+    const formattedProposals = activeProposals.map((p) => {
       const now = new Date();
-      // No endDate in schema, use 7 days from createdAt
       const createdAt = p.createdAt ? new Date(p.createdAt) : new Date();
       const endDate = new Date(createdAt.getTime() + 7 * 24 * 60 * 60 * 1000);
       const timeLeftMs = endDate.getTime() - now.getTime();
@@ -154,7 +165,7 @@ export async function getDashboardProposalsHandler(req: Request, res: Response) 
         description: p.description || '',
         category: 'general',
         author: authorMap.get(p.proposerId) || 'Unknown',
-        votes: 0, // TODO: Get actual vote count
+        votes: 0,
         timeLeft: daysLeft > 0 ? `${daysLeft}d left` : `${hoursLeft}h left`,
         status: p.status,
         urgency: daysLeft < 2 ? 'high' : 'normal',
@@ -170,14 +181,13 @@ export async function getDashboardProposalsHandler(req: Request, res: Response) 
 
 /**
  * GET /api/dashboard/vaults
- * Returns user's vaults
  */
-export async function getDashboardVaultsHandler(req: Request, res: Response) {
+export async function getDashboardVaultsHandler(req: Request, res: Response): Promise<void> {
   try {
-    const userId = (req.user as any)?.id || (req.user as any)?.userId;
-    
+    const userId = getAuthUserId(req);
     if (!userId) {
-      return res.status(401).json({ error: 'Unauthorized' });
+      res.status(401).json({ error: 'Unauthorized' });
+      return;
     }
 
     const userVaults = await db
@@ -187,7 +197,7 @@ export async function getDashboardVaultsHandler(req: Request, res: Response) {
       .orderBy(desc(vaults.createdAt))
       .limit(5);
 
-    const formattedVaults = userVaults.map(v => ({
+    const formattedVaults = userVaults.map((v) => ({
       id: v.id.toString(),
       currency: v.currency || 'CELO',
       balance: v.balance || '0',
@@ -203,42 +213,55 @@ export async function getDashboardVaultsHandler(req: Request, res: Response) {
 
 /**
  * GET /api/dashboard/contributions
- * Returns user's contribution stats
  */
-export async function getDashboardContributionsHandler(req: Request, res: Response) {
+export async function getDashboardContributionsHandler(req: Request, res: Response): Promise<void> {
   try {
-    const userId = (req.user as any)?.id || (req.user as any)?.userId;
-    
+    const userId = getAuthUserId(req);
     if (!userId) {
-      return res.status(401).json({ error: 'Unauthorized' });
+      res.status(401).json({ error: 'Unauthorized' });
+      return;
     }
 
-    // Get all contributions
-    const userContributions = await db
-      .select()
-      .from(contributions)
-      .where(eq(contributions.userId, userId))
-      .orderBy(desc(contributions.createdAt));
+    const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
 
-    // Calculate streak
+    const [userContributions, monthlyContributionsCount] = await Promise.all([
+      db
+        .select()
+        .from(contributions)
+        .where(eq(contributions.userId, userId))
+        .orderBy(desc(contributions.createdAt))
+        .limit(100),
+
+      db
+        .select({ count: count() })
+        .from(contributions)
+        .where(
+          and(
+            eq(contributions.userId, userId),
+            gte(contributions.createdAt, thirtyDaysAgo)
+          )
+        ),
+    ]);
+
+    // Compute streak on standard date boundaries
     let currentStreak = 0;
     const today = new Date();
     today.setHours(0, 0, 0, 0);
 
     const contributionDates = userContributions
-      .map(c => {
+      .map((c) => {
         const d = c.createdAt ? new Date(c.createdAt) : null;
         if (!d) return null;
         d.setHours(0, 0, 0, 0);
         return d.getTime();
       })
-      .filter(Boolean)
-      .sort((a, b) => (b as number) - (a as number));
+      .filter((d): d is number => d !== null)
+      .sort((a, b) => b - a);
 
     if (contributionDates.length > 0) {
       let checkDate = today.getTime();
       const uniqueDates = [...new Set(contributionDates)];
-      
+
       for (const date of uniqueDates) {
         if (date === checkDate || date === checkDate - 86400000) {
           currentStreak++;
@@ -249,15 +272,9 @@ export async function getDashboardContributionsHandler(req: Request, res: Respon
       }
     }
 
-    // Monthly contributions (last 30 days)
-    const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
-    const monthlyContributions = userContributions.filter(
-      c => c.createdAt && new Date(c.createdAt) >= thirtyDaysAgo
-    ).length;
-
     res.json({
       currentStreak,
-      monthlyContributions,
+      monthlyContributions: monthlyContributionsCount[0]?.count || 0,
       totalContributions: userContributions.length,
     });
   } catch (error) {
@@ -268,29 +285,27 @@ export async function getDashboardContributionsHandler(req: Request, res: Respon
 
 /**
  * GET /api/dashboard/members
- * Returns recent active members from user's DAOs
  */
-export async function getDashboardMembersHandler(req: Request, res: Response) {
+export async function getDashboardMembersHandler(req: Request, res: Response): Promise<void> {
   try {
-    const userId = (req.user as any)?.id || (req.user as any)?.userId;
-    
+    const userId = getAuthUserId(req);
     if (!userId) {
-      return res.status(401).json({ error: 'Unauthorized' });
+      res.status(401).json({ error: 'Unauthorized' });
+      return;
     }
 
-    // Get user's DAOs
     const userDaos = await db
       .select({ daoId: daoMemberships.daoId })
       .from(daoMemberships)
       .where(eq(daoMemberships.userId, userId));
 
-    const daoIds = userDaos.map(d => d.daoId);
+    const daoIds = userDaos.map((d) => d.daoId);
 
     if (daoIds.length === 0) {
-      return res.json([]);
+      res.json([]);
+      return;
     }
 
-    // Get recent members
     const recentMembers = await db
       .select({
         userId: daoMemberships.userId,
@@ -298,24 +313,25 @@ export async function getDashboardMembersHandler(req: Request, res: Response) {
         joinedAt: daoMemberships.joinedAt,
       })
       .from(daoMemberships)
-      .where(sql`${daoMemberships.daoId} IN ${daoIds}`)
+      .where(inArray(daoMemberships.daoId, daoIds))
       .orderBy(desc(daoMemberships.joinedAt))
       .limit(10);
 
-    // Get user details
-    const memberUserIds = recentMembers.map(m => m.userId);
-    const memberUsers = await db
-      .select({
-        id: users.id,
-        username: users.username,
-        profilePicture: users.profileImageUrl,
-      })
-      .from(users)
-      .where(sql`${users.id} IN ${memberUserIds}`);
+    const memberUserIds = recentMembers.map((m) => m.userId);
+    const memberUsers = memberUserIds.length > 0
+      ? await db
+          .select({
+            id: users.id,
+            username: users.username,
+            profilePicture: users.profileImageUrl,
+          })
+          .from(users)
+          .where(inArray(users.id, memberUserIds))
+      : [];
 
-    const userMap = new Map(memberUsers.map(u => [u.id, u]));
+    const userMap = new Map(memberUsers.map((u) => [u.id, u]));
 
-    const formattedMembers = recentMembers.map(m => {
+    const formattedMembers = recentMembers.map((m) => {
       const user = userMap.get(m.userId);
       return {
         name: user?.username || 'Unknown',
@@ -334,42 +350,40 @@ export async function getDashboardMembersHandler(req: Request, res: Response) {
 
 /**
  * GET /api/dashboard/tasks
- * Returns available tasks for the user
  */
-export async function getDashboardTasksHandler(req: Request, res: Response) {
+export async function getDashboardTasksHandler(req: Request, res: Response): Promise<void> {
   try {
-    const userId = (req.user as any)?.id || (req.user as any)?.userId;
-    
+    const userId = getAuthUserId(req);
     if (!userId) {
-      return res.status(401).json({ error: 'Unauthorized' });
+      res.status(401).json({ error: 'Unauthorized' });
+      return;
     }
 
-    // Get user's DAOs
     const userDaos = await db
       .select({ daoId: daoMemberships.daoId })
       .from(daoMemberships)
       .where(eq(daoMemberships.userId, userId));
 
-    const daoIds = userDaos.map(d => d.daoId);
+    const daoIds = userDaos.map((d) => d.daoId);
 
     if (daoIds.length === 0) {
-      return res.json([]);
+      res.json([]);
+      return;
     }
 
-    // Get open tasks
     const openTasks = await db
       .select()
       .from(tasks)
       .where(
         and(
-          sql`${tasks.daoId} IN ${daoIds}`,
+          inArray(tasks.daoId, daoIds),
           eq(tasks.status, 'open')
         )
       )
       .orderBy(desc(tasks.createdAt))
       .limit(10);
 
-    const formattedTasks = openTasks.map(t => {
+    const formattedTasks = openTasks.map((t) => {
       const deadline = t.deadline ? new Date(t.deadline) : new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
       const now = new Date();
       const timeLeftMs = deadline.getTime() - now.getTime();
@@ -379,7 +393,7 @@ export async function getDashboardTasksHandler(req: Request, res: Response) {
         id: t.id.toString(),
         title: t.title,
         reward: parseFloat(t.reward || '0'),
-  difficulty: t.difficulty || 'medium',
+        difficulty: t.difficulty || 'medium',
         timeLeft: `${daysLeft}d`,
         category: t.category || 'general',
       };
@@ -396,85 +410,64 @@ export async function getDashboardTasksHandler(req: Request, res: Response) {
  * GET /api/dashboard/complete
  * Comprehensive system-wide dashboard aggregation endpoint
  */
-export async function getDashboardCompleteHandler(req: Request, res: Response) {
+export async function getDashboardCompleteHandler(req: Request, res: Response): Promise<void> {
   try {
-    const userId = (req.user as any)?.id || (req.user as any)?.userId;
-    
+    const userId = getAuthUserId(req);
     if (!userId) {
-      return res.status(401).json({ error: 'Unauthorized' });
+      res.status(401).json({ error: 'Unauthorized' });
+      return;
     }
 
-    // Get user data
-    const userData = await db.select().from(users).where(eq(users.id, userId)).limit(1);
+    const [userData, userMemberships, userVaults, pendingWithdrawalsResult, referralStatsResult] =
+      await Promise.all([
+        db.select().from(users).where(eq(users.id, userId)).limit(1),
+
+        db.select().from(daoMemberships).where(eq(daoMemberships.userId, userId)),
+
+        db.select().from(vaults).where(eq(vaults.userId, userId)),
+
+        db
+          .select({ count: count() })
+          .from(contributions)
+          .where(
+            and(
+              eq(contributions.userId, userId),
+              eq(contributions.status, 'pending')
+            )
+          ),
+
+        db
+          .select({ totalReferrals: count() })
+          .from(referralRewards)
+          .where(eq(referralRewards.referrerId, userId))
+          .catch(() => [{ totalReferrals: 0 }]),
+      ]);
+
     const user = userData[0];
+    const daoIds = userMemberships.map((m) => m.daoId);
 
-    // Get user's DAOs and memberships
-    const userMemberships = await db
-      .select()
-      .from(daoMemberships)
-      .where(eq(daoMemberships.userId, userId));
-
-    const daoIds = userMemberships.map(m => m.daoId);
-
-    // Get user's DAOs details
-    const userDAOs = daoIds.length > 0 
-      ? await db.select().from(daos).where(sql`${daos.id} IN ${daoIds}`)
-      : [];
-
-    // Get treasury/vault data
-    const userVaults = await db
-      .select()
-      .from(vaults)
-      .where(eq(vaults.userId, userId));
+    const userDAOs =
+      daoIds.length > 0
+        ? await db.select().from(daos).where(inArray(daos.id, daoIds))
+        : [];
 
     const totalAssets = userVaults.reduce((sum, vault) => {
-      return sum + parseFloat(vault.balance || '0');
+      return sum + (parseFloat(vault.balance || '0') || 0);
     }, 0);
 
-    // Get active proposals
-    const activeProposals = daoIds.length > 0
-      ? await db
-          .select({ count: count() })
-          .from(proposals)
-          .where(and(sql`${proposals.daoId} IN ${daoIds}`, eq(proposals.status, 'active')))
-      : [{ count: 0 }];
+    const activeInvestments = userVaults.filter(
+      (v) => parseFloat(v.balance || '0') > 0
+    ).length;
 
-    // Get pending withdrawals
-    const pendingWithdrawals = await db
-      .select({ count: count() })
-      .from(sql`(SELECT 1 FROM ${contributions} WHERE user_id = ${userId} AND status = 'pending')`);
-
-    // Get active investments (vaults with activity)
-    const activeInvestments = userVaults.filter(v => parseFloat(v.balance || '0') > 0).length;
-
-    // Get member growth and stats
-    const activeMembers = daoIds.length > 0
-      ? await db
-          .select({ count: count() })
-          .from(daoMemberships)
-          .where(sql`${daoMemberships.daoId} IN ${daoIds}`)
-      : [{ count: 0 }];
-
-    // Get referral stats
-    const referralStats = await db
-      .select({
-        totalReferrals: count(),
-        activeReferrals: count(),
-      })
-      .from(referralRewards)
-      .where(eq(referralRewards.referrerId, userId))
-      .catch(() => [{ totalReferrals: 0, activeReferrals: 0 }]);
-
-    // Format DAOs for display
-    const formattedDAOs = userDAOs.map(dao => ({
+    const formattedDAOs = userDAOs.map((dao) => ({
       id: dao.id,
       name: dao.name || 'Untitled DAO',
       description: dao.description || '',
-      members: userMemberships.filter(m => m.daoId === dao.id).length,
+      members: userMemberships.filter((m) => m.daoId === dao.id).length,
       tvl: totalAssets,
       status: 'active' as const,
       created: dao.createdAt?.toISOString() || new Date().toISOString(),
-      avatar: dao.image || '🏗️',
+      avatar: dao.imageUrl || '🏗️',
       governance: {
         proposals: 0,
         activeFundingRound: false,
@@ -482,7 +475,10 @@ export async function getDashboardCompleteHandler(req: Request, res: Response) {
       },
       treasury: {
         balance: totalAssets,
-        assets: userVaults.map(v => ({ name: v.name || 'Vault', value: parseFloat(v.balance || '0') })),
+        assets: userVaults.map((v) => ({
+          name: v.name || 'Vault',
+          value: parseFloat(v.balance || '0'),
+        })),
         lastUpdated: new Date().toISOString(),
       },
       stats: {
@@ -492,45 +488,44 @@ export async function getDashboardCompleteHandler(req: Request, res: Response) {
       },
     }));
 
-    // Build complete dashboard response
+    const rawWallet = user?.walletAddress || '';
+    const formattedWalletAddress =
+      rawWallet.length > 10 ? `${rawWallet.slice(0, 6)}...${rawWallet.slice(-4)}` : '0x0000...';
+
     const dashboardData = {
       totalAssets: Math.round(totalAssets * 100) / 100,
       monthlyReturn: 3.2,
-      activeInvestments: activeInvestments,
-      pendingWithdrawals: (pendingWithdrawals[0]?.count || 0) as number,
+      activeInvestments,
+      pendingWithdrawals: pendingWithdrawalsResult[0]?.count || 0,
       userDAOs: formattedDAOs,
-      daoDiscovery: [], // Discovery DAOs - can be added later
+      daoDiscovery: [],
       wallets: [
         {
-          id: user?.walletAddress || 'wallet-1',
-          address: user?.walletAddress?.slice(0, 10) + '...' || '0x0000...',
+          id: rawWallet || 'wallet-1',
+          address: formattedWalletAddress,
           balance: totalAssets,
           network: 'Ethereum',
-          verified: !!user?.walletAddress,
+          verified: Boolean(rawWallet),
         },
       ],
       referralStats: {
-        totalReferrals: (referralStats[0]?.totalReferrals || 0) as number,
-        activeReferrals: (referralStats[0]?.activeReferrals || 0) as number,
+        totalReferrals: referralStatsResult[0]?.totalReferrals || 0,
+        activeReferrals: referralStatsResult[0]?.totalReferrals || 0,
         referralRewards: 0,
         pendingRewards: 0,
       },
-      vaults: userVaults.map(v => ({
+      vaults: userVaults.map((v) => ({
         id: v.id,
         name: v.name || 'Vault',
         balance: parseFloat(v.balance || '0'),
-        apy: parseFloat(v.apy || '0'),
-        type: v.type || 'Conservative',
+        apy: parseFloat(String(v.interestRate ?? '0')),
+        type: v.vaultType || 'regular',
         created: v.createdAt?.toISOString() || new Date().toISOString(),
       })),
       investmentPools: [],
-      portfolioValue: [
-        { date: new Date().toISOString().split('T')[0], value: totalAssets },
-      ],
+      portfolioValue: [{ date: new Date().toISOString().split('T')[0], value: totalAssets }],
       transactionHistory: [],
-      performanceData: [
-        { month: 'Nov', return: 3.2 },
-      ],
+      performanceData: [{ month: 'Nov', return: 3.2 }],
       features: {
         kyc: true,
         pools: true,
@@ -543,9 +538,9 @@ export async function getDashboardCompleteHandler(req: Request, res: Response) {
     res.json(dashboardData);
   } catch (error) {
     console.error('Error fetching complete dashboard:', error);
-    res.status(500).json({ 
+    res.status(500).json({
       error: 'Failed to fetch dashboard data',
-      details: error instanceof Error ? error.message : 'Unknown error'
+      details: error instanceof Error ? error.message : 'Unknown error',
     });
   }
 }

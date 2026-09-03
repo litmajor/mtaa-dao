@@ -2,6 +2,7 @@
 import React, { useState, useEffect } from 'react';
 import { Eye, EyeOff, Mail, Lock, AlertCircle, UserPlus, Check, Phone, Send, Sparkles, Shield, Zap, ArrowLeft } from 'lucide-react';
 import { HeroLogo } from '@/components/ui/logo';
+import OAuthConfirmationDialog from './OAuthConfirmationDialog';
 
 export default function StunningRegister() {
   const [email, setEmail] = useState('');
@@ -25,6 +26,8 @@ export default function StunningRegister() {
   const [method, setMethod] = useState<'email' | 'phone' | ''>('');
   const [countryInfo, setCountryInfo] = useState<{ code: string; flag: string; name: string } | null>(null);
   const [showCountryDropdown, setShowCountryDropdown] = useState(false);
+  const [showOAuthConfirmation, setShowOAuthConfirmation] = useState(false);
+  const [oauthConfirmEmail, setOauthConfirmEmail] = useState('');
   
   // Extended country code map with popular African countries first
   const countryCodes: Record<string, { flag: string; name: string }> = {
@@ -867,6 +870,21 @@ export default function StunningRegister() {
           </div>
         </div>
       </div>
+
+      {/* OAuth Confirmation Dialog */}
+      {showOAuthConfirmation && (
+        <OAuthConfirmationDialog
+          email={oauthConfirmEmail}
+          onSuccess={() => {
+            // Redirect to subprofile-selection or dashboard after successful confirmation
+            window.location.href = '/subprofile-selection';
+          }}
+          onCancel={() => {
+            setShowOAuthConfirmation(false);
+            window.location.href = '/register';
+          }}
+        />
+      )}
     </div>
   );
 }

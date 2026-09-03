@@ -88,6 +88,7 @@ export enum PaymentErrorCode {
   INVALID_USER = 'INVALID_USER',
   INVALID_EMAIL = 'INVALID_EMAIL',
   INVALID_PHONE = 'INVALID_PHONE',
+  VALIDATION_ERROR = 'VALIDATION_ERROR',
 
   // Limit errors
   LIMIT_EXCEEDED = 'LIMIT_EXCEEDED',
@@ -615,7 +616,13 @@ export class PaymentErrorHandler {
         statusCode: 500,
         retryable: true,
         category: PaymentErrorCategory.UNKNOWN
+      },
+      [PaymentErrorCode.VALIDATION_ERROR]: {
+        statusCode: 400,
+        retryable: false,
+        category: PaymentErrorCategory.VALIDATION
       }
+      
     };
 
     return configs[code] || configs[PaymentErrorCode.UNKNOWN_ERROR];

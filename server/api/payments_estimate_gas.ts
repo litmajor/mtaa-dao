@@ -1,6 +1,8 @@
 
-import { Request, Response } from 'express';
+import type { Request, Response } from 'express';
+import { formatUnits } from 'ethers';
 import { tokenService } from '../services/tokenService';
+import { gasPriceOracle } from '../services/gasPriceOracle';
 import { TokenRegistry } from '../../shared/tokenRegistry';
 
 interface GasEstimateRequest {
@@ -47,27 +49,27 @@ export async function paymentsEstimateGasHandler(req: Request, res: Response) {
     }
 
     // Estimate gas for the operation
-  // Use a default sender address for estimation (could be from config or environment)
-  const defaultSender = process.env.DEFAULT_SENDER_ADDRESS || '0x000000000000000000000000000000000000dead';
-  const gasEstimateStr = await tokenService.estimateTokenGas(tokenSymbol, toAddress, amount, defaultSender);
-  const gasEstimate = BigInt(gasEstimateStr);
-    
-    // Get current gas price
-    const gasPrice = await tokenService.provider.getFeeData();
-    
-    // Calculate estimated cost
-    const estimatedCostWei = gasEstimate * (gasPrice.gasPrice || BigInt(0));
-  const estimatedCostCelo = require('ethers').formatUnits(estimatedCostWei, 18); // CELO has 18 decimals
+    const defaultSender = process.env.DEFAULT_SENDER_ADDRESS || '0x000000000000000000000000000000000000dead';
+    const gasEstimateStr = await tokenService.estimateTokenGas(tokenSymbol, toAddress, amount, defaultSender);
+    const gasEstimate = BigInt(gasEstimateStr);
+
+    // Use the production gas oracle for Celo, which handles EIP-1559 and fallback pricing
+    const gasStrategy = await gasPriceOracle.getOptimalGasStrategy(tokenService.provider, 'celo', 'standard');
+    const gasPriceWei = BigInt(gasStrategy.maxFeePerGas || gasStrategy.gasPrice || '0');
 
     // Apply operation-specific multipliers for safety
     const operationMultipliers = {
-      transfer: 1.1,  // 10% buffer
-      deposit: 1.2,   // 20% buffer for vault operations
-      withdraw: 1.3   // 30% buffer for complex withdrawals
-    };
+      transfer: 1.1,
+      deposit: 1.2,
+      withdraw: 1.3
+    } as const;
 
     const safetyMultiplier = operationMultipliers[operationType];
     const safeGasEstimate = BigInt(Math.ceil(Number(gasEstimate) * safetyMultiplier));
+    const estimatedCostWei = gasEstimate * gasPriceWei;
+    const recommendedCostWei = safeGasEstimate * gasPriceWei;
+    const estimatedCostCelo = formatUnits(estimatedCostWei, 18);
+    const recommendedCostCelo = formatUnits(recommendedCostWei, 18);
 
     res.json({
       success: true,
@@ -81,14 +83,15 @@ export async function paymentsEstimateGasHandler(req: Request, res: Response) {
         gas: {
           estimated: gasEstimate.toString(),
           recommended: safeGasEstimate.toString(),
-          price: gasPrice.gasPrice?.toString() || '0',
-          maxFee: gasPrice.maxFeePerGas?.toString() || '0',
-          maxPriorityFee: gasPrice.maxPriorityFeePerGas?.toString() || '0'
+          price: gasPriceWei.toString(),
+          maxFee: gasStrategy.maxFeePerGas || '0',
+          maxPriorityFee: gasStrategy.maxPriorityFeePerGas || '0'
         },
         cost: {
           estimatedCELO: estimatedCostCelo,
-          safetyMultiplier: safetyMultiplier,
-          estimatedUSD: (parseFloat(estimatedCostCelo) * 0.65).toFixed(4) // Rough CELO price
+          recommendedCELO: recommendedCostCelo,
+          safetyMultiplier,
+          estimatedUSD: (parseFloat(estimatedCostCelo) * 0.65).toFixed(4)
         },
         network: 'Celo',
         timestamp: new Date().toISOString()

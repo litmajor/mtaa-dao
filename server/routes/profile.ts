@@ -1,6 +1,6 @@
 import { Router } from "express";
 import { db } from "../db";
-import { users, vaults, contributions, userActivities } from "../../shared/schema";
+import { users, vaults, contributions, userActivities, userIdentities } from "../../shared/schema";
 import { eq, desc, and, sql } from "drizzle-orm";
 import { authenticate } from "../auth";
 
@@ -22,6 +22,14 @@ router.get("/", authenticate, async (req, res) => {
     if (!user) {
       return res.status(404).json({ error: "User not found" });
     }
+
+    const linkedIdentities = await db
+      .select({ provider: userIdentities.provider })
+      .from(userIdentities)
+      .where(eq(userIdentities.userId, userId));
+
+    const authProviders = [...new Set(linkedIdentities.map(identity => identity.provider))];
+    const signInMethod = authProviders[0] ?? (user.email ? "email" : "unknown");
 
     // Get contribution stats
     const contributionStats = await db
@@ -90,12 +98,17 @@ router.get("/", authenticate, async (req, res) => {
     res.json({
       user: {
         id: user.id,
+        username: user.username,
         firstName: user.firstName,
         lastName: user.lastName,
         email: user.email,
         roles: user.roles,
         joinedAt: user.createdAt,
         profilePicture: user.profileImageUrl,
+        profileImageUrl: user.profileImageUrl,
+        telegramUsername: user.telegramUsername,
+        authProviders,
+        signInMethod,
       },
       contributionStats: {
         totalContributions: parseFloat(contributionStats.totalContributions.toString()),
@@ -301,12 +314,12 @@ router.get('/contributions', async (req, res) => {
   try {
     const userId = (req as any).userId;
 
-    const contributions = await db
+    const userContributions = await db
       .select({
         id: sql`CAST(${contributions.id} AS TEXT)`,
         daoId: contributions.daoId,
         amount: contributions.amount,
-        contributionType: contributions.contributionType,
+        purpose: contributions.purpose,
         createdAt: contributions.createdAt,
       })
       .from(contributions)
@@ -314,9 +327,14 @@ router.get('/contributions', async (req, res) => {
       .orderBy(desc(contributions.createdAt))
       .limit(50);
 
+    const mappedContributions = userContributions.map((entry) => ({
+      ...entry,
+      contributionType: entry.purpose,
+    }));
+
     res.json({ 
       success: true,
-      contributions
+      contributions: mappedContributions
     });
   } catch (error) {
     console.error('Error fetching contributions:', error);

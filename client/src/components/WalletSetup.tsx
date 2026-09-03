@@ -11,6 +11,7 @@ import { Alert, AlertDescription } from './ui/alert';
 import { Wallet, Plus, Upload, Eye, EyeOff, Copy, Download, CheckCircle, Shield, TriangleAlert } from 'lucide-react';
 import { useToast } from './ui/use-toast';
 import SeedPhraseModal from './modals/SeedPhraseModal';
+import { createAndBackupWallet } from '../utils/walletVault';
 
 interface WalletSetupProps {
   userId: string;
@@ -57,38 +58,25 @@ export default function WalletSetup({ userId, onWalletCreated }: WalletSetupProp
   const createNewWallet = async () => {
     setLoading(true);
     try {
-      // Create a mnemonic-backed wallet (chain/network selection and asset preferences occur afterward)
-      const response = await fetch('/api/v1/wallets/setup/create/mnemonic', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          userId,
-          wordCount: 12,
-          initialAssetPreference: assets[0]?.currency
-        })
+      const password = window.prompt('Set a backup password (12+ characters, with upper/lowercase letters, a number, and a symbol):');
+      if (!password || password.length < 12 || !/[A-Z]/.test(password) || !/[a-z]/.test(password) || !/[0-9]/.test(password) || !/[^A-Za-z0-9]/.test(password)) {
+        throw new Error('Backup password must be 12+ characters and include upper/lowercase letters, a number, and a symbol');
+      }
+
+      const wallet = await createAndBackupWallet(password, userId, {
+        currency: assets[0]?.currency || 'USDC',
+        walletType: 'personal',
       });
 
-      const data = await response.json();
-      
-      if (data.success) {
-        // Show seed phrase modal instead of just a toast
-        setSeedPhraseModal({
-          isOpen: true,
-          seedPhrase: data.data?.mnemonic || data.data?.wallet?.mnemonic || '',
-          walletAddress: data.data?.wallet?.address || ''
-        });
-        // mark UNBACKED until user confirms backup
-        setWalletSecurityState('UNBACKED');
+      setSeedPhraseModal({
+        isOpen: true,
+        seedPhrase: wallet.mnemonic,
+        walletAddress: wallet.address,
+      });
+      setWalletSecurityState('SECURE');
 
-        // Initialize additional assets if any
-        if (assets.length > 1) {
-          await initializeAssets(data.data.wallet.address);
-        }
-        
-        onWalletCreated?.(data);
-      } else {
-        throw new Error(data.error || data.message);
-      }
+      if (assets.length > 1) await initializeAssets(wallet.address);
+      onWalletCreated?.({ success: true, data: { wallet } });
     } catch (error) {
       toast({
         title: "Error",
@@ -104,25 +92,11 @@ export default function WalletSetup({ userId, onWalletCreated }: WalletSetupProp
     (async () => {
       setSeedPhraseModal({ ...seedPhraseModal, isOpen: false });
       try {
-        const resp = await fetch('/api/v1/wallets/setup/backup/confirm', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' }
+        toast({
+          title: "Success!",
+          description: "Your encrypted wallet backup is stored. Keep your backup password safe."
         });
-
-        if (resp.ok) {
-          toast({
-            title: "Success!",
-            description: "Your wallet backup has been recorded. Redirecting to wallet dashboard..."
-          });
-          setWalletSecurityState('SECURE');
-        } else {
-          const err = await resp.json().catch(() => ({}));
-          toast({
-            title: "Notice",
-            description: err.error || 'Backup recorded locally; server update failed',
-            variant: 'destructive'
-          });
-        }
+        setWalletSecurityState('SECURE');
       } catch (e: any) {
         toast({
           title: "Network Error",

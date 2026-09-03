@@ -7,6 +7,7 @@ import { Label } from '../ui/label';
 import { Alert, AlertDescription } from '../ui/alert';
 import { Download, Upload, Shield, AlertTriangle, CheckCircle, Eye, EyeOff } from 'lucide-react';
 import { useToast } from '../ui/use-toast';
+import { restoreFromServerBackup } from '../../utils/walletVault';
 
 export default function WalletBackupManager({ userId }: { userId: string }) {
   const [password, setPassword] = useState('');
@@ -29,22 +30,21 @@ export default function WalletBackupManager({ userId }: { userId: string }) {
 
     setIsExporting(true);
     try {
-      const response = await fetch('/api/v1/wallets/setup/backup/export', {
-        method: 'POST',
+      const response = await fetch('/api/v1/wallets/setup/backup', {
+        method: 'GET',
         headers: { 'Content-Type': 'application/json' },
         credentials: 'include',
-        body: JSON.stringify({ password })
       });
 
       const data = await response.json();
 
-      if (data.success) {
+      if (data.backupExists && data.blob) {
         // Download backup file
-        const blob = new Blob([JSON.stringify(data.backup, null, 2)], { type: 'application/json' });
+        const blob = new Blob([JSON.stringify(data.blob, null, 2)], { type: 'application/json' });
         const url = window.URL.createObjectURL(blob);
         const a = document.createElement('a');
         a.href = url;
-        a.download = data.filename;
+        a.download = `wallet-backup-${Date.now()}.json`;
         document.body.appendChild(a);
         a.click();
         document.body.removeChild(a);
@@ -71,7 +71,7 @@ export default function WalletBackupManager({ userId }: { userId: string }) {
   };
 
   const handleRestoreBackup = async () => {
-    if (!backupFile || !password) {
+    if (!password) {
       toast({
         title: 'Missing Information',
         description: 'Please select a backup file and enter password',
@@ -82,22 +82,11 @@ export default function WalletBackupManager({ userId }: { userId: string }) {
 
     setIsRestoring(true);
     try {
-      const fileContent = await backupFile.text();
-      const backupData = JSON.parse(fileContent);
-
-      const response = await fetch('/api/v1/wallets/setup/backup/restore', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        credentials: 'include',
-        body: JSON.stringify({ backupData, password })
-      });
-
-      const data = await response.json();
-
-      if (data.success) {
+      const restored = await restoreFromServerBackup(password);
+      if (restored.address) {
         toast({
           title: 'Wallet Restored',
-          description: `Wallet ${data.walletAddress.slice(0, 6)}...${data.walletAddress.slice(-4)} restored successfully`
+          description: `Wallet ${restored.address.slice(0, 6)}...${restored.address.slice(-4)} restored successfully`
         });
 
         setPassword('');
@@ -105,8 +94,6 @@ export default function WalletBackupManager({ userId }: { userId: string }) {
 
         // Reload page to refresh wallet state
         setTimeout(() => window.location.reload(), 2000);
-      } else {
-        throw new Error(data.error || 'Restore failed');
       }
     } catch (error: any) {
       toast({

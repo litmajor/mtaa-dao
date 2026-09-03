@@ -1,13 +1,13 @@
-import { Router, Request, Response } from 'express';
+import { Router} from 'express';
+import type { Request, Response } from 'express';
 import { logger } from '../../utils/logger';
 import { requireRole } from '../../middleware/rbac';
 import {
   PaymentErrorAlertService,
-  AlertTrigger,
-  AlertRecipient,
   AlertSeverity,
   AlertChannel,
 } from '../../services/paymentErrorAlertService';
+import type { AlertTrigger, AlertRecipient } from '../../services/paymentErrorAlertService';
 
 const router = Router();
 const requireSuperAdmin = requireRole('super_admin');

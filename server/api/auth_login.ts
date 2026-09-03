@@ -1,5 +1,5 @@
 
-import { Request, Response } from 'express';
+import type { Request, Response } from 'express';
 import crypto from 'crypto';
 import { db } from '../storage';
 import { users } from '../../shared/schema';
@@ -181,10 +181,10 @@ export async function authLoginHandler(req: Request, res: Response) {
     });
 
     // Log successful login for security monitoring
-    console.log(`✅ Successful login: ${user.id} (${email || phone}) from IP: ${req.ip}`);
+    console.log(` Successful login: ${user.id} (${email || phone}) from IP: ${req.ip}`);
 
     console.log('[LOGIN] Sending response...');
-    // ✅ NO accessToken in JSON response - it's now in httpOnly cookie
+    //  NO accessToken in JSON response - it's now in httpOnly cookie
     // Frontend will NOT store anything, will use cookies automatically via credentials: 'include'
     res.json({
       success: true,

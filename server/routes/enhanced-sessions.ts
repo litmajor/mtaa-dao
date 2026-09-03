@@ -3,10 +3,14 @@
  * API endpoints for advanced session management features
  */
 
-import { Router, Request, Response, NextFunction } from 'express';
+import { Router } from 'express';
+import type { Request, Response, NextFunction } from 'express';
 import { z } from 'zod';
+import { eq, and } from 'drizzle-orm';
+import { db } from '../db';
+import { users, wallets } from '../../shared/schema';
 import { authenticateToken } from '../middleware/auth';
-import { validateRequest } from '../middleware/validation';
+import { validate, validateRequest } from '../middleware/validation';
 import {
   extendWalletSession,
   checkSessionExpiry,
@@ -25,6 +29,40 @@ import { otpService } from '../services/otpService';
 import { logger } from '../utils/logger';
 
 const router = Router();
+
+const getCurrentSessionToken = (req: Request): string | undefined => {
+  const value = req.headers['x-wallet-session'];
+  if (typeof value === 'string') return value;
+  if (Array.isArray(value) && value.length > 0) return value[0];
+  return undefined;
+};
+
+const getAuthenticatedProfile = async (userId: string) => {
+  return db.query.users.findFirst({
+    where: eq(users.id, userId),
+  });
+};
+
+const ensureWalletOwnership = async (walletId: string, userId: string) => {
+  const wallet = await db.query.wallets.findFirst({
+    where: and(eq(wallets.id, walletId), eq(wallets.userId, userId)),
+  });
+
+  if (!wallet) {
+    throw Object.assign(new Error('Wallet not found for this user'), { statusCode: 403 });
+  }
+
+  return wallet;
+};
+
+const parsePositiveLimit = (value: unknown, fallback: number, max: number): number => {
+  const parsed = Number.parseInt(String(value ?? ''), 10);
+  if (!Number.isFinite(parsed) || parsed < 1) {
+    return fallback;
+  }
+
+  return Math.max(1, Math.min(parsed, max));
+};
 
 /**
  * POST /api/sessions/extend
@@ -68,7 +106,9 @@ router.post(
 router.get(
   '/expiry-check',
   authenticateToken,
-  validateRequest(z.object({ sessionToken: z.string() }).strict(), 'query'),
+  validate({
+    query: z.object({ sessionToken: z.string() }).strict(),
+  }),
   async (req: Request, res: Response, next: NextFunction) => {
     try {
       const { sessionToken } = req.query;
@@ -117,7 +157,7 @@ router.get(
           lastAccessedAt: session.lastAccessedAt,
           expiresAt: session.expiresAt,
           biometricEnabled: session.biometricEnabled,
-          isCurrent: session.sessionToken === (req as any).sessionToken, // Current session
+          isCurrent: !!getCurrentSessionToken(req) && session.sessionToken === getCurrentSessionToken(req),
         })),
         count: sessions.length,
       });
@@ -203,7 +243,23 @@ router.post(
     try {
       const { notificationId } = req.params;
 
-      await markNotificationAsRead(notificationId);
+      const userId = (req as any).user?.id;
+
+      if (!userId) {
+        return res.status(401).json({
+          success: false,
+          error: 'User not authenticated',
+        });
+      }
+
+      const updated = await markNotificationAsRead(notificationId, userId);
+
+      if (!updated) {
+        return res.status(404).json({
+          success: false,
+          error: 'Notification not found or not owned by this user',
+        });
+      }
 
       res.json({
         success: true,
@@ -226,14 +282,12 @@ router.post(
     z.object({
       walletId: z.string().uuid(),
       resetMethod: z.enum(['email', 'sms']).optional(),
-      email: z.string().email().optional(),
-      phone: z.string().optional(),
     })
   ),
   async (req: Request, res: Response, next: NextFunction) => {
     try {
       const userId = (req as any).user?.id;
-      const { walletId, resetMethod, email, phone } = req.body;
+      const { walletId, resetMethod } = req.body;
 
       if (!userId) {
         return res.status(401).json({
@@ -242,21 +296,30 @@ router.post(
         });
       }
 
-      const targetEmail = resetMethod === 'email' ? email : undefined;
-      const targetPhone = resetMethod === 'sms' ? phone : undefined;
+      await ensureWalletOwnership(walletId, userId);
+
+      const profile = await getAuthenticatedProfile(userId);
+      const targetEmail = profile?.email || undefined;
+      const targetPhone = profile?.phone || undefined;
 
       if (!targetEmail && !targetPhone) {
         return res.status(400).json({
           success: false,
-          error: 'An email or phone number is required for PIN reset',
+          error: 'No verified email or phone is associated with this account',
         });
       }
 
-      const result = await requestPINReset(walletId, userId, targetPhone, targetEmail);
+      const effectiveMethod = resetMethod || (targetEmail ? 'email' : 'sms');
+      const result = await requestPINReset(
+        walletId,
+        userId,
+        effectiveMethod === 'sms' ? targetPhone : undefined,
+        effectiveMethod === 'email' ? targetEmail : undefined
+      );
 
       logger.info(`PIN reset requested for user ${userId}`, {
         walletId,
-        resetMethod: resetMethod || (targetEmail ? 'email' : 'sms'),
+        resetMethod: effectiveMethod,
       });
 
       res.json({
@@ -279,27 +342,38 @@ router.post(
  */
 router.post(
   '/pin-reset/verify',
+  authenticateToken,
   validateRequest(
     z.object({
       walletId: z.string().uuid(),
       verificationCode: z.string().min(4),
-      email: z.string().email().optional(),
-      phone: z.string().optional(),
     })
   ),
   async (req: Request, res: Response, next: NextFunction) => {
     try {
-      const { walletId, verificationCode, email, phone } = req.body;
-      const contact = email || phone;
+      const userId = (req as any).user?.id;
+      const { walletId, verificationCode } = req.body;
+
+      if (!userId) {
+        return res.status(401).json({
+          success: false,
+          error: 'User not authenticated',
+        });
+      }
+
+      await ensureWalletOwnership(walletId, userId);
+
+      const profile = await getAuthenticatedProfile(userId);
+      const contact = profile?.email || profile?.phone;
 
       if (!contact) {
         return res.status(400).json({
           success: false,
-          error: 'An email or phone number is required',
+          error: 'No verified email or phone is associated with this account',
         });
       }
 
-      const identifier = email ? `email:${walletId}:${email}` : `phone:${walletId}:${phone}`;
+      const identifier = contact.includes('@') ? `email:${userId}:${contact}` : `phone:${userId}:${contact}`;
       const verification = await otpService.verifyOTP(identifier, verificationCode);
 
       if (!verification.valid) {
@@ -325,20 +399,18 @@ router.post(
  */
 router.post(
   '/pin-reset/complete',
+  authenticateToken,
   validateRequest(
     z.object({
       walletId: z.string().uuid(),
       verificationCode: z.string().min(4),
       newPin: z.string().length(4).regex(/^\d+$/),
-      email: z.string().email().optional(),
-      phone: z.string().optional(),
     })
   ),
   async (req: Request, res: Response, next: NextFunction) => {
     try {
       const userId = (req as any).user?.id;
-      const { walletId, verificationCode, newPin, email, phone } = req.body;
-      const contact = email || phone;
+      const { walletId, verificationCode, newPin } = req.body;
 
       if (!userId) {
         return res.status(401).json({
@@ -347,10 +419,25 @@ router.post(
         });
       }
 
+      await ensureWalletOwnership(walletId, userId);
+
+      const profile = await getAuthenticatedProfile(userId);
+      const contact = profile?.email || profile?.phone;
+
       if (!contact) {
         return res.status(400).json({
           success: false,
-          error: 'An email or phone number is required',
+          error: 'No verified email or phone is associated with this account',
+        });
+      }
+
+      const identifier = contact.includes('@') ? `email:${userId}:${contact}` : `phone:${userId}:${contact}`;
+      const verification = await otpService.verifyOTP(identifier, verificationCode);
+
+      if (!verification.valid) {
+        return res.status(400).json({
+          success: false,
+          error: verification.error || 'Invalid or expired verification code',
         });
       }
 
@@ -426,10 +513,9 @@ router.post(
 router.get(
   '/biometric/status',
   authenticateToken,
-  validateRequest(
-    z.object({ deviceId: z.string() }).strict(),
-    'query'
-  ),
+  validate({
+    query: z.object({ deviceId: z.string() }).strict(),
+  }),
   async (req: Request, res: Response, next: NextFunction) => {
     try {
       const userId = (req as any).user?.id;
@@ -504,7 +590,7 @@ router.get(
   async (req: Request, res: Response, next: NextFunction) => {
     try {
       const userId = (req as any).user?.id;
-      const limit = Math.min(parseInt(req.query.limit as string) || 50, 100);
+      const limit = parsePositiveLimit(req.query.limit, 50, 100);
 
       if (!userId) {
         return res.status(401).json({

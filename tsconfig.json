@@ -1,26 +1,10 @@
 {
-  "include": [
-    "client/src/**/*",
-    "client/pages/**/*",
-    "shared/**/*",
-    "server/**/*",
-    "server/register.ts",
-    "pages/**/*"
-  ],
-  "exclude": [
-    "node_modules",
-    "build",
-    "dist",
-    "**/*.test.ts",
-    "**/*.test.tsx",
-    "**/__tests__/**"
-  ],
   "compilerOptions": {
     "ignoreDeprecations": "6.0",
     "target": "ES2020",
     "downlevelIteration": true,
     "incremental": true,
-    "tsBuildInfoFile": "./node_modules/.cache/tsbuildinfo",
+    "tsBuildInfoFile": "./.tsbuildinfo",
     "noEmit": true,
     "module": "ESNext",
     "strict": true,
@@ -36,15 +20,30 @@
     "isolatedModules": true,
     "verbatimModuleSyntax": true,
     "baseUrl": ".",
-    "types": [
-      "node",
-      "jest"
-    ],
+    "types": ["node", "jest"],
     "typeRoots": ["./server/types", "./node_modules/@types"],
     "paths": {
       "@/*": ["./client/src/*"],
       "@shared/*": ["./shared/*"]
-      
     }
-  }
+  },
+  "include": [
+    "client/src/**/*",
+    "shared/**/*",
+    "server/**/*"
+  ],
+  "exclude": [
+    "node_modules",
+    "attatched_assets",
+    ".vscode",  
+    ".obsidian",
+    "build",
+    "dist",
+    ".next",
+    ".cache",
+    "coverage",
+    "**/*.test.ts",
+    "**/*.test.tsx",
+    "**/__tests__/**"
+  ]
 }

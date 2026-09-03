@@ -1,4 +1,67 @@
-import { describe, test, expect, beforeEach } from 'vitest';
+import { describe, test, expect, beforeEach, vi } from 'vitest';
+
+// Set environment variables FIRST
+process.env.DATABASE_URL = 'postgresql://test:test@localhost:5432/test_db';
+process.env.JWT_SECRET = 'test-jwt-secret-this-is-long-enough-for-32-chars-requirement';
+process.env.JWT_REFRESH_SECRET = 'test-jwt-refresh-secret-this-is-long-enough-for-32-chars';
+
+// Mock config
+vi.mock('../../shared/config.ts', () => ({
+  env: {
+    JWT_SECRET: 'test-jwt-secret-this-is-long-enough-for-32-chars-requirement',
+    JWT_REFRESH_SECRET: 'test-jwt-refresh-secret-this-is-long-enough-for-32-chars',
+    DATABASE_URL: 'postgresql://test:test@localhost:5432/test_db',
+    NODE_ENV: 'test',
+  },
+}));
+
+// Mock logger
+vi.mock('../utils/logger', () => {
+  class MockLogger {
+    debug = vi.fn();
+    warn = vi.fn();
+    error = vi.fn();
+    info = vi.fn();
+  }
+  const defaultLogger = new MockLogger();
+  return { 
+    Logger: MockLogger,
+    logger: defaultLogger,
+    requestLogger: vi.fn(),
+  };
+});
+
+// Mock db
+vi.mock('../db', () => {
+  return {
+    db: {
+      select: vi.fn(() => ({
+        from: vi.fn(() => ({
+          where: vi.fn(() => ({
+            limit: vi.fn(() => Promise.resolve([])),
+          })),
+          limit: vi.fn(() => Promise.resolve([])),
+        })),
+      })),
+      execute: vi.fn(() => Promise.resolve({ rowCount: 0 })),
+    },
+    pool: {
+      connect: vi.fn(() => Promise.resolve({
+        query: vi.fn(() => Promise.resolve({ rows: [] })),
+        release: vi.fn(),
+      })),
+    },
+  };
+});
+
+// Mock dbClient utilities
+vi.mock('../utils/dbClient', () => {
+  return {
+    withClient: vi.fn(async (handler) => handler({ query: vi.fn(() => Promise.resolve({ rows: [] })) })),
+    withTransaction: vi.fn(async (handler) => handler({ query: vi.fn(() => Promise.resolve({ rows: [] })) })),
+  };
+});
+
 import { sharedIdempotencyManager } from '../services/sharedIdempotencyManager';
 import { db } from '../db';
 import { sql } from 'drizzle-orm';

@@ -6,7 +6,8 @@ import {
   vaults, 
   walletTransactions,
   paymentTransactions,
-  daoMemberships 
+  daoMemberships,
+  platformRevenue,
 } from '../../shared/schema';
 import { eq, sql, and, gte, desc } from 'drizzle-orm';
 import { Logger } from '../utils/logger';
@@ -18,6 +19,8 @@ interface RevenueStream {
   amount: number;
   currency: string;
   period: 'daily' | 'weekly' | 'monthly';
+  sourceType: 'user_payment' | 'dao_billing' | 'platform_ledger' | 'provider_fee';
+  status: 'collected' | 'recorded_unsettled';
 }
 
 interface TransactionFeeConfig {
@@ -27,29 +30,19 @@ interface TransactionFeeConfig {
   minFeeUSD: number;
 }
 
-interface PayAsYouGrowThreshold {
-  memberCount: number;
-  vaultTVL: number; // USD
-  monthlyFee: number; // KES
-}
+const PLATFORM_TRANSACTION_FEE_PERCENT = 2.0;
+// TODO: replace with volume-based fee ladder once real transaction data exists — see pricing.md §6.4.
+// Flat rate is a placeholder, not a design decision.
 
 export class RevenueService {
   
   // Transaction fee configuration
   private feeConfig: TransactionFeeConfig = {
-    onRampFee: 1.0, // 1% on fiat → crypto
-    offRampFee: 1.0, // 1% on crypto → fiat
-    swapFee: 0.3, // 0.3% on token swaps
+    onRampFee: PLATFORM_TRANSACTION_FEE_PERCENT, // TODO: replace with volume-based fee ladder once real transaction data exists — see pricing.md §6.4. Flat rate is a placeholder, not a design decision.
+    offRampFee: PLATFORM_TRANSACTION_FEE_PERCENT,
+    swapFee: PLATFORM_TRANSACTION_FEE_PERCENT,
     minFeeUSD: 0.10 // Minimum $0.10 fee
   };
-
-  // Pay-as-you-grow thresholds for DAOs
-  private daoThresholds: PayAsYouGrowThreshold[] = [
-    { memberCount: 50, vaultTVL: 10000, monthlyFee: 500 }, // KES 500/mo
-    { memberCount: 100, vaultTVL: 50000, monthlyFee: 1500 }, // KES 1,500/mo
-    { memberCount: 250, vaultTVL: 200000, monthlyFee: 5000 }, // KES 5,000/mo
-    { memberCount: 500, vaultTVL: 1000000, monthlyFee: 15000 }, // KES 15,000/mo
-  ];
 
   /**
    * Calculate transaction fee for on/off-ramp
@@ -58,19 +51,9 @@ export class RevenueService {
     type: 'on_ramp' | 'off_ramp' | 'swap',
     amountUSD: number
   ): Promise<{ fee: number; netAmount: number }> {
-    let feePercentage = 0;
-
-    switch (type) {
-      case 'on_ramp':
-        feePercentage = this.feeConfig.onRampFee;
-        break;
-      case 'off_ramp':
-        feePercentage = this.feeConfig.offRampFee;
-        break;
-      case 'swap':
-        feePercentage = this.feeConfig.swapFee;
-        break;
-    }
+    // TODO: replace with volume-based fee ladder once real transaction data exists — see pricing.md §6.4.
+    // Flat rate is a placeholder, not a design decision.
+    const feePercentage = PLATFORM_TRANSACTION_FEE_PERCENT;
 
     const calculatedFee = (amountUSD * feePercentage) / 100;
     const fee = Math.max(calculatedFee, this.feeConfig.minFeeUSD);
@@ -90,15 +73,14 @@ export class RevenueService {
     transactionHash?: string
   ): Promise<void> {
     try {
-      await db.execute(sql`
-        INSERT INTO platform_revenue (
-          revenue_stream, user_id, amount_usd, currency, 
-          metadata, created_at
-        ) VALUES (
-          ${type + '_fee'}, ${userId}, ${feeUSD}, 'USD',
-          ${JSON.stringify({ amountUSD, transactionHash })}, NOW()
-        )
-      `);
+      await db.insert(platformRevenue).values({
+        userId,
+        amount: feeUSD.toFixed(2),
+        currency: 'USD',
+        description: JSON.stringify({ amountUSD, transactionHash }),
+        transactionType: `${type}_fee`,
+        status: 'paid',
+      });
 
       Logger.getLogger().info(`Transaction fee recorded: ${type} - $${feeUSD.toFixed(2)}`);
     } catch (error) {
@@ -107,56 +89,19 @@ export class RevenueService {
   }
 
   /**
-   * Check if DAO should pay based on growth thresholds
+   * Legacy DAO pay-as-you-grow check retained as a TODO marker only.
+   * This path is intentionally not used for fee calculation anymore.
+   * TODO: remove once the DAO growth/fee ladder is explicitly retired and the route call graph is confirmed.
    */
   async checkDaoPayAsYouGrow(daoId: string): Promise<{
     shouldPay: boolean;
-    tier?: PayAsYouGrowThreshold;
+    tier?: { memberCount: number; vaultTVL: number; monthlyFee: number };
     reason?: string;
   }> {
-    try {
-      // Get DAO details
-      const dao = await db.query.daos.findFirst({
-        where: eq(daos.id, daoId)
-      });
-
-      if (!dao) {
-        return { shouldPay: false, reason: 'DAO not found' };
-      }
-
-      // If already on paid plan, skip
-      if (dao.plan && dao.plan !== 'free') {
-        return { shouldPay: false, reason: 'Already on paid plan' };
-      }
-
-      // Get member count
-      const memberCount = dao.memberCount || 0;
-
-      // Get vault TVL
-      const vaultTVL = await db.execute(sql`
-        SELECT COALESCE(SUM(CAST(total_value_locked AS NUMERIC)), 0) as total_tvl
-        FROM vaults
-        WHERE dao_id = ${daoId} AND is_active = true
-      `);
-
-      const totalTVL = parseFloat(vaultTVL.rows[0]?.total_tvl || '0');
-
-      // Check thresholds
-      for (const threshold of this.daoThresholds) {
-        if (memberCount >= threshold.memberCount || totalTVL >= threshold.vaultTVL) {
-          return {
-            shouldPay: true,
-            tier: threshold,
-            reason: `Exceeded threshold: ${memberCount} members or $${totalTVL.toFixed(2)} TVL`
-          };
-        }
-      }
-
-      return { shouldPay: false };
-    } catch (error) {
-      Logger.getLogger().error('Failed to check DAO pay-as-you-grow:', error);
-      return { shouldPay: false, reason: 'Error checking thresholds' };
-    }
+    // TODO: replace with volume-based fee ladder once real transaction data exists — see pricing.md §6.4.
+    // Flat rate is a placeholder, not a design decision.
+    Logger.getLogger().debug(`Legacy DAO pay-as-you-grow check invoked for ${daoId}; no tier-based fee ladder is active.`);
+    return { shouldPay: false, reason: 'Fee calculation is flat-rate placeholder only; legacy DAO tier ladder removed.' };
   }
 
   /**
@@ -174,9 +119,9 @@ export class RevenueService {
         FROM vault_strategy_allocations
         WHERE is_active = true
         AND updated_at >= ${startDate}
-      `);
+      `) as any;
 
-      const totalYield = parseFloat(yieldData.rows[0]?.total_yield || '0');
+      const totalYield = parseFloat(String((yieldData.rows[0] as any)?.total_yield ?? '0'));
       
       // Platform takes 10% of all yields as affiliate fee
       const affiliateFee = totalYield * 0.10;
@@ -212,15 +157,15 @@ export class RevenueService {
         AND mtaa_spent > 0
         GROUP BY feature_type
         ORDER BY total_spent DESC
-      `);
+      `) as any;
 
       const totalSpent = spendingData.rows.reduce(
-        (sum, row) => sum + parseFloat(row.total_spent || '0'), 
+        (sum: number, row: any) => sum + parseFloat(String(row.total_spent ?? '0')),
         0
       );
 
       const transactions = spendingData.rows.reduce(
-        (sum, row) => sum + parseInt(row.transaction_count || '0'), 
+        (sum: number, row: any) => sum + parseInt(String(row.transaction_count ?? '0')),
         0
       );
 
@@ -240,116 +185,110 @@ export class RevenueService {
    */
   async getRevenueReport(period: 'daily' | 'weekly' | 'monthly'): Promise<{
     total: number;
+    totalByCurrency: Record<string, number>;
     streams: RevenueStream[];
+    recordedUnsettled: RevenueStream[];
     diversification: number; // 0-100 score
   }> {
     try {
-      const streams: RevenueStream[] = [];
+      const { collected, recordedUnsettled } = await this.getRevenueStreams(period);
+      const streams = collected;
+      const totalByCurrency = streams.reduce<Record<string, number>>((totals, stream) => {
+        totals[stream.currency] = (totals[stream.currency] || 0) + stream.amount;
+        return totals;
+      }, {});
 
-      // 1. User subscriptions
-      const userSubs = await this.getUserSubscriptionRevenue(period);
-      streams.push({
-        source: 'User Subscriptions',
-        amount: userSubs,
-        currency: 'KES',
-        period
-      });
-
-      // 2. DAO subscriptions
-      const daoSubs = await this.getDAOSubscriptionRevenue(period);
-      streams.push({
-        source: 'DAO Subscriptions',
-        amount: daoSubs,
-        currency: 'KES',
-        period
-      });
-
-      // 3. Transaction fees
-      const txFees = await this.getTransactionFeeRevenue(period);
-      streams.push({
-        source: 'Transaction Fees',
-        amount: txFees,
-        currency: 'USD',
-        period
-      });
-
-      // 4. Affiliate yields
-      const affiliateYield = await this.calculateAffiliateYield(period);
-      streams.push({
-        source: 'Affiliate Yields',
-        amount: affiliateYield,
-        currency: 'USD',
-        period
-      });
-
-      // 5. MTAA marketplace
-      const marketplace = await this.getMTAAMarketplaceRevenue(period);
-      streams.push({
-        source: 'MTAA Marketplace',
-        amount: marketplace.totalSpent,
-        currency: 'MTAA',
-        period
-      });
-
-      // Calculate total (normalize to USD)
-      const total = streams.reduce((sum, stream) => {
-        if (stream.currency === 'KES') return sum + (stream.amount / 130); // KES to USD
-        if (stream.currency === 'MTAA') return sum + (stream.amount * 0.10); // MTAA to USD
-        return sum + stream.amount;
-      }, 0);
+      // Mixed currencies are intentionally not converted with a hardcoded rate.
+      // Keep `total` for API compatibility as the collected USD subtotal.
+      const total = totalByCurrency.USD || 0;
 
       // Calculate diversification score (higher = better)
       const nonZeroStreams = streams.filter(s => s.amount > 0).length;
-      const diversification = (nonZeroStreams / streams.length) * 100;
+      const diversification = streams.length > 0
+        ? (nonZeroStreams / streams.length) * 100
+        : 0;
 
-      return { total, streams, diversification };
+      return { total, totalByCurrency, streams, recordedUnsettled, diversification };
     } catch (error) {
       Logger.getLogger().error('Failed to generate revenue report:', error);
-      return { total: 0, streams: [], diversification: 0 };
+      return { total: 0, totalByCurrency: {}, streams: [], recordedUnsettled: [], diversification: 0 };
     }
   }
 
-  // Helper methods
-  private async getUserSubscriptionRevenue(period: 'daily' | 'weekly' | 'monthly'): Promise<number> {
+  private async getRevenueStreams(
+    period: 'daily' | 'weekly' | 'monthly'
+  ): Promise<{ collected: RevenueStream[]; recordedUnsettled: RevenueStream[] }> {
     const startDate = this.getStartDate(period);
-
-    const revenue = await db.execute(sql`
-      SELECT COALESCE(SUM(amount), 0) as total
+    const result = await db.execute(sql`
+      SELECT
+        'User Payments' AS source,
+        currency,
+        COALESCE(SUM(CAST(amount AS NUMERIC)), 0) AS amount,
+        'user_payment' AS source_type
       FROM user_payment_history
       WHERE payment_type = 'subscription'
-      AND status = 'completed'
-      AND created_at >= ${startDate}
-    `);
+        AND status = 'completed'
+        AND created_at >= ${startDate}
+      GROUP BY currency
 
-    return parseFloat(revenue.rows[0]?.total || '0');
-  }
+      UNION ALL
 
-  private async getDAOSubscriptionRevenue(period: 'daily' | 'weekly' | 'monthly'): Promise<number> {
-    const startDate = this.getStartDate(period);
-
-    const revenue = await db.execute(sql`
-      SELECT COALESCE(SUM(amount), 0) as total
+      SELECT
+        'DAO Billing' AS source,
+        currency,
+        COALESCE(SUM(CAST(amount AS NUMERIC)), 0) AS amount,
+        'dao_billing' AS source_type
       FROM billing_history
       WHERE status = 'paid'
-      AND created_at >= ${startDate}
-    `);
+        AND created_at >= ${startDate}
+      GROUP BY currency
 
-    return parseFloat(revenue.rows[0]?.total || '0');
-  }
+      UNION ALL
 
-  private async getTransactionFeeRevenue(period: 'daily' | 'weekly' | 'monthly'): Promise<number> {
-    const startDate = this.getStartDate(period);
-
-    const revenue = await db.execute(sql`
-      SELECT COALESCE(SUM(amount_usd), 0) as total
+      SELECT
+        'Platform Ledger' AS source,
+        COALESCE(currency, 'KES') AS currency,
+        COALESCE(SUM(CAST(amount AS NUMERIC)), 0) AS amount,
+        'platform_ledger' AS source_type
       FROM platform_revenue
-      WHERE revenue_stream IN ('on_ramp_fee', 'off_ramp_fee', 'swap_fee')
-      AND created_at >= ${startDate}
-    `);
+      WHERE status = 'paid'
+        AND created_at >= ${startDate}
+      GROUP BY COALESCE(currency, 'KES')
+    `) as any;
 
-    return parseFloat(revenue.rows[0]?.total || '0');
+    const collected = (result.rows as Array<Record<string, unknown>>).map((row) => ({
+      source: String(row.source),
+      amount: Number(row.amount || 0),
+      currency: String(row.currency || 'KES'),
+      period,
+      sourceType: row.source_type as RevenueStream['sourceType'],
+      status: 'collected' as const,
+    }));
+
+    const feeResult = await db.execute(sql`
+      SELECT
+        'Provider Fee Records' AS source,
+        currency,
+        COALESCE(SUM(CAST(fee_amount AS NUMERIC)), 0) AS amount
+      FROM transaction_fees
+      WHERE fee_type = 'platform_fee'
+        AND created_at >= ${startDate}
+      GROUP BY currency
+    `) as any;
+
+    const recordedUnsettled = (feeResult.rows as Array<Record<string, unknown>>).map((row) => ({
+      source: String(row.source),
+      amount: Number(row.amount || 0),
+      currency: String(row.currency || 'KES'),
+      period,
+      sourceType: 'provider_fee' as const,
+      status: 'recorded_unsettled' as const,
+    }));
+
+    return { collected, recordedUnsettled };
   }
 
+  // Helper methods
   private getStartDate(period: 'daily' | 'weekly' | 'monthly'): Date {
     const now = new Date();
     switch (period) {

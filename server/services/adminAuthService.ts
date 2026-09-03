@@ -93,19 +93,45 @@ export class AdminAuthService {
   async canPerformAction(
     userId: string,
     actionType: string,
-    resourceType: string
+    resourceType: string,
+    resourceContext?: { agentId?: string; proposalId?: string; daoId?: string }
   ): Promise<boolean> {
-    // Verify superuser
     try {
-      await this.verifySuperuser(userId);
+      const user = await this.getAdminUser(userId);
+      if (!user || !user.is_active) {
+        return false;
+      }
+
+      const normalizedAction = actionType.toUpperCase();
+      const normalizedRole = user.role?.toLowerCase() || '';
+
+      // Superuser is allowed everywhere.
+      if (user.is_superuser) {
+        return true;
+      }
+
+      // Proposal actions require explicit admin/super-admin privileges rather than a blanket superuser-only gate.
+      if (resourceType === 'PROPOSAL') {
+        const proposalActions = new Set([
+          'VIEW_PROPOSAL',
+          'CREATE_PROPOSAL',
+          'APPROVE_PROPOSAL',
+          'REJECT_PROPOSAL',
+          'EXECUTE_PROPOSAL'
+        ]);
+
+        if (!proposalActions.has(normalizedAction)) {
+          return false;
+        }
+
+        return ['admin', 'super_admin', 'approval_board'].includes(normalizedRole);
+      }
+
+      // Default to admin-only for other sensitive resources.
+      return ['admin', 'super_admin', 'approval_board'].includes(normalizedRole);
     } catch (e) {
       return false;
     }
-
-    // Additional rules can be added here per actionType/resourceType
-    // For now, all superusers can perform all admin actions
-
-    return true;
   }
 
   /**

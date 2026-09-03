@@ -5,15 +5,11 @@
  */
 
 import { db } from '../db';
-import { vaultTransactions, walletTransactions, daos, vaults } from '../../shared/schema';
-import { eq, and, sql } from 'drizzle-orm';
-import axios from 'axios';
+import { vaultTransactions, walletTransactions, daos, vaults, vaultPerformance, vaultStrategyAllocations } from '../../shared/schema';
+import { eq, and, gte, asc, sql } from 'drizzle-orm';
+import { priceHistoryService } from './priceHistoryService';
 
 // ==================== REAL DATA SOURCES ====================
-
-const COINGECKO_API = 'https://api.coingecko.com/api/v3';
-const DEFILLAMA_API = 'https://coins.llama.fi';
-const GRAPH_API = 'https://api.thegraph.com/subgraphs/name';
 
 // ==================== TYPES ====================
 
@@ -83,16 +79,27 @@ export class AdvancedAnalyticsService {
     days: number = 30
   ): Promise<BurnRateMetrics> {
     try {
+      if (!Number.isFinite(days) || days <= 0) {
+        throw new Error('Analysis period must be greater than zero');
+      }
+
       const cutoffDate = new Date();
       cutoffDate.setDate(cutoffDate.getDate() - days);
 
       // Get all transactions in period
-      const transactions = await db.execute(sql`
-        SELECT amount, created_at, type FROM vault_transactions
-        WHERE dao_id = ${daoId}
-        AND created_at >= ${cutoffDate}
-        AND type IN ('withdrawal', 'fee')
-      `);
+      const transactions = await db
+        .select({
+          amount: vaultTransactions.amount,
+          transactionType: vaultTransactions.transactionType,
+          createdAt: vaultTransactions.createdAt,
+        })
+        .from(vaultTransactions)
+        .innerJoin(vaults, eq(vaultTransactions.vaultId, vaults.id))
+        .where(and(
+          eq(vaults.daoId, daoId),
+          gte(vaultTransactions.createdAt, cutoffDate),
+        ))
+        .orderBy(asc(vaultTransactions.createdAt));
 
       if (transactions.length === 0) {
         return {
@@ -108,23 +115,29 @@ export class AdvancedAnalyticsService {
       }
 
       // Calculate burn (outflows only)
-      let totalBurned = 0;
-      for (const txn of transactions) {
-        if (txn.type === 'withdrawal' || txn.type === 'fee') {
-          totalBurned += txn.amount;
-        }
+      const burnTransactions = transactions.filter(txn =>
+        txn.transactionType === 'withdrawal' || txn.transactionType === 'fee'
+      );
+      const amounts = burnTransactions.map(txn => Number(txn.amount));
+      if (amounts.some(amount => !Number.isFinite(amount))) {
+        throw new Error('Invalid transaction amount in burn-rate data');
       }
+      const totalBurned = amounts.reduce((sum, amount) => sum + amount, 0);
 
       // Calculate daily rate
       const dailyBurnRate = totalBurned / days;
       const weeklyBurnRate = dailyBurnRate * 7;
       const monthlyBurnRate = dailyBurnRate * 30;
-      const averageTransactionSize = totalBurned / transactions.length;
+      const averageTransactionSize = burnTransactions.length > 0
+        ? totalBurned / burnTransactions.length
+        : 0;
 
       // Determine trend (compare first half vs second half)
-      const midpoint = Math.floor(transactions.length / 2);
-      const firstHalf = transactions.slice(0, midpoint).reduce((sum, t) => sum + (t.type === 'fee' || t.type === 'withdrawal' ? t.amount : 0), 0);
-      const secondHalf = transactions.slice(midpoint).reduce((sum, t) => sum + (t.type === 'fee' || t.type === 'withdrawal' ? t.amount : 0), 0);
+      const midpoint = Math.floor(burnTransactions.length / 2);
+      const firstHalf = burnTransactions.slice(0, midpoint)
+        .reduce((sum, t) => sum + Number(t.amount), 0);
+      const secondHalf = burnTransactions.slice(midpoint)
+        .reduce((sum, t) => sum + Number(t.amount), 0);
       const trend = firstHalf > secondHalf ? 'DECELERATING' : firstHalf < secondHalf ? 'ACCELERATING' : 'STABLE';
 
       return {
@@ -134,7 +147,7 @@ export class AdvancedAnalyticsService {
         weeklyBurnRate,
         monthlyBurnRate,
         averageTransactionSize,
-        transactionCount: transactions.length,
+        transactionCount: burnTransactions.length,
         trend,
       };
     } catch (error) {
@@ -151,7 +164,7 @@ export class AdvancedAnalyticsService {
   async forecastRunway(daoId: string): Promise<RunwayForecast> {
     try {
       const dao = await db.query.daos.findFirst({
-        where: eq(daos.id, daoId as any),
+        where: eq(daos.id, daoId),
       });
 
       if (!dao) {
@@ -218,7 +231,7 @@ export class AdvancedAnalyticsService {
   async portfolioCorrelationAnalysis(vaultId: string): Promise<PortfolioCorrelation> {
     try {
       const vault = await db.query.vaults.findFirst({
-        where: eq(vaults.id, vaultId as any),
+        where: eq(vaults.id, vaultId),
       });
 
       if (!vault) {
@@ -226,10 +239,13 @@ export class AdvancedAnalyticsService {
       }
 
       // Get vault holdings/allocations
-      const allocations = await db.execute(sql`
-        SELECT asset_symbol, allocation_percentage FROM vault_strategy_allocations
-        WHERE vault_id = ${vaultId}
-      `);
+      const allocations = await db
+        .select({
+          tokenSymbol: vaultStrategyAllocations.tokenSymbol,
+          allocationPercentage: vaultStrategyAllocations.allocationPercentage,
+        })
+        .from(vaultStrategyAllocations)
+        .where(eq(vaultStrategyAllocations.vaultId, vaultId));
 
       if (allocations.length === 0) {
         return {
@@ -242,7 +258,7 @@ export class AdvancedAnalyticsService {
       }
 
       // Fetch 90-day price history for each asset
-      const assetSymbols = allocations.map(a => a.asset_symbol);
+      const assetSymbols = allocations.map(a => a.tokenSymbol);
       const priceHistories = await this._fetchPriceHistories(assetSymbols, 90);
 
       // Calculate correlation matrix
@@ -257,7 +273,9 @@ export class AdvancedAnalyticsService {
       }
 
       // Calculate diversification score (0-100)
-      const avgCorrelation = Array.from(vaultCorrelations.values()).reduce((a, b) => a + b, 0) / vaultCorrelations.size;
+      const avgCorrelation = vaultCorrelations.size > 0
+        ? Array.from(vaultCorrelations.values()).reduce((a, b) => a + b, 0) / vaultCorrelations.size
+        : 0;
       const diversificationScore = Math.max(0, Math.min(100, (1 - avgCorrelation) * 100));
 
       // Systemic risk = average correlation (market exposure)
@@ -286,46 +304,14 @@ export class AdvancedAnalyticsService {
     symbols: string[],
     days: number = 90
   ): Promise<Map<string, number[]>> {
-    const histories = new Map<string, number[]>();
-
-    for (const symbol of symbols) {
-      try {
-        // Map symbol to CoinGecko ID (simplified mapping)
-        const coinMap: {[key: string]: string} = {
-          'ETH': 'ethereum',
-          'USDC': 'usd-coin',
-          'USDT': 'tether',
-          'BTC': 'bitcoin',
-          'MTAA': 'mtaa',  // Your DAO token
-          'STETH': 'staked-ether',
-          'CURVE': 'curve-dao-token',
-        };
-
-        const coinId = coinMap[symbol] || symbol.toLowerCase();
-
-        // Fetch market chart data
-        const response = await axios.get(
-          `${COINGECKO_API}/coins/${coinId}/market_chart`,
-          {
-            params: {
-              vs_currency: 'usd',
-              days,
-              interval: 'daily',
-            },
-          }
-        );
-
-        // Extract prices array
-        const prices = response.data.prices.map((p: [number, number]) => p[1]);
-        histories.set(symbol, prices);
-      } catch (error) {
-        console.warn(`⚠️ Could not fetch price history for ${symbol}:`, error);
-        // Fallback: empty array
-        histories.set(symbol, []);
-      }
-    }
-
-    return histories;
+    const uniqueSymbols = Array.from(new Set(symbols));
+    const historicalData = await priceHistoryService.getMultipleHistoricalPrices(uniqueSymbols, days);
+    return new Map(uniqueSymbols.map(symbol => [
+      symbol,
+      (historicalData.get(symbol)?.prices || [])
+        .map(point => point.close)
+        .filter(price => Number.isFinite(price) && price > 0),
+    ]));
   }
 
   /**
@@ -346,9 +332,8 @@ export class AdvancedAnalyticsService {
       returns.set(symbol, dailyReturns);
     }
 
-    // Calculate average correlation with market (sum of all pairwise correlations)
-    let totalCorr = 0;
-    let pairCount = 0;
+    const correlationSums = new Map<string, number>();
+    const correlationCounts = new Map<string, number>();
 
     for (let i = 0; i < symbols.length; i++) {
       for (let j = i + 1; j < symbols.length; j++) {
@@ -357,17 +342,17 @@ export class AdvancedAnalyticsService {
 
         if (ret1.length > 0 && ret2.length > 0) {
           const corr = this._calculatePearsonCorrelation(ret1, ret2);
-          totalCorr += corr;
-          pairCount++;
+          correlationSums.set(symbols[i], (correlationSums.get(symbols[i]) || 0) + corr);
+          correlationSums.set(symbols[j], (correlationSums.get(symbols[j]) || 0) + corr);
+          correlationCounts.set(symbols[i], (correlationCounts.get(symbols[i]) || 0) + 1);
+          correlationCounts.set(symbols[j], (correlationCounts.get(symbols[j]) || 0) + 1);
         }
       }
     }
 
-    // Average correlation is the average of all pairs
-    const avgCorrelation = pairCount > 0 ? totalCorr / pairCount : 0;
-
     for (const symbol of symbols) {
-      correlations.set(symbol, avgCorrelation);
+      const count = correlationCounts.get(symbol) || 0;
+      correlations.set(symbol, count > 0 ? (correlationSums.get(symbol) || 0) / count : 0);
     }
 
     return correlations;
@@ -413,12 +398,18 @@ export class AdvancedAnalyticsService {
       const cutoffDate = new Date();
       cutoffDate.setDate(cutoffDate.getDate() - 365);
 
-      const performanceData = await db.execute(sql`
-        SELECT daily_return, vault_value FROM vault_performance
-        WHERE vault_id = ${vaultId}
-        AND date >= ${cutoffDate}
-        ORDER BY date ASC
-      `);
+      const performanceData = await db
+        .select({
+          returnPercentage: vaultPerformance.yieldPercentage,
+          value: vaultPerformance.endingValue,
+          periodStart: vaultPerformance.periodStart,
+        })
+        .from(vaultPerformance)
+        .where(and(
+          eq(vaultPerformance.vaultId, vaultId),
+          gte(vaultPerformance.periodStart, cutoffDate),
+        ))
+        .orderBy(asc(vaultPerformance.periodStart));
 
       if (performanceData.length < 2) {
         return {
@@ -434,7 +425,11 @@ export class AdvancedAnalyticsService {
       }
 
       // Calculate volatility
-      const returns = performanceData.map(p => p.daily_return);
+      const returns = performanceData.map(p => Number(p.returnPercentage || '0') / 100);
+      const values = performanceData.map(p => Number(p.value));
+      if (returns.some(value => !Number.isFinite(value)) || values.some(value => !Number.isFinite(value))) {
+        throw new Error('Invalid performance data');
+      }
       const avgReturn = returns.reduce((a, b) => a + b, 0) / returns.length;
       const variance = returns.reduce((sum, r) => sum + Math.pow(r - avgReturn, 2), 0) / returns.length;
       const volatility = Math.sqrt(variance) * 100;  // Convert to %
@@ -444,29 +439,35 @@ export class AdvancedAnalyticsService {
       const index95 = Math.floor(sortedReturns.length * 0.05);  // 5th percentile
       const index99 = Math.floor(sortedReturns.length * 0.01);  // 1st percentile
 
-      const currentValue = performanceData[performanceData.length - 1].vault_value;
+      const currentValue = values[values.length - 1];
       const valueAtRisk95 = currentValue * Math.abs(sortedReturns[index95]);
       const valueAtRisk99 = currentValue * Math.abs(sortedReturns[index99]);
 
       // Calculate Sharpe Ratio (using daily risk-free rate ≈ 0.02%)
       const riskFreeRate = 0.0002;
-      const sharpeRatio = (avgReturn - riskFreeRate) / (volatility / 100);
+      const volatilityDecimal = volatility / 100;
+      const sharpeRatio = volatilityDecimal > 0
+        ? (avgReturn - riskFreeRate) / volatilityDecimal
+        : 0;
 
       // Calculate Sortino Ratio (downside capture)
       const downside = returns
         .filter(r => r < 0)
         .reduce((sum, r) => sum + Math.pow(r, 2), 0) / returns.length;
       const downsideDeviation = Math.sqrt(downside);
-      const sortinoRatio = (avgReturn - riskFreeRate) / downsideDeviation;
+      const sortinoRatio = downsideDeviation > 0
+        ? (avgReturn - riskFreeRate) / downsideDeviation
+        : 0;
 
       // Calculate max drawdown
       let maxDrawdown = 0;
-      let peak = performanceData[0].vault_value;
-      for (const data of performanceData) {
-        if (data.vault_value > peak) {
-          peak = data.vault_value;
+      let peak = values[0];
+      if (peak <= 0) throw new Error('Performance values must start above zero');
+      for (const value of values) {
+        if (value > peak) {
+          peak = value;
         }
-        const drawdown = (peak - data.vault_value) / peak;
+        const drawdown = (peak - value) / peak;
         maxDrawdown = Math.max(maxDrawdown, drawdown);
       }
 
@@ -474,8 +475,8 @@ export class AdvancedAnalyticsService {
       let recoveryTime = 0;
       let recoveryStarted = false;
       for (let i = 1; i < performanceData.length; i++) {
-        const prevValue = performanceData[i - 1].vault_value;
-        const currValue = performanceData[i].vault_value;
+        const prevValue = values[i - 1];
+        const currValue = values[i];
         if (!recoveryStarted && currValue > prevValue) {
           recoveryStarted = true;
         }
@@ -511,15 +512,25 @@ export class AdvancedAnalyticsService {
     days: number = 365
   ): Promise<PerformanceAnalysis> {
     try {
+      if (!Number.isFinite(days) || days <= 0) {
+        throw new Error('Analysis period must be greater than zero');
+      }
+
       const cutoffDate = new Date();
       cutoffDate.setDate(cutoffDate.getDate() - days);
 
-      const performanceData = await db.execute(sql`
-        SELECT daily_return, vault_value FROM vault_performance
-        WHERE vault_id = ${vaultId}
-        AND date >= ${cutoffDate}
-        ORDER BY date ASC
-      `);
+      const performanceData = await db
+        .select({
+          returnPercentage: vaultPerformance.yieldPercentage,
+          value: vaultPerformance.endingValue,
+          periodStart: vaultPerformance.periodStart,
+        })
+        .from(vaultPerformance)
+        .where(and(
+          eq(vaultPerformance.vaultId, vaultId),
+          gte(vaultPerformance.periodStart, cutoffDate),
+        ))
+        .orderBy(asc(vaultPerformance.periodStart));
 
       if (performanceData.length === 0) {
         return {
@@ -535,19 +546,29 @@ export class AdvancedAnalyticsService {
       }
 
       // Total return calculation
-      const startValue = performanceData[0].vault_value;
-      const endValue = performanceData[performanceData.length - 1].vault_value;
+      const values = performanceData.map(data => Number(data.value));
+      const dailyReturns = performanceData.map(data => Number(data.returnPercentage || '0') / 100);
+      if (values.some(value => !Number.isFinite(value)) || dailyReturns.some(value => !Number.isFinite(value))) {
+        throw new Error('Invalid performance data');
+      }
+
+      const startValue = values[0];
+      const endValue = values[values.length - 1];
+      if (startValue <= 0 || endValue < 0) {
+        throw new Error('Performance values must be non-negative and start above zero');
+      }
       const totalReturn = ((endValue - startValue) / startValue) * 100;
 
       // Annualized return
       const periods = days / 365;
-      const annualizedReturn = (Math.pow(endValue / startValue, 1 / periods) - 1) * 100;
+      const annualizedReturn = Number.isFinite(endValue / startValue)
+        ? (Math.pow(endValue / startValue, 1 / periods) - 1) * 100
+        : 0;
 
       // Cumulative return in USD
       const cumulativeReturn = endValue - startValue;
 
       // Daily returns analysis
-      const dailyReturns = performanceData.map(p => p.daily_return);
       const bestDay = Math.max(...dailyReturns) * 100;
       const worstDay = Math.min(...dailyReturns) * 100;
 
@@ -599,7 +620,9 @@ export class AdvancedAnalyticsService {
       else if (burnRate.trend === 'STABLE') healthScore -= 5;
 
       // Deduct for transaction volatility (max -30 points)
-      const volatility = burnRate.monthlyBurnRate / (burnRate.averageTransactionSize || 1);
+      const volatility = burnRate.transactionCount > 0 && burnRate.averageTransactionSize > 0
+        ? burnRate.monthlyBurnRate / burnRate.averageTransactionSize
+        : 0;
       if (volatility > 100) healthScore -= 30;
       else if (volatility > 50) healthScore -= 15;
 
@@ -623,17 +646,23 @@ export class AdvancedAnalyticsService {
    * Internal: Get total DAO balance
    */
   private async _getDAOBalance(daoId: string): Promise<number> {
-    try {
-      const result = await db.execute(sql`
-        SELECT COALESCE(SUM(balance), 0) as total FROM wallet_transactions
-        WHERE dao_id = ${daoId}
-      `);
+    const [balanceResult] = await db
+      .select({
+        balance: sql<string>`COALESCE(SUM(CASE
+          WHEN ${walletTransactions.type} IN ('deposit', 'contribution') THEN CAST(${walletTransactions.amount} AS DECIMAL)
+          WHEN ${walletTransactions.type} = 'withdrawal' THEN -CAST(${walletTransactions.amount} AS DECIMAL)
+          ELSE 0
+        END), 0)`,
+      })
+      .from(walletTransactions)
+      .where(and(
+        eq(walletTransactions.daoId, daoId),
+        eq(walletTransactions.status, 'completed'),
+      ));
 
-      return result[0]?.total || 0;
-    } catch (error) {
-      console.error('❌ Error getting DAO balance:', error);
-      return 0;
-    }
+    const balance = Number(balanceResult?.balance ?? 0);
+    if (!Number.isFinite(balance)) throw new Error('Invalid DAO balance');
+    return Math.max(0, balance);
   }
 
   /**

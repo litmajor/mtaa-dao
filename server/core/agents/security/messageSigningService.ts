@@ -1,5 +1,5 @@
 import crypto from 'crypto';
-import { Logger } from '../utils/logger';
+import { Logger } from '../../../utils/logger';
 
 const logger = new Logger('agent-message-signing');
 

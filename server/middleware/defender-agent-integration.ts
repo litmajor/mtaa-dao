@@ -4,7 +4,7 @@
  * privilege checks, and threat response across the platform
  */
 
-import { Request, Response, NextFunction } from 'express';
+import type { Request, Response, NextFunction } from 'express';
 import { Logger } from '../utils/logger';
 
 const logger = new Logger('defender-agent');
@@ -33,6 +33,7 @@ export interface EndpointSecurityPolicy {
  * Dynamic endpoint registry that defender agent can manage
  */
 export class DefenderAgentEndpointRegistry {
+  private readonly MAX_ALERTS = 5000;
   private endpoints = new Map<string, EndpointSecurityPolicy>();
   private threatAlerts: Array<{
     timestamp: Date;
@@ -47,8 +48,9 @@ export class DefenderAgentEndpointRegistry {
    * Register endpoint with security policy
    */
   registerEndpoint(policy: EndpointSecurityPolicy) {
-    const key = `${policy.method}:${policy.endpoint}`;
-    this.endpoints.set(key, policy);
+    const normalizedMethod = policy.method.toUpperCase();
+    const key = `${normalizedMethod}:${policy.endpoint}`;
+    this.endpoints.set(key, { ...policy, method: normalizedMethod });
     logger.info(`[DEFENDER] Endpoint registered: ${key}`, {
       threatLevel: policy.threatLevel,
       requiredPrivileges: policy.requiredPrivileges,
@@ -59,8 +61,26 @@ export class DefenderAgentEndpointRegistry {
    * Get security policy for endpoint
    */
   getEndpointPolicy(method: string, endpoint: string): EndpointSecurityPolicy | null {
-    const key = `${method}:${endpoint}`;
-    return this.endpoints.get(key) || null;
+    const normalizedMethod = method.toUpperCase();
+    const exactKey = `${normalizedMethod}:${endpoint}`;
+
+    if (this.endpoints.has(exactKey)) {
+      return this.endpoints.get(exactKey) || null;
+    }
+
+    for (const [key, policy] of this.endpoints.entries()) {
+      const separatorIndex = key.indexOf(':');
+      if (separatorIndex === -1) continue;
+
+      const policyMethod = key.slice(0, separatorIndex).toUpperCase();
+      const policyEndpoint = key.slice(separatorIndex + 1);
+
+      if (policyMethod === normalizedMethod && this.pathMatches(endpoint, policyEndpoint)) {
+        return policy;
+      }
+    }
+
+    return null;
   }
 
   /**
@@ -71,8 +91,9 @@ export class DefenderAgentEndpointRegistry {
     endpoint: string,
     requiredPrivileges: string[]
   ): Promise<boolean> {
-    const key = `${method}:${endpoint}`;
-    const policy = this.endpoints.get(key);
+    const normalizedMethod = method.toUpperCase();
+    const key = `${normalizedMethod}:${endpoint}`;
+    const policy = this.endpoints.get(key) || this.getEndpointPolicy(normalizedMethod, endpoint);
 
     if (!policy) {
       logger.warn(`[DEFENDER] Cannot update privileges for unknown endpoint: ${key}`);
@@ -101,8 +122,9 @@ export class DefenderAgentEndpointRegistry {
     durationMs: number,
     reason: string
   ): Promise<boolean> {
-    const key = `${method}:${endpoint}`;
-    const policy = this.endpoints.get(key);
+    const normalizedMethod = method.toUpperCase();
+    const key = `${normalizedMethod}:${endpoint}`;
+    const policy = this.endpoints.get(key) || this.getEndpointPolicy(normalizedMethod, endpoint);
 
     if (!policy) {
       logger.warn(`[DEFENDER] Cannot block unknown endpoint: ${key}`);
@@ -125,8 +147,9 @@ export class DefenderAgentEndpointRegistry {
    * Defender agent: Unblock endpoint
    */
   async unblockEndpoint(method: string, endpoint: string): Promise<boolean> {
-    const key = `${method}:${endpoint}`;
-    const policy = this.endpoints.get(key);
+    const normalizedMethod = method.toUpperCase();
+    const key = `${normalizedMethod}:${endpoint}`;
+    const policy = this.endpoints.get(key) || this.getEndpointPolicy(normalizedMethod, endpoint);
 
     if (!policy) {
       return false;
@@ -165,6 +188,10 @@ export class DefenderAgentEndpointRegistry {
     severity: 'low' | 'medium' | 'high' | 'critical',
     action: string
   ) {
+    if (this.threatAlerts.length >= this.MAX_ALERTS) {
+      this.threatAlerts.shift();
+    }
+
     this.threatAlerts.push({
       timestamp: new Date(),
       endpoint,
@@ -227,15 +254,14 @@ export class DefenderAgentEndpointRegistry {
     // Respond to patterns
     for (const [endpoint, count] of threatsByEndpoint.entries()) {
       if (count > 5) {
-        // 5+ threats on same endpoint in 1 hour
         logger.warn(`[DEFENDER] Attack pattern detected on endpoint: ${endpoint}`);
-        // Block endpoint temporarily
-        const policy = this.getEndpointPolicy('POST', endpoint) ||
-          this.getEndpointPolicy('GET', endpoint) ||
-          this.getEndpointPolicy('PUT', endpoint);
+
+        const policy = Array.from(this.endpoints.values()).find(candidate =>
+          this.pathMatches(endpoint, candidate.endpoint)
+        );
 
         if (policy) {
-          await this.blockEndpoint('POST', endpoint, 5 * 60 * 1000, 'Attack pattern detected');
+          await this.blockEndpoint(policy.method, policy.endpoint, 5 * 60 * 1000, 'Attack pattern detected');
         }
       }
     }
@@ -380,117 +406,113 @@ export const defenderRegistry = new DefenderAgentEndpointRegistry();
  * Middleware: Defender agent privilege checker
  * Uses dynamic policies from registry
  */
-export function defenderPrivilegeCheck(req: Request, res: Response, next: NextFunction) {
-  const method = req.method;
-  const path = req.path;
-  const userId = (req as any).user?.id || (req as any).user?.claims?.sub;
+export async function defenderPrivilegeCheck(req: Request, res: Response, next: NextFunction) {
+  try {
+    const method = req.method.toUpperCase();
+    const path = req.path;
+    const userId = (req as any).user?.id || (req as any).user?.claims?.sub;
 
-  // Get endpoint policy
-  const policy = defenderRegistry.getEndpointPolicy(method, path);
-  if (!policy) {
-    // No policy defined - allow by default
-    return next();
-  }
+    const policy = defenderRegistry.getEndpointPolicy(method, path);
+    if (!policy) {
+      return next();
+    }
 
-  // Check if endpoint is blocked
-  if (defenderRegistry.isEndpointBlocked(method, path)) {
-    logger.warn(`[DEFENDER] Blocked request to endpoint under attack`, {
-      userId,
-      method,
-      path,
-    });
-    return res.status(503).json({
-      success: false,
-      message: 'This endpoint is temporarily unavailable due to security measures',
-      error: 'ENDPOINT_BLOCKED',
-    });
-  }
+    if (defenderRegistry.isEndpointBlocked(method, path)) {
+      logger.warn(`[DEFENDER] Blocked request to endpoint under attack`, {
+        userId,
+        method,
+        path,
+      });
+      return res.status(503).json({
+        success: false,
+        message: 'This endpoint is temporarily unavailable due to security measures',
+        error: 'ENDPOINT_BLOCKED',
+      });
+    }
 
-  // Check user role
-  const userRole = (req as any).user?.role || 'user';
-  if (!policy.allowedRoles.includes(userRole) && userRole !== 'admin') {
-    logger.warn(`[DEFENDER] Insufficient role for endpoint access`, {
-      userId,
-      userRole,
-      requiredRoles: policy.allowedRoles,
-    });
+    const userRole = (req as any).user?.role || 'user';
+    if (!policy.allowedRoles.includes(userRole) && userRole !== 'admin') {
+      logger.warn(`[DEFENDER] Insufficient role for endpoint access`, {
+        userId,
+        userRole,
+        requiredRoles: policy.allowedRoles,
+      });
 
-    defenderRegistry.recordThreatAlert(
-      path,
-      userId || 'unknown',
-      'PRIVILEGE_ESCALATION_ATTEMPT',
-      'high',
-      'blocked'
+      defenderRegistry.recordThreatAlert(
+        path,
+        userId || 'unknown',
+        'PRIVILEGE_ESCALATION_ATTEMPT',
+        'high',
+        'blocked'
+      );
+
+      return res.status(403).json({
+        success: false,
+        message: 'Insufficient permissions for this endpoint',
+        error: 'INSUFFICIENT_PRIVILEGES',
+        requiredPrivileges: policy.requiredPrivileges,
+      });
+    }
+
+    const userPrivileges = (req as any).user?.privileges || [];
+    const missingPrivileges = policy.requiredPrivileges.filter(
+      p => !userPrivileges.includes(p)
     );
 
-    return res.status(403).json({
-      success: false,
-      message: 'Insufficient permissions for this endpoint',
-      error: 'INSUFFICIENT_PRIVILEGES',
-      requiredPrivileges: policy.requiredPrivileges,
-    });
-  }
+    if (missingPrivileges.length > 0) {
+      logger.warn(`[DEFENDER] Missing required privileges`, {
+        userId,
+        endpoint: path,
+        missingPrivileges,
+      });
 
-  // Check required privileges
-  const userPrivileges = (req as any).user?.privileges || [];
-  const missingPrivileges = policy.requiredPrivileges.filter(
-    p => !userPrivileges.includes(p)
-  );
+      defenderRegistry.recordThreatAlert(
+        path,
+        userId || 'unknown',
+        'INSUFFICIENT_PRIVILEGES',
+        'medium',
+        'blocked'
+      );
 
-  if (missingPrivileges.length > 0) {
-    logger.warn(`[DEFENDER] Missing required privileges`, {
-      userId,
-      endpoint: path,
-      missingPrivileges,
-    });
+      return res.status(403).json({
+        success: false,
+        message: 'Missing required privileges',
+        error: 'MISSING_PRIVILEGES',
+        requiredPrivileges: missingPrivileges,
+      });
+    }
 
-    defenderRegistry.recordThreatAlert(
-      path,
-      userId || 'unknown',
-      'INSUFFICIENT_PRIVILEGES',
-      'medium',
-      'blocked'
-    );
-
-    return res.status(403).json({
-      success: false,
-      message: 'Missing required privileges',
-      error: 'MISSING_PRIVILEGES',
-      requiredPrivileges: missingPrivileges,
-    });
-  }
-
-  // Run custom validation if defined
-  if (policy.customValidation) {
-    policy
-      .customValidation(req)
-      .then(result => {
-        if (!result.allowed) {
-          logger.warn(`[DEFENDER] Custom validation failed`, {
-            userId,
-            path,
-            reason: result.reason,
-          });
-
-          return res.status(403).json({
-            success: false,
-            message: result.reason || 'Access denied by custom validation',
-            error: 'CUSTOM_VALIDATION_FAILED',
-          });
-        }
-
-        next();
-      })
-      .catch(error => {
-        logger.error(`[DEFENDER] Custom validation error`, {
+    if (policy.customValidation) {
+      const result = await policy.customValidation(req);
+      if (!result.allowed) {
+        logger.warn(`[DEFENDER] Custom validation failed`, {
           userId,
           path,
-          error: error.message,
+          reason: result.reason,
         });
-        next(error);
-      });
-  } else {
-    next();
+
+        defenderRegistry.recordThreatAlert(
+          path,
+          userId || 'unknown',
+          'CUSTOM_VALIDATION_FAILURE',
+          'medium',
+          'blocked'
+        );
+
+        return res.status(403).json({
+          success: false,
+          message: result.reason || 'Access denied by custom validation',
+          error: 'CUSTOM_VALIDATION_FAILED',
+        });
+      }
+    }
+
+    return next();
+  } catch (error) {
+    logger.error('[DEFENDER] Error in privilege middleware', {
+      error: error instanceof Error ? error.message : String(error),
+    });
+    return next(error);
   }
 }
 

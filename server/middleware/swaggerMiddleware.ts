@@ -10,7 +10,8 @@
 
 import swaggerUi from 'swagger-ui-express';
 import { swaggerSpec } from '../config/swagger';
-import { Router, Request, Response } from 'express';
+import { Router } from 'express';
+import type { Request, Response } from 'express';
 
 const router = Router();
 

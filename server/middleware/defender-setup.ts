@@ -4,7 +4,7 @@
  * Includes enterprise-grade custom validation handlers for all endpoints
  */
 
-import { Express, Request, Response } from 'express';
+import type { Express, Request, Response } from 'express';
 import {
   defenderRegistry,
   defenderPrivilegeCheck,
@@ -21,7 +21,7 @@ import {
 } from './dynamic-route-mapper';
 
 import {
-  EndpointSecurityPolicy,
+  type EndpointSecurityPolicy,
   ValidationRuleType,
   ThreatLevel,
   UserRole,
@@ -56,18 +56,15 @@ export function setupDefenderAgent(app: Express, authMiddleware: any) {
 
   // 3. Apply privilege checking middleware to DAO routes
   app.use('/api/dao/:daoId', authMiddleware, defenderPrivilegeCheck);
-  app.use('/api/dao/:daoId/governance', defenderPrivilegeCheck);
-  app.use('/api/dao/:daoId/treasury', defenderPrivilegeCheck);
-  app.use('/api/dao/:daoId/disbursements', defenderPrivilegeCheck);
   logger.info('[DEFENDER] Privilege checking enabled on DAO routes');
 
-  // 4. Auto-register all Express routes
-  registerExpressRoutes(app);
-  logger.info('[DEFENDER] Route mapper initialized');
-
-  // 5. Setup defender agent APIs
+  // 4. Setup defender agent APIs before route scan so they are included in the route registry
   setupDefenderAgentAPIs(app, authMiddleware);
   logger.info('[DEFENDER] Defender agent APIs initialized');
+
+  // 5. Auto-register all Express routes
+  registerExpressRoutes(app);
+  logger.info('[DEFENDER] Route mapper initialized');
 
   // 6. Start defender agent analysis loop (every 5 minutes)
   startDefenderAgentLoop();
@@ -110,11 +107,12 @@ function registerCustomValidationHandlers(registry: any) {
 
   // /api/dao/:daoId/treasury/transfer/native - High-value transfer validation
   registry.updateCustomValidator('/api/dao/:daoId/treasury/transfer/native', async (context: any) => {
-    const amount = parseFloat(context.requestBody.amount || '0');
+    const requestBody = context.requestBody || {};
+    const amount = parseFloat(requestBody.amount || '0');
 
     // Validate recipient
     const recipientResult = await customValidationRules.validateRecipientWhitelist(context, [
-      context.requestBody.toAddress,
+      requestBody.toAddress,
     ]);
     if (!recipientResult.allowed) return recipientResult;
 
@@ -141,10 +139,11 @@ function registerCustomValidationHandlers(registry: any) {
 
   // /api/dao/:daoId/treasury/transfer/token - Token transfer with whitelist
   registry.updateCustomValidator('/api/dao/:daoId/treasury/transfer/token', async (context: any) => {
-    const amount = parseFloat(context.requestBody.amount || '0');
+    const requestBody = context.requestBody || {};
+    const amount = parseFloat(requestBody.amount || '0');
 
     // Validate token contract address
-    if (!context.requestBody.tokenAddress?.match(/^0x[a-fA-F0-9]{40}$/)) {
+    if (!requestBody.tokenAddress?.match(/^0x[a-fA-F0-9]{40}$/)) {
       return {
         allowed: false,
         reason: 'Invalid ERC20 token address',
@@ -160,7 +159,7 @@ function registerCustomValidationHandlers(registry: any) {
 
     // Check recipient
     const recipientResult = await customValidationRules.validateRecipientWhitelist(context, [
-      context.requestBody.toAddress,
+      requestBody.toAddress,
     ]);
     if (!recipientResult.allowed) return recipientResult;
 
@@ -191,7 +190,7 @@ function registerCustomValidationHandlers(registry: any) {
 
   // /api/dao/:daoId/treasury/multisig/propose - Amount validation for multisig proposal
   registry.updateCustomValidator('/api/dao/:daoId/treasury/multisig/propose', async (context: any) => {
-    const { requestBody } = context;
+    const requestBody = context.requestBody || {};
 
     if (!requestBody.transaction || !requestBody.description) {
       return {
@@ -208,9 +207,10 @@ function registerCustomValidationHandlers(registry: any) {
 
   // /api/dao/:daoId/treasury/multisig/:txId/execute - Multi-sig requirement check
   registry.updateCustomValidator('/api/dao/:daoId/treasury/multisig/:txId/execute', async (context: any) => {
+    const requestBody = context.requestBody || {};
     return customValidationRules.validateMultiSigRequirement(context, {
       requiredSignatures: 3, // Example: 3 of 5
-      signatories: context.requestBody.signatories || [],
+      signatories: requestBody.signatories || [],
     });
   });
 
@@ -236,6 +236,24 @@ export function updateEndpointValidator(
 /**
  * Setup REST APIs for defender agent to access and manage security
  */
+function parseEndpointIdentifier(rawEndpoint: string): { method: string; path: string } | null {
+  const endpoint = decodeURIComponent(rawEndpoint);
+  const firstColonIndex = endpoint.indexOf(':');
+
+  if (firstColonIndex === -1) {
+    return null;
+  }
+
+  const method = endpoint.slice(0, firstColonIndex).toUpperCase();
+  const path = endpoint.slice(firstColonIndex + 1);
+
+  if (!method || !path) {
+    return null;
+  }
+
+  return { method, path };
+}
+
 function setupDefenderAgentAPIs(app: Express, authMiddleware: any) {
   const adminAuth = authMiddleware; // Could be stricter admin auth
 
@@ -287,8 +305,16 @@ function setupDefenderAgentAPIs(app: Express, authMiddleware: any) {
    */
   app.post('/api/admin/defender/endpoints/:endpoint/privileges', adminAuth, async (req: Request, res: Response) => {
     try {
-      const endpoint = decodeURIComponent(req.params.endpoint);
-      const [method, path] = endpoint.split(':');
+      const parsedEndpoint = parseEndpointIdentifier(req.params.endpoint);
+      if (!parsedEndpoint) {
+        return res.status(400).json({
+          success: false,
+          message: 'Invalid endpoint identifier format',
+        });
+      }
+
+      const { method, path } = parsedEndpoint;
+      const endpoint = `${method}:${path}`;
       const { requiredPrivileges } = req.body;
 
       if (!Array.isArray(requiredPrivileges)) {
@@ -309,8 +335,8 @@ function setupDefenderAgentAPIs(app: Express, authMiddleware: any) {
 
       res.json({
         success: true,
-        message: `Privileges updated for ${endpoint}`,
-        endpoint,
+        message: `Privileges updated for ${method}:${path}`,
+        endpoint: `${method}:${path}`,
         requiredPrivileges,
       });
     } catch (error) {
@@ -334,8 +360,16 @@ function setupDefenderAgentAPIs(app: Express, authMiddleware: any) {
    */
   app.post('/api/admin/defender/endpoints/:endpoint/block', adminAuth, async (req: Request, res: Response) => {
     try {
-      const endpoint = decodeURIComponent(req.params.endpoint);
-      const [method, path] = endpoint.split(':');
+      const parsedEndpoint = parseEndpointIdentifier(req.params.endpoint);
+      if (!parsedEndpoint) {
+        return res.status(400).json({
+          success: false,
+          message: 'Invalid endpoint identifier format',
+        });
+      }
+
+      const { method, path } = parsedEndpoint;
+      const endpoint = `${method}:${path}`;
       const { durationMs = 300000, reason = 'Security threat detected' } = req.body;
 
       const blocked = await defenderRegistry.blockEndpoint(method, path, durationMs, reason);
@@ -350,7 +384,7 @@ function setupDefenderAgentAPIs(app: Express, authMiddleware: any) {
       res.json({
         success: true,
         message: `Endpoint blocked for ${durationMs}ms`,
-        endpoint,
+        endpoint: `${method}:${path}`,
         reason,
         unblockAt: new Date(Date.now() + durationMs).toISOString(),
       });
@@ -371,9 +405,16 @@ function setupDefenderAgentAPIs(app: Express, authMiddleware: any) {
    */
   app.post('/api/admin/defender/endpoints/:endpoint/unblock', adminAuth, async (req: Request, res: Response) => {
     try {
-      const endpoint = decodeURIComponent(req.params.endpoint);
-      const [method, path] = endpoint.split(':');
+      const parsedEndpoint = parseEndpointIdentifier(req.params.endpoint);
+      if (!parsedEndpoint) {
+        return res.status(400).json({
+          success: false,
+          message: 'Invalid endpoint identifier format',
+        });
+      }
 
+      const { method, path } = parsedEndpoint;
+      const endpoint = `${method}:${path}`;
       const unblocked = await defenderRegistry.unblockEndpoint(method, path);
 
       if (!unblocked) {
@@ -385,8 +426,8 @@ function setupDefenderAgentAPIs(app: Express, authMiddleware: any) {
 
       res.json({
         success: true,
-        message: `Endpoint unblocked`,
-        endpoint,
+        message: 'Endpoint unblocked',
+        endpoint: `${method}:${path}`,
       });
     } catch (error) {
       logger.error('[DEFENDER] Error unblocking endpoint', {
@@ -455,12 +496,21 @@ function setupDefenderAgentAPIs(app: Express, authMiddleware: any) {
   });
 
   /**
-   * GET /api/admin/routes/:method/:path/metrics
+   * GET /api/admin/routes/metrics
    * Defender agent: Get specific route metrics
    */
-  app.get('/api/admin/routes/:method/:path/metrics', adminAuth, (req: Request, res: Response) => {
-    const { method, path } = req.params;
-    const metrics = dynamicRouteMapper.getRouteMetrics(method.toUpperCase(), `/${path}`);
+  app.get('/api/admin/routes/metrics', adminAuth, (req: Request, res: Response) => {
+    const method = String(req.query.method || '').trim().toUpperCase();
+    const path = String(req.query.path || '').trim();
+
+    if (!method || !path) {
+      return res.status(400).json({
+        success: false,
+        message: 'Query params method and path are required',
+      });
+    }
+
+    const metrics = dynamicRouteMapper.getRouteMetrics(method, path.startsWith('/') ? path : `/${path}`);
 
     if (!metrics) {
       return res.status(404).json({
@@ -482,10 +532,23 @@ function setupDefenderAgentAPIs(app: Express, authMiddleware: any) {
  * Start defender agent analysis loop
  * Runs every 5 minutes to detect and respond to threats
  */
+let analysisIntervalHandle: NodeJS.Timeout | null = null;
+
+export function stopDefenderAgentLoop() {
+  if (analysisIntervalHandle) {
+    clearInterval(analysisIntervalHandle);
+    analysisIntervalHandle = null;
+  }
+}
+
 function startDefenderAgentLoop() {
   const ANALYSIS_INTERVAL = 5 * 60 * 1000; // 5 minutes
 
-  setInterval(async () => {
+  if (analysisIntervalHandle) {
+    clearInterval(analysisIntervalHandle);
+  }
+
+  analysisIntervalHandle = setInterval(async () => {
     try {
       await runDefenderAgentAnalysis();
     } catch (error) {
@@ -498,6 +561,21 @@ function startDefenderAgentLoop() {
   logger.info(`[DEFENDER] Analysis loop started (every ${ANALYSIS_INTERVAL / 1000 / 60} minutes)`);
 }
 
+const defaultEndpointPolicy: EndpointSecurityPolicy = {
+  endpoint: '/api/dao/:daoId',
+  method: 'GET',
+  requiredPrivileges: ['dao:read'],
+  requiredRoles: [UserRole.MEMBER, UserRole.ADMIN, UserRole.GOVERNANCE],
+  threatLevel: ThreatLevel.MODERATE,
+  rateLimit: { requests: 60, windowMs: 60_000 },
+  requiresAudit: true,
+  customRules: [],
+  description: 'Default defender endpoint policy',
+  owner: 'system',
+};
+
 export default {
   setupDefenderAgent,
+  stopDefenderAgentLoop,
+  defaultEndpointPolicy,
 };

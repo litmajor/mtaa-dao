@@ -3,9 +3,10 @@
  * Implements business logic validation for endpoints
  */
 
-import { ValidationContext, ValidationResult, ValidationRuleType, ThreatLevel } from './types';
+import { ValidationRuleType, ThreatLevel } from './types';
+import type { ValidationContext, ValidationResult } from './types';
 import { Logger } from '../../utils/logger';
-import { Request } from 'express';
+import type { Request } from 'express';
 import { redis } from '../../services/redis';
 
 const logger = new Logger('defender-custom-rules');

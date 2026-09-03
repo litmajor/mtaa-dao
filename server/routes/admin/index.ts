@@ -22,6 +22,9 @@ import adminErrorAlertsRouter from './admin-error-alerts';
 import adminErrorAnalyticsRouter from './admin-error-analytics';
 import adminRecoveryRouter from './admin-recovery';
 import adminBillingRouter from './admin-billing';
+import adminDashboardStatusRouter from './admin-dashboard-status';
+import adminSupportRouter from './admin-support';
+import adminAgentsKillSwitchRouter from './admin-agents-kill-switch';
 
 const router = Router();
 
@@ -35,6 +38,7 @@ router.use(adminVotingRouter);       // Voting configuration: /api/admin/daos/:d
 router.use(adminAnalyticsRouter);    // Analytics: /api/admin/analytics/*
 router.use(adminRiskRouter);         // Risk Assessment: /api/admin/daos/:daoId/risk/*
 router.use(adminAgentsEldersRouter); // Agents & Elders: /api/admin/agents-elders/*
+router.use('/agents', adminAgentsKillSwitchRouter); // Agent kill-switch and reactivation: /api/admin/agents/*
 router.use(adminSecurityRouter);     // Security: /api/admin/security/*
 router.use(adminAuthRouter);         // Auth logs: /api/admin/auth/*
 router.use(adminSettingsRouter);     // Settings: /api/admin/settings/*
@@ -47,5 +51,7 @@ router.use(adminErrorAlertsRouter);  // Error Alerts: /api/admin/alerts/* (Phase
 router.use(adminErrorAnalyticsRouter); // Error Analytics: /api/admin/analytics/* (Phase 3c Part 3)
 router.use(adminRecoveryRouter); // Recovery Workflows: /api/admin/recovery/* (Phase 3c Part 5)
 router.use(adminBillingRouter);      // Billing: /api/admin/billing/* (Platform analytics)
+router.use('/dashboard', adminDashboardStatusRouter); // Dashboard status and recovery overview
+router.use(adminSupportRouter); // Support ticket administration
 
 export default router;

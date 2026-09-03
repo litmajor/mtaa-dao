@@ -170,8 +170,38 @@ export class GatewayAgentService {
       preferredSource,
     });
 
+    // Publish request and wait for correlated update message
     await this.messageBus.publish(request);
-    return request;
+
+    const expectedUpdateType = request.type.replace("_request", "_update");
+    return await new Promise<GatewayMessage | null>((resolve) => {
+      const timeoutMs = 2000;
+      let resolved = false;
+
+      const unsubscribe = this.messageBus.subscribe(expectedUpdateType as any, async (msg) => {
+        try {
+          if (msg?.payload?.requestId && request.payload?.requestId && msg.payload.requestId === request.payload.requestId) {
+            if (!resolved) {
+              resolved = true;
+              unsubscribe();
+              resolve(msg);
+            }
+          }
+        } catch (err) {
+          // ignore handler errors
+        }
+      });
+
+      // Fallback timeout: resolve with null after timeoutMs
+      const t = setTimeout(() => {
+        if (!resolved) {
+          resolved = true;
+          try { unsubscribe(); } catch {}
+          resolve(null);
+        }
+        clearTimeout(t);
+      }, timeoutMs);
+    });
   }
 
   /**
@@ -193,7 +223,33 @@ export class GatewayAgentService {
     });
 
     await this.messageBus.publish(request);
-    return request;
+
+    const expectedUpdateType = request.type.replace("_request", "_update");
+    return await new Promise<GatewayMessage | null>((resolve) => {
+      const timeoutMs = 2000;
+      let resolved = false;
+
+      const unsubscribe = this.messageBus.subscribe(expectedUpdateType as any, async (msg) => {
+        try {
+          if (msg?.payload?.requestId && request.payload?.requestId && msg.payload.requestId === request.payload.requestId) {
+            if (!resolved) {
+              resolved = true;
+              unsubscribe();
+              resolve(msg);
+            }
+          }
+        } catch (err) {}
+      });
+
+      const t = setTimeout(() => {
+        if (!resolved) {
+          resolved = true;
+          try { unsubscribe(); } catch {}
+          resolve(null);
+        }
+        clearTimeout(t);
+      }, timeoutMs);
+    });
   }
 
   /**
@@ -215,7 +271,33 @@ export class GatewayAgentService {
     });
 
     await this.messageBus.publish(request);
-    return request;
+
+    const expectedUpdateType = request.type.replace("_request", "_update");
+    return await new Promise<GatewayMessage | null>((resolve) => {
+      const timeoutMs = 2000;
+      let resolved = false;
+
+      const unsubscribe = this.messageBus.subscribe(expectedUpdateType as any, async (msg) => {
+        try {
+          if (msg?.payload?.requestId && request.payload?.requestId && msg.payload.requestId === request.payload.requestId) {
+            if (!resolved) {
+              resolved = true;
+              unsubscribe();
+              resolve(msg);
+            }
+          }
+        } catch (err) {}
+      });
+
+      const t = setTimeout(() => {
+        if (!resolved) {
+          resolved = true;
+          try { unsubscribe(); } catch {}
+          resolve(null);
+        }
+        clearTimeout(t);
+      }, timeoutMs);
+    });
   }
 
   /**
@@ -231,7 +313,33 @@ export class GatewayAgentService {
     });
 
     await this.messageBus.publish(request);
-    return request;
+
+    const expectedUpdateType = request.type.replace("_request", "_update");
+    return await new Promise<GatewayMessage | null>((resolve) => {
+      const timeoutMs = 2000;
+      let resolved = false;
+
+      const unsubscribe = this.messageBus.subscribe(expectedUpdateType as any, async (msg) => {
+        try {
+          if (msg?.payload?.requestId && request.payload?.requestId && msg.payload.requestId === request.payload.requestId) {
+            if (!resolved) {
+              resolved = true;
+              unsubscribe();
+              resolve(msg);
+            }
+          }
+        } catch (err) {}
+      });
+
+      const t = setTimeout(() => {
+        if (!resolved) {
+          resolved = true;
+          try { unsubscribe(); } catch {}
+          resolve(null);
+        }
+        clearTimeout(t);
+      }, timeoutMs);
+    });
   }
 
   /**

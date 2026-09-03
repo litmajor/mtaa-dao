@@ -1,6 +1,32 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-const connectMock = vi.fn();
+// Mock config FIRST
+vi.mock('../../shared/config.ts', () => ({
+  env: {
+    JWT_SECRET: 'test-jwt-secret-this-is-long-enough-for-32-chars-requirement',
+    JWT_REFRESH_SECRET: 'test-jwt-refresh-secret-this-is-long-enough-for-32-chars',
+    DATABASE_URL: 'postgresql://test:test@localhost:5432/test_db',
+    NODE_ENV: 'test',
+  },
+}));
+
+// Mock logger
+vi.mock('../utils/logger', () => {
+  class MockLogger {
+    debug = vi.fn();
+    warn = vi.fn();
+    error = vi.fn();
+    info = vi.fn();
+  }
+  const defaultLogger = new MockLogger();
+  return { 
+    Logger: MockLogger,
+    logger: defaultLogger,
+    requestLogger: vi.fn(),
+  };
+});
+
+const connectMock = vi.fn(() => Promise.resolve());
 const createClientMock = vi.fn(() => ({
   isOpen: false,
   connect: connectMock,

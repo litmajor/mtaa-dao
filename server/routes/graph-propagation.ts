@@ -5,7 +5,8 @@
  * Exposes metrics, state, and control endpoints for the graph propagation system
  */
 
-import { Router, Request, Response } from 'express';
+import { Router } from 'express';
+import type { Request, Response } from 'express';
 import { asyncHandler } from '../middleware/errorHandler';
 import { graphPropagationEngine } from '../services/graphPropagationEngine';
 import { propagationMonitoringService } from '../services/propagationMonitoringService';
@@ -65,12 +66,22 @@ router.get('/metrics', asyncHandler(async (req: Request, res: Response) => {
  * Get all nodes with their propagation state
  */
 router.get('/nodes', asyncHandler(async (req: Request, res: Response) => {
+  const page = Math.max(1, Number(req.query.page ?? 1));
+  const limit = Math.min(Math.max(1, Number(req.query.limit ?? 100)), 500);
+  const offset = (page - 1) * limit;
+
   const nodes = graphPropagationEngine.getAllNodes();
-  
+  const paginatedNodes = nodes.slice(offset, offset + limit);
+
+  logger.debug('Graph propagation nodes queried', { page, limit, offset, total: nodes.length });
+
   res.json({
     success: true,
-    count: nodes.length,
-    nodes: nodes.map(n => ({
+    count: paginatedNodes.length,
+    total: nodes.length,
+    page,
+    limit,
+    nodes: paginatedNodes.map(n => ({
       nodeId: n.nodeId,
       nodeType: n.nodeType,
       propagationState: n.propagationState,
@@ -122,10 +133,15 @@ router.get('/cascades/:nodeId', asyncHandler(async (req: Request, res: Response)
  * Get recent propagation events
  */
 router.get('/events', asyncHandler(async (req: Request, res: Response) => {
-  const limit = parseInt(req.query.limit as string, 10) || 100;
-  
+  const rawLimit = Number(req.query.limit);
+  const limit = Number.isFinite(rawLimit) && rawLimit > 0 ? Math.min(Math.floor(rawLimit), 1000) : 100;
+
+  if (rawLimit !== undefined && (!Number.isFinite(rawLimit) || rawLimit <= 0 || rawLimit > 1000)) {
+    logger.warn('Invalid propagation event limit requested', { rawLimit, normalizedLimit: limit });
+  }
+
   const events = propagationMonitoringService.getRecentEvents(limit);
-  
+
   res.json({
     success: true,
     count: events.length,
@@ -152,20 +168,14 @@ router.get('/circuit-breaker', asyncHandler(async (req: Request, res: Response) 
  * ⚠️ SECURITY: State mutation - super admin only
  */
 router.post('/circuit-breaker/reset', requireRole('super_admin'), asyncHandler(async (req: Request, res: Response) => {
-  try {
-    circuitBreaker.reset();
-    
-    res.json({
-      success: true,
-      message: 'Circuit breaker reset',
-      stats: circuitBreaker.getStats(),
-    });
-  } catch (error) {
-    res.status(400).json({
-      success: false,
-      error: error instanceof Error ? error.message : 'Failed to reset circuit breaker',
-    });
-  }
+  circuitBreaker.reset();
+  logger.info('Propagation circuit breaker reset via API', { userId: req.user?.id });
+
+  res.json({
+    success: true,
+    message: 'Circuit breaker reset',
+    stats: circuitBreaker.getStats(),
+  });
 }));
 
 /**
@@ -188,21 +198,16 @@ router.get('/snapshots', asyncHandler(async (req: Request, res: Response) => {
  * ⚠️ SECURITY: State mutation - super admin only
  */
 router.post('/snapshots/create', requireRole('super_admin'), asyncHandler(async (req: Request, res: Response) => {
-  try {
-    const nodes = graphPropagationEngine.getAllNodes();
-    const snapshot = productionHardeningService.snapshot(nodes, 'Manual snapshot from API', 'API');
-    
-    res.json({
-      success: true,
-      snapshotId: snapshot.timestamp,
-      message: 'Snapshot created successfully',
-    });
-  } catch (error) {
-    res.status(400).json({
-      success: false,
-      error: error instanceof Error ? error.message : 'Failed to create snapshot',
-    });
-  }
+  const nodes = graphPropagationEngine.getAllNodes();
+  const snapshot = productionHardeningService.snapshot(nodes, 'Manual snapshot from API', 'API');
+
+  logger.info('Propagation snapshot created via API', { userId: req.user?.id, snapshotId: snapshot.timestamp, nodeCount: nodes.length });
+
+  res.json({
+    success: true,
+    snapshotId: snapshot.timestamp,
+    message: 'Snapshot created successfully',
+  });
 }));
 
 /**
@@ -212,29 +217,33 @@ router.post('/snapshots/create', requireRole('super_admin'), asyncHandler(async 
  */
 router.post('/snapshots/restore/:snapshotId', requireRole('super_admin'), asyncHandler(async (req: Request, res: Response) => {
   const { snapshotId } = req.params;
-  const timestamp = parseInt(snapshotId, 10);
-  
-  try {
-    const restored = productionHardeningService.restoreSnapshot(timestamp);
-    
-    if (!restored) {
-      return res.status(404).json({
-        success: false,
-        error: `Snapshot ${snapshotId} not found`,
-      });
-    }
-    
-    res.json({
-      success: true,
-      message: `Restored snapshot ${snapshotId}`,
-      snapshotId,
-    });
-  } catch (error) {
-    res.status(400).json({
+  const timestamp = Number(snapshotId);
+
+  if (!Number.isInteger(timestamp) || timestamp <= 0 || !Number.isFinite(timestamp)) {
+    logger.warn('Invalid snapshot restore request', { snapshotId, userId: req.user?.id });
+    return res.status(400).json({
       success: false,
-      error: error instanceof Error ? error.message : 'Failed to restore snapshot',
+      error: 'Snapshot ID must be a positive integer',
     });
   }
+
+  const restored = productionHardeningService.restoreSnapshot(timestamp);
+
+  if (!restored) {
+    logger.warn('Snapshot restore failed: snapshot not found', { snapshotId, userId: req.user?.id, timestamp });
+    return res.status(404).json({
+      success: false,
+      error: `Snapshot ${snapshotId} not found`,
+    });
+  }
+
+  logger.info('Propagation snapshot restored via API', { userId: req.user?.id, snapshotId, timestamp });
+
+  res.json({
+    success: true,
+    message: `Restored snapshot ${snapshotId}`,
+    snapshotId,
+  });
 }));
 
 /**
@@ -242,14 +251,13 @@ router.post('/snapshots/restore/:snapshotId', requireRole('super_admin'), asyncH
  * Get detected anomalies
  */
 router.get('/anomalies', asyncHandler(async (req: Request, res: Response) => {
-  // Note: detectAnomalies is not available on ProductionHardeningService
-  // Return empty anomalies for now
-  const anomalies: any[] = [];
-  
-  res.json({
-    success: true,
-    detected: anomalies.length > 0,
-    anomalies,
+  logger.warn('Anomaly endpoint is not yet implemented for propagation graph', { endpoint: '/api/propagation/anomalies' });
+
+  res.status(501).json({
+    success: false,
+    detected: false,
+    anomalies: [],
+    error: 'Anomaly detection is not available yet',
   });
 }));
 
@@ -258,15 +266,19 @@ router.get('/anomalies', asyncHandler(async (req: Request, res: Response) => {
  * Export full graph state
  */
 router.get('/state', asyncHandler(async (req: Request, res: Response) => {
+  const fullStateRequested = req.query.full === 'true';
+  if (fullStateRequested) {
+    logger.warn('Full propagation state export requested; this may be large and expensive', { userId: req.user?.id, nodes: graphPropagationEngine.getAllNodes().length });
+  }
+
   const state = graphPropagationEngine.exportState();
-  
+
   res.json({
     success: true,
     timestamp: state.timestamp,
     nodesCount: state.nodes.length,
     edgesCount: state.edges.length,
-    // Note: Full state can be large, include flag to get full data
-    _fullState: req.query.full === 'true' ? state : undefined,
+    _fullState: fullStateRequested ? state : undefined,
   });
 }));
 

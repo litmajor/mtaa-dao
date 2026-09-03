@@ -270,22 +270,23 @@ contract MultiAssetVault is ERC20, AccessControl, ReentrancyGuard, Pausable {
         uint256 stablePrice = IPriceOracle(priceOracle).getPrice(stablecoin);
         require(stablePrice > 0, "Stablecoin oracle malfunction");
         uint256 stableAmount = (usdAmount * (10 ** stableDecimals)) / stablePrice;
-        IERC20(stablecoin).safeTransferFrom(msg.sender, address(this), stableAmount);
 
-        
-        // Calculate shares to mint based on current pool value
+        // Calculate shares to mint based on current pool value excluding this deposit.
+        uint256 portfolioValue = calculateTotalAssetValue() + getStablecoinValue();
         if (totalSupply() == 0) {
             // First investment: 1:1 ratio
             sharesMinted = usdAmount;
         } else {
-            // Subsequent investments: proportional to TVL
-            sharesMinted = (usdAmount * totalSupply()) / totalValueLocked;
+            require(portfolioValue > 0, "Vault has zero NAV");
+            sharesMinted = Math.mulDiv(usdAmount, totalSupply(), portfolioValue);
         }
-        
+
+        IERC20(stablecoin).safeTransferFrom(msg.sender, address(this), stableAmount);
+
         // Mint share tokens
         _mint(msg.sender, sharesMinted);
-        
-        // Update TVL
+
+        // Update book-value ledger
         totalValueLocked += usdAmount;
         
         // Record investment
@@ -323,19 +324,24 @@ contract MultiAssetVault is ERC20, AccessControl, ReentrancyGuard, Pausable {
             require(block.timestamp >= last + withdrawalLockupPeriod, "Withdrawal locked");
         }
         
-        // Calculate USD value of shares
-        uint256 usdValue = (shares * totalValueLocked) / totalSupply();
+        // Calculate USD value of shares based on current NAV including cash
+        uint256 portfolioValue = calculateTotalAssetValue() + getStablecoinValue();
+        uint256 usdValue = Math.mulDiv(shares, portfolioValue, totalSupply());
         
         // Calculate performance fee and protocol fee
         uint256 fee = (usdValue * performanceFee) / 10000;
         uint256 protocolFee = (usdValue * PROTOCOL_WITHDRAW_FEE_BPS) / 10000;
         netAmount = usdValue - fee - protocolFee;
         
+        // Calculate the book-value claim being burned, preserving the historical
+        // `totalValueLocked` ledger as deposits minus redemptions.
+        uint256 bookValueRedeemed = (shares * totalValueLocked) / totalSupply();
+
         // Burn shares
         _burn(msg.sender, shares);
         
-        // Update TVL
-        totalValueLocked -= usdValue;
+        // Update book-value ledger
+        totalValueLocked -= bookValueRedeemed;
         
         // Transfer fees to collectors
         uint8 stableDecimals = 18;
@@ -346,6 +352,9 @@ contract MultiAssetVault is ERC20, AccessControl, ReentrancyGuard, Pausable {
         uint256 stableNetAmount = (netAmount * (10 ** stableDecimals)) / stablePrice;
         uint256 stableFeeAmount = (fee * (10 ** stableDecimals)) / stablePrice;
         uint256 stableProtocolFeeAmount = (protocolFee * (10 ** stableDecimals)) / stablePrice;
+
+        uint256 stableBalance = IERC20(stablecoin).balanceOf(address(this));
+        require(stableBalance >= stableNetAmount + stableFeeAmount + stableProtocolFeeAmount, "Insufficient stablecoin buffer");
 
         IERC20(stablecoin).safeTransfer(msg.sender, stableNetAmount);
         
@@ -447,9 +456,30 @@ contract MultiAssetVault is ERC20, AccessControl, ReentrancyGuard, Pausable {
                 uint8 stableDecimals = 18;
                 try IERC20Metadata(stablecoin).decimals() returns (uint8 sd) { stableDecimals = sd; } catch {}
 
-                // expected stablecoin amount = amt * (10**stableDecimals) / (10**assetDecimals)
-                uint256 expectedStable = (amt * (10 ** stableDecimals)) / (10 ** assetDecimals);
-                uint256 minOut = (expectedStable * (10000 - maxSlippageBps)) / 10000;
+                // Use oracle prices to compute expected stablecoin amount for the token being sold
+                uint256 assetPricePerUnit = IPriceOracle(priceOracle).getPrice(token);
+                require(assetPricePerUnit > 0, "Oracle malfunction");
+                uint256 stablePrice = IPriceOracle(priceOracle).getPrice(stablecoin);
+                require(stablePrice > 0, "Stablecoin oracle malfunction");
+
+                // expected stablecoin amount = amt * assetPricePerUnit / stablePrice
+                // normalize decimals so result is in stablecoin token units
+                // formula: expectedStable = (amt * assetPricePerUnit * (10 ** stableDecimals)) / (stablePrice * (10 ** assetDecimals))
+                uint256 expectedStable = (amt * assetPricePerUnit * (10 ** stableDecimals)) / (stablePrice * (10 ** assetDecimals));
+
+                // Account for the AMM's pool fee (30 bps) so honest executions
+                // that pay the pool fee do not falsely revert. Reserve the remaining
+                // slippage band for protection.
+                uint256 poolFeeBps = 30;
+                uint256 effectiveSlippage = maxSlippageBps;
+                if (effectiveSlippage + poolFeeBps >= 10000) {
+                    // avoid underflow; cap to zero floor
+                    effectiveSlippage = 0;
+                } else {
+                    effectiveSlippage = effectiveSlippage + poolFeeBps;
+                }
+
+                uint256 minOut = (expectedStable * (10000 - effectiveSlippage)) / 10000;
 
                 IUniswapRouter(uniswapRouter).swapExactTokensForTokens(amt, minOut, path, address(this), block.timestamp + 300);
                 
@@ -506,8 +536,18 @@ contract MultiAssetVault is ERC20, AccessControl, ReentrancyGuard, Pausable {
         uint256 oraclePrice = IPriceOracle(priceOracle).getPrice(targetAssetAddress);
         require(oraclePrice > 0, "Oracle malfunction");
 
-        // implied price per unit from DEX estimate (USD scaled by 1e8)
-        uint256 impliedPricePerUnit = (stablecoinAmount * 1e8) / estimatedOut;
+        // Normalize decimals and compute implied price per unit from DEX estimate (USD scaled by 1e8)
+        uint8 assetDecimals = 18;
+        try IERC20Metadata(targetAssetAddress).decimals() returns (uint8 ad) { assetDecimals = ad; } catch {}
+        uint8 stableDecimals = 18;
+        try IERC20Metadata(stablecoinAddress).decimals() returns (uint8 sd) { stableDecimals = sd; } catch {}
+
+        uint256 stablePrice = IPriceOracle(priceOracle).getPrice(stablecoinAddress);
+        require(stablePrice > 0, "Stablecoin oracle malfunction");
+
+        // impliedPricePerUnit = (stablecoinAmount * stablePrice / 10**stableDecimals) / (estimatedOut / 10**assetDecimals)
+        // rearranged to maintain integer arithmetic and keep scale of 1e8 from stablePrice
+        uint256 impliedPricePerUnit = (stablecoinAmount * stablePrice * (10 ** assetDecimals)) / (estimatedOut * (10 ** stableDecimals));
 
         uint256 priceDiffBps;
         if (impliedPricePerUnit > oraclePrice) {
@@ -537,8 +577,8 @@ contract MultiAssetVault is ERC20, AccessControl, ReentrancyGuard, Pausable {
         // Update asset balance
         assets[symbolHash].balance += amountReceived;
         
-        // Get price per unit for event logging
-        uint256 pricePerUnit = (stablecoinAmount * 1e8) / amountReceived;
+        // Get price per unit for event logging (USD scaled by 1e8)
+        uint256 pricePerUnit = (stablecoinAmount * stablePrice * (10 ** assetDecimals)) / (amountReceived * (10 ** stableDecimals));
         
         emit AssetAcquired(symbolHash, stablecoinAddress, amountReceived, pricePerUnit);
         
@@ -631,6 +671,27 @@ contract MultiAssetVault is ERC20, AccessControl, ReentrancyGuard, Pausable {
     }
 
     /**
+     * @notice Get the current USD value of the vault's stablecoin buffer
+     * @return USD value in 1e8 units
+     */
+    function getStablecoinValue() public view returns (uint256) {
+        if (stablecoin == address(0)) return 0;
+        uint256 stableBalance = IERC20(stablecoin).balanceOf(address(this));
+        if (stableBalance == 0) return 0;
+
+        uint8 stableDecimals = 18;
+        try IERC20Metadata(stablecoin).decimals() returns (uint8 sd) {
+            stableDecimals = sd;
+        } catch {}
+
+        uint256 stablePrice = IPriceOracle(priceOracle).getPrice(stablecoin);
+        require(stablePrice > 0, "Stablecoin oracle malfunction");
+
+        uint256 normalizedBalance = (stableBalance * 1e8) / (10 ** stableDecimals);
+        return (normalizedBalance * stablePrice) / 1e8;
+    }
+
+    /**
      * @notice Get portfolio composition
      * @return Array of asset symbols with their current allocation percentages
      */
@@ -668,9 +729,9 @@ contract MultiAssetVault is ERC20, AccessControl, ReentrancyGuard, Pausable {
      */
     function getSharePrice() public view returns (uint256) {
         if (totalSupply() == 0) return 1e8; // Initial price: $1
-        uint256 assetValue = calculateTotalAssetValue();
-        if (assetValue == 0) return 1e8;
-        return (assetValue * 1e8) / totalSupply();
+        uint256 totalAssets = calculateTotalAssetValue() + getStablecoinValue();
+        if (totalAssets == 0) return 0;
+        return (totalAssets * 1e8) / totalSupply();
     }
 
     /**
@@ -681,7 +742,7 @@ contract MultiAssetVault is ERC20, AccessControl, ReentrancyGuard, Pausable {
     function getUserValue(address user) external view returns (uint256) {
         uint256 userShares = balanceOf(user);
         if (totalSupply() == 0) return 0;
-        uint256 totalAssets = calculateTotalAssetValue();
+        uint256 totalAssets = calculateTotalAssetValue() + getStablecoinValue();
         return (userShares * totalAssets) / totalSupply();
     }
 
@@ -690,7 +751,7 @@ contract MultiAssetVault is ERC20, AccessControl, ReentrancyGuard, Pausable {
      * @return TVL in USD (scaled by 1e8)
      */
     function getTVL() external view returns (uint256) {
-        return calculateTotalAssetValue();
+        return calculateTotalAssetValue() + getStablecoinValue();
     }
 
     /**

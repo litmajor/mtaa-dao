@@ -20,7 +20,7 @@
  * For questions: See CONSOLIDATION_INTEGRATION_GUIDE.md
  */
 
-import { Request, Response, NextFunction } from 'express';
+import type { Request, Response, NextFunction } from 'express';
 
 // Extend Express Request type to support custom activityType
 declare global {

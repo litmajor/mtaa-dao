@@ -3,7 +3,7 @@
  * Provides wrappers and helpers for adding security validation to route handlers
  */
 
-import { Request, Response, NextFunction } from 'express';
+import type { Request, Response, NextFunction } from 'express';
 import { 
   validateDaoId, 
   sanitizeObject, 
@@ -127,13 +127,13 @@ export function secureRoute(handler: (req: SecureRequest, res: Response, next?: 
  */
 export function secureRateLimit(maxRequests: number = 10, windowMs: number = 60000) {
   const limiter = rateLimitByUserId(maxRequests, windowMs);
-  
+
   return (req: Request, res: Response, next: NextFunction) => {
     const userId = (req as any).user?.id || (req as any).user?.claims?.sub;
-    
+
     try {
       limiter(req, res, () => {
-        logger.debug(`[RATE_LIMIT] Request allowed`, {
+        logger.debug('[RATE_LIMIT] Request allowed', {
           userId,
           path: req.path,
           method: req.method,
@@ -203,9 +203,14 @@ export function auditLog(operationType: string) {
   return (req: Request, res: Response, next: NextFunction) => {
     const startTime = Date.now();
     const originalSend = res.send;
+    let auditLogged = false;
 
-    // Store original send function
-    res.send = function(data: any) {
+    res.send = function(this: Response, body?: any) {
+      if (auditLogged || res.headersSent) {
+        return originalSend.call(this, body);
+      }
+
+      auditLogged = true;
       const duration = Date.now() - startTime;
       const statusCode = res.statusCode;
       const userId = (req as any).user?.id || (req as any).user?.claims?.sub;
@@ -221,8 +226,7 @@ export function auditLog(operationType: string) {
         success: statusCode < 400,
       });
 
-      // Call original send
-      return originalSend.call(this, data);
+      return originalSend.call(this, body);
     };
 
     next();
@@ -263,7 +267,8 @@ export function monitorDeprecation(endpointName: string) {
 export function assessThreatLevel(req: Request): 'low' | 'medium' | 'high' {
   const suspiciousPatterns = (req as SecureRequest).securityContext?.suspiciousPatterns || [];
   const contentLength = req.get('content-length');
-  const largePayload = contentLength && parseInt(contentLength) > 1024 * 1024; // > 1MB
+  const parsedLength = contentLength !== undefined ? Number.parseInt(contentLength, 10) : NaN;
+  const largePayload = Number.isFinite(parsedLength) && parsedLength > 1024 * 1024; // > 1MB
 
   // Count risk factors
   let riskScore = 0;

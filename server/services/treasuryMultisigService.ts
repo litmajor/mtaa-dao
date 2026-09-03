@@ -6,11 +6,13 @@ import {
   treasuryBudgetAllocations,
   treasuryAuditLog,
   daoMemberships,
-  users
+  users,
+  multisigWallets
 } from '../../shared/schema';
 import { eq, and, desc, gte, lte, sql } from 'drizzle-orm';
 import { Logger } from '../utils/logger';
 import { AppError, ValidationError, NotFoundError } from '../middleware/errorHandler';
+import { TreasuryService } from './treasuryService';
 
 export class TreasuryMultisigService {
   
@@ -31,7 +33,7 @@ export class TreasuryMultisigService {
       if (!dao.length) throw new NotFoundError('DAO not found');
 
       const daoData = dao[0];
-      
+
       // CRITICAL: Check if proposer is elder or admin
       const membership = await db.select().from(daoMemberships)
         .where(and(
@@ -42,6 +44,21 @@ export class TreasuryMultisigService {
 
       if (!membership.length || !['elder', 'admin'].includes(membership[0].role || '')) {
         throw new ValidationError('Only elders and admins can propose treasury withdrawals');
+      }
+
+      if (await TreasuryService.isFrozen(daoId)) {
+        throw new ValidationError('Treasury is frozen; new withdrawal proposals are temporarily blocked');
+      }
+
+      const wallet = await db.select({ id: multisigWallets.id })
+        .from(multisigWallets)
+        .where(and(
+          eq(multisigWallets.daoId, daoId),
+          eq(multisigWallets.isActive, true)
+        ))
+        .limit(1);
+      if (!wallet.length) {
+        throw new ValidationError('No active multisig wallet is configured for this DAO');
       }
 
       // CRITICAL: Check multi-sig threshold
@@ -76,6 +93,7 @@ export class TreasuryMultisigService {
 
       const [transaction] = await db.insert(treasuryMultisigTransactions).values({
         daoId,
+        multisigWalletId: wallet[0].id,
         proposedBy,
         transactionType: 'withdrawal',
         amount: amount.toString(),

@@ -1,4 +1,4 @@
-import { Request, Response } from 'express';
+import type { Request, Response } from 'express';
 import { db } from '../db';
 import { eq, and, desc } from 'drizzle-orm';
 import { Logger } from '../utils/logger';
@@ -264,52 +264,126 @@ export const RULE_TEMPLATES = {
 };
 
 /**
- * Evaluate if a transaction/action meets rule conditions
+ * Resolve a value from nested object paths like 'user.metrics.daysLate'.
+ */
+function getFieldValue(data: any, field: string): any {
+  if (!field) return undefined;
+
+  const path = field
+    .replace(/\[(\d+)\]/g, '.$1')
+    .split('.')
+    .filter(Boolean);
+
+  let current = data;
+  for (const segment of path) {
+    if (current == null) return undefined;
+    current = current[segment];
+  }
+
+  return current;
+}
+
+function normalizeComparableValue(value: any): any {
+  if (value === null || value === undefined) return value;
+
+  if (typeof value === 'bigint') return Number(value);
+  if (typeof value === 'string') {
+    const trimmed = value.trim();
+    if (trimmed === '') return '';
+    if (/^-?\d+(\.\d+)?$/.test(trimmed)) return Number(trimmed);
+    const asDate = new Date(trimmed);
+    if (!Number.isNaN(asDate.getTime()) && /T|Z|\d{4}-\d{2}-\d{2}/.test(trimmed)) return asDate.getTime();
+    return trimmed;
+  }
+
+  return value;
+}
+
+/**
+ * Evaluate if a transaction/action meets rule conditions.
+ * Uses clause grouping so AND has higher precedence than OR.
  */
 function evaluateConditions(conditions: RuleCondition[], data: any): boolean {
   if (conditions.length === 0) return true;
 
-  let result = true;
-  let currentLogicalOperator = 'AND';
+  const clauses: boolean[] = [];
+  let currentClause = evaluateCondition(conditions[0], data);
 
-  for (const condition of conditions) {
-    const conditionResult = evaluateCondition(condition, data);
+  for (let index = 1; index < conditions.length; index++) {
+    const previousCondition = conditions[index - 1];
+    const connector = previousCondition.logicalOperator || 'AND';
+    const nextClause = evaluateCondition(conditions[index], data);
 
-    if (currentLogicalOperator === 'AND') {
-      result = result && conditionResult;
-    } else if (currentLogicalOperator === 'OR') {
-      result = result || conditionResult;
+    if (connector === 'OR') {
+      clauses.push(currentClause);
+      currentClause = nextClause;
+    } else {
+      currentClause = currentClause && nextClause;
     }
-
-    currentLogicalOperator = condition.logicalOperator || 'AND';
   }
 
-  return result;
+  clauses.push(currentClause);
+  return clauses.some(Boolean);
 }
 
 /**
  * Evaluate a single condition
  */
 function evaluateCondition(condition: RuleCondition, data: any): boolean {
-  const fieldValue = data[condition.field];
+  const fieldValue = getFieldValue(data, condition.field);
+  const actualValue = normalizeComparableValue(fieldValue);
+  const expectedValue = normalizeComparableValue(condition.value);
+
+  if (fieldValue === undefined || fieldValue === null) {
+    if (condition.operator === RuleOperator.EQUALS) {
+      return expectedValue === undefined || expectedValue === null;
+    }
+    if (condition.operator === RuleOperator.NOT_EQUALS) {
+      return expectedValue !== undefined && expectedValue !== null;
+    }
+    return false;
+  }
 
   switch (condition.operator) {
     case RuleOperator.EQUALS:
-      return fieldValue === condition.value;
+      return actualValue === expectedValue || String(actualValue) === String(expectedValue);
     case RuleOperator.NOT_EQUALS:
-      return fieldValue !== condition.value;
-    case RuleOperator.GREATER_THAN:
-      return fieldValue > condition.value;
-    case RuleOperator.LESS_THAN:
-      return fieldValue < condition.value;
-    case RuleOperator.GREATER_EQUAL:
-      return fieldValue >= condition.value;
-    case RuleOperator.LESS_EQUAL:
-      return fieldValue <= condition.value;
+      return actualValue !== expectedValue && String(actualValue) !== String(expectedValue);
+    case RuleOperator.GREATER_THAN: {
+      const left = Number(actualValue);
+      const right = Number(expectedValue);
+      return Number.isFinite(left) && Number.isFinite(right) && left > right;
+    }
+    case RuleOperator.LESS_THAN: {
+      const left = Number(actualValue);
+      const right = Number(expectedValue);
+      return Number.isFinite(left) && Number.isFinite(right) && left < right;
+    }
+    case RuleOperator.GREATER_EQUAL: {
+      const left = Number(actualValue);
+      const right = Number(expectedValue);
+      return Number.isFinite(left) && Number.isFinite(right) && left >= right;
+    }
+    case RuleOperator.LESS_EQUAL: {
+      const left = Number(actualValue);
+      const right = Number(expectedValue);
+      return Number.isFinite(left) && Number.isFinite(right) && left <= right;
+    }
     case RuleOperator.CONTAINS:
-      return typeof fieldValue === 'string' && fieldValue.includes(condition.value);
-    case RuleOperator.IN:
-      return Array.isArray(condition.value) && condition.value.includes(fieldValue);
+      if (typeof actualValue === 'string' && typeof expectedValue === 'string') {
+        return actualValue.includes(expectedValue);
+      }
+      if (Array.isArray(actualValue)) {
+        return actualValue.some((item) => normalizeComparableValue(item) === expectedValue);
+      }
+      return false;
+    case RuleOperator.IN: {
+      if (Array.isArray(expectedValue)) {
+        return expectedValue.some((item) => normalizeComparableValue(item) === normalizeComparableValue(actualValue))
+          || (Array.isArray(actualValue) && actualValue.some((item) => expectedValue.includes(normalizeComparableValue(item))));
+      }
+      return false;
+    }
     default:
       return true;
   }
@@ -380,38 +454,45 @@ export async function evaluateTransaction(
   userId: string
 ): Promise<RuleExecutionResult> {
   try {
-    // Get all enabled rules for this DAO and type
     const rules = await getActiveRules(daoId, ruleType);
 
     if (rules.length === 0) {
       return { allowed: true, actions: [] };
     }
 
-    // Sort by priority (higher first)
     rules.sort((a, b) => (b.priority || 0) - (a.priority || 0));
 
-    // Evaluate each rule
+    const aggregate: RuleExecutionResult = {
+      allowed: true,
+      actions: [],
+      penalties: [],
+      requiresApproval: false,
+    };
+
     for (const rule of rules) {
       const conditionsMet = evaluateConditions(rule.conditions, transactionData);
 
-      if (conditionsMet) {
-        const result = await executeRuleActions(rule.actions);
+      if (!conditionsMet) continue;
 
-        // Log audit entry
-        await logRuleExecution(
-          rule.id,
-          userId,
-          result.allowed ? 'approved' : result.requiresApproval ? 'pending' : 'rejected',
-          transactionData
-        );
+      const result = await executeRuleActions(rule.actions);
+      aggregate.actions.push(...result.actions);
+      if (result.penalties) aggregate.penalties = [...(aggregate.penalties || []), ...result.penalties];
+      if (result.requiresApproval) aggregate.requiresApproval = true;
 
-        if (!result.allowed || result.requiresApproval) {
-          return result;
-        }
+      if (result.allowed === false) {
+        aggregate.allowed = false;
+        if (!aggregate.reason) aggregate.reason = result.reason;
       }
+
+      await logRuleExecution(
+        rule.id,
+        userId,
+        aggregate.allowed === false ? 'rejected' : aggregate.requiresApproval ? 'pending' : 'approved',
+        transactionData
+      );
     }
 
-    return { allowed: true, actions: [] };
+    return aggregate;
   } catch (err) {
     logger.error(`Error evaluating transaction: ${err}`);
     throw err;

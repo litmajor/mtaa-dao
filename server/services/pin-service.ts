@@ -302,20 +302,23 @@ export async function resetPIN(
   userId: string,
   phoneOrEmail: string,
   verificationCode: string,
-  newPIN: string
+  newPIN: string,
+  options: { skipOtpVerification?: boolean } = {}
 ): Promise<{ success: boolean; message?: string; error?: string }> {
   try {
     if (!/^\d{4,8}$/.test(newPIN)) {
       return { success: false, error: 'New PIN must be 4-8 digits' };
     }
 
-    const identifier = phoneOrEmail.includes('@') ? `email:${userId}:${phoneOrEmail}` : `phone:${userId}:${phoneOrEmail}`;
-    const verification = await otpService.verifyOTP(identifier, verificationCode);
-    if (!verification.valid) {
-      return { success: false, error: verification.error || 'Invalid or expired verification code' };
+    if (!options.skipOtpVerification) {
+      const identifier = phoneOrEmail.includes('@') ? `email:${userId}:${phoneOrEmail}` : `phone:${userId}:${phoneOrEmail}`;
+      const verification = await otpService.verifyOTP(identifier, verificationCode);
+      if (!verification.valid) {
+        return { success: false, error: verification.error || 'Invalid or expired verification code' };
+      }
+      // OTPService.verifyOTP already deletes the OTP on success — it cannot
+      // be reused for a second reset attempt.
     }
-    // OTPService.verifyOTP already deletes the OTP on success — it cannot
-    // be reused for a second reset attempt.
 
     const { hash, salt } = hashPIN(newPIN);
 

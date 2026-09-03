@@ -10,10 +10,11 @@
  * - GET /:approvalId/signatures - get signature history
  */
 
-import { Router, Request, Response } from 'express';
+import { Router } from 'express';
+import type { Request, Response } from 'express';
 import { db } from '../../../../../storage';
 import { eq, and } from 'drizzle-orm';
-import { treasuryWithdrawalApprovals, treasuryMultisigTransactions, vaults, daoMemberships } from '@shared/schema';
+import { vaults, daoMemberships } from '@shared/schema';
 import { 
   addSignature,
   getApprovalRequest,
@@ -38,6 +39,23 @@ interface ApprovalSigner {
 const router = Router({ mergeParams: true });
 
 /**
+ * Helper function to verify user's membership in a DAO
+ */
+async function verifyDaoMembership(daoId: string, userId: string): Promise<boolean> {
+  const membership = await db
+    .select()
+    .from(daoMemberships)
+    .where(
+      and(
+        eq(daoMemberships.daoId, daoId),
+        eq(daoMemberships.userId, userId)
+      )
+    );
+
+  return membership.length > 0;
+}
+
+/**
  * GET /v1/daos/:daoId/treasury/withdrawals/pending
  * 
  * List all pending withdrawal approvals for this DAO
@@ -52,15 +70,20 @@ router.get('/pending', authenticate, async (req: Request, res: Response) => {
       return res.status(401).json({ error: 'Unauthorized' });
     }
 
+    const isMember = await verifyDaoMembership(daoId, userId);
+    if (!isMember) {
+      return res.status(403).json({ error: 'Forbidden: You are not a member of this DAO' });
+    }
+
     // Get pending approvals for this DAO
     const pendingApprovals = await getPendingApprovals(daoId);
 
     // Enhance with signer status for current user
     const enhanced = pendingApprovals.map((approval: any) => {
-      const currentUserSigner = approval.signers.find((s: ApprovalSigner) => s.userId === userId);
+      const currentUserSigner = approval.signers?.find((s: ApprovalSigner) => s.userId === userId);
       return {
         ...approval,
-        currentUserHasSigned: currentUserSigner?.approved || currentUserSigner?.rejected,
+        currentUserHasSigned: !!(currentUserSigner?.approved || currentUserSigner?.rejected),
         currentUserApproved: currentUserSigner?.approved || false,
         currentUserRejected: currentUserSigner?.rejected || false,
       };
@@ -91,10 +114,7 @@ router.get('/signer-pending', authenticate, async (req: Request, res: Response) 
       return res.status(401).json({ error: 'Unauthorized' });
     }
 
-    // Get approvals requiring this user's signature
-    const approvalsForUser = await getApprovalsForSigner(daoId, userId);
-
-    // Get user's role in DAO for context
+    // Check membership and fetch role
     const membershipData = await db
       .select()
       .from(daoMemberships)
@@ -105,7 +125,14 @@ router.get('/signer-pending', authenticate, async (req: Request, res: Response) 
         )
       );
 
-    const userRole = membershipData?.[0]?.role || 'member';
+    if (!membershipData.length) {
+      return res.status(403).json({ error: 'Forbidden: You are not a member of this DAO' });
+    }
+
+    const userRole = membershipData[0].role || 'member';
+
+    // Get approvals requiring this user's signature
+    const approvalsForUser = await getApprovalsForSigner(daoId, userId);
 
     return res.json({
       userRole,
@@ -127,6 +154,16 @@ router.get('/signer-pending', authenticate, async (req: Request, res: Response) 
 router.get('/:approvalId', authenticate, async (req: Request, res: Response) => {
   try {
     const { daoId, approvalId } = req.params;
+    const userId = req.user?.id;
+
+    if (!userId) {
+      return res.status(401).json({ error: 'Unauthorized' });
+    }
+
+    const isMember = await verifyDaoMembership(daoId, userId);
+    if (!isMember) {
+      return res.status(403).json({ error: 'Forbidden: You are not a member of this DAO' });
+    }
 
     // Get approval
     const approval = await getApprovalRequest(approvalId);
@@ -154,13 +191,13 @@ router.get('/:approvalId', authenticate, async (req: Request, res: Response) => 
     return res.json({
       approval,
       signatures,
-      vault: {
-        id: vault?.id,
-        name: vault?.name,
-        vaultType: vault?.vaultType,
-        balance: vault?.balance,
-        currency: vault?.currency,
-      },
+      vault: vault ? {
+        id: vault.id,
+        name: vault.name,
+        vaultType: vault.vaultType,
+        balance: vault.balance,
+        currency: vault.currency,
+      } : null,
     });
   } catch (error) {
     console.error('Error fetching approval details:', error);
@@ -177,12 +214,22 @@ router.get('/:approvalId', authenticate, async (req: Request, res: Response) => 
 router.get('/:approvalId/signatures', authenticate, async (req: Request, res: Response) => {
   try {
     const { daoId, approvalId } = req.params;
+    const userId = req.user?.id;
 
-    // Verify approval belongs to this DAO
+    if (!userId) {
+      return res.status(401).json({ error: 'Unauthorized' });
+    }
+
+    const isMember = await verifyDaoMembership(daoId, userId);
+    if (!isMember) {
+      return res.status(403).json({ error: 'Forbidden: You are not a member of this DAO' });
+    }
+
+    // Verify approval exists and belongs to this DAO
     const approval = await getApprovalRequest(approvalId);
 
     if (!approval || approval.daoId !== daoId) {
-      return res.status(403).json({ error: 'Unauthorized' });
+      return res.status(404).json({ error: 'Approval not found or unauthorized' });
     }
 
     const signatures = await getSignatureHistory(approvalId);
@@ -224,11 +271,11 @@ router.post('/:approvalId/approve', treasuryAdminGuard, async (req: Request, res
     const approval = await getApprovalRequest(approvalId);
 
     if (!approval || approval.daoId !== daoId) {
-      return res.status(403).json({ error: 'Unauthorized' });
+      return res.status(404).json({ error: 'Approval not found for this DAO' });
     }
 
     // Verify user is authorized signer
-    const isSigner = approval.signers.some((s: ApprovalSigner) => s.userId === userId);
+    const isSigner = approval.signers?.some((s: ApprovalSigner) => s.userId === userId);
     if (!isSigner) {
       return res.status(403).json({ error: 'Not authorized to sign this approval' });
     }
@@ -242,14 +289,14 @@ router.post('/:approvalId/approve', treasuryAdminGuard, async (req: Request, res
       approved: true,
     });
 
-    // Log action
+    // Log audit event
     await logConsolidatedAuditEvent({
       dao_id: daoId,
       user_id: userId,
       action: 'withdrawal_signed_approved',
       severity: 'high',
       details: {
-        approvalId: approvalId,
+        approvalId,
         newStatus: result.status,
         currentSignatures: result.currentSignatures,
       },
@@ -267,7 +314,6 @@ router.post('/:approvalId/approve', treasuryAdminGuard, async (req: Request, res
   } catch (error: any) {
     console.error('Error approving withdrawal:', error);
 
-    // Log error
     await logConsolidatedAuditEvent({
       dao_id: daoId,
       user_id: req.user?.id,
@@ -292,7 +338,6 @@ router.post('/:approvalId/approve', treasuryAdminGuard, async (req: Request, res
  */
 router.post('/:approvalId/reject', treasuryAdminGuard, async (req: Request, res: Response) => {
   const { daoId, approvalId } = req.params;
-  const approvalIdStr = approvalId;
   try {
     const { reason } = req.body;
     const userId = req.user?.id;
@@ -306,11 +351,11 @@ router.post('/:approvalId/reject', treasuryAdminGuard, async (req: Request, res:
     const approval = await getApprovalRequest(approvalId);
 
     if (!approval || approval.daoId !== daoId) {
-      return res.status(403).json({ error: 'Unauthorized' });
+      return res.status(404).json({ error: 'Approval not found for this DAO' });
     }
 
     // Verify user is authorized signer
-    const isSigner = approval.signers.some((s: ApprovalSigner) => s.userId === userId);
+    const isSigner = approval.signers?.some((s: ApprovalSigner) => s.userId === userId);
     if (!isSigner) {
       return res.status(403).json({ error: 'Not authorized to sign this approval' });
     }
@@ -324,14 +369,14 @@ router.post('/:approvalId/reject', treasuryAdminGuard, async (req: Request, res:
       approved: false,
     });
 
-    // Log action
+    // Log audit event
     await logConsolidatedAuditEvent({
       dao_id: daoId,
       user_id: userId,
       action: 'withdrawal_signed_rejected',
       severity: 'high',
       details: {
-        approvalId: approvalId,
+        approvalId,
         reason: reason || 'No reason provided',
         newStatus: result.status,
       },

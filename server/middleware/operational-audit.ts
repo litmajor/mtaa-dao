@@ -32,7 +32,7 @@
  * Mount at the very beginning of Express middleware stack
  */
 
-import { Request, Response, NextFunction } from 'express';
+import type { Request, Response, NextFunction } from 'express';
 import { getAuditLogger } from '../services/operational/audit/logger';
 import { AuditActionType } from '../services/operational/types';
 

@@ -2,8 +2,8 @@
 pragma solidity ^0.8.20;
 
 import "@openzeppelin/contracts-upgradeable/access/OwnableUpgradeable.sol";
-import "@openzeppelin/contracts-upgradeable/security/ReentrancyGuardUpgradeable.sol";
-import "@openzeppelin/contracts-upgradeable/security/PausableUpgradeable.sol";
+import "./security/ReentrancyGuardUpgradeable.sol";
+import "@openzeppelin/contracts-upgradeable/utils/PausableUpgradeable.sol";
 import "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
 import "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
@@ -169,7 +169,6 @@ contract DAOSubscriptionManager is
         __Ownable_init(msg.sender);
         __ReentrancyGuard_init();
         __Pausable_init();
-        __UUPSUpgradeable_init();
 
         cUSD = IERC20(_cUSD);
         cUSDPermit = IERC20Permit(_cUSD);
@@ -289,7 +288,8 @@ contract DAOSubscriptionManager is
         view
         returns (uint256 rate, uint256 denominator)
     {
-        (rate, denominator, bool success) = _tryOracle(primaryOracle);
+        bool success;
+        (rate, denominator, success) = _tryOracle(primaryOracle);
         if (success) return (rate, denominator);
 
         if (address(backupOracle.sortedOracles) != address(0)) {

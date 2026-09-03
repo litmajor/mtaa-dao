@@ -67,10 +67,10 @@ export default function SecureWalletManager({ userId, onWalletCreated }: SecureW
       const arr = new Uint8Array(entropyBytes);
       crypto.getRandomValues(arr);
 
-      const { Wallet, utils } = await import('ethers');
+      const { HDNodeWallet, Mnemonic } = await import('ethers');
       const entropyHex = '0x' + Array.from(arr).map((b) => b.toString(16).padStart(2, '0')).join('');
-      const mnem = utils.entropyToMnemonic ? utils.entropyToMnemonic(entropyHex) : Wallet.createRandom().mnemonic.phrase;
-      const wallet = Wallet.fromMnemonic(mnem);
+      const mnem = Mnemonic.entropyToPhrase(entropyHex);
+      const wallet = HDNodeWallet.fromPhrase(mnem);
 
       setMnemonic(mnem);
       setWalletAddress(await wallet.getAddress());
@@ -120,22 +120,14 @@ export default function SecureWalletManager({ userId, onWalletCreated }: SecureW
     try {
       const { Wallet } = await import('ethers');
       // Recover wallet locally from mnemonic
-      const wallet = Wallet.fromMnemonic(mnemonic.trim());
+      const wallet = Wallet.fromPhrase(mnemonic.trim());
       const address = await wallet.getAddress();
 
-      // Create signed challenge similar to import flow
-      const ts = Date.now();
-      const nonceArr = new Uint32Array(1);
-      crypto.getRandomValues(nonceArr);
-      const nonce = nonceArr[0];
-      const message = `MtaaDAO wallet recover verification\naddress: ${address}\ntimestamp: ${ts}\nnonce: ${nonce}`;
-      const signature = await wallet.signMessage(message);
-
-      // Send only address, message, signature to server; never send mnemonic or private key
-      const response = await fetch('/api/v1/wallets/setup/recover', {
+      // Register only the public address; the mnemonic stays in the browser.
+      const response = await fetch('/api/v1/wallets/setup/register', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', ...(await authClient.getAuthHeaders()) },
-        body: JSON.stringify({ userId, address, message, signature })
+        body: JSON.stringify({ address })
       });
 
       const data = await response.json();
@@ -235,19 +227,9 @@ export default function SecureWalletManager({ userId, onWalletCreated }: SecureW
         return;
       }
     }
-    // Mark backed up and secure
+    // The encrypted backup is persisted during wallet creation.
     setBackedUp(true);
     setWalletSecurityState('SECURE');
-    // notify server of backup confirmation (authorized)
-    try {
-      await fetch('/api/v1/wallets/setup/backup-confirm', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', ...(await authClient.getAuthHeaders()) },
-        body: JSON.stringify({ userId, address: walletAddress })
-      });
-    } catch (e) {
-      console.warn('Failed to notify server of backup confirmation', e);
-    }
     toast({ title: 'Backup Verified', description: 'Your recovery phrase has been confirmed' });
     setStep('complete');
   };
@@ -275,7 +257,7 @@ export default function SecureWalletManager({ userId, onWalletCreated }: SecureW
       // Otherwise try to build a keystore from available secrets and provided password
       if (mnemonic && password) {
         const { Wallet } = await import('ethers');
-        const wallet = Wallet.fromMnemonic(mnemonic.trim());
+        const wallet = Wallet.fromPhrase(mnemonic.trim());
         const keystore = await wallet.encrypt(password);
         const element = document.createElement('a');
         const file = new Blob([keystore], { type: 'application/json' });

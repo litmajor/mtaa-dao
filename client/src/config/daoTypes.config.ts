@@ -105,7 +105,6 @@ export const MTAA_DISCOUNT_CURVE = 'sqrt-2.5' as const;
 export const DAO_TYPE_CONFIG = {
 
   harambee: {
-    requiredTier: 'free' as Tier,
     primaryPersona: 'okedi',
 
     constraints: {
@@ -182,7 +181,6 @@ export const DAO_TYPE_CONFIG = {
   },
 
   shortTerm: {
-    requiredTier: 'free' as Tier,
     primaryPersona: 'okedi',
 
     constraints: {
@@ -264,7 +262,6 @@ export const DAO_TYPE_CONFIG = {
   },
 
   savings: {
-    requiredTier: 'free' as Tier,
     primaryPersona: 'okedi',
     secondaryPersona: 'yuki',
 
@@ -369,7 +366,6 @@ export const DAO_TYPE_CONFIG = {
   },
 
   merryGoRound: {
-    requiredTier: 'growth' as Tier,
     primaryPersona: 'okedi',
     secondaryPersona: 'yuki',
 
@@ -483,7 +479,6 @@ export const DAO_TYPE_CONFIG = {
   },
 
   community: {
-    requiredTier: 'growth' as Tier,
     primaryPersona: 'okedi',
     secondaryPersona: 'yuki',
 
@@ -618,7 +613,6 @@ export const DAO_TYPE_CONFIG = {
   },
 
   investment: {
-    requiredTier: 'professional' as Tier,
     primaryPersona: 'yuki',
     secondaryPersona: 'amara',
     tertiaryPersona: 'okedi',

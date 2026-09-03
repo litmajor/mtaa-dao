@@ -10,16 +10,18 @@
  * - Log all credential access
  */
 
-import { Request, Response, NextFunction } from 'express';
+import type { Request, Response, NextFunction } from 'express';
 import { CEXCredentialRepository } from '../repositories/cexCredentialRepository';
 import { KeyManagementService } from '../services/keyManagementService';
 
-/**
- * Extended Express Request with CEX credentials
- */
+// Standard Express type extension
 declare global {
   namespace Express {
+    interface User {
+      id: string;
+    }
     interface Request {
+      user?: User;
       cex?: {
         credentials: {
           userId: string;
@@ -35,26 +37,39 @@ declare global {
 }
 
 /**
+ * Helper: Fire-and-forget audit logging to prevent blocking main API path
+ */
+function logAuditAsync(
+  action: 'encrypt' | 'decrypt' | 'rotate' | 'reencrypt',
+  resource: string,
+  success: boolean,
+  error?: string,
+  userId?: string
+): void {
+  KeyManagementService.getInstance()
+    .logAudit(action, resource, success, error, userId)
+    .catch((err) => console.error('Failed to write audit log:', err));
+}
+
+/**
  * Middleware: Retrieve and validate CEX credentials
- * 
- * Usage:
- * router.post('/place-order', cexAuthMiddleware, placeOrderHandler);
  */
 export async function cexAuthMiddleware(
   req: Request,
   res: Response,
   next: NextFunction
 ): Promise<void> {
-  try {
-    const userId = (req as any).user?.id;
-    if (!userId) {
-      res.status(401).json({ error: 'User not authenticated' });
-      return;
-    }
+  const userId = req.user?.id;
+  if (!userId) {
+    res.status(401).json({ error: 'User not authenticated' });
+    return;
+  }
 
-    // Check if user has credentials
-    const credExists = await CEXCredentialRepository.credentialsExist(userId);
-    if (!credExists) {
+  try {
+    // Single DB call instead of existence check + fetch
+    const credentials = await CEXCredentialRepository.getCredentialsByUserId(userId);
+    
+    if (!credentials) {
       res.status(400).json({
         error: 'CEX credentials not configured',
         message: 'User needs to set up exchange credentials first',
@@ -62,17 +77,6 @@ export async function cexAuthMiddleware(
       return;
     }
 
-    // Retrieve and decrypt credentials
-    const credentials = await CEXCredentialRepository.getCredentialsByUserId(userId);
-    if (!credentials) {
-      res.status(400).json({
-        error: 'CEX credentials not found',
-        message: 'Failed to retrieve credentials',
-      });
-      return;
-    }
-
-    // Check if credentials are active
     if (!credentials.isActive) {
       res.status(403).json({
         error: 'CEX credentials deactivated',
@@ -81,8 +85,8 @@ export async function cexAuthMiddleware(
       return;
     }
 
-    // Attach credentials to request
-    (req as any).cex = {
+    // Attach strongly-typed credentials
+    req.cex = {
       credentials: {
         userId,
         exchange: credentials.exchange,
@@ -93,90 +97,65 @@ export async function cexAuthMiddleware(
       credentialId: credentials.id,
     };
 
-    // Update last used timestamp
-    await CEXCredentialRepository.updateLastUsed(userId);
+    // Update last used timestamp in background
+    CEXCredentialRepository.updateLastUsed(userId).catch((err) =>
+      console.error('Failed to update last used timestamp:', err)
+    );
 
-    // Log access
-    const keyMgmt = KeyManagementService.getInstance();
-    await keyMgmt.logAudit('decrypt', 'api_credentials', true, undefined, userId);
+    // Audit log
+    logAuditAsync('decrypt', 'api_credentials', true, undefined, userId);
 
     next();
   } catch (error) {
-    const userId = (req as any).user?.id;
-    const keyMgmt = KeyManagementService.getInstance();
-    await keyMgmt.logAudit(
-      'decrypt',
-      'api_credentials',
-      false,
-      error instanceof Error ? error.message : String(error),
-      userId
-    );
+    const errorMessage = error instanceof Error ? error.message : String(error);
+    logAuditAsync('decrypt', 'api_credentials', false, errorMessage, userId);
 
     console.error('CEX auth middleware error:', error);
     res.status(500).json({
       error: 'Failed to retrieve credentials',
-      message: error instanceof Error ? error.message : 'Unknown error',
+      message: errorMessage,
     });
   }
 }
 
 /**
  * Middleware: Optionally retrieve CEX credentials (don't fail if not present)
- * 
- * Usage:
- * router.get('/prices', optionalCexAuthMiddleware, getPricesHandler);
  */
 export async function optionalCexAuthMiddleware(
   req: Request,
   res: Response,
   next: NextFunction
 ): Promise<void> {
-  try {
-    const userId = (req as any).user?.id;
-    if (!userId) {
-      // User not authenticated, continue without credentials
-      next();
-      return;
-    }
-
-    const credExists = await CEXCredentialRepository.credentialsExist(userId);
-    if (!credExists) {
-      // No credentials set up yet, continue without them
-      next();
-      return;
-    }
-
-    // Credentials exist, try to retrieve them
-    try {
-      const credentials = await CEXCredentialRepository.getCredentialsByUserId(userId);
-      if (credentials && credentials.isActive) {
-        (req as any).cex = {
-          credentials: {
-            userId,
-            exchange: credentials.exchange,
-            apiKey: credentials.apiKey,
-            apiSecret: credentials.apiSecret,
-            passphrase: credentials.passphrase,
-          },
-          credentialId: credentials.id,
-        };
-
-        await CEXCredentialRepository.updateLastUsed(userId);
-
-        const keyMgmt = KeyManagementService.getInstance();
-        await keyMgmt.logAudit('decrypt', 'api_credentials', true, undefined, userId);
-      }
-    } catch (error) {
-      // Log error but continue
-      console.warn('Optional CEX auth failed:', error);
-    }
-
-    next();
-  } catch (error) {
-    console.error('Optional CEX auth middleware error:', error);
-    // Continue anyway - this is optional
-    next();
+  const userId = req.user?.id;
+  if (!userId) {
+    return next();
   }
+
+  try {
+    const credentials = await CEXCredentialRepository.getCredentialsByUserId(userId);
+    if (credentials && credentials.isActive) {
+      req.cex = {
+        credentials: {
+          userId,
+          exchange: credentials.exchange,
+          apiKey: credentials.apiKey,
+          apiSecret: credentials.apiSecret,
+          passphrase: credentials.passphrase,
+        },
+        credentialId: credentials.id,
+      };
+
+      CEXCredentialRepository.updateLastUsed(userId).catch((err) =>
+        console.error('Failed to update last used timestamp:', err)
+      );
+
+      logAuditAsync('decrypt', 'api_credentials', true, undefined, userId);
+    }
+  } catch (error) {
+    console.warn('Optional CEX auth failed:', error);
+  }
+
+  next();
 }
 
 /**
@@ -187,10 +166,10 @@ export function validateExchange(
   res: Response,
   next: NextFunction
 ): void {
-  const exchange = req.params.exchange || req.body.exchange;
+  const exchange = (req.params.exchange || req.body.exchange)?.toString().toLowerCase();
   const validExchanges = ['binance', 'kraken', 'coinbase', 'bybit', 'kucoin', 'okx'];
 
-  if (!exchange || !validExchanges.includes(exchange.toLowerCase())) {
+  if (!exchange || !validExchanges.includes(exchange)) {
     res.status(400).json({
       error: 'Invalid exchange',
       message: `Exchange must be one of: ${validExchanges.join(', ')}`,
@@ -204,7 +183,6 @@ export function validateExchange(
 
 /**
  * Middleware: Validate trading pair format
- * Expected format: BTC/USDT, ETH/USD, etc.
  */
 export function validateTradingPair(
   req: Request,
@@ -236,25 +214,15 @@ export function validateCredentialRequest(
 ): void {
   const { apiKey, apiSecret } = req.body;
 
-  if (!apiKey || !apiSecret) {
-    res.status(400).json({
-      error: 'Missing required fields',
-      message: 'Both apiKey and apiSecret are required',
-      required: ['apiKey', 'apiSecret'],
-      optional: ['passphrase'],
-    });
-    return;
-  }
-
   if (typeof apiKey !== 'string' || typeof apiSecret !== 'string') {
     res.status(400).json({
       error: 'Invalid field types',
-      message: 'apiKey and apiSecret must be strings',
+      message: 'apiKey and apiSecret must be valid strings',
     });
     return;
   }
 
-  if (apiKey.length < 10 || apiSecret.length < 10) {
+  if (apiKey.trim().length < 10 || apiSecret.trim().length < 10) {
     res.status(400).json({
       error: 'Invalid credentials',
       message: 'API key and secret appear too short',
@@ -266,17 +234,29 @@ export function validateCredentialRequest(
 }
 
 /**
- * Middleware: Rate limiting for credential operations
- * Prevents brute force or abuse
+ * Middleware: Sliding-window rate limiting for credential operations
  */
 const credentialAccessLog = new Map<string, number[]>();
+
+// Run explicit cleanup interval every 5 minutes to prevent memory leaks
+setInterval(() => {
+  const oneMinuteAgo = Date.now() - 60000;
+  for (const [userId, times] of credentialAccessLog.entries()) {
+    const validTimes = times.filter((t) => t > oneMinuteAgo);
+    if (validTimes.length === 0) {
+      credentialAccessLog.delete(userId);
+    } else {
+      credentialAccessLog.set(userId, validTimes);
+    }
+  }
+}, 300000);
 
 export function rateLimitCredentials(
   req: Request,
   res: Response,
   next: NextFunction
 ): void {
-  const userId = (req as any).user?.id;
+  const userId = req.user?.id;
   if (!userId) {
     res.status(401).json({ error: 'User not authenticated' });
     return;
@@ -285,11 +265,10 @@ export function rateLimitCredentials(
   const now = Date.now();
   const oneMinuteAgo = now - 60000;
 
-  // Get access times for this user in the last minute
-  const accessTimes = (credentialAccessLog.get(userId) || [])
-    .filter(time => time > oneMinuteAgo);
+  const accessTimes = (credentialAccessLog.get(userId) || []).filter(
+    (time) => time > oneMinuteAgo
+  );
 
-  // Limit to 10 requests per minute
   if (accessTimes.length >= 10) {
     res.status(429).json({
       error: 'Too many requests',
@@ -299,21 +278,8 @@ export function rateLimitCredentials(
     return;
   }
 
-  // Record this access
   accessTimes.push(now);
   credentialAccessLog.set(userId, accessTimes);
-
-  // Cleanup old entries occasionally
-  if (Math.random() < 0.01) {
-    credentialAccessLog.forEach((times, user) => {
-      const filtered = times.filter(t => t > oneMinuteAgo);
-      if (filtered.length === 0) {
-        credentialAccessLog.delete(user);
-      } else {
-        credentialAccessLog.set(user, filtered);
-      }
-    });
-  }
 
   next();
 }
@@ -326,27 +292,19 @@ export async function handleCEXError(
   req: Request,
   res: Response
 ): Promise<void> {
-  const userId = (req as any).user?.id;
+  const userId = req.user?.id;
+  const message = error instanceof Error ? error.message : String(error);
 
   console.error('CEX operation error:', error);
 
-  // Log to audit trail
-  const keyMgmt = KeyManagementService.getInstance();
-  await keyMgmt.logAudit(
-    'decrypt',
-    'api_credentials',
-    false,
-    error.message,
-    userId
-  );
+  logAuditAsync('decrypt', 'api_credentials', false, message, userId);
 
-  // Return appropriate error response
-  if (error.message.includes('Decryption failed')) {
+  if (message.includes('Decryption failed')) {
     res.status(500).json({
       error: 'Credential decryption failed',
       message: 'Unable to access your credentials. This may indicate tampering.',
     });
-  } else if (error.message.includes('Master key')) {
+  } else if (message.includes('Master key')) {
     res.status(500).json({
       error: 'System configuration error',
       message: 'Encryption system not properly configured',
@@ -354,7 +312,7 @@ export async function handleCEXError(
   } else {
     res.status(500).json({
       error: 'CEX operation failed',
-      message: error.message,
+      message,
     });
   }
 }

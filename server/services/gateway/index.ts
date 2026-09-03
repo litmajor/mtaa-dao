@@ -390,12 +390,16 @@ class RealGasProvider {
       if (!prices) {
         return null;
       }
+      // Get optimal strategies for all tiers
+      const standardStrat = await gasPriceOracle.getOptimalGasStrategy(provider, normalizeChainName(chainId), 'standard');
+      const fastStrat = await gasPriceOracle.getOptimalGasStrategy(provider, normalizeChainName(chainId), 'fast');
+      const instantStrat = await gasPriceOracle.getOptimalGasStrategy(provider, normalizeChainName(chainId), 'instant');
 
       return {
         chainId,
-        standard: prices.standard,
-        fast: prices.fast,
-        instant: prices.instant,
+        standard: standardStrat.maxFeePerGas || standardStrat.gasPrice || prices.baseFee,
+        fast: fastStrat.maxFeePerGas || fastStrat.gasPrice || prices.baseFee,
+        instant: instantStrat.maxFeePerGas || instantStrat.gasPrice || prices.baseFee,
         estimatedTime: {
           standard: 30,
           fast: 10,

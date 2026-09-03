@@ -317,7 +317,7 @@ contract CrossChainBridge is Ownable, ReentrancyGuard, Pausable {
     /**
      * @notice Recommended gas limit for lzOptions when bridging TO `eid`.
      * The off-chain SDK should read this and build extraOptions with it
-     * (e.g. via @layerzerolabs/lz-v2-utilities Options.addExecutorLzReceiveOption)
+    * (e.g. via the LayerZero utilities package's Options.addExecutorLzReceiveOption)
      * rather than hardcoding a gas limit client-side.
      */
     function recommendedGasLimit(uint32 eid) external view returns (uint256) {

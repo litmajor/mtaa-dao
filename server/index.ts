@@ -9,6 +9,8 @@ import compression from 'compression';
 import { registerRoutes } from "./routes";
 import { setupWeeklyRewardsDistribution } from "./jobs/weeklyRewardsDistribution";
 import { setupInvestmentPoolsAutomation } from "./jobs/investmentPoolsAutomation";
+import { startSupportTicketMetricsJob } from './jobs/supportTicketMetrics';
+import { mtaaTokenomicsIndexer } from './services/mtaaTokenomicsIndexer';
 // Dev-only Vite helpers are dynamically imported later to avoid bundling Vite into the production server build
 import { logger, requestLogger, logStartup } from './utils/logger';
 import { initializeConsoleLogger, getConsoleLogger } from './utils/console-logger';
@@ -777,6 +779,8 @@ process.on('uncaughtException', (error) => {
 
     setupWeeklyRewardsDistribution();
     setupInvestmentPoolsAutomation();
+    startSupportTicketMetricsJob();
+    mtaaTokenomicsIndexer.start().catch(error => logger.warn('[STARTUP] MTAA tokenomics indexer disabled or failed', metaFromUnknown(error)));
     initializeAutoPromotionJob();
     initializePaymentRequestExpirationJob();
     ScheduledAggregationJobs.initializeScheduledJobs();
@@ -1544,7 +1548,7 @@ process.on('uncaughtException', (error) => {
     app.use('/api/v1/strategies', isAuthenticated, strategiesRouter); // 📈 V1 Strategies (core CRUD + execution + social)
     // ✅ CONSOLIDATED ADMIN ROUTES (Phase 1 - Migration Complete)
     // Requires authentication + superuser role
-    app.use('/api/admin', isAuthenticated, requireRole('super_admin'), adminConsolidated); // 👤 Admin operations + AI monitoring (UNIFIED)
+    app.use('/api/admin', adminConsolidated); // 👤 Admin operations + AI monitoring (UNIFIED)
     app.use('/api/defender', isAuthenticated, requireRole('super_admin'), defenderRoutes); // Registered defender routes
     if (!(app as any).locals?.routesRegistered) {
       app.use('/api/exchanges', isAuthenticated, exchangeRoutes); // CCXT Service - Phase 1
@@ -1645,6 +1649,23 @@ process.on('uncaughtException', (error) => {
     logger.info('✅ System diagnostics endpoints mounted at /api/diagnostics/*');
 
     // Setup Vite dev server or serve static files
+    // Security: add X-Robots-Tag header for sensitive front-end routes to prevent indexing
+    // Registered BEFORE the SPA catch-all so the header is present on index.html responses.
+    const noIndexPaths = ['/dashboard', '/wallet', '/treasury', '/admin', '/strategies'];
+    app.use((req, res, next) => {
+      try {
+        const reqPath = (req.path || req.originalUrl || '').toString();
+        for (const p of noIndexPaths) {
+          if (reqPath === p || reqPath.startsWith(p + '/') || reqPath.startsWith(p + '?') || reqPath.startsWith(p)) {
+            res.setHeader('X-Robots-Tag', 'noindex, nofollow');
+            break;
+          }
+        }
+      } catch (e) {
+        // best-effort only
+      }
+      next();
+    });
     if (env.NODE_ENV === "development") {
       try {
         const { setupVite } = await import('./vite');

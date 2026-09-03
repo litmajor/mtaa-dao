@@ -206,10 +206,36 @@ The report is written to visibility/architecture-report.json.
 
 ## 📦 Getting Started
 
+### Toolchain rule: Hardhat vs Foundry
+
+This repo intentionally uses two different smart-contract toolchains:
+
+- **Hardhat** is the active app toolchain for the main protocol contracts under `contracts/`.
+  Use it for compilation, deployments, and script execution.
+- **Foundry** is scoped to the local-only security research harness under `test/security/`.
+  It is not the default compiler for the application and should not be used to build the main app contract set.
+
+Safe commands for app contracts:
+
+```bash
+npm run contracts:compile
+npx hardhat compile
+npx hardhat run scripts/deploy.ts --network localhost
+```
+
+Safe commands for the security suite:
+
+```bash
+forge test -vv
+forge test --match-path 'test/security/**' -vv
+```
+
+> Do not run `forge build` or other repo-root Foundry commands against the app contracts unless the scope is explicitly limited to the security harness. This mismatch caused the a lot of environment confusion and is now documented as a hard rule.
+
 ### Prerequisites
 - **Node.js** 18+ (or 20+)
 - **npm** or **pnpm**
-- **PostgreSQL** 13+ (for database)
+- **PostgreSQL** 16+ (for database)
 - **Redis** 6+ (for caching)
 - **Wallet** with CELO/cUSD (for blockchain interaction)
 

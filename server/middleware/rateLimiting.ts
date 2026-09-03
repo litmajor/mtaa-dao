@@ -1,4 +1,4 @@
-import { Request, Response, NextFunction } from 'express';
+import type { Request, Response, NextFunction } from 'express';
 import { Logger } from '../utils/logger';
 
 const logger = new Logger('rate-limit-middleware');
@@ -21,6 +21,7 @@ export interface RateLimitConfig {
   skipSuccessfulRequests?: boolean; // Don't count successful requests
   skipFailedRequests?: boolean; // Don't count failed requests
   onLimitReached?: (req: Request, res: Response) => void; // Custom handler
+  store?: MemoryRateLimitStore; // Optional shared store for singleton limiters
 }
 
 export interface RateLimitStore {
@@ -39,7 +40,7 @@ class MemoryRateLimitStore {
   private cleanupInterval: NodeJS.Timeout;
 
   constructor(windowMs: number) {
-    // Cleanup old entries every minute
+    // Cleanup old entries every minute; unref so the timer does not keep the process alive.
     this.cleanupInterval = setInterval(() => {
       const now = Date.now();
       Object.keys(this.store).forEach((key) => {
@@ -48,6 +49,7 @@ class MemoryRateLimitStore {
         }
       });
     }, 60_000);
+    this.cleanupInterval.unref?.();
   }
 
   increment(key: string, windowMs: number): number {
@@ -64,6 +66,21 @@ class MemoryRateLimitStore {
 
     this.store[key].count++;
     return this.store[key].count;
+  }
+
+  decrement(key: string): number {
+    const existing = this.store[key];
+    if (!existing) {
+      return 0;
+    }
+
+    if (existing.count <= 1) {
+      delete this.store[key];
+      return 0;
+    }
+
+    existing.count--;
+    return existing.count;
   }
 
   getRemainingRequests(key: string, maxRequests: number): number {
@@ -83,16 +100,31 @@ class MemoryRateLimitStore {
   }
 }
 
+function normalizeClientIp(ip: string): string {
+  return ip.replace(/^::ffff:/, '').trim();
+}
+
 /**
  * Default key generator (IP-based)
  */
-function defaultKeyGenerator(req: Request): string {
-  return (
-    req.ip ||
-    req.connection.remoteAddress ||
-    req.socket.remoteAddress ||
-    'unknown'
-  ).toString();
+export function defaultKeyGenerator(req: Request): string {
+  const forwardedFor = req.headers['x-forwarded-for'];
+  if (typeof forwardedFor === 'string' && forwardedFor.trim().length > 0) {
+    return normalizeClientIp(forwardedFor.split(',')[0].trim());
+  }
+
+  if (Array.isArray(forwardedFor) && forwardedFor.length > 0) {
+    return normalizeClientIp(forwardedFor[0].split(',')[0].trim());
+  }
+
+  const realIp = req.headers['x-real-ip'];
+  if (typeof realIp === 'string' && realIp.trim().length > 0) {
+    return normalizeClientIp(realIp.trim());
+  }
+
+  return normalizeClientIp(
+    (req.ip || req.connection?.remoteAddress || req.socket?.remoteAddress || 'unknown').toString()
+  );
 }
 
 /**
@@ -106,9 +138,8 @@ export function createRateLimiter(config: RateLimitConfig) {
     skipSuccessfulRequests = false,
     skipFailedRequests = false,
     onLimitReached,
+    store = new MemoryRateLimitStore(windowMs),
   } = config;
-
-  const store = new MemoryRateLimitStore(windowMs);
 
   return (req: Request, res: Response, next: NextFunction) => {
     const key = keyGenerator(req);
@@ -144,11 +175,15 @@ export function createRateLimiter(config: RateLimitConfig) {
       return;
     }
 
-    // Track response to optionally skip counting
+    // Track response to optionally skip counting without double-incrementing the counter.
     if (skipSuccessfulRequests || skipFailedRequests) {
-      const originalSend = res.send;
+      let finalized = false;
+      const finalizeSkip = () => {
+        if (finalized) {
+          return;
+        }
 
-      res.send = function (data: any) {
+        finalized = true;
         const statusCode = res.statusCode;
         const isSuccess = statusCode >= 200 && statusCode < 300;
 
@@ -156,17 +191,28 @@ export function createRateLimiter(config: RateLimitConfig) {
           (skipSuccessfulRequests && isSuccess) ||
           (skipFailedRequests && !isSuccess)
         ) {
-          // Decrement count for this request
-          store.increment(key, 0); // Reset
+          store.decrement(key);
           logger.debug('Request skipped from rate limit', {
             key,
             statusCode,
             path: req.path,
           });
         }
-
-        return originalSend.call(this, data);
       };
+
+      const methodsToWrap = ['send', 'json', 'end', 'sendFile'] as const;
+      for (const methodName of methodsToWrap) {
+        const original = res[methodName] as Function | undefined;
+        if (typeof original !== 'function') {
+          continue;
+        }
+
+        res[methodName] = function (this: Response, ...args: any[]) {
+          const result = original.apply(this, args);
+          finalizeSkip();
+          return result;
+        } as any;
+      }
     }
 
     next();
@@ -177,13 +223,15 @@ export function createRateLimiter(config: RateLimitConfig) {
  * Selective rate limiter - only apply to routes that need it
  * Skip static assets, pages, components, and public routes
  */
+const globalRateLimiterStore = new MemoryRateLimitStore(15 * 60 * 1000);
+
 export const globalRateLimiter = (req: Request, res: Response, next: NextFunction) => {
   // Exempt these from rate limiting:
   // 1. Static assets (images, fonts, CSS, JS)
   // 2. Vite pages and components
   // 3. Public endpoints (health, public stats, etc.)
   // 4. Well-known routes
-  
+
   const exemptPatterns = [
     // Static assets
     /\.(png|jpg|jpeg|gif|svg|ico|webp|woff|woff2|ttf|eot)$/i,
@@ -248,6 +296,7 @@ export const globalRateLimiter = (req: Request, res: Response, next: NextFunctio
   const limiter = createRateLimiter({
     windowMs: 15 * 60 * 1000, // 15 minutes
     maxRequests: process.env.NODE_ENV === 'development' ? 5000 : 100,
+    store: globalRateLimiterStore,
   });
 
   limiter(req, res, next);

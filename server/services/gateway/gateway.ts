@@ -110,7 +110,9 @@ export class GatewayService extends EventEmitter {
       });
       return price;
     } catch (error) {
-      console.error(`Error fetching price for ${token}:`, error);
+      const errorMsg = error instanceof Error ? error.message : String(error);
+      // Log detailed error internally, don't expose to clients
+      this.emit('error', { context: 'getTokenPrice', token, chainId, error: errorMsg });
       return null;
     }
   }
@@ -178,7 +180,9 @@ export class GatewayService extends EventEmitter {
       this.setCached(this.state.liquidity, cacheKey, liquidity, CACHE_TTL.LIQUIDITY);
       return liquidity;
     } catch (error) {
-      console.error(`Error fetching liquidity:`, error);
+      const errorMsg = error instanceof Error ? error.message : String(error);
+      // Log detailed error internally, don't expose to clients
+      this.emit('error', { context: 'getLiquidityInfo', tokenA, tokenB, chainId, error: errorMsg });
       return null;
     }
   }

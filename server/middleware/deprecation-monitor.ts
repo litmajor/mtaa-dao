@@ -3,28 +3,41 @@
  * Tracks usage of deprecated endpoints for migration planning
  */
 
-import { Request, Response, NextFunction } from 'express';
+import type { Request, Response, NextFunction } from 'express';
 import { Logger } from '../utils/logger';
 import fs from 'fs';
 import path from 'path';
+import { cacheService } from '../services/cacheService';
 
 const logger = new Logger('deprecation-monitor');
 
 /**
- * In-memory storage for deprecation metrics
- * In production, consider using Redis or a time-series database
+ * Redis and In-memory storage for deprecation metrics
+ * Time series database considered
  */
+const MAX_UNIQUE_USERS_PER_ENDPOINT = 1000;
+const DEPRECATION_CACHE_PREFIX = 'deprecation-monitor:';
+
 class DeprecationMonitor {
   private metrics = new Map<string, {
     endpoint: string;
     count: number;
     lastUsed: Date;
-    users: Set<string>;
+    users: Map<string, number>;
     errors: number;
     avgResponseTime: number;
   }>();
 
   private requestTimings = new Map<string, number[]>();
+
+  private async persistMetricToRedis(endpoint: string, metric: { endpoint: string; count: number; lastUsed: string; users: string[]; errors: number; avgResponseTime: number }) {
+    try {
+      const key = `${DEPRECATION_CACHE_PREFIX}${endpoint}`;
+      await cacheService.set(key, metric, 60 * 60 * 24 * 7); // 7-day retention
+    } catch (error) {
+      logger.debug('[DEPRECATION] Redis persistence unavailable', { endpoint, error });
+    }
+  }
 
   /**
    * Record deprecated endpoint usage
@@ -42,7 +55,7 @@ class DeprecationMonitor {
         endpoint,
         count: 0,
         lastUsed: new Date(),
-        users: new Set(),
+        users: new Map(),
         errors: 0,
         avgResponseTime: 0,
       });
@@ -53,7 +66,15 @@ class DeprecationMonitor {
     metric.lastUsed = new Date();
 
     if (userId) {
-      metric.users.add(userId);
+      if (!metric.users.has(userId)) {
+        if (metric.users.size >= MAX_UNIQUE_USERS_PER_ENDPOINT) {
+          const oldestUser = metric.users.keys().next().value;
+          if (oldestUser) metric.users.delete(oldestUser);
+        }
+        metric.users.set(userId, Date.now());
+      } else {
+        metric.users.set(userId, Date.now());
+      }
     }
 
     if (statusCode >= 400) {
@@ -73,6 +94,17 @@ class DeprecationMonitor {
     }
     const sum = timings.reduce((a, b) => a + b, 0);
     metric.avgResponseTime = Math.round(sum / timings.length);
+
+    const snapshot = {
+      endpoint: metric.endpoint,
+      count: metric.count,
+      lastUsed: metric.lastUsed.toISOString(),
+      users: Array.from(metric.users.keys()),
+      errors: metric.errors,
+      avgResponseTime: metric.avgResponseTime,
+    };
+
+    void this.persistMetricToRedis(endpoint, snapshot);
 
     logger.debug(`[DEPRECATION] Endpoint usage recorded`, {
       endpoint,
@@ -107,7 +139,7 @@ class DeprecationMonitor {
   /**
    * Export metrics to JSON file for analysis
    */
-  exportMetrics(filePath?: string) {
+  async exportMetrics(filePath?: string) {
     const file = filePath || path.join(process.cwd(), 'deprecation-metrics.json');
     const data = {
       exportedAt: new Date().toISOString(),
@@ -116,12 +148,13 @@ class DeprecationMonitor {
         total_deprecated_endpoints: this.metrics.size,
         total_requests: Array.from(this.metrics.values()).reduce((sum, m) => sum + m.count, 0),
         total_unique_users: new Set(
-          Array.from(this.metrics.values()).flatMap(m => Array.from(m.users))
+          Array.from(this.metrics.values()).flatMap(m => Array.from(m.users.keys()))
         ).size,
       },
     };
 
-    fs.writeFileSync(file, JSON.stringify(data, null, 2));
+    await fs.promises.mkdir(path.dirname(file), { recursive: true });
+    await fs.promises.writeFile(file, JSON.stringify(data, null, 2), 'utf8');
     logger.info(`[DEPRECATION] Metrics exported to ${file}`);
 
     return data;
@@ -216,9 +249,14 @@ class DeprecationMonitor {
   /**
    * Clear metrics (useful for testing)
    */
-  clear() {
+  async clear() {
     this.metrics.clear();
     this.requestTimings.clear();
+    try {
+      await cacheService.deleteByPrefix(DEPRECATION_CACHE_PREFIX);
+    } catch (error) {
+      logger.debug('[DEPRECATION] Redis clear skipped', { error });
+    }
   }
 }
 
@@ -231,21 +269,39 @@ export const deprecationMonitor = new DeprecationMonitor();
  * @example
  * app.use('/api/governance/:daoId', trackDeprecatedEndpoint('/api/governance'));
  */
-export function trackDeprecatedEndpoint(endpoint: string) {
+export interface DeprecatedEndpointOptions {
+  sunsetDate?: Date | string | number;
+  docsUrl?: string;
+  deprecationMessage?: string;
+}
+
+export function trackDeprecatedEndpoint(
+  endpoint: string,
+  options: DeprecatedEndpointOptions = {}
+) {
   return (req: Request, res: Response, next: NextFunction) => {
     const startTime = Date.now();
-    const userId = (req as any).user?.id || (req as any).user?.claims?.sub || null;
+    const userId = req.user?.id || req.user?.claims?.sub || null;
+    const sunsetDate = new Date(options.sunsetDate ?? Date.now() + 90 * 24 * 60 * 60 * 1000);
+    const docsUrl = options.docsUrl ?? 'https://docs.mtaadao.com/api-deprecations';
+    const deprecationMessage =
+      options.deprecationMessage || 'Deprecated API endpoint: migrate to the current DAO route structure.';
 
-    // Override res.send to track response
-    const originalSend = res.send;
-    res.send = function(data: any) {
+    res.setHeader('Deprecation', 'true');
+    res.setHeader('Sunset', sunsetDate.toUTCString());
+    res.setHeader('Link', `<${docsUrl}>; rel="deprecation"`);
+    res.setHeader('Warning', `299 - "${deprecationMessage}"`);
+
+    let finalised = false;
+    const finalize = () => {
+      if (finalised) return;
+      finalised = true;
+
       const responseTime = Date.now() - startTime;
       const statusCode = res.statusCode;
 
-      // Record usage
       deprecationMonitor.recordUsage(endpoint, userId, statusCode, responseTime);
 
-      // Log
       logger.warn(`[DEPRECATED] ${endpoint}`, {
         method: req.method,
         path: req.path,
@@ -253,9 +309,10 @@ export function trackDeprecatedEndpoint(endpoint: string) {
         statusCode,
         responseTimeMs: responseTime,
       });
-
-      return originalSend.call(this, data);
     };
+
+    res.once('finish', finalize);
+    res.once('close', finalize);
 
     next();
   };
@@ -302,9 +359,9 @@ export function getDeprecationReport(req: Request, res: Response) {
  *   res.json({ success: true, exported: data });
  * });
  */
-export function exportDeprecationMetrics(req: Request, res: Response) {
+export async function exportDeprecationMetrics(req: Request, res: Response) {
   try {
-    const data = deprecationMonitor.exportMetrics();
+    const data = await deprecationMonitor.exportMetrics();
     res.json({
       success: true,
       message: 'Metrics exported to deprecation-metrics.json',

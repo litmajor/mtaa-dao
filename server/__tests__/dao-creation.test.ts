@@ -5,7 +5,7 @@ import { v4 as uuidv4 } from 'uuid';
 import { daos, users } from '../../shared/schema';
 import { daoDeployHandler } from '../api/dao_deploy';
 import { sharedIdempotencyManager } from '../services/sharedIdempotencyManager';
-import { Request, Response } from 'express';
+import type { Request, Response } from 'express';
 
 describe('Tier 3: DAO Creation', () => {
   let founderWallet: string;

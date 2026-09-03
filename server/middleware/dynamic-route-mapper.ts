@@ -3,7 +3,8 @@
  * Provides defender agent visibility into all registered routes and their security status
  */
 
-import { Express, Router, Request, Response, NextFunction } from 'express';
+import { Router } from 'express';
+import type { Express, Request, Response, NextFunction } from 'express';
 import { Logger } from '../utils/logger';
 
 const logger = new Logger('route-mapper');
@@ -34,15 +35,21 @@ export interface MappedRoute {
  */
 export class DynamicRouteMapper {
   private routes = new Map<string, MappedRoute>();
-  private routeMetrics = new Map<string, { requests: number; errors: number; avgResponseTime: number }>();
+  private routeMetrics = new Map<
+    string,
+    { requests: number; errors: number; totalTimeMs: number; avgResponseTime: number }
+  >();
 
   /**
    * Register a route with security metadata
    */
-  registerRoute(route: MappedRoute) {
+  registerRoute(route: MappedRoute): void {
     const key = `${route.method}:${route.path}`;
     this.routes.set(key, route);
-    this.routeMetrics.set(key, { requests: 0, errors: 0, avgResponseTime: 0 });
+
+    if (!this.routeMetrics.has(key)) {
+      this.routeMetrics.set(key, { requests: 0, errors: 0, totalTimeMs: 0, avgResponseTime: 0 });
+    }
 
     logger.debug(`[ROUTE_MAPPER] Route registered`, {
       key,
@@ -62,28 +69,30 @@ export class DynamicRouteMapper {
    * Defender agent: Get high-risk routes
    */
   getHighRiskRoutes(): MappedRoute[] {
-    return Array.from(this.routes.values()).filter(r => r.riskLevel === 'critical');
+    return Array.from(this.routes.values()).filter(
+      (r) => r.riskLevel === 'high' || r.riskLevel === 'critical'
+    );
   }
 
   /**
    * Defender agent: Get unprotected routes
    */
   getUnprotectedRoutes(): MappedRoute[] {
-    return Array.from(this.routes.values()).filter(r => !r.protected);
+    return Array.from(this.routes.values()).filter((r) => !r.protected);
   }
 
   /**
    * Defender agent: Get routes by owner/service
    */
   getRoutesByOwner(owner: string): MappedRoute[] {
-    return Array.from(this.routes.values()).filter(r => r.owner === owner);
+    return Array.from(this.routes.values()).filter((r) => r.owner === owner);
   }
 
   /**
    * Defender agent: Get routes by tag
    */
   getRoutesByTag(tag: string): MappedRoute[] {
-    return Array.from(this.routes.values()).filter(r => r.tags.includes(tag));
+    return Array.from(this.routes.values()).filter((r) => r.tags.includes(tag));
   }
 
   /**
@@ -99,11 +108,15 @@ export class DynamicRouteMapper {
     unprotectedHighRiskRoutes: MappedRoute[];
   } {
     const allRoutes = this.getAllRoutes();
-    const protected_ = allRoutes.filter(r => r.protected).length;
-    const unprotected = allRoutes.filter(r => !r.protected).length;
-    const critical = allRoutes.filter(r => r.riskLevel === 'critical').length;
-    const highRisk = allRoutes.filter(r => r.riskLevel === 'high' || r.riskLevel === 'critical').length;
-    const unprotectedHighRisk = allRoutes.filter(r => !r.protected && (r.riskLevel === 'high' || r.riskLevel === 'critical'));
+    const protected_ = allRoutes.filter((r) => r.protected).length;
+    const unprotected = allRoutes.filter((r) => !r.protected).length;
+    const critical = allRoutes.filter((r) => r.riskLevel === 'critical').length;
+    const highRisk = allRoutes.filter(
+      (r) => r.riskLevel === 'high' || r.riskLevel === 'critical'
+    ).length;
+    const unprotectedHighRisk = allRoutes.filter(
+      (r) => !r.protected && (r.riskLevel === 'high' || r.riskLevel === 'critical')
+    );
 
     return {
       totalRoutes: allRoutes.length,
@@ -111,16 +124,16 @@ export class DynamicRouteMapper {
       unprotectedRoutes: unprotected,
       criticalRoutes: critical,
       highRiskRoutes: highRisk,
-      coverage: `${((protected_ / allRoutes.length) * 100).toFixed(1)}%`,
+      coverage: allRoutes.length > 0 ? `${((protected_ / allRoutes.length) * 100).toFixed(1)}%` : '0.0%',
       unprotectedHighRiskRoutes: unprotectedHighRisk,
     };
   }
 
   /**
-   * Record route access
+   * Record route access using canonical route path
    */
-  recordAccess(method: string, path: string, statusCode: number, responseTimeMs: number) {
-    const key = `${method}:${path}`;
+  recordAccess(method: string, path: string, statusCode: number, responseTimeMs: number): void {
+    const key = `${method.toUpperCase()}:${path}`;
     const route = this.routes.get(key);
 
     if (route) {
@@ -131,18 +144,17 @@ export class DynamicRouteMapper {
       if (statusCode >= 400) {
         route.accessLog.lastError = `HTTP ${statusCode}`;
       }
+    }
 
-      const metrics = this.routeMetrics.get(key);
-      if (metrics) {
-        metrics.requests++;
-        if (statusCode >= 400) {
-          metrics.errors++;
-        }
-
-        // Update average response time
-        const totalTime = metrics.avgResponseTime * (metrics.requests - 1) + responseTimeMs;
-        metrics.avgResponseTime = Math.round(totalTime / metrics.requests);
+    const metrics = this.routeMetrics.get(key);
+    if (metrics) {
+      metrics.requests++;
+      if (statusCode >= 400) {
+        metrics.errors++;
       }
+
+      metrics.totalTimeMs += responseTimeMs;
+      metrics.avgResponseTime = Math.round(metrics.totalTimeMs / metrics.requests);
     }
   }
 
@@ -150,7 +162,7 @@ export class DynamicRouteMapper {
    * Get route metrics for defender agent analysis
    */
   getRouteMetrics(method: string, path: string) {
-    const key = `${method}:${path}`;
+    const key = `${method.toUpperCase()}:${path}`;
     const route = this.routes.get(key);
     const metrics = this.routeMetrics.get(key);
 
@@ -163,7 +175,10 @@ export class DynamicRouteMapper {
       metrics: {
         requests: metrics.requests,
         errors: metrics.errors,
-        errorRate: metrics.requests > 0 ? ((metrics.errors / metrics.requests) * 100).toFixed(2) : '0',
+        errorRate:
+          metrics.requests > 0
+            ? ((metrics.errors / metrics.requests) * 100).toFixed(2)
+            : '0',
         avgResponseTime: metrics.avgResponseTime,
       },
     };
@@ -212,7 +227,7 @@ export class DynamicRouteMapper {
   exportRouteMap() {
     return {
       exportedAt: new Date().toISOString(),
-      routes: this.getAllRoutes().map(r => ({
+      routes: this.getAllRoutes().map((r) => ({
         method: r.method,
         path: r.path,
         protected: r.protected,
@@ -234,18 +249,18 @@ export const dynamicRouteMapper = new DynamicRouteMapper();
 /**
  * Middleware: Automatic route access tracking for defender agent
  */
-export function trackRouteAccess(req: Request, res: Response, next: NextFunction) {
+export function trackRouteAccess(req: Request, res: Response, next: NextFunction): void {
   const startTime = Date.now();
-  const method = req.method;
-  const path = req.path;
 
-  // Override res.send to track response
-  const originalSend = res.send;
-  res.send = function(data: any) {
+  res.on('finish', () => {
     const responseTime = Date.now() - startTime;
-    dynamicRouteMapper.recordAccess(method, path, res.statusCode, responseTime);
-    return originalSend.call(this, data);
-  };
+    // Construct target parametric route pattern (e.g. /api/v1 + /user/:id) to prevent metric cardinality explosion
+    const routePath = req.route
+      ? `${req.baseUrl || ''}${req.route.path}`
+      : req.path;
+
+    dynamicRouteMapper.recordAccess(req.method, routePath, res.statusCode, responseTime);
+  });
 
   next();
 }
@@ -254,85 +269,62 @@ export function trackRouteAccess(req: Request, res: Response, next: NextFunction
  * Express plugin: Auto-register routes from app
  * Scans Express app and registers all routes with defender agent
  */
-export function registerExpressRoutes(app: Express) {
+export function registerExpressRoutes(app: Express): void {
   const routes: MappedRoute[] = [];
+
+  function cleanPrefix(regex: RegExp): string {
+    if (!regex || !regex.source) return '';
+    const src = regex.source;
+    if (src === '^\\/?(?=\\/|$)' || src === '^\\/$') return '';
+
+    return src
+      .replace(/^\^/, '')
+      .replace(/\\\//g, '/')
+      .replace(/\?\(\?=\/\|\$\)/g, '')
+      .replace(/\/\?\$?/g, '')
+      .replace(/\(\?:\(\[\^\\\/\]\+\?\)\)/g, ':id');
+  }
 
   /**
    * Recursively scan router layers
    */
   function scanRouter(router: any, basePath: string = '') {
-    if (!router.stack) return;
+    if (!router || !router.stack) return;
 
     for (const layer of router.stack) {
       if (layer.route) {
-        // It's a route
-        // Ensure both basePath and route.path are strings (safety check)
+        // Concrete Route Layer
         const routePath = typeof layer.route.path === 'string' ? layer.route.path : '';
-        const path = (basePath + routePath).replace(/RegExp/g, ''); // Remove any stray RegExp strings
-        
+        const fullPath = `${basePath}${routePath}`.replace(/\/+/g, '/');
+
         // Skip routes with invalid paths
-        if (!path || typeof path !== 'string') {
+        if (!fullPath || typeof fullPath !== 'string') {
           continue;
         }
-        
+
         const methods = Object.keys(layer.route.methods) as any[];
 
         for (const method of methods) {
           routes.push({
             method: method.toUpperCase() as any,
-            path,
+            path: fullPath || '/',
             handler: layer.route.stack?.[0]?.name || 'anonymous',
             middleware: layer.route.stack?.map((s: any) => s.name || 'middleware') || [],
-            tags: extractTags(path),
-            riskLevel: assessRiskLevel(path),
+            tags: extractTags(fullPath),
+            riskLevel: assessRiskLevel(fullPath),
             accessLog: {
               totalRequests: 0,
             },
             protected: hasProtectionMiddleware(layer.route.stack),
-            description: `${method.toUpperCase()} ${path}`,
-            owner: extractOwner(path),
+            description: `${method.toUpperCase()} ${fullPath}`,
+            owner: extractOwner(fullPath),
           });
         }
-      } else if (layer.name === 'router' && layer.handle.stack) {
-        // It's a sub-router
-        // Properly extract the path prefix from the router layer
-        // layer.regexp is Express's internal regex for matching, e.g., /^\/v1\/?$/i for /v1
-        let prefix = '';
-        
-        // First, try to use the mount path if available
-        if (layer.route && typeof layer.route.path === 'string') {
-          prefix = layer.route.path;
-        } else if (layer.regexp && typeof layer.regexp.source === 'string') {
-          // Extract path from regexp source more carefully
-          // Express regexes typically look like: /^\/path\/?$/i or /^\/path(?:\/|$)/i
-          const regexSource = layer.regexp.source;
-          
-          // Skip if this looks like a parameter pattern (e.g., for :id matching)
-          if (regexSource.includes('(?:') || regexSource.includes('\\d')) {
-            // This is likely a parameter pattern, skip it
-            prefix = '';
-          } else {
-            // Remove start anchor, end anchor, and common suffixes
-            let path = regexSource
-              .replace(/^\^/, '')           // Remove start anchor ^
-              .replace(/\$.*$/, '')         // Remove end anchor and beyond
-              .replace(/\(\?:\\\\\/\|\$\)$/g, '') // Remove optional trailing slash pattern
-              .replace(/\\\/\|\$/, '')      // Remove | pattern
-              .replace(/\\\//g, '/');       // Unescape forward slashes
-            
-            // Clean up any remaining regex metacharacters
-            if (path && path !== '/' && !path.includes('RegExp')) {
-              prefix = path;
-            }
-          }
-        }
-        
-        // Ensure prefix is a string (safety check to prevent RegExp objects)
-        if (typeof prefix !== 'string') {
-          prefix = '';
-        }
-        
-        scanRouter(layer.handle, basePath + prefix);
+      } else if (layer.name === 'router' && layer.handle?.stack) {
+        // Sub-router
+        const prefix = cleanPrefix(layer.regexp);
+        const nextBasePath = `${basePath}/${prefix}`.replace(/\/+/g, '/');
+        scanRouter(layer.handle, nextBasePath);
       }
     }
   }
@@ -364,7 +356,9 @@ export function registerExpressRoutes(app: Express) {
       .join(' ')
       .toLowerCase();
 
-    return /(authenticate|authorization|authorize|requirerole|requiredaorole|requiredaorole|auth|token|session|jwt|privilege)/.test(middlewareNames);
+    return /(authenticate|authorization|authorize|requirerole|requiredaorole|auth|token|session|jwt|privilege)/.test(
+      middlewareNames
+    );
   }
 
   function extractOwner(path: string): string {
@@ -377,7 +371,9 @@ export function registerExpressRoutes(app: Express) {
   }
 
   // Scan the app
-  scanRouter(app._router);
+  if (app._router && app._router.stack) {
+    scanRouter(app._router);
+  }
 
   // Register all found routes
   for (const route of routes) {
@@ -398,7 +394,7 @@ export function registerExpressRoutes(app: Express) {
 
   if (audit.unprotectedHighRiskRoutes.length > 0) {
     logger.warn('[ROUTE_MAPPER] Unprotected high-risk routes found!', {
-      routes: audit.unprotectedHighRiskRoutes.map(r => `${r.method} ${r.path}`),
+      routes: audit.unprotectedHighRiskRoutes.map((r) => `${r.method} ${r.path}`),
     });
   }
 }
@@ -415,15 +411,15 @@ export function getRouteStatistics() {
     audit,
     problematic,
     routesByRisk: {
-      critical: routes.filter(r => r.riskLevel === 'critical').length,
-      high: routes.filter(r => r.riskLevel === 'high').length,
-      medium: routes.filter(r => r.riskLevel === 'medium').length,
-      low: routes.filter(r => r.riskLevel === 'low').length,
+      critical: routes.filter((r) => r.riskLevel === 'critical').length,
+      high: routes.filter((r) => r.riskLevel === 'high').length,
+      medium: routes.filter((r) => r.riskLevel === 'medium').length,
+      low: routes.filter((r) => r.riskLevel === 'low').length,
     },
     routesByTag: Object.fromEntries(
-      Array.from(new Set(routes.flatMap(r => r.tags))).map(tag => [
+      Array.from(new Set(routes.flatMap((r) => r.tags))).map((tag) => [
         tag,
-        routes.filter(r => r.tags.includes(tag)).length,
+        routes.filter((r) => r.tags.includes(tag)).length,
       ])
     ),
   };

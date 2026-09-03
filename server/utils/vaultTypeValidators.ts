@@ -10,7 +10,7 @@
  * - deployment: smart contract deployment, no withdraw
  * - custom: no constraints
  * 
- * ✅ TYPE-SAFE: Full TypeScript validation
+ *  TYPE-SAFE: Full TypeScript validation
  */
 
 import { z } from 'zod';

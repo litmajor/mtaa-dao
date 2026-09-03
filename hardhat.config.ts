@@ -1,151 +1,140 @@
 // hardhat.config.ts
-// Production-Ready Hardhat Configuration with Security Hardening
-
+// This is the app-level Hardhat configuration for the main smart-contract toolchain.
+// It compiles and deploys the repository's production Solidity contracts under ./contracts.
+//
+// IMPORTANT: Do not treat Foundry as the default compiler for the app stack.
+// The project intentionally uses two separate toolchains:
+//   - Hardhat: production contracts, deployment, compile checks, and app-level scripts.
+//   - Foundry: isolated security research suite under ./test/security and ./test/security/harness.
+//
+// Standard dev fallback for compile-only checks when env vars are not configured:
+//   $key='0x0123456789012345678901234567890123456789012345678901234567890123';
+//   $env:PRIVATE_KEY=$key; $env:CELO_ALFAJORES_PRIVATE_KEY=$key; $env:CELO_MAINNET_PRIVATE_KEY=$key; $env:POLYGON_MAINNET_PRIVATE_KEY=$key;
+//   npx hardhat compile
+//
+// This avoids exposing real private keys in local development. Use real credentials via
+// environment variables or a secrets manager in production.
+//
+// Rule for future work: use `npx hardhat ...` / `npm run contracts:compile` for app contracts.
+// Use `forge ...` only for the locally scoped security harness defined in foundry.toml.
+// Do not run `forge build` or other Foundry commands against the app contract set unless
+// the scope is explicitly restricted to the security harness.
 import hardhatToolboxMochaEthersPlugin from "@nomicfoundation/hardhat-toolbox-mocha-ethers";
+import "@nomicfoundation/hardhat-verify";
 import { HardhatUserConfig } from "hardhat/config";
-// Note: `hardhat-gas-reporter` is incompatible with Hardhat 3 in this project setup.
-// Temporarily remove its import to avoid runtime errors during migration.
-// import "hardhat-gas-reporter";
 import * as dotenv from "dotenv";
 
-// Securely initialize environment variables before parsing config
 dotenv.config();
 
-const config = {
+// Helper to sanitize private keys safely
+const getPrivateKey = (key?: string): string[] => {
+  if (!key || key.trim() === "") return [];
+  return key.startsWith("0x") ? [key] : [`0x${key}`];
+};
+
+const config: HardhatUserConfig = {
+  // The app-level contract toolchain intentionally does not depend on Foundry.
+  // Foundry is reserved for the local security research suite in ./test/security.
   plugins: [hardhatToolboxMochaEthersPlugin],
 
-  
   solidity: {
     version: "0.8.24",
     settings: {
       evmVersion: "cancun",
-      viaIR: true,
+      viaIR: true, // Prevents "Stack Too Deep" & cuts contract bytecode size
       optimizer: {
         enabled: true,
-        runs: 200,  // Optimization for code size
+        runs: 1, // Optimizes for lowest deployment size
+      },
+      metadata: {
+        bytecodeHash: "none",
       },
     },
   },
 
-  // Build `networks` programmatically so we avoid adding entries with empty URLs
-  networks: (() => {
-    const base: Record<string, any> = {
-      hardhat: {
-        type: "edr-simulated",
-        chainId: 31337,
-        forking: process.env.FORKING === "true" && process.env.MAINNET_RPC_URL
-          ? { enabled: true, url: process.env.MAINNET_RPC_URL }
+  networks: {
+    hardhat: {
+      type: "edr-simulated",
+      chainId: 31337,
+      forking:
+        process.env.FORKING === "true" && process.env.MAINNET_RPC_URL
+          ? {
+              url: process.env.MAINNET_RPC_URL,
+              enabled: true,
+            }
           : undefined,
-      },
-
-      localhost: {
-        type: "http",
-        url: "http://127.0.0.1:8545",
-      },
-
-      sepolia: {
-        type: "http",
-        url: process.env.SEPOLIA_RPC_URL || "https://rpc.sepolia.org",
-        accounts: process.env.PRIVATE_KEY ? [process.env.PRIVATE_KEY] : [],
-        gasPrice: 2_000_000_000,
-        chainId: 11155111,
-        timeout: 40_000,
-      },
-
-      amoy: {
-        type: "http",
-        url: process.env.AMOY_RPC_URL || "https://rpc-amoy.polygon.technology",
-        accounts: process.env.PRIVATE_KEY ? [process.env.PRIVATE_KEY] : [],
-        gasPrice: 30_000_000_000,
-        chainId: 80002,
-      },
-
-      celo_alfajores: {
-        type: "http",
-        url: process.env.CELO_ALFAJORES_RPC_URL || "https://alfajores-forno.celo-testnet.org",
-        accounts: process.env.CELO_ALFAJORES_PRIVATE_KEY ? [process.env.CELO_ALFAJORES_PRIVATE_KEY] : [],
-        gasPrice: 1_000_000_000,
-        chainId: 44787,
-        timeout: 40_000,
-      },
-
-      celo_mainnet: {
-        type: "http",
-        url: process.env.CELO_MAINNET_RPC_URL || "https://forno.celo.org",
-        accounts: process.env.CELO_MAINNET_PRIVATE_KEY ? [process.env.CELO_MAINNET_PRIVATE_KEY] : [],
-        gasPrice: 2_000_000_000,
-        chainId: 42220,
-        timeout: 60_000,
-      },
-
-      polygon_mainnet: {
-        type: "http",
-        url: process.env.POLYGON_MAINNET_RPC_URL || "https://polygon-rpc.com",
-        accounts: process.env.POLYGON_MAINNET_PRIVATE_KEY ? [process.env.POLYGON_MAINNET_PRIVATE_KEY] : [],
-        gasPrice: 100_000_000_000,
-        chainId: 137,
-        timeout: 60_000,
-      },
-    };
-
-    // Only add `mainnet` when an RPC URL is provided to avoid validation errors
-    if (process.env.MAINNET_RPC_URL) {
-      base.mainnet = {
-        type: "http",
-        url: process.env.MAINNET_RPC_URL,
-        accounts: process.env.PRIVATE_KEY ? [process.env.PRIVATE_KEY] : [],
-        gasPrice: 50_000_000_000,
-        chainId: 1,
-        timeout: 60_000,
-      };
-    }
-
-    return base;
-  })(),
-
-  etherscan: {
-    apiKey: {
-      sepolia: process.env.ETHERSCAN_API_KEY || "",
-      mainnet: process.env.ETHERSCAN_API_KEY || "",
-      polygon: process.env.POLYGONSCAN_API_KEY || "",
-      polygonAmoy: process.env.POLYGONSCAN_API_KEY || "",
-      celo: process.env.CELOSCAN_API_KEY || "",
-      alfajores: process.env.CELOSCAN_API_KEY || "",
     },
-    customChains: [
-      {
-        network: "celo",
-        chainId: 42220,
-        urls: { apiURL: "https://api.celoscan.io/api", browserURL: "https://celoscan.io/" }
-      },
-      {
-        network: "alfajores",
-        chainId: 44787,
-        urls: { apiURL: "https://api-alfajores.celoscan.io/api", browserURL: "https://alfajores.celoscan.io/" }
-      }
-    ]
+
+    localhost: {
+      type: "http",
+      url: "http://127.0.0.1:8545",
+      chainId: 31337,
+    },
+
+    sepolia: {
+      type: "http",
+      url: process.env.SEPOLIA_RPC_URL || "https://rpc.sepolia.org",
+      accounts: getPrivateKey(process.env.PRIVATE_KEY),
+      chainId: 11155111,
+      gasPrice: 2_000_000_000,
+      timeout: 40000,
+    },
+
+    amoy: {
+      type: "http",
+      url: process.env.AMOY_RPC_URL || "https://rpc-amoy.polygon.technology",
+      accounts: getPrivateKey(process.env.PRIVATE_KEY),
+      chainId: 80002,
+      gasPrice: 30_000_000_000,
+    },
+
+    celo_alfajores: {
+      type: "http",
+      url: process.env.CELO_ALFAJORES_RPC_URL || "https://alfajores-forno.celo-testnet.org",
+      accounts: getPrivateKey(process.env.CELO_ALFAJORES_PRIVATE_KEY || process.env.PRIVATE_KEY),
+      chainId: 44787,
+      gasPrice: 1_000_000_000,
+      timeout: 40000,
+    },
+
+    celo_mainnet: {
+      type: "http",
+      url: process.env.CELO_MAINNET_RPC_URL || "https://forno.celo.org",
+      accounts: getPrivateKey(process.env.CELO_MAINNET_PRIVATE_KEY || process.env.PRIVATE_KEY),
+      chainId: 42220,
+      gasPrice: 2_000_000_000,
+      timeout: 60000,
+    },
+
+    polygon_mainnet: {
+      type: "http",
+      url: process.env.POLYGON_MAINNET_RPC_URL || "https://polygon-rpc.com",
+      accounts: getPrivateKey(process.env.POLYGON_MAINNET_PRIVATE_KEY || process.env.PRIVATE_KEY),
+      chainId: 137,
+      gasPrice: 100_000_000_000,
+      timeout: 60000,
+    },
   },
 
-  gasReporter: {
-    enabled: process.env.REPORT_GAS === "true",
-    currency: "USD",
-    coinmarketcap: process.env.COINMARKETCAP_API_KEY,
-    outputFile: "gas-report.txt",
-    noColors: false,
+  // Verification configuration block for Hardhat 3
+  verify: {
+    etherscan: {
+      apiKey: process.env.ETHERSCAN_API_KEY || "",
+    },
   },
 
   paths: {
+    // Keep the app-contract toolchain isolated from the Foundry-only security suite in ./test/security.
+    // Hardhat should compile only the production contract source tree, not the Foundry harness/test files.
     sources: "./contracts",
     tests: "./tests",
     cache: "./cache",
     artifacts: "./artifacts",
   },
 
-  // TypeChain for type-safe contract interactions
   typechain: {
-    outDir: "typechain",
-    target: "ethers-v6",
+    outDir: "typechain-types",
   },
-} as HardhatUserConfig;
+} as unknown as HardhatUserConfig;
 
 export default config;

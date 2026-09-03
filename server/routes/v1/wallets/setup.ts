@@ -11,11 +11,14 @@ import express from 'express';
 import { isAuthenticated } from '../../../auth';
 import { walletOwnershipGuard } from '../../../middleware/walletValidation';
 import { createRateLimiter } from '../../../middleware/rateLimiting';
+import { db } from '../../../db';
 import { ethers } from 'ethers';
 import challengeStore from '../../../utils/challengeStore';
 import { randomUUID } from 'crypto';
 import { createUserWallet, generateMnemonicWallet, walletGenerationService } from '../../../services/wallet-generation-service';
-import { saveVaultBackup } from '../../../services/walletVaultService';
+import { deleteUserBackup, getUserBackup, saveUserBackup } from '../../../services/walletVaultService';
+import { users } from '../../../../shared/schema';
+import { eq } from 'drizzle-orm';
 
 const router = express.Router({ mergeParams: true });
 
@@ -92,6 +95,21 @@ const setupBackupLimiter = createRateLimiter({
   }
 });
 
+async function requireRecentTwoFactor(req: express.Request, res: express.Response): Promise<boolean> {
+  const userId = (req as any).user?.id || (req as any).user?.claims?.sub;
+  const [user] = await db.select({ enabled: users.twoFactorEnabled, verifiedAt: users.twoFactorVerifiedAt })
+    .from(users)
+    .where(eq(users.id, userId))
+    .limit(1);
+
+  const verifiedAt = user?.verifiedAt ? new Date(user.verifiedAt).getTime() : 0;
+  if (!user?.enabled || !verifiedAt || Date.now() - verifiedAt > 60 * 60 * 1000) {
+    res.status(403).json({ success: false, error: 'Recent 2FA verification required' });
+    return false;
+  }
+  return true;
+}
+
 /**
  * POST /v1/wallets/setup/create
  * Create a new wallet (from create-wallet)
@@ -117,12 +135,8 @@ router.post('/create', isAuthenticated, setupCreationLimiter, async (req, res) =
       walletResult = await createUserWallet(userId, initialAssetPreference || 'USDC', walletType);
     }
 
-    if (keystore) {
-      await saveVaultBackup(userId, walletResult.walletId, keystore, {
-        ipAddress: req.ip,
-        userAgent: req.get('user-agent'),
-      });
-    }
+    // Keystore backup is now handled via POST /v1/wallets/setup/backup with client-encrypted blobs.
+    // This endpoint no longer persists keystores.
 
     res.status(201).json({
       success: true,
@@ -247,47 +261,58 @@ router.post('/import/private-key', isAuthenticated, setupCreationLimiter, async 
 });
 
 /**
- * POST /v1/wallets/setup/recover
- * Recover wallet from mnemonic (from recover-wallet)
+ * POST /v1/wallets/setup/backup
+ * Store a client-encrypted wallet backup blob. The server never decrypts it.
  */
-router.post('/recover', isAuthenticated, setupCreationLimiter, async (req, res) => {
+router.post('/backup', isAuthenticated, setupBackupLimiter, async (req, res) => {
   try {
-    const { address, message, signature } = req.body;
-
-    if (!address || !message || !signature) {
-      return res.status(400).json({ success: false, error: 'Missing address/message/signature' });
-    }
-
-    let recovered: string;
-    try {
-      recovered = ethers.verifyMessage(message, signature);
-    } catch (err) {
-      return res.status(400).json({ success: false, error: 'Invalid signature format' });
-    }
-
-    if (recovered.toLowerCase() !== String(address).toLowerCase()) {
-      return res.status(400).json({ success: false, error: 'Signature does not match address' });
-    }
-
-    res.status(201).json({ success: true, data: { wallet: { address, recovered: true } } });
+    const userId = (req as any).user?.id || (req as any).user?.claims?.sub;
+    const result = await saveUserBackup(userId, req.body, {
+      ipAddress: req.ip,
+      userAgent: req.get('user-agent'),
+    });
+    return res.json(result);
   } catch (error) {
-    console.error('Failed to recover wallet:', error);
-    res.status(400).json({ success: false, error: (error as Error).message });
+    console.error('Failed to save wallet backup:', error);
+    return res.status(400).json({ success: false, error: 'Backup could not be saved' });
   }
 });
 
 /**
- * POST /v1/wallets/setup/restore
- * Restore wallet from backup file (from restore-from-backup)
+ * GET /v1/wallets/setup/backup
+ * Retrieve the authenticated user's opaque backup blob.
  */
-router.post('/restore', isAuthenticated, setupBackupLimiter, async (req, res) => {
+router.get('/backup', isAuthenticated, setupBackupLimiter, async (req, res) => {
   try {
-    const { backupData, password } = req.body;
-    const walletId = randomUUID();
-    res.status(201).json({ success: true, data: { wallet: { id: walletId, restored: true } } });
+    if (!await requireRecentTwoFactor(req, res)) return;
+    const userId = (req as any).user?.id || (req as any).user?.claims?.sub;
+    const backup = await getUserBackup(userId, {
+      ipAddress: req.ip,
+      userAgent: req.get('user-agent'),
+    });
+    return res.json(backup || { backupExists: false, blob: null });
   } catch (error) {
-    console.error('Failed to restore from backup:', error);
-    res.status(400).json({ success: false, error: (error as Error).message });
+    console.error('Failed to retrieve wallet backup:', error);
+    return res.status(500).json({ success: false, error: 'Could not retrieve backup' });
+  }
+});
+
+/**
+ * DELETE /v1/wallets/setup/backup
+ * Delete all cloud-stored backup blobs for the authenticated user.
+ */
+router.delete('/backup', isAuthenticated, setupBackupLimiter, async (req, res) => {
+  try {
+    if (!await requireRecentTwoFactor(req, res)) return;
+    const userId = (req as any).user?.id || (req as any).user?.claims?.sub;
+    await deleteUserBackup(userId, {
+      ipAddress: req.ip,
+      userAgent: req.get('user-agent'),
+    });
+    return res.json({ success: true, deleted: true });
+  } catch (error) {
+    console.error('Failed to delete wallet backup:', error);
+    return res.status(500).json({ success: false, error: 'Could not delete backup' });
   }
 });
 
@@ -337,37 +362,6 @@ router.get('/backup/status/:userId', isAuthenticated, walletOwnershipGuard, asyn
   }
 });
 
-/**
- * GET /v1/wallets/setup/backup/export
- * Export encrypted backup (from export-encrypted-backup)
- */
-router.get('/backup/export', isAuthenticated, setupBackupLimiter, async (req, res) => {
-  try {
-    res.json({
-      success: true,
-      data: {
-        backup: { v: '1.0', s: '', i: '', d: '', t: '' },
-        filename: `wallet-backup-${Date.now()}.json`
-      }
-    });
-  } catch (error) {
-    console.error('Failed to export backup:', error);
-    res.status(400).json({ success: false, error: (error as Error).message });
-  }
-});
-
-/**
- * GET /v1/wallets/setup/backup/data
- * Get backup data (from get-backup-data)
- */
-router.get('/backup/data', isAuthenticated, setupBackupLimiter, async (req, res) => {
-  try {
-    res.json({ success: true, data: { backupData: null } });
-  } catch (error) {
-    console.error('Failed to get backup data:', error);
-    res.status(400).json({ success: false, error: (error as Error).message });
-  }
-});
 
 /**
  * POST /v1/wallets/setup/vault/initialize

@@ -7,47 +7,32 @@ import {
   poolWithdrawals,
   daos,
   subscriptions,
+  platformRevenue,
 } from '../../shared/schema';
 import { eq, and, sql } from 'drizzle-orm';
 import { dbOptimizationLayer } from './databaseOptimizationLayer';
 
 /**
  * Investment Pool Pricing Service
- * Enforces platform fees based on DAO subscription tier
+ * Interim flat fee placeholder; no DAO subscription tier is read for fee calculation.
  */
 
+const PLATFORM_TRANSACTION_FEE_PERCENT = 2.0;
+// TODO: replace with volume-based fee ladder once real transaction data exists — see pricing.md §6.4.
+// Flat rate is a placeholder, not a design decision.
+
 interface PlatformFeeStructure {
-  tier: 'community' | 'growth' | 'professional' | 'enterprise';
+  tier: 'placeholder';
   transactionFeePercent: number;
   performanceFeePercent: number;
   managementFeePercent: number;
 }
 
-const PLATFORM_FEES: Record<string, PlatformFeeStructure> = {
-  community: {
-    tier: 'community',
-    transactionFeePercent: 2.0,
-    performanceFeePercent: 8.0,
-    managementFeePercent: 1.0,
-  },
-  growth: {
-    tier: 'growth',
-    transactionFeePercent: 1.5,
-    performanceFeePercent: 8.0,
-    managementFeePercent: 1.0,
-  },
-  professional: {
-    tier: 'professional',
-    transactionFeePercent: 1.0,
-    performanceFeePercent: 8.0,
-    managementFeePercent: 1.0,
-  },
-  enterprise: {
-    tier: 'enterprise',
-    transactionFeePercent: 0.75, // Custom negotiated
-    performanceFeePercent: 8.0,
-    managementFeePercent: 1.0,
-  },
+const FLAT_PLATFORM_FEES: PlatformFeeStructure = {
+  tier: 'placeholder',
+  transactionFeePercent: PLATFORM_TRANSACTION_FEE_PERCENT,
+  performanceFeePercent: 8.0,
+  managementFeePercent: 1.0,
 };
 
 class InvestmentPoolPricingService {
@@ -56,12 +41,11 @@ class InvestmentPoolPricingService {
    */
   async getPlatformFee(poolId: string): Promise<PlatformFeeStructure> {
     try {
-      // Optimized: Use batched JOIN query instead of 2-3 sequential queries (cached for 5 min)
       const feeStructure = await dbOptimizationLayer.getPoolFeeOptimized(poolId);
-      return feeStructure || PLATFORM_FEES.community;
+      return feeStructure || FLAT_PLATFORM_FEES;
     } catch (error) {
       logger.error('Error getting platform fee:', error);
-      return PLATFORM_FEES.community;
+      return FLAT_PLATFORM_FEES;
     }
   }
 
@@ -136,30 +120,19 @@ class InvestmentPoolPricingService {
 
       if (!pool?.daoId) return;
 
-      // Record in platform revenue table
-      await db.execute(sql`
-        INSERT INTO platform_revenue (
-          source,
-          dao_id,
-          revenue_type,
-          amount_ksh,
-          tier,
-          metadata,
-          created_at
-        ) VALUES (
-          'investment_pool',
-          ${pool.daoId},
-          ${type === 'investment' ? 'pool_investment_fee' : 'pool_withdrawal_fee'},
-          ${fees.platformFee + (fees.performanceFee || 0)},
-          ${fees.tier},
-          ${JSON.stringify({
-            poolId,
-            platformFee: fees.platformFee,
-            performanceFee: fees.performanceFee || 0,
-          })},
-          NOW()
-        )
-      `);
+      await db.insert(platformRevenue).values({
+        daoId: pool.daoId,
+        amount: (fees.platformFee + (fees.performanceFee || 0)).toFixed(2),
+        currency: 'USD',
+        description: JSON.stringify({
+          poolId,
+          tier: fees.tier,
+          platformFee: fees.platformFee,
+          performanceFee: fees.performanceFee || 0,
+        }),
+        transactionType: type === 'investment' ? 'pool_investment_fee' : 'pool_withdrawal_fee',
+        status: 'paid',
+      });
 
       logger.info(`✅ Recorded pool revenue: ${type} fee of KES ${fees.platformFee} (${fees.tier} tier)`);
     } catch (error) {

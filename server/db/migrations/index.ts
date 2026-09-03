@@ -4,6 +4,7 @@
  */
 
 import { migrateCEXTables, rollbackCEXTables } from './004-cex-tables';
+import { migrateFuturesInfrastructure, rollbackFuturesInfrastructure } from './005-futures-infrastructure';
 import { migrateNotificationTables } from './001-notification-system';
 import { migrateRulesEngine } from './002-rules-engine';
 import { migrateLimitOrdersTables } from './003-limit-orders';
@@ -25,6 +26,7 @@ import { migrateVaultDomainTables, rollbackVaultDomainTables } from './030-vault
 import { migrateTreasuryDomainTables, rollbackTreasuryDomainTables } from './031-treasury-domain';
 import { migrateInvestmentPoolsTables, rollbackInvestmentPoolsTables } from './032-investment-pools';
 import { migrateMonitoringMetricsTables, rollbackMonitoringMetricsTables } from './033-monitoring-metrics';
+import { migrateTokenomicsTables, rollbackTokenomicsTables } from './034-tokenomics';
 
 export interface MigrationResult {
   success: boolean;
@@ -67,6 +69,13 @@ export async function runAllMigrations(): Promise<MigrationResult> {
     } catch (err: any) {
       errors.push(`CEX tables migration failed: ${err.message}`);
       throw err; // This is critical, stop here
+    }
+
+    try {
+      await migrateFuturesInfrastructure();
+    } catch (err: any) {
+      errors.push(`Futures infrastructure migration failed: ${err.message}`);
+      throw err; // Critical: depends on cex_credentials, stop here
     }
 
     try {
@@ -188,6 +197,13 @@ export async function runAllMigrations(): Promise<MigrationResult> {
       throw err;
     }
 
+    try {
+      await migrateTokenomicsTables();
+    } catch (err: any) {
+      errors.push(`Tokenomics tables migration failed: ${err.message}`);
+      throw err;
+    }
+
     const duration = Date.now() - startTime;
     console.log(`\n✅ All migrations completed in ${duration}ms`);
 
@@ -263,6 +279,12 @@ export async function rollbackMigrations(): Promise<MigrationResult> {
     }
 
     try {
+      await rollbackTokenomicsTables();
+    } catch (err: any) {
+      errors.push(`Tokenomics rollback failed: ${err.message}`);
+    }
+
+    try {
       await rollbackInvestmentPoolsTables();
     } catch (err: any) {
       errors.push(`Investment pools rollback failed: ${err.message}`);
@@ -319,6 +341,12 @@ export async function rollbackMigrations(): Promise<MigrationResult> {
       await rollbackCEXTables();
     } catch (err: any) {
       errors.push(`CEX tables rollback failed: ${err.message}`);
+    }
+
+    try {
+      await rollbackFuturesInfrastructure();
+    } catch (err: any) {
+      errors.push(`Futures infrastructure rollback failed: ${err.message}`);
     } 
 
     try {
@@ -352,6 +380,8 @@ export async function rollbackCEXMigrations(): Promise<MigrationResult> {
 
   try {
     console.log('🔄 Rolling back CEX migrations...\n');
+    // Futures infrastructure depends on cex_credentials, so roll it back first
+    await rollbackFuturesInfrastructure();
     await rollbackCEXTables();
 
     const duration = Date.now() - startTime;

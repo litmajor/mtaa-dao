@@ -4,13 +4,12 @@ import { Logger } from '../utils/logger';
 const logger = Logger.getLogger();
 
 interface GasPrice {
-  slow: string;
-  standard: string;
-  fast: string;
-  instant: string;
-  baseFee?: string;
-  priorityFee?: string;
+  // EIP-1559 fields: raw base and priority, without tier-specific multipliers
+  baseFee: string; // base fee per gas (wei)
+  priorityFee?: string; // suggested priority fee (wei), may be undefined on legacy chains
   timestamp: number;
+  // Tier suggestions (for reference/fallback only)
+  // Built inside getOptimalGasStrategy, not here
 }
 
 interface GasStrategy {
@@ -19,14 +18,16 @@ interface GasStrategy {
   gasPrice?: string;
 }
 
-const FEE_STRATEGIES: Record<string, { multiplier: number; priority: number; replacementBumpPct?: number }> = {
-  ethereum: { multiplier: 1.2, priority: 1.5, replacementBumpPct: 10 },
-  polygon: { multiplier: 1.5, priority: 2.0, replacementBumpPct: 20 },
-  arbitrum: { multiplier: 1.1, priority: 1.2, replacementBumpPct: 8 },
-  optimism: { multiplier: 1.15, priority: 1.25, replacementBumpPct: 10 },
-  bsc: { multiplier: 1.05, priority: 1.0, replacementBumpPct: 5 },
-  base: { multiplier: 1.1, priority: 1.2, replacementBumpPct: 8 },
-  avalanche: { multiplier: 1.1, priority: 1.2, replacementBumpPct: 8 }
+// Fee strategies in basis points (1 bps = 0.01%)
+const FEE_STRATEGIES: Record<string, { maxFeeMultiplierBps: number; priorityMultiplierBps: number; replacementBumpPct?: number; fallbackGweiPerChain?: number }> = {
+  ethereum: { maxFeeMultiplierBps: 120, priorityMultiplierBps: 150, replacementBumpPct: 10, fallbackGweiPerChain: 1 },
+  polygon: { maxFeeMultiplierBps: 150, priorityMultiplierBps: 200, replacementBumpPct: 20, fallbackGweiPerChain: 50 },
+  arbitrum: { maxFeeMultiplierBps: 110, priorityMultiplierBps: 120, replacementBumpPct: 8, fallbackGweiPerChain: 1 },
+  optimism: { maxFeeMultiplierBps: 115, priorityMultiplierBps: 125, replacementBumpPct: 10, fallbackGweiPerChain: 1 },
+  bsc: { maxFeeMultiplierBps: 105, priorityMultiplierBps: 100, replacementBumpPct: 5, fallbackGweiPerChain: 1 },
+  base: { maxFeeMultiplierBps: 110, priorityMultiplierBps: 120, replacementBumpPct: 8, fallbackGweiPerChain: 1 },
+  avalanche: { maxFeeMultiplierBps: 110, priorityMultiplierBps: 120, replacementBumpPct: 8, fallbackGweiPerChain: 2 },
+  celo: { maxFeeMultiplierBps: 115, priorityMultiplierBps: 130, replacementBumpPct: 10, fallbackGweiPerChain: 5 }
 };
 
 export class GasPriceOracle {
@@ -34,6 +35,7 @@ export class GasPriceOracle {
   private readonly DEFAULT_CACHE_MS = 30 * 1000;
 
   // Get current gas prices for a specific provider + chain
+  // Returns: baseFee + priorityFee only. Tier scaling happens in getOptimalGasStrategy.
   async getCurrentGasPrices(provider: any, chain: string): Promise<GasPrice> {
     const now = Date.now();
     const cacheKey = chain || 'default';
@@ -41,26 +43,27 @@ export class GasPriceOracle {
     if (cached && now < cached.expiry) return cached.prices;
 
     try {
-      // Prefer EIP-1559 fee data when available
+      // Always use getFeeData (ethers v6 only supports EIP-1559)
       const feeData = await provider.getFeeData();
+      
+      // Prefer baseFee from latest block when available
       let baseFee: bigint | undefined;
-      let priorityFee: bigint | undefined;
       try {
         const block = await provider.getBlock('latest');
         baseFee = block?.baseFeePerGas as bigint | undefined;
       } catch (e) {
-        // ignore
+        // If block fetch fails, estimate from feeData.maxFeePerGas - maxPriorityFeePerGas
+        if (feeData.maxFeePerGas && feeData.maxPriorityFeePerGas) {
+          baseFee = BigInt(feeData.maxFeePerGas) - BigInt(feeData.maxPriorityFeePerGas);
+          if (baseFee < 0n) baseFee = BigInt(feeData.maxFeePerGas);
+        }
       }
 
-      if (feeData.maxFeePerGas && feeData.maxPriorityFeePerGas && baseFee) {
-        priorityFee = feeData.maxPriorityFeePerGas as bigint;
-        const base = baseFee as bigint;
+      // If we have both baseFee and priorityFee, use EIP-1559 path
+      if (baseFee && feeData.maxPriorityFeePerGas) {
+        const priorityFee = BigInt(feeData.maxPriorityFeePerGas);
         const prices: GasPrice = {
-          slow: (base * BigInt(110) / BigInt(100)).toString(),
-          standard: (base * BigInt(120) / BigInt(100) + priorityFee).toString(),
-          fast: (base * BigInt(150) / BigInt(100) + priorityFee * BigInt(2)).toString(),
-          instant: (base * BigInt(200) / BigInt(100) + priorityFee * BigInt(3)).toString(),
-          baseFee: base.toString(),
+          baseFee: baseFee.toString(),
           priorityFee: priorityFee.toString(),
           timestamp: now
         };
@@ -68,26 +71,35 @@ export class GasPriceOracle {
         return prices;
       }
 
-      // Legacy gasPrice fallback
-      const gasPrice = await provider.getGasPrice();
+      // Fallback: use feeData.gasPrice if available (legacy or estimated)
+      if (feeData.gasPrice) {
+        const gasPrice = BigInt(feeData.gasPrice);
+        const prices: GasPrice = {
+          baseFee: gasPrice.toString(),
+          timestamp: now
+        };
+        this.cached.set(cacheKey, { prices, expiry: now + this.DEFAULT_CACHE_MS });
+        return prices;
+      }
+
+      // Total fallback: use chain-specific default
+      const strategy = FEE_STRATEGIES[chain] || { maxFeeMultiplierBps: 120, priorityMultiplierBps: 150, fallbackGweiPerChain: 1 };
+      const fallbackGwei = strategy.fallbackGweiPerChain || 1;
+      const fallbackWei = BigInt(fallbackGwei * 1_000_000_000);
+      logger.warn('All gas price sources failed, using chain fallback', { chain, fallbackGwei });
       const prices: GasPrice = {
-        slow: (gasPrice * BigInt(90) / BigInt(100)).toString(),
-        standard: gasPrice.toString(),
-        fast: (gasPrice * BigInt(120) / BigInt(100)).toString(),
-        instant: (gasPrice * BigInt(150) / BigInt(100)).toString(),
+        baseFee: fallbackWei.toString(),
         timestamp: now
       };
-
-      this.cached.set(cacheKey, { prices, expiry: now + this.DEFAULT_CACHE_MS });
+      this.cached.set(cacheKey, { prices, expiry: now + (this.DEFAULT_CACHE_MS / 2) });
       return prices;
     } catch (err: any) {
       logger.warn('Gas price fetch failed, returning conservative defaults', { chain, error: err?.message });
-      const fallback = BigInt(2_000_000_000); // 2 Gwei
+      const strategy = FEE_STRATEGIES[chain] || { maxFeeMultiplierBps: 120, priorityMultiplierBps: 150, fallbackGweiPerChain: 2 };
+      const fallbackGwei = strategy.fallbackGweiPerChain || 2;
+      const fallbackWei = BigInt(fallbackGwei * 1_000_000_000);
       const prices: GasPrice = {
-        slow: (fallback * BigInt(80) / BigInt(100)).toString(),
-        standard: fallback.toString(),
-        fast: (fallback * BigInt(120) / BigInt(100)).toString(),
-        instant: (fallback * BigInt(150) / BigInt(100)).toString(),
+        baseFee: fallbackWei.toString(),
         timestamp: now
       };
       this.cached.set(cacheKey, { prices, expiry: now + (this.DEFAULT_CACHE_MS / 2) });
@@ -96,33 +108,54 @@ export class GasPriceOracle {
   }
 
   // Compute optimal gas strategy with chain-specific scaling
+  // Urgency levels determine the multiplier applied to baseFee + priorityFee
   async getOptimalGasStrategy(provider: any, chain: string, urgency: 'slow' | 'standard' | 'fast' | 'instant' = 'standard'): Promise<GasStrategy> {
-    const strategy = FEE_STRATEGIES[chain] || { multiplier: 1.2, priority: 1.5, replacementBumpPct: 10 };
+    const strategy = FEE_STRATEGIES[chain] || { maxFeeMultiplierBps: 120, priorityMultiplierBps: 150, replacementBumpPct: 10 };
     const prices = await this.getCurrentGasPrices(provider, chain);
+    const baseFee = BigInt(prices.baseFee);
 
-    // Selected base price
-    const selected = BigInt(prices[urgency]);
-    const scaled = selected * BigInt(Math.floor(strategy.multiplier * 100)) / BigInt(100);
+    // Tier-specific fee multipliers (in basis points, no longer stored in prices object)
+    const tierMultipliersBps: Record<string, { maxFeeBps: number; priorityBps: number }> = {
+      slow: { maxFeeBps: 110, priorityBps: 100 },        // base * 1.1, minimal tip
+      standard: { maxFeeBps: strategy.maxFeeMultiplierBps, priorityBps: strategy.priorityMultiplierBps },
+      fast: { maxFeeBps: 150, priorityBps: 200 },
+      instant: { maxFeeBps: 200, priorityBps: 300 }
+    };
 
-    if (prices.baseFee && prices.priorityFee) {
-      const priority = BigInt(prices.priorityFee);
+    const tierMultipliers = tierMultipliersBps[urgency] || tierMultipliersBps.standard;
+
+    // For EIP-1559:
+    // maxFeePerGas = baseFee + (priorityFee * multiplier)
+    // maxPriorityFeePerGas = priorityFee * multiplier
+    if (prices.priorityFee) {
+      const priorityFee = BigInt(prices.priorityFee);
+      
+      // Calculate maxFeePerGas without double-counting:
+      // scale the priority, then add base
+      const scaledPriority = priorityFee * BigInt(tierMultipliers.priorityBps) / BigInt(10000);
+      const maxFeePerGas = baseFee + scaledPriority;
+
       return {
-        maxFeePerGas: scaled.toString(),
-        maxPriorityFeePerGas: (priority * BigInt(Math.floor(strategy.priority * 100)) / BigInt(100)).toString()
+        maxFeePerGas: maxFeePerGas.toString(),
+        maxPriorityFeePerGas: scaledPriority.toString()
       };
     }
 
-    return { gasPrice: scaled.toString() };
+    // Legacy (no priorityFee available): scale baseFee directly
+    const scaledGasPrice = baseFee * BigInt(tierMultipliers.maxFeeBps) / BigInt(10000);
+    return { gasPrice: scaledGasPrice.toString() };
   }
 
   // Provide a replacement price to bump a stuck transaction by a percentage
   async getReplacementPrice(provider: any, chain: string, currentGasPrice: bigint | string, bumpPct?: number): Promise<string> {
-    const strategy = FEE_STRATEGIES[chain] || { multiplier: 1.2, priority: 1.5, replacementBumpPct: 10 };
+    const strategy = FEE_STRATEGIES[chain] || { maxFeeMultiplierBps: 120, priorityMultiplierBps: 150, replacementBumpPct: 10 };
     const bump = bumpPct ?? strategy.replacementBumpPct ?? 10;
     const current = typeof currentGasPrice === 'string' ? BigInt(currentGasPrice) : currentGasPrice;
 
-    // Fetch latest standard price to avoid underbidding
-    const latest = await this.getCurrentGasPrices(provider, chain).then(p => BigInt(p.standard));
+    // Fetch latest standard strategy to avoid underbidding
+    const standardStrat = await this.getOptimalGasStrategy(provider, chain, 'standard');
+    const latest = BigInt(standardStrat.maxFeePerGas || standardStrat.gasPrice || '0');
+    if (latest === 0n) return current.toString(); // Fallback
     const bumped = latest > current ? latest + (latest * BigInt(bump) / BigInt(100)) : current + (current * BigInt(bump) / BigInt(100));
     return bumped.toString();
   }

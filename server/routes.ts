@@ -110,6 +110,9 @@ import { authRegisterHandler, verifyOtpHandler, resendOtpHandler } from './api/a
 import { authTelegramLinkHandler } from './api/auth_telegram_link';
 import { authOauthGoogleHandler } from './api/auth_oauth_google';
 import { authOauthGoogleCallbackHandler } from './api/auth_oauth_google_callback';
+import { authConfirmIdentityLinkingHandler } from './api/auth_confirm_identity_linking';
+import { authTelegramInitHandler } from './api/auth_telegram_init';
+import { authTelegramCallbackHandler } from './api/auth_telegram_callback';
 import { accountDeleteHandler } from './api/account_delete';
 import { daoDeployHandler } from './api/dao_deploy';
 import { getSpawnFeeQuote, SPAWN_FEE_KES } from './services/daoSpawnService';
@@ -615,6 +618,9 @@ export async function registerRoutes(app: express.Application, server: HTTPServe
   app.post('/api/auth/telegram-link', isAuthenticated, otpResendRateLimiter, authTelegramLinkHandler);
   app.get('/api/auth/oauth/google', authOauthGoogleHandler);
   app.get('/api/auth/oauth/google/callback', authOauthGoogleCallbackHandler);
+  app.post('/api/auth/oauth/confirm-linking', authConfirmIdentityLinkingHandler);
+  app.get('/api/auth/telegram/init', authTelegramInitHandler);
+  app.post('/api/auth/telegram/callback', authTelegramCallbackHandler);
   app.post('/api/auth/refresh-token', loginRateLimiter, refreshTokenHandler);
   app.post('/api/auth/logout', logoutHandler);
 

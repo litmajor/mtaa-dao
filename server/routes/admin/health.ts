@@ -6,7 +6,8 @@
  * These endpoints expose sensitive system topology and must be heavily restricted
  */
 
-import { Router, Request, Response, NextFunction } from 'express';
+import { Router } from 'express';
+import type { Request, Response, NextFunction } from 'express';
 import { healthRegistry } from '../../core/consolidation/HealthRegistryConsolidation';
 import { circuitBreakerRegistry } from '../../core/consolidation/CircuitBreakerConsolidation';
 import { Logger } from '../../utils/logger';
@@ -74,7 +75,15 @@ router.get('/state', [authenticateToken, requireSuperAdmin, auditHealthAccess], 
 router.get('/summary', [authenticateToken, requireSuperAdmin, auditHealthAccess], async (req: Request, res: Response, next: NextFunction) => {
   try {
     const snapshot = healthRegistry.getSnapshot();
-    const circuitBreakers = circuitBreakerRegistry.getAllStatuses();
+    const circuitBreakers = circuitBreakerRegistry.getAll().map((breaker) => {
+      const metrics = breaker.getMetrics();
+      return {
+        name: metrics.name,
+        state: metrics.state,
+        isHealthy: metrics.state === 'CLOSED',
+        failureRate: metrics.failureRate,
+      };
+    });
 
     res.json({
       success: true,
@@ -84,14 +93,9 @@ router.get('/summary', [authenticateToken, requireSuperAdmin, auditHealthAccess]
         healthScore: snapshot.healthScore,
         uptime: snapshot.uptime,
         components: snapshot.components,
-        database: health.database,
-        memory: health.memory,
-        circuitBreakers: Object.entries(circuitBreakers).map(([name, status]) => ({
-          name,
-          state: status.state,
-          isHealthy: status.state === 'CLOSED',
-          failureRate: status.failureRate,
-        })),
+        database: snapshot.database,
+        memory: snapshot.memory,
+        circuitBreakers,
       },
     });
   } catch (error) {
@@ -129,14 +133,14 @@ router.get('/telemetry', [authenticateToken, requireSuperAdmin, auditHealthAcces
  */
 router.get('/circuit-breakers', [authenticateToken, requireSuperAdmin, auditHealthAccess], async (req: Request, res: Response, next: NextFunction) => {
   try {
-    const statuses = circuitBreakerRegistry.getAllStatuses();
-    const hasOpenCircuits = circuitBreakerRegistry.hasOpenCircuits();
+    const breakers = circuitBreakerRegistry.getAll().map((breaker) => breaker.getMetrics());
+    const hasOpenCircuits = circuitBreakerRegistry.getHealth().openCount > 0;
 
     res.json({
       success: true,
       data: {
         hasOpenCircuits,
-        breakers: Object.values(statuses),
+        breakers,
       },
     });
   } catch (error) {
@@ -158,8 +162,8 @@ router.get('/agents', [authenticateToken, requireSuperAdmin, auditHealthAccess],
       success: true,
       data: {
         agents: snapshot.agents,
-        activeAgents: snapshot.agents.filter((a) => a.status !== 'down').length,
-        healthyAgents: snapshot.agents.filter((a) => a.healthScore >= 80).length,
+        activeAgents: snapshot.agents.filter((a) => a.status !== 'offline').length,
+        healthyAgents: snapshot.agents.filter((a) => a.status === 'healthy').length,
         timestamp: snapshot.timestamp,
       },
     });

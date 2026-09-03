@@ -128,6 +128,27 @@ function parseJsonIfString<T>(value: unknown): T {
   return value as T;
 }
 
+function parsePostgresArray<T = string>(value: unknown): T[] {
+  if (value == null) return [];
+  if (Array.isArray(value)) return value as T[];
+  if (typeof value === 'string') {
+    const trimmed = value.trim();
+    if (!trimmed || trimmed === '{}') return [];
+    const inner = trimmed.startsWith('{') && trimmed.endsWith('}') ? trimmed.slice(1, -1) : trimmed;
+    if (!inner) return [];
+    return inner
+      .split(',')
+      .map((item) => item.trim().replace(/^"|"$/g, '').replace(/\\"/g, '"').replace(/\\'/g, "'"))
+      .filter(Boolean) as T[];
+  }
+  return [String(value)] as T[];
+}
+
+function postgresTextArray(values: string[]) {
+  if (values.length === 0) return sql`ARRAY[]::text[]`;
+  return sql`ARRAY[${sql.join(values.map((value) => sql`${value}`), sql`, `)}]::text[]`;
+}
+
 // -------------------- Implementation --------------------
 export async function recordConfigurationChange(
   entityType: string,
@@ -160,7 +181,7 @@ export async function recordConfigurationChange(
     INSERT INTO configuration_history
       (entity_type, entity_id, version_number, configuration, previous_configuration, changed_fields, change_reason, changed_by, changed_at)
     VALUES
-      (${entityType}, ${entityId}, ${versionNumber}, ${JSON.stringify(newConfiguration)}, ${previousConfiguration ? JSON.stringify(previousConfiguration) : null}, ${changedFields}, ${changeReason ?? null}, ${changedBy}, now())
+      (${entityType}, ${entityId}, ${versionNumber}, ${JSON.stringify(newConfiguration)}, ${previousConfiguration ? JSON.stringify(previousConfiguration) : null}, ${postgresTextArray(changedFields)}, ${changeReason ?? null}, ${changedBy}, now())
     RETURNING id, entity_type, entity_id, version_number, configuration, previous_configuration, changed_fields, change_reason, changed_by, changed_at, created_at
   `)) as QueryResult<Record<string, unknown>>;
 
@@ -172,11 +193,75 @@ export async function recordConfigurationChange(
     versionNumber: Number(row.version_number),
     configuration: parseJsonIfString<Record<string, unknown>>(row.configuration),
     previousConfiguration: row.previous_configuration ? parseJsonIfString<Record<string, unknown>>(row.previous_configuration) : undefined,
-    changedFields: (row.changed_fields as unknown) as string[],
+    changedFields: parsePostgresArray<string>(row.changed_fields),
     changeReason: (row.change_reason as unknown) as string | undefined,
     changedBy: String(row.changed_by),
     changedAt: (row.changed_at as unknown) as Date,
     createdAt: (row.created_at as unknown) as Date,
+  };
+}
+
+export async function compareConfigurationVersions(
+  entityType: string,
+  entityId: string,
+  versionA: number,
+  versionB: number
+): Promise<{ before: ConfigHistoryEntry | null; after: ConfigHistoryEntry | null; changedFields: string[]; summary: string }> {
+  const [first, second] = await Promise.all([
+    getConfigurationVersion(entityType, entityId, versionA),
+    getConfigurationVersion(entityType, entityId, versionB),
+  ]);
+
+  const before = first ?? null;
+  const after = second ?? null;
+  const allKeys = new Set<string>([
+    ...Object.keys(before?.configuration ?? {}),
+    ...Object.keys(after?.configuration ?? {}),
+  ]);
+
+  const changedFields = [...allKeys].filter((key) => {
+    const prev = before?.configuration?.[key];
+    const curr = after?.configuration?.[key];
+    return JSON.stringify(prev) !== JSON.stringify(curr);
+  });
+
+  return {
+    before,
+    after,
+    changedFields,
+    summary: before && after
+      ? `Compared version ${versionA} with version ${versionB}`
+      : 'Version comparison could not be fully resolved',
+  };
+}
+
+export async function resolveAlert(
+  alertId: string,
+  resolvedBy: string
+): Promise<ConfigAlert | null> {
+  const result = (await db.execute(sql`
+    UPDATE configuration_alerts
+    SET is_resolved = true, resolved_at = now(), resolved_by = ${resolvedBy}, updated_at = now()
+    WHERE id = ${alertId}
+    RETURNING id, entity_type, entity_id, alert_type, message, details, severity, is_resolved, resolved_at, resolved_by, notifications_sent, created_at, updated_at
+  `)) as QueryResult<Record<string, unknown>>;
+
+  if (result.rows.length === 0) return null;
+  const row = result.rows[0];
+  return {
+    id: String(row.id),
+    entityType: String(row.entity_type),
+    entityId: String(row.entity_id),
+    alertType: String(row.alert_type),
+    message: String(row.message),
+    details: row.details ? parseJsonIfString<Record<string, unknown>>(row.details) : undefined,
+    severity: row.severity as 'info' | 'warning' | 'error' | 'critical',
+    isResolved: Boolean(row.is_resolved),
+    resolvedAt: row.resolved_at as Date | undefined,
+    resolvedBy: row.resolved_by as string | undefined,
+    notificationsSent: Boolean(row.notifications_sent),
+    createdAt: (row.created_at as unknown) as Date,
+    updatedAt: (row.updated_at as unknown) as Date,
   };
 }
 
@@ -205,7 +290,7 @@ export async function getConfigurationHistory(
     versionNumber: Number(row.version_number),
     configuration: parseJsonIfString<Record<string, unknown>>(row.configuration),
     previousConfiguration: row.previous_configuration ? parseJsonIfString<Record<string, unknown>>(row.previous_configuration) : undefined,
-    changedFields: (row.changed_fields as unknown) as string[],
+    changedFields: parsePostgresArray<string>(row.changed_fields),
     changeReason: (row.change_reason as unknown) as string | undefined,
     changedBy: String(row.changed_by),
     changedAt: (row.changed_at as unknown) as Date,
@@ -234,7 +319,7 @@ export async function getConfigurationVersion(
     versionNumber: Number(row.version_number),
     configuration: parseJsonIfString<Record<string, unknown>>(row.configuration),
     previousConfiguration: row.previous_configuration ? parseJsonIfString<Record<string, unknown>>(row.previous_configuration) : undefined,
-    changedFields: (row.changed_fields as unknown) as string[],
+    changedFields: parsePostgresArray<string>(row.changed_fields),
     changeReason: (row.change_reason as unknown) as string | undefined,
     changedBy: String(row.changed_by),
     changedAt: (row.changed_at as unknown) as Date,
@@ -257,7 +342,7 @@ export async function createConfigTemplate(
 ): Promise<ConfigTemplate> {
   const insert = (await db.execute(sql`
     INSERT INTO configuration_templates (name, description, entity_type, specific_type, configuration, category, is_public, created_by, tags)
-    VALUES (${name}, ${options?.description ?? null}, ${entityType}, ${options?.specificType ?? null}, ${JSON.stringify(configuration)}, ${options?.category ?? null}, ${options?.isPublic !== false}, ${createdBy}, ${options?.tags ?? null})
+    VALUES (${name}, ${options?.description ?? null}, ${entityType}, ${options?.specificType ?? null}, ${JSON.stringify(configuration)}, ${options?.category ?? null}, ${options?.isPublic !== false}, ${createdBy}, ${postgresTextArray(options?.tags ?? [])})
     RETURNING id, name, description, entity_type, specific_type, configuration, category, is_public, created_by, usage_count, tags, created_at, updated_at
   `)) as QueryResult<Record<string, unknown>>;
 
@@ -273,7 +358,7 @@ export async function createConfigTemplate(
     isPublic: Boolean(row.is_public),
     createdBy: String(row.created_by),
     usageCount: Number(row.usage_count ?? 0),
-    tags: (row.tags as unknown) as string[] ?? [],
+    tags: parsePostgresArray<string>(row.tags),
     createdAt: (row.created_at as unknown) as Date,
     updatedAt: (row.updated_at as unknown) as Date,
   };
@@ -284,16 +369,16 @@ export async function getTemplatesByEntityType(
   includePrivate = false,
   specificType?: string
 ): Promise<ConfigTemplate[]> {
-  let query = `SELECT * FROM configuration_templates WHERE entity_type = $1`;
-  const params: unknown[] = [entityType];
-  if (!includePrivate) query = `SELECT * FROM configuration_templates WHERE entity_type = $1 AND is_public = true`;
-  if (specificType) {
-    query += ` AND specific_type = $${params.length + 1}`;
-    params.push(specificType);
-  }
-  query += ` ORDER BY usage_count DESC, updated_at DESC`;
+  const filters: any[] = [sql`entity_type = ${entityType}`];
+  if (!includePrivate) filters.push(sql`is_public = true`);
+  if (specificType) filters.push(sql`specific_type = ${specificType}`);
 
-  const result = (await db.execute((sql.raw as any)(query, ...(params as any[])))) as QueryResult<Record<string, unknown>>;
+  const result = (await db.execute(sql`
+    SELECT * FROM configuration_templates
+    WHERE ${sql.join(filters, sql` AND `)}
+    ORDER BY usage_count DESC, updated_at DESC
+  `)) as QueryResult<Record<string, unknown>>;
+
   return result.rows.map((row) => ({
     id: String(row.id),
     name: String(row.name),
@@ -305,7 +390,7 @@ export async function getTemplatesByEntityType(
     isPublic: Boolean(row.is_public),
     createdBy: String(row.created_by),
     usageCount: Number(row.usage_count ?? 0),
-    tags: (row.tags as unknown) as string[] ?? [],
+    tags: parsePostgresArray<string>(row.tags),
     createdAt: (row.created_at as unknown) as Date,
     updatedAt: (row.updated_at as unknown) as Date,
   }));
@@ -461,14 +546,16 @@ export async function createConfigAlert(
 }
 
 export async function getUnresolvedAlerts(entityType?: string, limit = 50): Promise<ConfigAlert[]> {
-  let query = `SELECT * FROM configuration_alerts WHERE is_resolved = false`;
-  const params: unknown[] = [];
-  if (entityType) {
-    query += ` AND entity_type = $1`;
-    params.push(entityType);
-  }
-  query += ` ORDER BY severity DESC, created_at DESC LIMIT ${limit}`;
-  const result = (await db.execute((sql.raw as any)(query, ...(params as any[])))) as QueryResult<Record<string, unknown>>;
+  const filters: any[] = [sql`is_resolved = false`];
+  if (entityType) filters.push(sql`entity_type = ${entityType}`);
+
+  const result = (await db.execute(sql`
+    SELECT * FROM configuration_alerts
+    WHERE ${sql.join(filters, sql` AND `)}
+    ORDER BY severity DESC, created_at DESC
+    LIMIT ${limit}
+  `)) as QueryResult<Record<string, unknown>>;
+
   return result.rows.map((row) => ({
     id: String(row.id),
     entityType: String(row.entity_type),
@@ -601,7 +688,7 @@ export async function createAlertRule(
     threshold: row.threshold ? parseJsonIfString<Record<string, unknown>>(row.threshold) : undefined,
     severity: row.severity as AlertRule['severity'],
     isEnabled: Boolean(row.is_enabled),
-    notificationChannels: (row.notification_channels as unknown) as string[] ?? [],
+    notificationChannels: parsePostgresArray<string>(row.notification_channels),
     createdBy: String(row.created_by),
     createdAt: (row.created_at as unknown) as Date,
     updatedAt: (row.updated_at as unknown) as Date,
@@ -609,13 +696,14 @@ export async function createAlertRule(
 }
 
 export async function getEnabledAlertRules(entityType?: string): Promise<AlertRule[]> {
-  let query = `SELECT * FROM alert_rules WHERE is_enabled = true`;
-  const params: unknown[] = [];
-  if (entityType) {
-    query += ` AND (entity_type = $1 OR entity_type IS NULL)`;
-    params.push(entityType);
-  }
-  const result = (await db.execute((sql.raw as any)(query, ...(params as any[])))) as QueryResult<Record<string, unknown>>;
+  const filters: any[] = [sql`is_enabled = true`];
+  if (entityType) filters.push(sql`(entity_type = ${entityType} OR entity_type IS NULL)`);
+
+  const result = (await db.execute(sql`
+    SELECT * FROM alert_rules
+    WHERE ${sql.join(filters, sql` AND `)}
+  `)) as QueryResult<Record<string, unknown>>;
+
   return result.rows.map((row) => ({
     id: String(row.id),
     name: String(row.name),
@@ -627,26 +715,32 @@ export async function getEnabledAlertRules(entityType?: string): Promise<AlertRu
     threshold: row.threshold ? parseJsonIfString<Record<string, unknown>>(row.threshold) : undefined,
     severity: row.severity as AlertRule['severity'],
     isEnabled: Boolean(row.is_enabled),
-    notificationChannels: (row.notification_channels as unknown) as string[] ?? [],
+    notificationChannels: parsePostgresArray<string>(row.notification_channels),
     createdBy: String(row.created_by),
     createdAt: (row.created_at as unknown) as Date,
     updatedAt: (row.updated_at as unknown) as Date,
   }));
 }
 
-export async function updateAlertRule(ruleId: string, updates: Partial<AlertRule>): Promise<AlertRule | null> {
-  const setClauses: string[] = [];
-  const values: unknown[] = [];
-  if (updates.name) { setClauses.push(`name = $${values.length + 1}`); values.push(updates.name); }
-  if (updates.description !== undefined) { setClauses.push(`description = $${values.length + 1}`); values.push(updates.description); }
-  if (updates.condition) { setClauses.push(`condition = $${values.length + 1}`); values.push(JSON.stringify(updates.condition)); }
-  if (updates.severity) { setClauses.push(`severity = $${values.length + 1}`); values.push(updates.severity); }
-  if (updates.isEnabled !== undefined) { setClauses.push(`is_enabled = $${values.length + 1}`); values.push(updates.isEnabled); }
+export async function updateAlertRule(ruleId: string, patch: Partial<AlertRule>): Promise<AlertRule | null> {
+  const setClauses: any[] = [];
+  if (patch.name) setClauses.push(sql`name = ${patch.name}`);
+  if (patch.description !== undefined) setClauses.push(sql`description = ${patch.description ?? null}`);
+  if (patch.condition) setClauses.push(sql`condition = ${JSON.stringify(patch.condition)}`);
+  if (patch.threshold) setClauses.push(sql`threshold = ${JSON.stringify(patch.threshold)}`);
+  if (patch.severity) setClauses.push(sql`severity = ${patch.severity}`);
+  if (patch.isEnabled !== undefined) setClauses.push(sql`is_enabled = ${patch.isEnabled}`);
+  if (patch.notificationChannels) setClauses.push(sql`notification_channels = ${postgresTextArray(patch.notificationChannels)}`);
   if (setClauses.length === 0) return null;
-  setClauses.push('updated_at = now()');
-  values.push(ruleId);
-  const query = `UPDATE alert_rules SET ${setClauses.join(', ')} WHERE id = $${values.length} RETURNING id, name, description, entity_type, entity_id, alert_type, condition, threshold, severity, is_enabled, notification_channels, created_by, created_at, updated_at`;
-  const result = (await db.execute((sql.raw as any)(query, ...(values as any[])))) as QueryResult<Record<string, unknown>>;
+  setClauses.push(sql`updated_at = now()`);
+
+  const result = (await db.execute(sql`
+    UPDATE alert_rules
+    SET ${sql.join(setClauses, sql`, `)}
+    WHERE id = ${ruleId}
+    RETURNING id, name, description, entity_type, entity_id, alert_type, condition, threshold, severity, is_enabled, notification_channels, created_by, created_at, updated_at
+  `)) as QueryResult<Record<string, unknown>>;
+
   if (result.rows.length === 0) return null;
   const row = result.rows[0];
   return {
@@ -660,7 +754,7 @@ export async function updateAlertRule(ruleId: string, updates: Partial<AlertRule
     threshold: row.threshold ? parseJsonIfString<Record<string, unknown>>(row.threshold) : undefined,
     severity: row.severity as AlertRule['severity'],
     isEnabled: Boolean(row.is_enabled),
-    notificationChannels: (row.notification_channels as unknown) as string[] ?? [],
+    notificationChannels: parsePostgresArray<string>(row.notification_channels),
     createdBy: String(row.created_by),
     createdAt: (row.created_at as unknown) as Date,
     updatedAt: (row.updated_at as unknown) as Date,
@@ -673,25 +767,33 @@ export async function searchConfigurationHistory(
   limit = 50,
   offset = 0
 ): Promise<{ results: ConfigHistoryEntry[]; total: number }> {
-  let base = `SELECT ch.* FROM configuration_history ch WHERE 1=1`;
-  const params: unknown[] = [];
-  if (searchQuery.trim()) { params.push(`%${searchQuery}%`); base += ` AND ch.change_reason ILIKE $${params.length}`; }
-  if (filters.entityType) { params.push(filters.entityType); base += ` AND ch.entity_type = $${params.length}`; }
-  if (filters.entityId) { params.push(filters.entityId); base += ` AND ch.entity_id = $${params.length}`; }
-  if (filters.startDate) { params.push(filters.startDate); base += ` AND ch.changed_at >= $${params.length}`; }
-  if (filters.endDate) { params.push(filters.endDate); base += ` AND ch.changed_at <= $${params.length}`; }
-  if (filters.changedBy) { params.push(filters.changedBy); base += ` AND ch.changed_by = $${params.length}`; }
+  const filterClauses: any[] = [];
+  if (searchQuery.trim()) filterClauses.push(sql`ch.change_reason ILIKE ${`%${searchQuery}%`}`);
+  if (filters.entityType) filterClauses.push(sql`ch.entity_type = ${filters.entityType}`);
+  if (filters.entityId) filterClauses.push(sql`ch.entity_id = ${filters.entityId}`);
+  if (filters.startDate) filterClauses.push(sql`ch.changed_at >= ${filters.startDate}`);
+  if (filters.endDate) filterClauses.push(sql`ch.changed_at <= ${filters.endDate}`);
+  if (filters.changedBy) filterClauses.push(sql`ch.changed_by = ${filters.changedBy}`);
   if (filters.changedFields && filters.changedFields.length > 0) {
-    const fieldClauses: string[] = [];
-    for (const f of filters.changedFields) { params.push(JSON.stringify([f])); fieldClauses.push(`ch.changed_fields @> $${params.length}`); }
-    base += ` AND (${fieldClauses.join(' OR ')})`;
+    const fieldMatches = filters.changedFields.map((field) => sql`ch.changed_fields @> ${JSON.stringify([field])}`);
+    filterClauses.push(sql`(${sql.join(fieldMatches, sql` OR `)})`);
   }
 
-  const countQuery = `SELECT COUNT(*) as total FROM configuration_history ch WHERE 1=1` + base.substring(base.indexOf('WHERE') + 5);
-  const countResult = (await db.execute((sql.raw as any)(countQuery, ...(params as any[])))) as QueryResult<{ total: number }>;
+  const countResult = (await db.execute(sql`
+    SELECT COUNT(*) as total
+    FROM configuration_history ch
+    WHERE ${sql.join(filterClauses.length > 0 ? filterClauses : [sql`TRUE`], sql` AND `)}
+  `)) as QueryResult<{ total: number }>;
 
-  const finalQuery = `${base} ORDER BY ch.changed_at DESC LIMIT ${limit} OFFSET ${offset}`;
-  const result = (await db.execute((sql.raw as any)(finalQuery, ...(params as any[])))) as QueryResult<Record<string, unknown>>;
+  const result = (await db.execute(sql`
+    SELECT ch.*
+    FROM configuration_history ch
+    WHERE ${sql.join(filterClauses.length > 0 ? filterClauses : [sql`TRUE`], sql` AND `)}
+    ORDER BY ch.changed_at DESC
+    LIMIT ${limit}
+    OFFSET ${offset}
+  `)) as QueryResult<Record<string, unknown>>;
+
   const rows = result.rows.map((row) => ({
     id: String(row.id),
     entityType: String(row.entity_type),
@@ -699,7 +801,7 @@ export async function searchConfigurationHistory(
     versionNumber: Number(row.version_number),
     configuration: parseJsonIfString<Record<string, unknown>>(row.configuration),
     previousConfiguration: row.previous_configuration ? parseJsonIfString<Record<string, unknown>>(row.previous_configuration) : undefined,
-    changedFields: (row.changed_fields as unknown) as string[],
+    changedFields: parsePostgresArray<string>(row.changed_fields),
     changeReason: row.change_reason as string | undefined,
     changedBy: String(row.changed_by),
     changedAt: (row.changed_at as unknown) as Date,

@@ -15,13 +15,13 @@ import { limitOrders } from '../../shared/schema';
 import { OrderRepository, OptimisticLockError } from '../domain/trading/OrderRepository';
 import { OrderStatus, validateOrderTransition } from '../domain/trading/OrderStateMachine';
 import { commandBus } from '../domain/setup';
-import { 
-  CreateOrderCommand, 
-  UpdateOrderFillCommand, 
-  CancelOrderCommand, 
+import type {
+  CreateOrderCommand,
+  UpdateOrderFillCommand,
+  CancelOrderCommand,
   ExpireOrderCommand,
-  TradingCommandTypes
 } from '../domain/trading/TradingCommands';
+import { TradingCommandTypes } from '../domain/trading/TradingCommands';
 import { v4 as uuid } from 'uuid';
 import { ccxtService } from './ccxtService';
 import { logger } from '../utils/logger';
@@ -48,11 +48,35 @@ export interface LimitOrderRecord {
 }
 
 class LimitOrderTracker {
-  private trackingInterval: NodeJS.Timer | null = null;
+  private trackingInterval: ReturnType<typeof setInterval> | null = null;
   private repo = new OrderRepository();
 
   constructor() {
     logger.info('✅ Limit Order Tracker Service initialized');
+  }
+
+  private async findPersistedOrdersByUser(userId: string, status?: string) {
+    const conditions = [eq(limitOrders.userId, userId)];
+    if (status) {
+      conditions.push(eq(limitOrders.status, status));
+    }
+
+    return db
+      .select()
+      .from(limitOrders)
+      .where(and(...conditions))
+      .limit(100);
+  }
+
+  private async findExpiredPersistedOrders() {
+    return db
+      .select()
+      .from(limitOrders)
+      .where(and(
+        lt(limitOrders.expiresAt, new Date()),
+        ne(limitOrders.status, 'expired')
+      ))
+      .limit(100);
   }
 
   /**
@@ -69,13 +93,13 @@ class LimitOrderTracker {
     expiresAt: Date
   ): Promise<LimitOrderRecord> {
     try {
-    try {
       const commandId = uuid();
       const command: CreateOrderCommand = {
         id: commandId,
         type: TradingCommandTypes.CreateOrder,
-        actor: userId, // Assuming user initiates
-        correlationId: commandId, // Should ideally come from request context
+        actor: userId,
+        correlationId: commandId,
+        timestamp: new Date(),
         payload: {
           userId,
           exchange,
@@ -89,7 +113,7 @@ class LimitOrderTracker {
       };
 
       const result = await commandBus.dispatch(command);
-      
+
       if (!result.success) {
         throw new Error(`Command failed: ${result.error}`);
       }
@@ -101,7 +125,12 @@ class LimitOrderTracker {
       // But we need the DB order ID. Wait, CreateOrderCommand doesn't currently accept the ID, it generates it inside repo or uses exchangeOrderId.
       // The aggregate uses `id: uuid()` in `create()`. We can query by `orderId` (exchangeOrderId).
       const orders = await this.repo.findByUser(userId, OrderStatus.CREATED);
-      const order = orders.find(o => o.orderId === orderId);
+      let order = orders.find(o => o.orderId === orderId);
+
+      if (!order) {
+        const persistedOrders = await this.findPersistedOrdersByUser(userId, OrderStatus.CREATED);
+        order = persistedOrders.find((o: any) => o.orderId === orderId) as any;
+      }
 
       if (!order) {
         throw new Error('Order was created but could not be retrieved immediately.');
@@ -228,11 +257,12 @@ class LimitOrderTracker {
           type: TradingCommandTypes.UpdateOrderFill,
           actor: 'system',
           correlationId: uuid(),
+          timestamp: new Date(),
           payload: {
             orderId: aggregate.id,
-            filledAmount: status.filled || aggregate.filledAmount,
-            filledPrice: status.average || aggregate.filledPrice,
-            fee: status.fee || aggregate.fee,
+            filledAmount: status.filled ?? aggregate.filledAmount,
+            filledPrice: status.average ?? aggregate.filledPrice ?? 0,
+            fee: status.fee ?? aggregate.fee,
             isFinalFill
           }
         };
@@ -312,7 +342,11 @@ class LimitOrderTracker {
     try {
       const now = new Date();
       const pendingOrders = await this.repo.findByStatus(OrderStatus.CREATED);
-      const expiredOrders = pendingOrders.filter(o => o.expiresAt < now);
+      const persistedExpiredOrders = await this.findExpiredPersistedOrders();
+      const expiredOrders: any[] = [
+        ...pendingOrders.filter(o => o.expiresAt < now),
+        ...persistedExpiredOrders.filter((o: any) => !pendingOrders.some(p => p.id === o.id))
+      ];
 
       for (const order of expiredOrders) {
         logger.info(`Order expired: ${order.orderId} (${order.symbol})`);
@@ -330,6 +364,7 @@ class LimitOrderTracker {
           type: TradingCommandTypes.ExpireOrder,
           actor: 'system',
           correlationId: uuid(),
+          timestamp: new Date(),
           payload: { orderId: order.id }
         };
         const result = await commandBus.dispatch(command);
@@ -364,8 +399,9 @@ class LimitOrderTracker {
         const command: CancelOrderCommand = {
           id: uuid(),
           type: TradingCommandTypes.CancelOrder,
-          actor: 'user', // Or 'system' depending on context
+          actor: 'user',
           correlationId: uuid(),
+          timestamp: new Date(),
           payload: { orderId: dbOrder.id, reason: 'User requested cancellation' }
         };
         const result = await commandBus.dispatch(command);

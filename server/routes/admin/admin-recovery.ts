@@ -4,12 +4,13 @@
  * Phase 3c Part 5 - Recovery Workflows
  */
 
-import express, { Router } from 'express';
-import { authenticate, authorize } from '../middleware/auth';
+import { Router } from 'express';
+import { authenticate, authorize } from '../../auth';
 import { circuitBreakerRegistry } from '../../core/consolidation/CircuitBreakerConsolidation';
 import { paymentRecoverySAGA } from '../../services/PaymentRecoverySAGAOrchestrator';
-import { db } from '../../db';
-import { AppError } from '../utils/appError';
+import { paymentRecoveryWorkflowService } from '../../services/paymentRecoveryWorkflowService';
+import { pool } from '../../db';
+import { AppError } from '../../utils/appError';
 
 const router = Router();
 
@@ -20,33 +21,38 @@ router.use(authenticate, authorize('super_admin'));
  * GET /admin/recovery/workflows
  * List all recovery workflows (paginated, filterable)
  */
-router.get('/admin/recovery/workflows', async (req, res) => {
+router.get('/recovery/workflows', async (req, res) => {
   try {
-    const limit = req.query.limit ? Math.min(parseInt(req.query.limit as string), 100) : 50;
-    const offset = req.query.offset ? parseInt(req.query.offset as string) : 0;
+    const limit = parsePaginationValue(req.query.limit, 50, 100);
+    const offset = parsePaginationValue(req.query.offset, 0, Number.MAX_SAFE_INTEGER);
     const state = req.query.state as string || 'all';
     const strategy = req.query.strategy as string || 'all';
 
-    let whereClause = '';
-    const values = [];
+    const filters: string[] = [];
+    const values: string[] = [];
 
     if (state !== 'all') {
-      whereClause += `${whereClause ? ' AND ' : 'WHERE '}state = $${values.length + 1}`;
+      filters.push(`status = $${values.length + 1}`);
       values.push(state);
     }
 
     if (strategy !== 'all') {
-      whereClause += `${whereClause ? ' AND ' : 'WHERE '}strategy = $${values.length + 1}`;
+      filters.push(`current_step = $${values.length + 1}`);
       values.push(strategy);
     }
 
-    const result = await db.query(
-      `SELECT * FROM recovery_workflows ${whereClause} ORDER BY created_at DESC LIMIT $${values.length + 1} OFFSET $${values.length + 2}`,
+    const whereClause = filters.length > 0 ? `WHERE ${filters.join(' AND ')}` : '';
+
+    const result = await pool.query(
+      `SELECT id, status, user_id, payment_id, amount, currency, steps_completed, current_step,
+          compensation_steps, attempt_count, max_attempts, last_error, created_at, updated_at
+      FROM payment_sagas ${whereClause}
+       ORDER BY created_at DESC LIMIT $${values.length + 1} OFFSET $${values.length + 2}`,
       [...values, limit, offset]
     );
 
-    const countResult = await db.query(
-      `SELECT COUNT(*) as count FROM recovery_workflows ${whereClause}`,
+    const countResult = await pool.query(
+      `SELECT COUNT(*) as count FROM payment_sagas ${whereClause}`,
       values
     );
 
@@ -61,6 +67,9 @@ router.get('/admin/recovery/workflows', async (req, res) => {
       }
     });
   } catch (error) {
+    if (error instanceof InvalidParameterError) {
+      return res.status(400).json({ error: error.message });
+    }
     console.error('Error fetching workflows:', error);
     res.status(500).json({
       error: 'Failed to fetch workflows',
@@ -73,11 +82,11 @@ router.get('/admin/recovery/workflows', async (req, res) => {
  * GET /admin/recovery/workflows/:workflowId
  * Get specific recovery workflow (admin view)
  */
-router.get('/admin/recovery/workflows/:workflowId', async (req, res) => {
+router.get('/recovery/workflows/:workflowId', async (req, res) => {
   try {
     const { workflowId } = req.params;
 
-    const saga = paymentRecoverySAGA.getSAGAState(workflowId);
+    const saga = await paymentRecoverySAGA.getSAGAState(workflowId);
 
     if (!saga) {
       return res.status(404).json({
@@ -92,13 +101,13 @@ router.get('/admin/recovery/workflows/:workflowId', async (req, res) => {
       adminView: {
         currentStep: saga.currentStep,
         completedSteps: saga.stepsCompleted,
-        totalSteps: saga.steps.length,
-        progress: `${saga.stepsCompleted.length}/${saga.steps.length}`,
-        errors: saga.errors,
-        events: saga.events,
+        totalSteps: paymentRecoverySAGA.getTotalExecutionSteps(saga),
+        progress: `${saga.stepsCompleted.length}/${paymentRecoverySAGA.getTotalExecutionSteps(saga)}`,
+        errors: saga.lastError ? [saga.lastError] : [],
+        events: await paymentRecoverySAGA.getSAGAEvents(workflowId),
         createdAt: saga.createdAt,
         updatedAt: saga.updatedAt,
-        completedAt: saga.completedAt
+        completedAt: ['succeeded', 'failed', 'abandoned'].includes(saga.status) ? saga.updatedAt : null
       }
     });
   } catch (error) {
@@ -114,54 +123,40 @@ router.get('/admin/recovery/workflows/:workflowId', async (req, res) => {
  * GET /admin/recovery/stats
  * Get recovery statistics and metrics
  */
-router.get('/admin/recovery/stats', async (req, res) => {
+router.get('/recovery/stats', async (req, res) => {
   try {
-    const hoursBack = req.query.hoursBack ? parseInt(req.query.hoursBack as string) : 24;
+    const hoursBack = parsePositiveInteger(req.query.hoursBack, 24);
     const fromDate = new Date(Date.now() - hoursBack * 60 * 60 * 1000);
 
-    // Get all SAGAs (no user filter for admin view)
-    const allSagas = paymentRecoverySAGA.getAllSAGAs();
-    const recentSagasCount = allSagas.filter(s => new Date(s.createdAt) > fromDate).length;
-
-    // Calculate metrics
-    const succeeded = allSagas.filter(s => s.status === 'succeeded').length;
-    const failed = allSagas.filter(s => s.status === 'failed').length;
-    const processing = allSagas.filter(s => s.status === 'processing').length;
-    const compensated = allSagas.filter(s => s.status === 'compensated').length;
-
-    const successRate = allSagas.length > 0 ? (succeeded / allSagas.length) * 100 : 0;
-    const avgDuration =
-      allSagas.filter(s => s.completedAt).length > 0
-        ? Math.round(
-            allSagas
-              .filter(s => s.completedAt)
-              .reduce((sum, s) => sum + (new Date(s.completedAt!).getTime() - new Date(s.createdAt).getTime()), 0) /
-            allSagas.filter(s => s.completedAt).length
-          )
-        : 0;
+    const stats = await paymentRecoverySAGA.getSAGAStats(fromDate);
+    const compensated = stats.compensating + stats.abandoned;
+    const successRate = stats.total > 0 ? (stats.succeeded / stats.total) * 100 : 0;
 
     res.json({
       timestamp: new Date(),
       period: { hoursBack, from: fromDate, to: new Date() },
       metrics: {
-        total: allSagas.length,
-        recentCount: recentSagasCount,
-        succeeded,
-        failed,
-        processing,
+        total: stats.total,
+        recentCount: stats.total,
+        succeeded: stats.succeeded,
+        failed: stats.failed,
+        processing: stats.processing,
         compensated,
         successRate: Math.round(successRate * 100) / 100,
-        averageDurationMs: avgDuration
+        averageDurationMs: stats.averageDurationMs
       },
       statusBreakdown: {
-        pending: allSagas.filter(s => s.status === 'pending').length,
-        processing,
-        succeeded,
-        failed,
+        pending: 0,
+        processing: stats.processing,
+        succeeded: stats.succeeded,
+        failed: stats.failed,
         compensated
       }
     });
   } catch (error) {
+    if (error instanceof InvalidParameterError) {
+      return res.status(400).json({ error: error.message });
+    }
     console.error('Error fetching recovery stats:', error);
     res.status(500).json({
       error: 'Failed to fetch recovery stats',
@@ -174,10 +169,10 @@ router.get('/admin/recovery/stats', async (req, res) => {
  * GET /admin/recovery/circuit-breakers
  * Get circuit breaker status for all providers
  */
-router.get('/admin/recovery/circuit-breakers', async (req, res) => {
+router.get('/recovery/circuit-breakers', async (req, res) => {
   try {
     // Get all domain breakers from registry
-    const allBreakers = circuitBreakerRegistry.getAllBreakers();
+    const allBreakers = circuitBreakerRegistry.getAll();
 
     // Group by state
     const byState: Record<string, any[]> = {
@@ -187,7 +182,7 @@ router.get('/admin/recovery/circuit-breakers', async (req, res) => {
     };
 
     allBreakers.forEach(b => {
-      const state = b.state.toLowerCase();
+      const state = b.getState().toLowerCase();
       if (byState[state]) {
         byState[state].push(b);
       }
@@ -196,14 +191,7 @@ router.get('/admin/recovery/circuit-breakers', async (req, res) => {
     res.json({
       timestamp: new Date(),
       breakers: allBreakers.map(b => ({
-        domain: b.domain,
-        state: b.state,
-        failureCount: b.failureCount,
-        successCount: b.successCount,
-        lastFailureTime: b.lastFailureTime,
-        nextResetTime: b.nextResetTime,
-        failureThreshold: b.config.failureThreshold,
-        resetTimeout: b.config.resetTimeout
+        ...b.getMetrics(),
       })),
       summary: {
         total: allBreakers.length,
@@ -230,11 +218,11 @@ router.get('/admin/recovery/circuit-breakers', async (req, res) => {
  * GET /admin/recovery/circuit-breakers/:provider
  * Get specific circuit breaker status
  */
-router.get('/admin/recovery/circuit-breakers/:provider', async (req, res) => {
+router.get('/recovery/circuit-breakers/:provider', async (req, res) => {
   try {
     const { provider } = req.params;
 
-    const breaker = circuitBreakerRegistry.getBreaker(provider);
+    const breaker = circuitBreakerRegistry.get(provider);
 
     if (!breaker) {
       return res.status(404).json({
@@ -242,19 +230,14 @@ router.get('/admin/recovery/circuit-breakers/:provider', async (req, res) => {
       });
     }
 
+    const metrics = breaker.getMetrics();
     res.json({
       timestamp: new Date(),
-      domain: provider,
+      domain: metrics.domain,
       breaker: {
-        state: breaker.state,
-        failureCount: breaker.failureCount,
-        successCount: breaker.successCount,
-        lastFailureTime: breaker.lastFailureTime,
-        nextResetTime: breaker.nextResetTime,
-        failureThreshold: breaker.config.failureThreshold,
-        resetTimeout: breaker.config.resetTimeout
+        ...metrics,
       },
-      nextResetAt: breaker.state === 'open' ? breaker.nextResetTime : null
+      nextResetAt: metrics.state === 'OPEN' ? metrics.openedAt : null
     });
   } catch (error) {
     console.error('Error fetching circuit breaker:', error);
@@ -270,7 +253,7 @@ router.get('/admin/recovery/circuit-breakers/:provider', async (req, res) => {
  * Update circuit breaker state
  * Body: { state: 'closed' | 'open' | 'half_open' }
  */
-router.put('/admin/recovery/circuit-breakers/:provider', async (req, res) => {
+router.put('/recovery/circuit-breakers/:provider', async (req, res) => {
   try {
     const { provider } = req.params;
     const { state } = req.body;
@@ -283,7 +266,7 @@ router.put('/admin/recovery/circuit-breakers/:provider', async (req, res) => {
     }
 
     // Update through circuit breaker registry
-    const breaker = circuitBreakerRegistry.getBreaker(provider);
+    const breaker = circuitBreakerRegistry.get(provider);
     if (!breaker) {
       return res.status(404).json({
         error: 'Circuit breaker not found'
@@ -291,16 +274,12 @@ router.put('/admin/recovery/circuit-breakers/:provider', async (req, res) => {
     }
 
     // Reset or set state directly (admin override)
-    if (state === 'closed') {
-      breaker.reset();
-    } else {
-      breaker.state = state as any;
-    }
+    breaker.setState(state === 'closed' ? 'CLOSED' : state === 'open' ? 'OPEN' : 'HALF_OPEN', 'admin override');
 
     res.json({
       timestamp: new Date(),
       domain: provider,
-      state: breaker.state,
+      state: breaker.getState().toLowerCase(),
       message: `Circuit breaker for ${provider} updated to ${state}`
     });
   } catch (error) {
@@ -316,11 +295,11 @@ router.put('/admin/recovery/circuit-breakers/:provider', async (req, res) => {
  * POST /admin/recovery/circuit-breakers/:provider/reset
  * Reset circuit breaker to closed state
  */
-router.post('/admin/recovery/circuit-breakers/:provider/reset', async (req, res) => {
+router.post('/recovery/circuit-breakers/:provider/reset', async (req, res) => {
   try {
     const { provider } = req.params;
 
-    const breaker = circuitBreakerRegistry.getBreaker(provider);
+    const breaker = circuitBreakerRegistry.get(provider);
     if (!breaker) {
       return res.status(404).json({
         error: 'Circuit breaker not found'
@@ -332,7 +311,7 @@ router.post('/admin/recovery/circuit-breakers/:provider/reset', async (req, res)
     res.json({
       timestamp: new Date(),
       domain: provider,
-      state: breaker.state,
+      state: breaker.getState().toLowerCase(),
       message: `Circuit breaker for ${provider} reset to closed`
     });
   } catch (error) {
@@ -348,7 +327,7 @@ router.post('/admin/recovery/circuit-breakers/:provider/reset', async (req, res)
  * GET /admin/recovery/provider-fallbacks
  * Get provider fallback configurations
  */
-router.get('/admin/recovery/provider-fallbacks', async (req, res) => {
+router.get('/recovery/provider-fallbacks', async (req, res) => {
   try {
     // Get SAGA provider configurations
     const sagaConfig = paymentRecoverySAGA.getProviderConfig();
@@ -378,12 +357,17 @@ router.get('/admin/recovery/provider-fallbacks', async (req, res) => {
  * Update provider fallback status
  * Body: { isAvailable, failureRate }
  */
-router.put('/admin/recovery/provider-fallbacks/:operation/:provider', async (req, res) => {
+router.put('/recovery/provider-fallbacks/:operation/:provider', async (req, res) => {
   try {
     const { operation, provider } = req.params;
     const { isAvailable, failureRate } = req.body;
 
-    if (failureRate !== undefined && (failureRate < 0 || failureRate > 100)) {
+    if (isAvailable !== undefined && typeof isAvailable !== 'boolean') {
+      return res.status(400).json({ error: 'isAvailable must be a boolean' });
+    }
+
+    if (failureRate !== undefined &&
+        (typeof failureRate !== 'number' || !Number.isFinite(failureRate) || failureRate < 0 || failureRate > 100)) {
       return res.status(400).json({
         error: 'failureRate must be between 0 and 100'
       });
@@ -420,10 +404,10 @@ router.put('/admin/recovery/provider-fallbacks/:operation/:provider', async (req
  * GET /admin/recovery/manual-interventions
  * Get pending manual intervention requests
  */
-router.get('/admin/recovery/manual-interventions', async (req, res) => {
+router.get('/recovery/manual-interventions', async (req, res) => {
   try {
-    const limit = req.query.limit ? Math.min(parseInt(req.query.limit as string), 100) : 50;
-    const offset = req.query.offset ? parseInt(req.query.offset as string) : 0;
+    const limit = parsePaginationValue(req.query.limit, 50, 100);
+    const offset = parsePaginationValue(req.query.offset, 0, Number.MAX_SAFE_INTEGER);
     const status = req.query.status as string || 'pending';
 
     let whereClause = '';
@@ -434,12 +418,15 @@ router.get('/admin/recovery/manual-interventions', async (req, res) => {
       values.push(status);
     }
 
-    const result = await db.query(
-      `SELECT * FROM manual_intervention_requests ${whereClause} ORDER BY created_at DESC LIMIT $${values.length + 1} OFFSET $${values.length + 2}`,
+    const result = await pool.query(
+      `SELECT id, workflow_id, user_id, transaction_id, reason, priority, status,
+          approved_by, approval_notes, created_at, updated_at
+       FROM manual_intervention_requests ${whereClause}
+       ORDER BY created_at DESC LIMIT $${values.length + 1} OFFSET $${values.length + 2}`,
       [...values, limit, offset]
     );
 
-    const countResult = await db.query(
+    const countResult = await pool.query(
       `SELECT COUNT(*) as count FROM manual_intervention_requests ${whereClause}`,
       values
     );
@@ -455,6 +442,9 @@ router.get('/admin/recovery/manual-interventions', async (req, res) => {
       }
     });
   } catch (error) {
+    if (error instanceof InvalidParameterError) {
+      return res.status(400).json({ error: error.message });
+    }
     console.error('Error fetching manual interventions:', error);
     res.status(500).json({
       error: 'Failed to fetch manual interventions',
@@ -468,11 +458,15 @@ router.get('/admin/recovery/manual-interventions', async (req, res) => {
  * Approve or reject manual intervention request
  * Body: { status: 'approved' | 'rejected', notes }
  */
-router.put('/admin/recovery/manual-interventions/:requestId', async (req, res) => {
+router.put('/recovery/manual-interventions/:requestId', async (req, res) => {
   try {
     const { requestId } = req.params;
     const { status, notes } = req.body;
-    const adminId = req.user.id;
+    const adminId = req.user?.id;
+
+    if (!adminId) {
+      return res.status(401).json({ error: 'Unauthorized' });
+    }
 
     if (!['approved', 'rejected'].includes(status)) {
       return res.status(400).json({
@@ -480,26 +474,22 @@ router.put('/admin/recovery/manual-interventions/:requestId', async (req, res) =
       });
     }
 
-    const result = await db.query(
-      `UPDATE manual_intervention_requests 
-       SET status = $1, approved_by = $2, approval_notes = $3, updated_at = $4
-       WHERE id = $5
-       RETURNING *`,
-      [status, adminId, notes || '', new Date(), requestId]
+    const resolution = await paymentRecoveryWorkflowService.resolveManualIntervention(
+      requestId,
+      adminId,
+      { type: status === 'approved' ? 'retry' : 'cancel', notes }
     );
-
-    if (result.rows.length === 0) {
-      return res.status(404).json({
-        error: 'Request not found'
-      });
-    }
 
     res.json({
       timestamp: new Date(),
-      request: result.rows[0],
-      message: `Manual intervention request ${status}`
+      request: resolution,
+      decision: status,
+      message: `Manual intervention request ${status}; ${status === 'approved' ? 'recovery retry queued' : 'workflow cancelled'}`
     });
   } catch (error) {
+    if (error instanceof AppError) {
+      return res.status(error.statusCode).json({ error: error.message });
+    }
     console.error('Error updating manual intervention:', error);
     res.status(500).json({
       error: 'Failed to update manual intervention',
@@ -512,13 +502,13 @@ router.put('/admin/recovery/manual-interventions/:requestId', async (req, res) =
  * GET /admin/recovery/analysis
  * Get recovery analysis and insights
  */
-router.get('/admin/recovery/analysis', async (req, res) => {
+router.get('/recovery/analysis', async (req, res) => {
   try {
-    const hoursBack = req.query.hoursBack ? parseInt(req.query.hoursBack as string) : 24;
+    const hoursBack = parsePositiveInteger(req.query.hoursBack, 24);
     const fromDate = new Date(Date.now() - hoursBack * 60 * 60 * 1000);
 
     // Strategies effectiveness
-    const strategyResult = await db.query(
+    const strategyResult = await pool.query(
       `SELECT strategy, state, COUNT(*) as count FROM recovery_workflows 
        WHERE created_at > $1 
        GROUP BY strategy, state`,
@@ -526,7 +516,7 @@ router.get('/admin/recovery/analysis', async (req, res) => {
     );
 
     // Provider performance
-    const providerResult = await db.query(
+    const providerResult = await pool.query(
       `SELECT current_provider, state, COUNT(*) as count FROM recovery_workflows 
        WHERE created_at > $1 
        GROUP BY current_provider, state`,
@@ -534,7 +524,7 @@ router.get('/admin/recovery/analysis', async (req, res) => {
     );
 
     // Error codes recovery rates
-    const errorResult = await db.query(
+    const errorResult = await pool.query(
       `SELECT original_error, state, COUNT(*) as count FROM recovery_workflows 
        WHERE created_at > $1 
        GROUP BY original_error, state
@@ -580,6 +570,9 @@ router.get('/admin/recovery/analysis', async (req, res) => {
       }
     });
   } catch (error) {
+    if (error instanceof InvalidParameterError) {
+      return res.status(400).json({ error: error.message });
+    }
     console.error('Error fetching recovery analysis:', error);
     res.status(500).json({
       error: 'Failed to fetch recovery analysis',
@@ -614,5 +607,25 @@ function generateRecommendations(strategies: any, providers: any): string[] {
 
   return recommendations;
 }
+
+function parsePaginationValue(value: unknown, fallback: number, maximum: number): number {
+  if (value === undefined) return fallback;
+  const parsed = Number(value);
+  if (!Number.isSafeInteger(parsed) || parsed < 0 || parsed > maximum) {
+    throw new InvalidParameterError('Invalid pagination parameter');
+  }
+  return parsed;
+}
+
+function parsePositiveInteger(value: unknown, fallback: number): number {
+  if (value === undefined) return fallback;
+  const parsed = Number(value);
+  if (!Number.isSafeInteger(parsed) || parsed <= 0) {
+    throw new InvalidParameterError('Invalid hoursBack parameter');
+  }
+  return parsed;
+}
+
+class InvalidParameterError extends Error {}
 
 export default router;
