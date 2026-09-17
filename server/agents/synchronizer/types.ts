@@ -3,7 +3,7 @@
  * SYNCHRONIZER Agent Type Definitions
  */
 
-import { AgentMetrics } from '../framework/base-agent';
+import { type AgentMetrics } from '../framework/base-agent';
 
 export enum SyncMode {
   STEADY_BEAT = 'steady_beat',

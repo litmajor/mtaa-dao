@@ -82,7 +82,7 @@ export class DiffProposer {
         }
       }
     } catch (error) {
-      logger.warn(`Failed to propose fixes for ${file}:`, error);
+      logger.warn(`Failed to propose fixes for ${file}:`, { error });
     }
 
     return patches;
@@ -154,7 +154,7 @@ export class DiffProposer {
         }
       }
     } catch (error) {
-      logger.warn(`Failed to propose naming fixes for ${file}:`, error);
+      logger.warn(`Failed to propose naming fixes for ${file}:`, { error });
     }
 
     return patches;
@@ -189,7 +189,7 @@ export class DiffProposer {
         }
       }
     } catch (error) {
-      logger.warn(`Failed to propose any-type fixes for ${file}:`, error);
+      logger.warn(`Failed to propose any-type fixes for ${file}:`, { error });
     }
 
     return patches;
@@ -273,7 +273,7 @@ Revert: ${patch.revertCommand}
         }
       }
     } catch (error) {
-      logger.warn(`Failed to list patches:`, error);
+      logger.warn(`Failed to list patches:`, { error });
     }
 
     return patches;

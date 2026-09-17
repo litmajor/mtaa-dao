@@ -24,7 +24,7 @@
  */
 
 import { Server as SocketIOServer } from 'socket.io';
-import { Server as HttpServer } from 'http';
+import { type Server as HttpServer } from 'http';
 import socketAuthMiddleware from '../middleware/socketAuth';
 import { morioDataHubService } from '../services/morio-data-hub.service';
 import { WS_PATHS, MorioWS } from './websocket-events';

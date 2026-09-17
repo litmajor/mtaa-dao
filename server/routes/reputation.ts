@@ -1,5 +1,5 @@
 
-import express, { Request, Response } from 'express';
+import express, { type Request, type Response } from 'express';
 import { db } from '../db';
 import { eq, desc, sql, and } from 'drizzle-orm';
 import { AchievementService } from '../achievementService';

@@ -13,6 +13,8 @@ import { Badge } from './ui/index';
 import { Input } from './ui/index';
 import { LoaderCircle, Users } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
+import { authClient } from '@/utils/authClient';
+import { Loader2 } from 'lucide-react';
 
 interface FollowUser {
   id: string;

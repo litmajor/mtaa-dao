@@ -230,7 +230,7 @@ export class MarketUniverseBuilder {
       }
       logger.info('[MarketUniverse] Seeded OHLCV dataSourceRegistry from MarketUniverse');
     } catch (err) {
-      logger.debug('[MarketUniverse] Unable to seed OHLCV registry:', err);
+      logger.debug('[MarketUniverse] Unable to seed OHLCV registry:', { error: err });
     }
 
     return assets;

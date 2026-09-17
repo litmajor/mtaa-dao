@@ -26,8 +26,8 @@
  */
 
 import WebSocket, { WebSocketServer } from 'ws';
-import { Server as HTTPServer } from 'http';
-import { IncomingMessage } from 'http';
+import { type Server as HTTPServer } from 'http';
+import { type IncomingMessage } from 'http';
 import { ccxtService } from '../services/ccxtService';
 import { logger } from '../utils/logger';
 import { v4 as uuidv4 } from 'uuid';
@@ -319,7 +319,9 @@ class PriceStreamServer {
       if (result.status === 'fulfilled') {
         pricesBySymbol.set(symbol, result.value);
       } else {
-        logger.debug(`Price fetch failed for ${symbol}:`, (result.reason as Error)?.message);
+        logger.debug(`Price fetch failed for ${symbol}:`, {
+          error: (result.reason as Error)?.message || String(result.reason)
+        });
       }
     });
 

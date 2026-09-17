@@ -11,7 +11,7 @@
  * ═══════════════════════════════════════════════════════════════════════════════
  */
 
-import express, { Request, Response } from 'express';
+import express, { type Request, type Response } from 'express';
 import { authenticate } from '../../../auth';
 import { db } from '../../../storage';
 import { eq, sql, count } from 'drizzle-orm';

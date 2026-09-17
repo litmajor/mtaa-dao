@@ -133,7 +133,7 @@ export class ImportValidator {
         }
       }
     } catch (error) {
-      logger.warn(`Failed to validate imports in ${filePath}:`, error);
+      logger.warn(`Failed to validate imports in ${filePath}:`, { error });
     }
 
     return issues;

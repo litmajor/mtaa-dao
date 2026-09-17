@@ -6,7 +6,7 @@
  * `yukiApi` implementations to keep existing call sites working.
  */
 
-/* eslint-disable @typescript-eslint/ban-ts-comment */
+ 
 // @ts-ignore - Forwarding to yukiApi
 import * as yuki from '../api/yukiApi';
 

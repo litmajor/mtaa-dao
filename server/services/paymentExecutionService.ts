@@ -10,7 +10,7 @@
  * - P2P execution respects confirmation requirements (no bypassing approval).
  */
 
-import { ReversibilityService } from './reversibilityService';
+import { type ReversibilityService } from './reversibilityService';
 import { db } from '../db';
 import { and, eq, sql } from 'drizzle-orm';
 import {
@@ -19,15 +19,15 @@ import {
 } from '../../shared/accountSchema';
 import { users } from '../../shared/schema';
 import {
-  ReversibleAction,
-  CreateReversibleActionDTO,
-  ReverseActionDTO,
+  type ReversibleAction,
+  type CreateReversibleActionDTO,
+  type ReverseActionDTO,
   ActorType,
   ActionSeverity,
   ReversalReason,
   ReversibilityStatus,
 } from '../types/reversibility';
-import { SimulationResult } from './simulationFramework';
+import { type SimulationResult } from './simulationFramework';
 import { sharedIdempotencyManager } from './sharedIdempotencyManager';
 
 export interface PaymentExecutionContext {

@@ -5,7 +5,7 @@
  */
 
 import { getMultiChainProvider } from './multiChainProvider';
-import { CHAIN_CONFIG, SupportedChain, getBestBridge } from '../../shared/chainConfiguration';
+import { CHAIN_CONFIG, type SupportedChain, getBestBridge } from '../../shared/chainConfiguration';
 import { Logger } from '../utils/logger';
 
 const logger = new Logger('fee-calculator');

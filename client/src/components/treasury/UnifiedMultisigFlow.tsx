@@ -38,7 +38,7 @@ import {
   Alert,
   AlertDescription,
 } from '../ui/alert';
-import { multisigTreasuryAPI, MultisigApproval, MultisigSigner } from '../../api/multisigTreasuryAPI';
+import { multisigTreasuryAPI, type MultisigApproval, type MultisigSigner } from '../../api/multisigTreasuryAPI';
 import { useFeature, LockedFeatureCard } from '@/hooks/useFeature';
 
 // ────────────────────────────────────────────────────────────────────────────────

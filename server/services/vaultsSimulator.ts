@@ -4,7 +4,7 @@
  * 4 simulators for vault management, redemptions, liquidations, and strategies
  */
 
-import { SimulationService, SimulationResult, SimulationStatus, SimulationDepth, SimulationParams } from './simulationFramework';
+import { SimulationService, type SimulationResult, SimulationStatus, SimulationDepth, type SimulationParams } from './simulationFramework';
 
 /**
  * Vault Deposit Simulator

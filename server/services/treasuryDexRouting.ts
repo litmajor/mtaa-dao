@@ -1,5 +1,5 @@
 import { Logger } from '../utils/logger';
-import { productionDexRouting, SwapOrder, RoutingResult } from './dexRoutingExecution.production';
+import { productionDexRouting, type SwapOrder, type RoutingResult } from './dexRoutingExecution.production';
 
 const logger = Logger.getLogger();
 

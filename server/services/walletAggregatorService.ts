@@ -160,7 +160,7 @@ class MultiChainWalletAggregator {
         this.providers.set(chain, new ethers.JsonRpcProvider(config.rpcUrl));
         logger.debug(`[Wallet] Initialized provider for ${chain}`);
       } catch (error) {
-        logger.warn(`[Wallet] Failed to initialize ${chain} provider:`, error);
+        logger.warn(`[Wallet] Failed to initialize ${chain} provider:`, { error });
       }
     }
   }
@@ -251,7 +251,7 @@ class MultiChainWalletAggregator {
             });
           }
         } catch (error) {
-          logger.warn(`[Wallet] Error fetching ${symbol} balance on ${chain}:`, error);
+          logger.warn(`[Wallet] Error fetching ${symbol} balance on ${chain}:`, { error });
         }
       }
 

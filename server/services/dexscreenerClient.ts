@@ -180,7 +180,7 @@ export class DexScreenerClient {
       );
       return data.pairs || [];
     } catch (err) {
-      logger.warn(`[DexScreener] searchPairs "${query}" failed:`, err);
+      logger.warn(`[DexScreener] searchPairs "${query}" failed:`, { error: err });
       return [];
     }
   }
@@ -195,7 +195,7 @@ export class DexScreenerClient {
       );
       return data.pairs?.[0] || null;
     } catch (err) {
-      logger.warn(`[DexScreener] getPairDetails failed:`, err);
+      logger.warn(`[DexScreener] getPairDetails failed:`, { error: err });
       return null;
     }
   }
@@ -210,7 +210,7 @@ export class DexScreenerClient {
       );
       return data.pairs || [];
     } catch (err) {
-      logger.warn(`[DexScreener] getTokenPairs failed for ${tokenAddress}:`, err);
+      logger.warn(`[DexScreener] getTokenPairs failed for ${tokenAddress}:`, { error: err });
       return [];
     }
   }
@@ -225,7 +225,7 @@ export class DexScreenerClient {
       );
       return Array.isArray(data) ? data : [];
     } catch (err) {
-      logger.warn(`[DexScreener] getTokenPairsOnChain failed:`, err);
+      logger.warn(`[DexScreener] getTokenPairsOnChain failed:`, { error: err });
       return [];
     }
   }
@@ -286,7 +286,7 @@ export class DexScreenerClient {
         data: candles,
       };
     } catch (err: any) {
-      logger.warn(`[DexScreener] getOHLCV failed for ${symbol}:`, err);
+      logger.warn(`[DexScreener] getOHLCV failed for ${symbol}:`, { error: err });
       return this.ohlcvError(symbol, timeframe, err.message || 'Unknown error');
     }
   }
@@ -413,7 +413,7 @@ export class DexScreenerClient {
 
       return filtered;
     } catch (err) {
-      logger.warn('[DexScreener] getCeloTrendingPairs failed:', err);
+      logger.warn('[DexScreener] getCeloTrendingPairs failed:', { error: err });
       return [];
     }
   }
@@ -513,7 +513,7 @@ export class DexScreenerClient {
       logger.info(`[DexScreener] Discovered ${deduped.length} emerging Celo tokens`);
       return deduped;
     } catch (err) {
-      logger.warn('[DexScreener] Emerging token discovery failed:', err);
+      logger.warn('[DexScreener] Emerging token discovery failed:', { error: err });
       return [];
     }
   }
@@ -571,7 +571,7 @@ export class DexScreenerClient {
         const data = JSON.parse(event.data as string);
         this.handleWebSocketMessage(data);
       } catch (err) {
-        logger.warn('[DexScreener WS] Parse error:', err);
+        logger.warn('[DexScreener WS] Parse error:', { error: err });
       }
     };
 
@@ -691,7 +691,7 @@ export class DexScreenerClient {
       try {
         cb(message);
       } catch (err) {
-        logger.warn('[DexScreener WS] Subscriber error:', err);
+        logger.warn('[DexScreener WS] Subscriber error:', { error: err });
       }
     }
   }

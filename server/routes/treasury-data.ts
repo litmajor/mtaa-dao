@@ -15,7 +15,7 @@
  * - GET /api/treasury/history/:daoId - Historical transactions
  */
 
-import express, { Request, Response } from 'express';
+import express, { type Request, type Response } from 'express';
 import { ethers } from 'ethers';
 import { isAuthenticated } from '../auth';
 import { logger } from '../utils/logger';
@@ -176,7 +176,7 @@ async function fetchTokenHoldings(vaultContract: ethers.Contract): Promise<Token
       try {
         rawAssets = await vaultContract.getAssets();
       } catch (err) {
-        logger.debug('[Treasury] vaultContract.getAssets() failed, falling back to mock assets', err);
+        logger.debug('[Treasury] vaultContract.getAssets() failed, falling back to mock assets', { error: err });
         rawAssets = [];
       }
     }
@@ -210,7 +210,7 @@ async function fetchTokenHoldings(vaultContract: ethers.Contract): Promise<Token
           decimals = await tokenContract.decimals().catch(() => decimals);
         }
       } catch (err) {
-        logger.debug('[Treasury] Error reading token metadata:', err);
+        logger.debug('[Treasury] Error reading token metadata:', { error: err });
       }
 
       // If rawAmount is still null, try to pull from tuple fields
@@ -302,7 +302,7 @@ async function fetchGovernanceWeight(governanceContract: ethers.Contract, vaultA
           if (totalSupply > 0) return (vaultBalance / totalSupply) * 100;
         }
       } catch (err) {
-        logger.debug('[Treasury] governance weight direct calc failed:', err);
+        logger.debug('[Treasury] governance weight direct calc failed:', { error: err });
       }
     }
 
@@ -316,7 +316,7 @@ async function fetchGovernanceWeight(governanceContract: ethers.Contract, vaultA
           return val;
         }
       } catch (err) {
-        logger.debug('[Treasury] governance votingWeight call failed:', err);
+        logger.debug('[Treasury] governance votingWeight call failed:', { error: err });
       }
     }
 

@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import { Request, Response } from 'express';
+import { type Request, type Response } from 'express';
 import { db } from '../db';
 import { logger } from '../utils/logger';
 import { authenticateToken } from '../middleware/auth';

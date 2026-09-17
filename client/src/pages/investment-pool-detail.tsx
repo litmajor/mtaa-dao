@@ -10,7 +10,7 @@ import { Badge } from '@/components/ui/badge';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { useToast } from '@/hooks/use-toast';
 import { authClient } from '@/utils/authClient';
-import { Loader, ArrowDownLeft, ArrowUpRight, Activity, BarChart2 } from 'lucide-react';
+import { Loader, ArrowDownLeft, ArrowUpRight, Activity, BarChart2, LoaderCircle, ChartColumn } from 'lucide-react';
 import ChartJS from '@/components/charts/ChartJSSetup';
 import { Chart } from 'react-chartjs-2';
 
@@ -441,9 +441,7 @@ export default function InvestmentPoolDetail() {
                         </div>
                         <div className="h-2 bg-white/10 rounded-full overflow-hidden">
                           <div className="flex h-full">
-                            {/* eslint-disable-next-line @next/next/no-style-component-with-dynamic-styles */}
                             <div className="bg-green-500" style={{ width: '42.5%' }} suppressHydrationWarning />
-                            {/* eslint-disable-next-line @next/next/no-style-component-with-dynamic-styles */}
                             <div className="bg-red-500" style={{ width: '15.2%' }} suppressHydrationWarning />
                           </div>
                         </div>

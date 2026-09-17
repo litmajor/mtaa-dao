@@ -4,7 +4,7 @@
  */
 
 import { BinanceConnector } from './binance';
-import { ExchangeConnector, ExchangeConfig } from './types';
+import { type ExchangeConnector, type ExchangeConfig } from './types';
 
 export class ExchangeManager {
   private connectors: Map<string, ExchangeConnector> = new Map();

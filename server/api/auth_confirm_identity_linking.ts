@@ -192,13 +192,13 @@ export async function authConfirmIdentityLinkingHandler(req: Request, res: Respo
     if (error instanceof Error) {
       switch (error.message) {
         case 'USER_NOT_FOUND':
-          logger.warn('User not found during confirmation', error);
+          logger.warn('User not found during confirmation', { error });
           return res.status(404).json({
             success: false,
             error: 'Account not found',
           });
         case 'USER_HAS_NO_PASSWORD':
-          logger.warn('User has no password set', error);
+          logger.warn('User has no password set', { error });
           return res.status(400).json({
             success: false,
             error: 'Account has no password set',

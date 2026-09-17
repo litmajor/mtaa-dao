@@ -2,7 +2,8 @@ import express from 'express';
 import { db } from '../storage';
 import { escrowAccounts, escrowMilestones, escrowDisputes } from '../../shared/escrowSchema';
 import { users } from '../../shared/schema';
-import { eq, or, sql } from 'drizzle-orm';
+import { and, eq, or, sql } from 'drizzle-orm';
+import type { SQL } from 'drizzle-orm';
 import { escrowService } from '../services/escrowService';
 import { authenticate } from '../auth';
 import { nanoid } from 'nanoid';
@@ -694,31 +695,34 @@ router.get('/list/all', authenticate, async (req, res) => {
     const userId = req.user!.id;
     const { status, role = 'all', daoId, limit = 50, offset = 0, sortBy = 'createdAt', sortOrder = 'desc' } = req.query;
 
-    let query = db.select()
-      .from(escrowAccounts);
+    const filters: SQL[] = [];
 
     // Filter by user's involvement (as payer, payee, or mediator)
     if (role === 'all') {
-      query = query.where(or(
+      filters.push(or(
         eq(escrowAccounts.payerId, userId),
         eq(escrowAccounts.payeeId, userId),
         eq(escrowAccounts.mediatorId, userId)
       ));
     } else if (role === 'payer') {
-      query = query.where(eq(escrowAccounts.payerId, userId));
+      filters.push(eq(escrowAccounts.payerId, userId));
     } else if (role === 'payee') {
-      query = query.where(eq(escrowAccounts.payeeId, userId));
+      filters.push(eq(escrowAccounts.payeeId, userId));
     } else if (role === 'mediator') {
-      query = query.where(eq(escrowAccounts.mediatorId, userId));
+      filters.push(eq(escrowAccounts.mediatorId, userId));
     }
 
     // Apply additional filters
     if (status) {
-      query = query.where(eq(escrowAccounts.status, String(status)));
+      filters.push(eq(escrowAccounts.status, String(status)));
     }
     if (daoId) {
-      query = query.where(eq(escrowAccounts.daoId, String(daoId)));
+      filters.push(eq(escrowAccounts.daoId, String(daoId)));
     }
+
+    const query = db.select()
+      .from(escrowAccounts)
+      .where(and(...filters));
 
     // Get total count
     const allResults = await query;

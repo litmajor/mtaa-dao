@@ -7,7 +7,7 @@
  * - Profitability calculation considering slippage and fees
  */
 
-import { NormalizedAsset, ExchangePresence } from '../types/assetTypes';
+import { type NormalizedAsset, type ExchangePresence } from '../types/assetTypes';
 import { logger } from '../utils/logger';
 
 export interface ArbitrageOpportunity {

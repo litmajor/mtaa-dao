@@ -7,7 +7,7 @@
  * this.wsEmitter.emit('config:changed', `config:${entityId}`, userId, { ...payload });
  */
 
-import WebSocketManager from '../websocket/websocket';
+import type WebSocketManager from '../websocket/websocket';
 
 export interface EmitOptions {
   includeTimestamp?: boolean;

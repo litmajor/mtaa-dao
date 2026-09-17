@@ -33,7 +33,7 @@
  */
 
 import { BaseAdapter } from "./base-adapter";
-import { AdapterResponse, NormalizedData, BaseAdapterConfig } from "../types";
+import { type AdapterResponse, type NormalizedData, type BaseAdapterConfig } from "../types";
 
 interface BeefyVaultMeta {
   id: string;

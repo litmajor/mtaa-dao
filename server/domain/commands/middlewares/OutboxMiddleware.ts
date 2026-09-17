@@ -1,7 +1,7 @@
-import { Command } from '../Command';
-import { CommandResult, CommandContext } from '../CommandBus';
-import { CommandMiddleware, NextFn } from './AuthorizationMiddleware';
-import { EventPublisher } from '../../events/EventPublisher';
+import { type Command } from '../Command';
+import { type CommandResult, type CommandContext } from '../CommandBus';
+import { type CommandMiddleware, type NextFn } from './AuthorizationMiddleware';
+import { type EventPublisher } from '../../events/EventPublisher';
 
 /**
  * Executes the downstream handler, takes any Domain Events returned in the result,

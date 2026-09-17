@@ -16,7 +16,7 @@
  * Can run on separate server if needed
  */
 
-import { fork, ChildProcess } from 'child_process';
+import { fork, type ChildProcess } from 'child_process';
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';

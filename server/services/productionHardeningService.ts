@@ -9,7 +9,7 @@
  */
 
 import { logger } from '../utils/logger';
-import { graphPropagationEngine, GraphNode, PropagationDelta } from './graphPropagationEngine';
+import { graphPropagationEngine, type GraphNode, type PropagationDelta } from './graphPropagationEngine';
 import { propagationMonitoringService } from './propagationMonitoringService';
 
 // ════════════════════════════════════════════════════════════════════════════════

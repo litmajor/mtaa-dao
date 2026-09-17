@@ -1,7 +1,7 @@
 import { logger } from '../utils/logger';
 import {
   advancedMicrostructureIndicators,
-  PriceImpactAnalysis,
+  type PriceImpactAnalysis,
 } from './advancedMicrostructureIndicators';
 
 export interface SwapRiskAssessment {

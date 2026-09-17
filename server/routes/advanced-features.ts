@@ -3,7 +3,7 @@
  * REST API endpoints for MEV protection, LP management, staking, options, analytics, and risk management
  */
 
-import { Router, Request, Response, NextFunction } from "express";
+import { Router, type Request, type Response, type NextFunction } from "express";
 import {
   createMEVStrategy,
   recordMEVTransaction,

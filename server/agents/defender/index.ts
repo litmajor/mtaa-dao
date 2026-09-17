@@ -14,9 +14,9 @@ import {
   DefenseMode,
   ThreatLevel,
   ActionType,
-  AgentBehavior,
-  DefenseAction,
-  DefenderMetrics
+  type AgentBehavior,
+  type DefenseAction,
+  type DefenderMetrics
 } from './types';
 import crypto from 'crypto';
 import { AgentCommunicator } from '../../core/agent-framework/agent-communicator';

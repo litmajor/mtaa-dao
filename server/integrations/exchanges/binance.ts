@@ -3,9 +3,9 @@
  * Implements exchange operations for Binance
  */
 
-import axios, { AxiosInstance } from 'axios';
+import axios, { type AxiosInstance } from 'axios';
 import crypto from 'crypto';
-import { ExchangeConnector, OrderRequest, OrderResponse, TickerData, BalanceResponse, FeeInfo, TradeHistory } from './types';
+import { type ExchangeConnector, type OrderRequest, type OrderResponse, type TickerData, type BalanceResponse, type FeeInfo, type TradeHistory } from './types';
 
 export class BinanceConnector implements ExchangeConnector {
   private apiKey: string;

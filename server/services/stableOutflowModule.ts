@@ -2,7 +2,7 @@ import { and, eq, sql } from 'drizzle-orm';
 import { db } from '../db';
 import { logger } from '../utils/logger';
 import { priceOracle } from './priceOracle';
-import { stableOutflowEvents, InsertStableOutflowEvent } from '../../shared/schema';
+import { stableOutflowEvents, type InsertStableOutflowEvent } from '../../shared/schema';
 import { stableAssetRegistryService } from './stableAssetRegistryService';
 import { stableRiskMonitorService } from './stableRiskMonitorService';
 import type { StableRiskFlags } from '../types/stableInflow';

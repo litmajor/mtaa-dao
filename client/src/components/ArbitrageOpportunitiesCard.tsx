@@ -152,21 +152,21 @@ export const ArbitrageOpportunitiesCard: React.FC<ArbitrageOpportunitiesProps> =
                       ${opp.sellPrice.toFixed(2)}
                     </td>
                     <td className="px-4 py-3 text-right">
-                      {/* eslint-disable-next-line */}
+                      { }
                       <div style={{ color: profit.color }} className="font-bold text-lg">
                         {profit.formatted}
                       </div>
                       <div className="text-xs text-gray-500">${opp.netProfit.toFixed(2)}</div>
                     </td>
                     <td className="px-4 py-3 text-center">
-                      {/* eslint-disable-next-line */}
+                      { }
                       <div style={{ color: getRiskColor(opp.risk) }} className="font-semibold">
                         {getRiskEmoji(opp.risk)}
                       </div>
                       <div className="text-xs text-gray-500 capitalize">{opp.risk}</div>
                     </td>
                     <td className="px-4 py-3 text-center">
-                      {/* eslint-disable-next-line */}
+                      { }
                       <div style={{ color: volumeScore.color }} className="font-semibold">
                         {volumeScore.emoji}
                       </div>

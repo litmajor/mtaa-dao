@@ -1,4 +1,4 @@
-import { DomainEvent } from './DomainEvent';
+import { type DomainEvent } from './DomainEvent';
 
 /**
  * Domain abstraction for publishing events.

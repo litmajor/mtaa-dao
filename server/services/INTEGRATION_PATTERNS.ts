@@ -7,7 +7,8 @@
  * Pattern demonstrated for all 10 shards with production error handling
  */
 
-import { DataSourceManager, DataSourceRequest, DataSourceResponse } from './dataSourceManager';
+import { DataSourceManager } from './dataSourceManager';
+import type { DataSourceRequest, DataSourceResponse } from './dataSourceManager';
 import { PriceHistoryService } from './priceHistoryService';
 import { GatewayAggregator } from './gatewayAggregator';
 import { SnapshotGovernanceService } from './snapshotGovernanceService';

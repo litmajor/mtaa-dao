@@ -8,12 +8,12 @@ import { GatewayAgent, getGatewayAgent, setGatewayAgent } from "./index";
 import { logger } from '../../../utils/logger';
 import {
   MessageBusAdapter,
-  CoordinatorBridge,
+  type CoordinatorBridge,
   getMessageBus,
   getCoordinatorBridge,
 } from "./message-bus";
 import type { GatewayConfig, GatewayMessage } from "./types";
-import { BaseAdapter } from "./adapters/base-adapter";
+import { type BaseAdapter } from "./adapters/base-adapter";
 
 /**
  * Gateway Agent Service - Main entry point for gateway functionality

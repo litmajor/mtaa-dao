@@ -1,5 +1,5 @@
 
-import React, { ButtonHTMLAttributes, forwardRef } from 'react';
+import React, { type ButtonHTMLAttributes, forwardRef } from 'react';
 import { Button } from './button';
 import { cn } from '@/lib/utils';
 

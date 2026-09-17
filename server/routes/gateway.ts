@@ -4,8 +4,8 @@
  * Response format: GatewayResponse<NormalizedData[]>
  */
 
-import { Router, Request, Response, NextFunction } from "express";
-import { GatewayAgentService } from "../core/agents/gateway/service";
+import { Router, type Request, type Response, type NextFunction } from "express";
+import { type GatewayAgentService } from "../core/agents/gateway/service";
 import { getGatewayAgentService } from "../core/agents/gateway/service";
 import { marketDataClient } from "../services/marketDataClient";
 import { authenticateToken } from "../middleware/auth";

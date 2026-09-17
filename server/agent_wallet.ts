@@ -5,6 +5,8 @@ import * as bip39 from 'bip39';
 import dotenv from 'dotenv';
 dotenv.config();
 
+type Web3Type = InstanceType<typeof Web3>;
+
 // Deploy a DAO contract using Web3
 export async function deployDaoContract(daoData: any): Promise<{ success: boolean; daoAddress?: string; error?: string }> {
   try {
@@ -366,8 +368,8 @@ export class EnhancedAgentWallet {
       };
     }
   }
-  private web3: Web3;
-  private account: ReturnType<Web3['eth']['accounts']['privateKeyToAccount']>;
+  private web3: Web3Type;
+  private account: ReturnType<Web3Type['eth']['accounts']['privateKeyToAccount']>;
   private chainId: number;
   private networkConfig: NetworkConfig;
   private permissionCheck?: (daoId: string, userId: string, action: string) => Promise<boolean>;
@@ -1042,7 +1044,7 @@ export class WalletManager {
     return Web3.utils.toChecksumAddress(address);
   }
 
-  static async isContract(web3: Web3, address: string): Promise<boolean> {
+  static async isContract(web3: Web3Type, address: string): Promise<boolean> {
     const code = await web3.eth.getCode(address);
     return code !== '0x';
   }
@@ -1143,7 +1145,7 @@ const isValidPrivateKey = (key: string | undefined): boolean => {
     try {
       const balance = await wallet.getBalanceEth();
       console.log(`Native Balance: ${balance.toFixed(6)} CELO`);
-      
+      3
       if (balance > 0) {
         const balanceUsd = balance * 0.65; // Using CELO price
         console.log(`Balance (USD): $${balanceUsd.toFixed(2)}`);

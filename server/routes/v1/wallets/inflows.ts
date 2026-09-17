@@ -16,7 +16,7 @@
  * - /v1/wallets/withdrawals/stable-assets (redirects here)
  */
 
-import express, { Request, Response, NextFunction } from 'express';
+import express, { type Request, type Response, type NextFunction } from 'express';
 import { isAuthenticated } from '../../../auth';
 
 const router = express.Router({ mergeParams: true });

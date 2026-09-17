@@ -10,7 +10,8 @@ import {
   Calendar, 
   TrendingUp,
   Zap,
-  CheckCircle 
+  CheckCircle,
+  BarChart3
 } from "lucide-react";
 
 interface Extension {

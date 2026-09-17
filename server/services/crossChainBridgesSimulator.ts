@@ -4,7 +4,7 @@
  * 2 simulators for bridge transfers and cross-chain operations
  */
 
-import { SimulationService, SimulationResult, SimulationStatus, SimulationDepth, SimulationParams } from './simulationFramework';
+import { SimulationService, type SimulationResult, SimulationStatus, SimulationDepth, type SimulationParams } from './simulationFramework';
 
 /**
  * Bridge Transfer Simulator

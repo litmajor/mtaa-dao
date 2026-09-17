@@ -4,5 +4,5 @@
     "noEmit": true
   },
   "include": ["client/src/**/*", "client/pages/**/*", "shared/**/*"],
-  "exclude": ["node_modules", "build", "dist", "server"]
+  "exclude": ["node_modules", "build", "dist", "server", "**/*.stories.tsx"]
 }

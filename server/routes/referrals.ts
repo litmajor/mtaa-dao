@@ -1,5 +1,5 @@
 
-import express, { Request, Response } from 'express';
+import express, { type Request, type Response } from 'express';
 import { db } from '../db';
 import { users, walletTransactions } from '../../shared/schema';
 import { eq, and, sql } from 'drizzle-orm';

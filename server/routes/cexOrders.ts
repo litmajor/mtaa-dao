@@ -16,7 +16,7 @@ import { Router } from 'express';
 import type { Request, Response } from 'express';
 import { CEXOrderExecutor } from '../services/cexOrderExecutor';
 import { CEXOrderManager } from '../services/cexOrderManager';
-import { Pool } from 'pg';
+import { type Pool } from 'pg';
 
 const router = Router();
 

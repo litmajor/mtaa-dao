@@ -1252,7 +1252,7 @@ export async function enableFeature(featureKey: string): Promise<void> {
       await redis.set(`feature:override:${featureKey}`, 'true', OVERRIDE_TTL_SECONDS);
       logger.info(`[FeatureService] Persisted override enable for ${featureKey}`);
     } catch (err) {
-      logger.warn(`[FeatureService] Failed to persist enable override for ${featureKey}`, err);
+      logger.warn(`[FeatureService] Failed to persist enable override for ${featureKey}`, { error: err });
     }
   }
 }
@@ -1268,7 +1268,7 @@ export async function disableFeature(featureKey: string): Promise<void> {
       await redis.set(`feature:override:${featureKey}`, 'false', OVERRIDE_TTL_SECONDS);
       logger.info(`[FeatureService] Persisted override disable for ${featureKey}`);
     } catch (err) {
-      logger.warn(`[FeatureService] Failed to persist disable override for ${featureKey}`, err);
+      logger.warn(`[FeatureService] Failed to persist disable override for ${featureKey}`, { error: err });
     }
   }
 }
@@ -1286,7 +1286,7 @@ export async function releasePhase(phase: number): Promise<void> {
           const { redis } = await import('./redis');
           await redis.set(`feature:override:${key}`, 'true', OVERRIDE_TTL_SECONDS);
         } catch (e) {
-          logger.warn('[FeatureService] releasePhase persist failed', e);
+          logger.warn('[FeatureService] releasePhase persist failed', { error: e });
         }
       })();
       promises.push(p);
@@ -1307,7 +1307,7 @@ export async function releaseAllFeatures(): Promise<void> {
         const { redis } = await import('./redis');
         await redis.set(`feature:override:${key}`, 'true', OVERRIDE_TTL_SECONDS);
       } catch (e) {
-        logger.warn('[FeatureService] releaseAll persist failed', e);
+          logger.warn('[FeatureService] releaseAll persist failed', { error: e });
       }
     })();
     promises.push(p);
@@ -1335,7 +1335,7 @@ export async function loadFeatureOverrides(): Promise<void> {
     }
     logger.info(`[FeatureService] Loaded ${applied} feature overrides from Redis`);
   } catch (err) {
-    logger.warn('[FeatureService] Failed to load feature overrides from Redis', err);
+    logger.warn('[FeatureService] Failed to load feature overrides from Redis', { error: err });
   }
 }
 

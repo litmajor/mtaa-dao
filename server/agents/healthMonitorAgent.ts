@@ -18,7 +18,7 @@
 // HTTP polling and consume HealthRegistry events directly.
 // ============================================================================
 
-import axios, { AxiosError } from 'axios';
+import axios, { type AxiosError } from 'axios';
 import { Logger } from '../utils/logger';
 
 const logger = Logger.getLogger();

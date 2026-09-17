@@ -4,7 +4,7 @@
  * Handles gas price estimation, configuration, and optimization
  */
 
-import Web3 from 'web3';
+import type Web3 from 'web3';
 type Web3Type = InstanceType<typeof Web3>;
 import type { GasConfig, GasPriceData } from './types';
 type TxObject = Record<string, unknown>;

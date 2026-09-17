@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import { crossChainService } from '../../services/crossChainService';
-import { ChainRegistry, SupportedChain } from '../../../shared/chainRegistry';
+import { ChainRegistry, type SupportedChain } from '../../../shared/chainRegistry';
 import { asyncHandler } from '../../middleware/errorHandler';
 import { isAuthenticated } from '../../auth';
 import { vaultSchema } from './validation-schemas';

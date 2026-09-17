@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { authClient } from '@/utils/authClient';
-import { User } from '../../types/user';
+import { type User } from '../../types/user';
 
 
 // Fetch user from API (replace with your actual endpoint and logic)

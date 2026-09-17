@@ -6,7 +6,7 @@
  * Phase 2+: Trading endpoints (orders, balance management)
  */
 
-import express, { Router, Request, Response, NextFunction } from 'express';
+import express, { type Router, type Request, type Response, type NextFunction } from 'express';
 import { authenticateToken } from '../middleware/auth';
 import ccxtService from '../services/ccxtService';
 import { logger } from '../utils/logger';

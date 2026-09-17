@@ -1,12 +1,13 @@
 
-import express, { Request, Response } from 'express';
+import express, { type Request, type Response } from 'express';
 import { metricsCollector } from '../monitoring/metricsCollector';
 import { logger } from '../utils/logger';
 import { isAuthenticated } from '../auth';
+import type { RequestMetrics, SystemMetrics } from '../monitoring/metricsCollector';
 // Type for metricsCollector.getMetrics() result
 type Metrics = {
-  requests: import('../monitoring/metricsCollector').RequestMetrics[];
-  system: import('../monitoring/metricsCollector').SystemMetrics[];
+  requests: RequestMetrics[];
+  system: SystemMetrics[];
   database: any[];
   business: any[];
   summary: {
@@ -209,16 +210,16 @@ router.get('/performance', isAuthenticated, (req: Request, res: Response) => {
 
   // Calculate performance insights
   const slowEndpoints = requests
-    .filter((r: import('../monitoring/metricsCollector').RequestMetrics) => r.responseTime > 1000)
-    .reduce((acc: Record<string, number>, req: import('../monitoring/metricsCollector').RequestMetrics) => {
+    .filter((r: RequestMetrics) => r.responseTime > 1000)
+    .reduce((acc: Record<string, number>, req: RequestMetrics) => {
       const key = `${req.method} ${req.route}`;
       acc[key] = (acc[key] || 0) + 1;
       return acc;
     }, {} as Record<string, number>);
 
   const errorEndpoints = requests
-    .filter((r: import('../monitoring/metricsCollector').RequestMetrics) => r.statusCode >= 400)
-    .reduce((acc: Record<string, number>, req: import('../monitoring/metricsCollector').RequestMetrics) => {
+    .filter((r: RequestMetrics) => r.statusCode >= 400)
+    .reduce((acc: Record<string, number>, req: RequestMetrics) => {
       const key = `${req.method} ${req.route}`;
       acc[key] = (acc[key] || 0) + 1;
       return acc;

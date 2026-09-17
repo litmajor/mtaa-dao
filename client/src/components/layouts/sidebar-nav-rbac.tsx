@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { useNavigation, NavigationItem, useIsAdmin } from '../contexts/navigation-context';
+import { useNavigation, type NavigationItem, useIsAdmin } from '../contexts/navigation-context';
 import { useUserRole } from '../contexts/auth-context';
 
 /**

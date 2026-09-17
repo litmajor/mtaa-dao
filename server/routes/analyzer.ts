@@ -357,7 +357,7 @@ router.get('/rotation/history/:daoId', isAuthenticated, analyzerLimiter, async (
         RotationSelectionMethod.PROPORTIONAL
       );
     } catch (e) {
-      logger.warn(`Could not determine next recipient for DAO ${daoId}`, e);
+      logger.warn(`Could not determine next recipient for DAO ${daoId}`, { error: e });
     }
 
     res.json({

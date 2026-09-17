@@ -19,26 +19,15 @@
         "project": "./tsconfig.json"
       },
       "extends": [
-        "plugin:@typescript-eslint/recommended",
-        "plugin:react/recommended",
-        "plugin:react-hooks/recommended",
-        "plugin:jsx-a11y/recommended"
+        "plugin:@typescript-eslint/recommended"
       ],
       "rules": {
         "@typescript-eslint/no-unused-vars": ["warn", { "argsIgnorePattern": "^_" }],
-        "react/react-in-jsx-scope": "off",
-        "react/prop-types": "off",
-        "react/display-name": "off",
-        "jsx-a11y/label-has-associated-control": "warn",
-        "jsx-a11y/no-static-element-interactions": "warn",
-        "jsx-a11y/click-events-have-key-events": "warn",
-        "jsx-a11y/no-noninteractive-element-interactions": "warn"
+        "@typescript-eslint/consistent-type-imports": [
+          "warn",
+          { "prefer": "type-imports", "fixStyle": "inline-type-imports" }
+        ]
       }
     }
-  ],
-  "settings": {
-    "react": {
-      "version": "detect"
-    }
-  }
+  ]
 }

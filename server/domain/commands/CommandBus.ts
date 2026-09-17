@@ -1,5 +1,5 @@
-import { Command } from './Command';
-import { DomainEvent } from '../events/DomainEvent';
+import { type Command } from './Command';
+import { type DomainEvent } from '../events/DomainEvent';
 
 /**
  * Context passed down the middleware pipeline to the handler.

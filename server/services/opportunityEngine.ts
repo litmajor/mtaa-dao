@@ -24,7 +24,7 @@
  */
 
 import { logger } from '../utils/logger';
-import { findArbitrageOpportunities, ArbitrageOpportunity } from './arbitrageDetection';
+import { findArbitrageOpportunities, type ArbitrageOpportunity } from './arbitrageDetection';
 import { orderRouter } from './orderRouter';
 import { collectorService } from './collectorService';
 import { engineService } from './engineService';
@@ -167,7 +167,7 @@ class OpportunityEngineService {
         return this.discoveredAssets;
       }
     } catch (err) {
-      logger.debug('[OpportunityEngine] symbolUniverseService discovery failed:', err);
+      logger.debug('[OpportunityEngine] symbolUniverseService discovery failed:', { error: err });
     }
 
     // Method 2: collectorService (fallback)
@@ -188,7 +188,7 @@ class OpportunityEngineService {
         return this.discoveredAssets;
       }
     } catch (err) {
-      logger.debug('[OpportunityEngine] collectorService discovery failed:', err);
+      logger.debug('[OpportunityEngine] collectorService discovery failed:', { error: err });
     }
 
     // Method 3: TokenRegistry (fallback) — FIX 2: use real TokenMetadata fields only
@@ -213,7 +213,7 @@ class OpportunityEngineService {
       }
       logger.warn('[OpportunityEngine] tokenRegistry returned 0 eligible tokens');
     } catch (err) {
-      logger.debug('[OpportunityEngine] tokenRegistry discovery failed:', err);
+      logger.debug('[OpportunityEngine] tokenRegistry discovery failed:', { error: err });
     }
 
     // Method 4: hardcoded fallback
@@ -345,7 +345,7 @@ class OpportunityEngineService {
 
       return { signalStrength, direction, reasoning };
     } catch (err) {
-      logger.warn(`[OpportunityEngine] Signal analysis error for ${asset}:`, err);
+      logger.warn(`[OpportunityEngine] Signal analysis error for ${asset}:`, { error: err });
       return { signalStrength: 0, direction: 'neutral', reasoning: ['Analysis error'] };
     }
   }
@@ -416,7 +416,7 @@ class OpportunityEngineService {
             },
           }));
         } catch (err) {
-          logger.debug(`[CEXScan] Error processing ${asset}:`, err);
+          logger.debug(`[CEXScan] Error processing ${asset}:`, { error: err });
           return [];
         }
       })

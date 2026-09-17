@@ -1,5 +1,5 @@
-import { Command } from '../Command';
-import { CommandResult, CommandContext } from '../CommandBus';
+import { type Command } from '../Command';
+import { type CommandResult, type CommandContext } from '../CommandBus';
 
 export type NextFn = (context?: CommandContext) => Promise<CommandResult>;
 

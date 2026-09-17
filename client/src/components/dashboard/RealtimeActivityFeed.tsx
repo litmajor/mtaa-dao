@@ -8,6 +8,15 @@ import {
   CheckCircle,
   ArrowUpRight,
   AlertCircle,
+  Star,
+  ZapIcon,
+  BarChart2,
+  GlobeIcon,
+  AlertOctagon,
+  ClockIcon,
+  Sparkles,
+  Zap,
+  Globe,
 } from 'lucide-react';
 import { Skeleton } from '@/components/ui/skeleton';
 import { useWebSocket } from '@/hooks/useWebSocket';

@@ -4,7 +4,7 @@
  * Provides logical timestamps for distributed synchronization
  */
 
-import { VectorClockData } from './types';
+import { type VectorClockData } from './types';
 
 export class VectorClock {
   public clocks: Record<string, number>;

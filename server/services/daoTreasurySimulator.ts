@@ -10,7 +10,7 @@
  * Includes capital flow projections, risk metrics (VaR, CVaR), scenario analysis
  */
 
-import { SimulationService, SimulationResult, SimulationParams, SimulationStatus, SimulationDepth } from './simulationFramework';
+import { SimulationService, type SimulationResult, type SimulationParams, SimulationStatus, SimulationDepth } from './simulationFramework';
 
 /**
  * Treasury Rebalance Simulator

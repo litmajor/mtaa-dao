@@ -39,7 +39,7 @@
  */
 
 import { ethers } from 'ethers';
-import { ChainRegistry, SupportedChain, CHAIN_CONFIGS } from '../../shared/chainRegistry';
+import { ChainRegistry, type SupportedChain, CHAIN_CONFIGS } from '../../shared/chainRegistry';
 import { Logger } from '../utils/logger';
 import { AppError } from '../middleware/errorHandler';
 import { db } from '../db';

@@ -15,7 +15,7 @@
  * DELETE /api/v1/wallets/invoices/:id          Delete draft invoice
  */
 
-import express, { Request, Response } from 'express';
+import express, { type Request, type Response } from 'express';
 import { db } from '../../../storage';
 import { invoices as invoicesTable, users } from '../../../../shared/schema';
 import { eq, and, ne } from 'drizzle-orm';

@@ -74,7 +74,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       }
 
       // Unknown error
-      // eslint-disable-next-line no-console
+       
       console.error('Error creating user:', err);
       return res.status(500).json({ error: 'Internal server error' });
     }

@@ -1,4 +1,4 @@
-import { Request, Response } from 'express';
+import { type Request, type Response } from 'express';
 import crypto from 'crypto';
 import { db } from '../db';
 import { users, userIdentities } from '../../shared/schema';

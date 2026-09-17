@@ -194,7 +194,7 @@ export class RuleEngine {
         }
       }
     } catch (error) {
-      logger.warn(`Failed to check rules for ${filePath}:`, error);
+      logger.warn(`Failed to check rules for ${filePath}:`, { error });
     }
 
     return breaches;

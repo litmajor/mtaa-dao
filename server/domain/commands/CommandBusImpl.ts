@@ -1,7 +1,7 @@
-import { Command } from './Command';
-import { CommandBus, CommandResult, CommandContext } from './CommandBus';
-import { CommandMiddleware } from './middlewares/AuthorizationMiddleware';
-import { CommandHandlerRegistry } from './handlers/CommandHandlerRegistry';
+import { type Command } from './Command';
+import { type CommandBus, type CommandResult, type CommandContext } from './CommandBus';
+import { type CommandMiddleware } from './middlewares/AuthorizationMiddleware';
+import { type CommandHandlerRegistry } from './handlers/CommandHandlerRegistry';
 
 export class CommandBusImpl implements CommandBus {
   constructor(

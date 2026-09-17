@@ -39,7 +39,7 @@ import React, {
   useState,
   useEffect,
   useCallback,
-  ReactNode,
+  type ReactNode,
   memo,
 } from 'react';
 import {

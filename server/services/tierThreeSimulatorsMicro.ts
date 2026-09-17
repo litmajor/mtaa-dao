@@ -8,7 +8,7 @@
  * Date: February 13, 2026
  */
 
-import { SimulationService, SimulationParams, SimulationResult, SimulationDepth, SimulationStatus } from './simulationFramework';
+import { SimulationService, type SimulationParams, type SimulationResult, SimulationDepth, SimulationStatus } from './simulationFramework';
 
 /**
  * Micro-Withdrawal Simulator

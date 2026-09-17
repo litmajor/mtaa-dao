@@ -5,7 +5,7 @@
 
 import React from 'react';
 import { Card, CardContent } from '@/components/ui/card';
-import { ReactNode } from 'react';
+import { type ReactNode } from 'react';
 
 interface WalletAccount {
   id: string;

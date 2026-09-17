@@ -6,8 +6,8 @@
  */
 
 import { pool } from '../db';
-import { CEXCredential } from '../types/cex.types';
-import { encrypt, decrypt, EncryptedData, obfuscate } from '../utils/encryption';
+import { type CEXCredential } from '../types/cex.types';
+import { encrypt, decrypt, type EncryptedData, obfuscate } from '../utils/encryption';
 import { KeyManagementService } from '../services/keyManagementService';
 
 export class CEXCredentialRepository {

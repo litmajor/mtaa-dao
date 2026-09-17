@@ -4,7 +4,7 @@
  * Handles decimal conversion, APY/APR calculations, timestamp normalization
  */
 
-import { NormalizedData } from "./types";
+import { type NormalizedData } from "./types";
 
 export interface NormalizationConfig {
   priceDecimalPlaces?: number;

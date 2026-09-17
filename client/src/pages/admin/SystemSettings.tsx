@@ -8,7 +8,7 @@ import { Label } from '@/components/ui/label';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Separator } from '@/components/ui/separator';
 import { useToast } from '@/hooks/use-toast';
-import { Settings, Globe, Zap, Shield, DollarSign, LoaderCircle, Save, RefreshCw } from 'lucide-react';
+import { Settings, Globe, Zap, Shield, DollarSign, LoaderCircle, Loader2, Save, RefreshCw } from 'lucide-react';
 import { authClient } from '@/utils/authClient';
 
 export default function SystemSettings() {

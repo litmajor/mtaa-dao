@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import ProposalCard from '../proposal-card';
-import { VoteProposalModal, ProposalDetails } from '../governance/VoteProposalModal';
+import { VoteProposalModal, type ProposalDetails } from '../governance/VoteProposalModal';
 import { Button } from '@/components/ui/button';
 import { Plus } from 'lucide-react';
 

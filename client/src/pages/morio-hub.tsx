@@ -4,7 +4,7 @@ import { useLocation } from 'wouter';
 import { MorioChat } from '@/components/morio/MorioChat';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
-import { Heart, Gift, Users, Target } from 'lucide-react';
+import { Heart, Gift, Users, Target, AlertCircle } from 'lucide-react';
 
 export default function MorioHub() {
   const { user } = useAuth();

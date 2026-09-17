@@ -28,7 +28,7 @@
  */
 
 import { BaseAdapter } from "./base-adapter";
-import { AdapterResponse, NormalizedData, BaseAdapterConfig } from "../types";
+import { type AdapterResponse, type NormalizedData, type BaseAdapterConfig } from "../types";
 
 const CURVE_API_BASE = "https://api.curve.finance/api/getPools";
 

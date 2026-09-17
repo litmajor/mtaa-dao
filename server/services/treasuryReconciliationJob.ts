@@ -89,7 +89,7 @@ export async function runTreasuryReconciliationJob(): Promise<ReconciliationJobS
       try {
         await recordReconciliationAudit(result);
       } catch (auditError) {
-        logger.warn(`[TreasuryReconciliationJob] Failed to record audit for ${result.entityId}:`, auditError);
+        logger.warn(`[TreasuryReconciliationJob] Failed to record audit for ${result.entityId}:`, { error: auditError });
       }
     }
 

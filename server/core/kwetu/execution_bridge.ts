@@ -9,7 +9,7 @@
  * - DAO risk profile constraints
  */
 
-import { gatewayAggregator, TreasuryProfile } from '../../services/gatewayAggregator';
+import { gatewayAggregator, type TreasuryProfile } from '../../services/gatewayAggregator';
 import { shardOrchestrator } from '../../services/intelligenceShards';
 import { assetGraphService } from '../../services/assetGraphService';
 import type { AssetStateSnapshot } from '../../types/assetGraph';

@@ -9,7 +9,7 @@
 
 import React, { useMemo } from 'react';
 import { AlertCircle, TrendingDown, TrendingUp } from 'lucide-react';
-import { ExchangeData } from '@/pages/trading';
+import { type ExchangeData } from '@/pages/trading';
 
 interface HeatmapViewProps {
   exchanges: ExchangeData[];
@@ -159,7 +159,7 @@ const HeatmapView: React.FC<HeatmapViewProps> = ({
               bg-gradient-to-br ${exchange.bgColor}
               border-gray-200 hover:border-blue-400
             `}
-            /* eslint-disable-next-line */
+             
             style={{
               opacity: exchange.opacity,
             }}

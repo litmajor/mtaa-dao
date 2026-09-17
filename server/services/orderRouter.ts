@@ -455,7 +455,9 @@ class OrderRouter {
     try {
       void this.persistPerformanceMemory();
     } catch (err) {
-      logger.warn('[OrderRouter] Failed to persist performance memory (async):', err instanceof Error ? err.message : err);
+      logger.warn('[OrderRouter] Failed to persist performance memory (async):', {
+        error: err instanceof Error ? err.message : String(err)
+      });
     }
 
     // Publish a lightweight execution event for real-time consumers

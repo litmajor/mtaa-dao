@@ -2,10 +2,7 @@
  * Recovery and Audit Utilities
  * Day 3 - Helper functions for soft delete recovery and audit logging
  */
-
-import formatDistanceToNow from 'date-fns/formatDistanceToNow';
-import differenceInDays from 'date-fns/differenceInDays';
-
+import { formatDistanceToNow, differenceInDays } from 'date-fns';
 /**
  * Calculate days remaining in recovery window
  */

@@ -2,7 +2,7 @@ import { Router } from 'express';
 import { z } from 'zod';
 import type { SwapQuote } from '../../services/crossChainSwapService';
 import { crossChainSwapService } from '../../services/crossChainSwapService';
-import { SupportedChain } from '../../../shared/chainRegistry';
+import { type SupportedChain } from '../../../shared/chainRegistry';
 import { asyncHandler } from '../../middleware/errorHandler';
 import { isAuthenticated } from '../../auth';
 import { requirePINVerification, checkAmountThreshold } from '../../middleware/pin-verification';

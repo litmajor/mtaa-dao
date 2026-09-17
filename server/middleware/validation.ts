@@ -1,6 +1,6 @@
 
 import type { Request, Response, NextFunction } from 'express';
-import { z, ZodSchema, ZodError } from 'zod';
+import { z, type ZodSchema, ZodError } from 'zod';
 import { AppError, ValidationError } from './errorHandler';
 import { Logger } from '../utils/logger';
 

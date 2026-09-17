@@ -5,6 +5,12 @@
  * Provides singleton instance creation and type exports
  */
 
+import type { WalletOperationsService } from './wallet-operations';
+import type { TokenUtilitiesService } from './token-utilities';
+import type { WalletPersistenceService } from './wallet-persistence';
+import type { WalletGasManagerService } from './wallet-gas-manager';
+import type { WalletInfoService } from './wallet-info';
+
 // Service exports
 export { WalletOperationsService, createWalletOperationsService } from './wallet-operations';
 export { TokenUtilitiesService, createTokenUtilitiesService } from './token-utilities';
@@ -51,7 +57,7 @@ export type { WalletProvider } from './wallet-provider-integrations';
 
 // ERC20 ABI export
 export { ENHANCED_ERC20_ABI } from './erc20-abi';
-import Web3 from 'web3';
+import type Web3 from 'web3';
 type Web3Type = InstanceType<typeof Web3>;
 
 interface SignerAccount {
@@ -66,11 +72,11 @@ interface SignerAccount {
  * Manages initialization and lifecycle of all service modules
  */
 export class AgentWalletManager {
-  private walletOperations?: import('./wallet-operations').WalletOperationsService;
-  private tokenUtilities?: import('./token-utilities').TokenUtilitiesService;
-  private walletPersistence?: import('./wallet-persistence').WalletPersistenceService;
-  private gasManager?: import('./wallet-gas-manager').WalletGasManagerService;
-  private walletInfo?: import('./wallet-info').WalletInfoService;
+  private walletOperations?: WalletOperationsService;
+  private tokenUtilities?: TokenUtilitiesService;
+  private walletPersistence?: WalletPersistenceService;
+  private gasManager?: WalletGasManagerService;
+  private walletInfo?: WalletInfoService;
   private isInitialized: boolean = false;
 
   /**

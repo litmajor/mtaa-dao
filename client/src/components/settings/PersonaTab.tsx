@@ -9,7 +9,7 @@ import { Switch } from '@/components/ui/switch';
 import { Users, LineChart, Briefcase } from 'lucide-react';
 
 export function PersonaTab() {
-  const { currentPersona, preferences, updatePreferences } = usePersona();
+  const { activeSubprofile, preferences, updatePreferences } = usePersona();
 
   return (
     <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500">

@@ -3,8 +3,9 @@
  * Handles periodic price collection with deterministic scheduling
  */
 
-import { Pool } from 'pg';
-import { CEXPriceCollector, CollectionResult } from './cexPriceCollector';
+import { type Pool } from 'pg';
+import { CEXPriceCollector } from './cexPriceCollector';
+import type { CollectionResult } from './cexPriceCollector';
 import ccxtService from './ccxtService';
 import { executeGuardedJob } from '../utils/jobExecutionGuard';
 

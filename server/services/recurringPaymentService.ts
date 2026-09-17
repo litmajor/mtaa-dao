@@ -192,7 +192,7 @@ export class RecurringPaymentService {
               persist: true,
             });
           } catch (wsError) {
-            logger.warn('Failed to emit WebSocket event for recurring payment completion', wsError);
+            logger.warn('Failed to emit WebSocket event for recurring payment completion', { error: wsError });
           }
 
           logger.info(`Recurring payment ${payment.id} processed successfully via SAGA ${saga.id}`);
@@ -323,7 +323,7 @@ export class RecurringPaymentService {
         persist: true,
       });
     } catch (wsError) {
-      logger.warn('Failed to emit WebSocket notification for insufficient balance', wsError);
+      logger.warn('Failed to emit WebSocket notification for insufficient balance', { error: wsError });
     }
 
     // Send notification
@@ -410,7 +410,7 @@ export class RecurringPaymentService {
         persist: true,
       });
     } catch (wsError) {
-      logger.warn('Failed to emit WebSocket notification for payment failure', wsError);
+      logger.warn('Failed to emit WebSocket notification for payment failure', { error: wsError });
     }
 
     // Notify user

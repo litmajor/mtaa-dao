@@ -7,7 +7,7 @@
  */
 
 import { logger } from '../utils/logger';
-import { graphPropagationEngine, GraphNode } from './graphPropagationEngine';
+import { graphPropagationEngine, type GraphNode } from './graphPropagationEngine';
 
 export interface AllocationDecision {
   nodeId: string;

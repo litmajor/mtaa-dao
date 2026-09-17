@@ -14,7 +14,7 @@
  * - All error handling uses updated PaymentErrorHandler signatures
  */
 
-import express, { Request, Response } from 'express';
+import express, { type Request, type Response } from 'express';
 import crypto from 'crypto';
 import { db } from './db';
 import { paymentTransactions, accounts, users } from '../shared/schema';

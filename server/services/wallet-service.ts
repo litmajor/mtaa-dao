@@ -13,12 +13,12 @@ import {
   transactionQueue,
   walletConnectionHistory,
   networkHealth,
-  InsertWalletConnection,
-  InsertBlockchainTransaction,
-  InsertTransactionQueue,
-  WalletConnection,
-  BlockchainTransaction,
-  BlockchainToken,
+  type InsertWalletConnection,
+  type InsertBlockchainTransaction,
+  type InsertTransactionQueue,
+  type WalletConnection,
+  type BlockchainTransaction,
+  type BlockchainToken,
 } from "@shared/walletIntegrationSchema";
 import { accounts } from "@shared/schema";
 import { eq, and, gte, lte, desc, sql, asc } from "drizzle-orm";

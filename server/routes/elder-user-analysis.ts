@@ -5,7 +5,7 @@
  * and provide insights on their activity, risk profile, contributions, and potential
  */
 
-import express, { Request, Response } from 'express';
+import express, { type Request, type Response } from 'express';
 import { db } from '../db';
 import { users, contributions, userActivities, userFollows, proposals, votes, vaults } from '../../shared/schema';
 import { eq, desc, and, sql, gte, lte } from 'drizzle-orm';

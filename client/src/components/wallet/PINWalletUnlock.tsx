@@ -10,7 +10,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { useToast } from '@/hooks/use-toast';
-import { Lock, Unlock, LoaderCircle } from 'lucide-react';
+import { Lock, Unlock, LoaderCircle, Loader2 } from 'lucide-react';
 
 interface PINWalletUnlockProps {
   walletId: string;

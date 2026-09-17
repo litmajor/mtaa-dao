@@ -217,7 +217,7 @@ export class WebSocketConnectionManager {
           client.messageCount++;
           sentCount++;
         } catch (error) {
-          logger.warn(`[WebSocket] Failed to send to ${connectionId}:`, error);
+          logger.warn(`[WebSocket] Failed to send to ${connectionId}:`, { error });
           this.markConnectionDead(connectionId);
         }
       }
@@ -247,7 +247,7 @@ export class WebSocketConnectionManager {
           client.messageCount++;
           sentCount++;
         } catch (error) {
-          logger.warn(`[WebSocket] Failed to send to user ${userId}:`, error);
+          logger.warn(`[WebSocket] Failed to send to user ${userId}:`, { error });
           this.markConnectionDead(connectionId);
         }
       }
@@ -304,7 +304,7 @@ export class WebSocketConnectionManager {
             client.isAlive = false;
             client.ws.ping();
           } catch (error) {
-            logger.warn(`[WebSocket] Error sending ping to ${connectionId}:`, error);
+            logger.warn(`[WebSocket] Error sending ping to ${connectionId}:`, { error });
             this.markConnectionDead(connectionId);
           }
         }

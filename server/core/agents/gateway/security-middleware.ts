@@ -3,9 +3,9 @@
  * Express middleware to apply security checks to all Gateway endpoints
  */
 
-import { Request, Response, NextFunction } from "express";
-import { SecureGatewayService } from "./security-integration";
-import { SecurityAssessment } from "./security-wrapper";
+import { type Request, type Response, type NextFunction } from "express";
+import { type SecureGatewayService } from "./security-integration";
+import { type SecurityAssessment } from "./security-wrapper";
 
 /**
  * Extend Express Request to include security context

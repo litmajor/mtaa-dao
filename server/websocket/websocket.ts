@@ -1,9 +1,9 @@
-import { Server, Socket } from 'socket.io';
+import { Server, type Socket } from 'socket.io';
 import type { DefaultEventsMap } from 'socket.io';
-import { Server as HTTPServer } from 'http';
+import { type Server as HTTPServer } from 'http';
 import socketAuthMiddleware from '../middleware/socketAuth';
 import { getRedisSubscriptionManager } from '../services/redisSubscriptionManager';
-import { AdminWS, WS_PATHS } from './websocket-events';
+import { type AdminWS, WS_PATHS } from './websocket-events';
 import { corsAllowedOrigins } from '../../shared/config.js';
 
 /**

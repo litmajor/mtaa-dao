@@ -4,7 +4,7 @@
  * Advanced behavioral analysis and pattern matching
  */
 
-import { ThreatSignature, ThreatLevel, AgentBehavior } from './types';
+import { type ThreatSignature, ThreatLevel, type AgentBehavior } from './types';
 
 export class ThreatDetectionEngine {
   private signatures: Record<string, ThreatSignature> = {};

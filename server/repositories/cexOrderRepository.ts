@@ -4,7 +4,7 @@
  */
 
 import { db } from '../db';
-import { CEXOrder } from '../../types/cex.types';
+import { type CEXOrder } from '../../types/cex.types';
 
 export class CEXOrderRepository {
   /**

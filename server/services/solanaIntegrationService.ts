@@ -5,8 +5,8 @@ import {
   Transaction,
   SystemProgram,
   sendAndConfirmTransaction,
-  ParsedTransactionWithMeta,
 } from '@solana/web3.js';
+import type { ParsedTransactionWithMeta } from '@solana/web3.js';
 import { TOKEN_PROGRAM_ID, getAssociatedTokenAddress } from '@solana/spl-token';
 import { Logger } from '../utils/logger';
 import { AppError } from '../middleware/errorHandler';

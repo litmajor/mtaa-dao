@@ -37,25 +37,25 @@
  * const gatewayBridge = bridge.getGatewayBridge();
  */
 
-import { Express } from 'express';
+import { type Express } from 'express';
 import Redis from 'ioredis';
 import {
   initializeMessageBus,
   getMessageBus,
-  EnhancedMessageBus,
+  type EnhancedMessageBus,
   MessageType,
 } from './enhanced-message-bus';
 import {
   initializeMetricsExporter,
-  MessageBusMetricsExporter,
+  type MessageBusMetricsExporter,
 } from './message-bus-metrics';
 import {
   registerMessageBusObservability,
 } from './message-bus-observability';
 import {
   MessageBusBridge,
-  CoordinatorBridgeAdapter,
-  GatewayBridgeAdapter,
+  type CoordinatorBridgeAdapter,
+  type GatewayBridgeAdapter,
 } from './message-bus-bridge';
 import { Logger } from '../../utils/logger';
 

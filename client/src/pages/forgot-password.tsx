@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import { Button } from "../components/ui/button";
-import { ArrowLeft, Mail, Phone, LoaderCircle, CheckCircle } from "lucide-react";
+import { ArrowLeft, Mail, Phone, LoaderCircle, CheckCircle, Loader2 } from "lucide-react";
 import { Link } from "react-router-dom";
 import { useToast } from "@/hooks/use-toast";
 import { Input } from '../components/ui/input';

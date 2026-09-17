@@ -14,10 +14,11 @@
  *    previously it ran forever even after shutdown() was called.
  */
 
-import WebSocket, { WebSocketServer } from 'ws';
-import { Server as HTTPServer } from 'http';
-import { IncomingMessage } from 'http';
-import { opportunityEngine, OpportunityData } from '../services/opportunityEngine';
+import type WebSocket from 'ws';
+import { WebSocketServer } from 'ws';
+import { type Server as HTTPServer } from 'http';
+import { type IncomingMessage } from 'http';
+import { opportunityEngine, type OpportunityData } from '../services/opportunityEngine';
 import { logger } from '../utils/logger';
 import { v4 as uuidv4 } from 'uuid';
 import { verifyAccessToken } from '../auth';

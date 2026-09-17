@@ -6,9 +6,9 @@
  * Enables real-time activity feeds, status updates, and notifications
  */
 
-import { AuditService, AuditEvent } from '../core/consolidation/AuditServiceConsolidation';
+import { type AuditService, type AuditEvent } from '../core/consolidation/AuditServiceConsolidation';
 import type { AuditEventType, AuditSeverity } from '../core/consolidation/AuditServiceConsolidation';
-import { WebSocketEventEmitter, getEventEmitter } from '../middleware/websocket-event-emitter';
+import { type WebSocketEventEmitter, getEventEmitter } from '../middleware/websocket-event-emitter';
 import { Logger } from '../utils/logger';
 
 const logger = Logger.getLogger();
@@ -314,7 +314,7 @@ function emitCustomEvent(emitter: WebSocketEventEmitter, event: AuditEvent, user
   if (event.context?.asAlert) {
     emitter.emitAlert(
       event.context?.alertType || 'custom_event',
-      event.severity,
+      mapAuditSeverityToAlertSeverity(event.severity),
       event.action,
       userId,
       event.context

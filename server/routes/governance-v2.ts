@@ -3,7 +3,7 @@
  * REST API endpoints for DAO governance, voting, treasury, and expenses
  */
 
-import { Router, Request, Response } from "express";
+import { Router, type Request, type Response } from "express";
 import { z } from "zod";
 import { authenticateToken } from "../middleware/auth";
 import {

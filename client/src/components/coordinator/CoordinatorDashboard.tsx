@@ -11,7 +11,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Badge } from '@/components/ui/badge';
 import { Progress } from '@/components/ui/progress';
 import { AlertCircle, CheckCircle2, XCircle, Clock, Activity } from 'lucide-react';
-import io, { Socket } from 'socket.io-client';
+import io, { type Socket } from 'socket.io-client';
 
 interface ElderAssessment {
   confidence: number;

@@ -27,7 +27,7 @@
  *   FREQTRADE_STRATEGIES_DIR   Local path to user_data/strategies/ for file-based deploy
  */
 
-import axios, { AxiosInstance, AxiosError } from 'axios';
+import axios, { type AxiosInstance, type AxiosError } from 'axios';
 import { spawn }                             from 'child_process';
 import { Logger }                            from '../utils/logger';
 

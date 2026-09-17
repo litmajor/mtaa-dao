@@ -44,7 +44,7 @@ export class VenueStatsCache {
         return JSON.parse(cached);
       }
     } catch (error) {
-      logger.warn(`[CACHE ERROR] Failed to get venue stats: ${key}`, error);
+      logger.warn(`[CACHE ERROR] Failed to get venue stats: ${key}`, { error });
       // Fall through to database
     }
     return null;
@@ -58,7 +58,7 @@ export class VenueStatsCache {
       await redis.setex(key, CACHE_CONFIG.venue_stats.ttl, JSON.stringify(stats));
       logger.debug(`[CACHE SET] Venue stats: ${key} (TTL: ${CACHE_CONFIG.venue_stats.ttl}s)`);
     } catch (error) {
-      logger.warn(`[CACHE ERROR] Failed to set venue stats: ${key}`, error);
+      logger.warn(`[CACHE ERROR] Failed to set venue stats: ${key}`, { error });
       // Cache failure shouldn't block application
     }
   }
@@ -71,7 +71,7 @@ export class VenueStatsCache {
       await redis.del(key);
       logger.debug(`[CACHE INVALIDATE] Venue stats: ${key}`);
     } catch (error) {
-      logger.warn(`[CACHE ERROR] Failed to invalidate venue stats: ${key}`, error);
+      logger.warn(`[CACHE ERROR] Failed to invalidate venue stats: ${key}`, { error });
     }
   }
 
@@ -93,7 +93,7 @@ export class OrderStatsCache {
         return JSON.parse(cached);
       }
     } catch (error) {
-      logger.warn(`[CACHE ERROR] Failed to get order stats: ${key}`, error);
+      logger.warn(`[CACHE ERROR] Failed to get order stats: ${key}`, { error });
     }
     return null;
   }
@@ -106,7 +106,7 @@ export class OrderStatsCache {
       await redis.setex(key, CACHE_CONFIG.order_stats.ttl, JSON.stringify(stats));
       logger.debug(`[CACHE SET] Order stats: ${key} (TTL: ${CACHE_CONFIG.order_stats.ttl}s)`);
     } catch (error) {
-      logger.warn(`[CACHE ERROR] Failed to set order stats: ${key}`, error);
+      logger.warn(`[CACHE ERROR] Failed to set order stats: ${key}`, { error });
     }
   }
 
@@ -118,7 +118,7 @@ export class OrderStatsCache {
       await redis.del(key);
       logger.debug(`[CACHE INVALIDATE] Order stats: ${key}`);
     } catch (error) {
-      logger.warn(`[CACHE ERROR] Failed to invalidate order stats: ${key}`, error);
+      logger.warn(`[CACHE ERROR] Failed to invalidate order stats: ${key}`, { error });
     }
   }
 
@@ -140,7 +140,7 @@ export class BalanceSummaryCache {
         return JSON.parse(cached);
       }
     } catch (error) {
-      logger.warn(`[CACHE ERROR] Failed to get balance summary: ${key}`, error);
+      logger.warn(`[CACHE ERROR] Failed to get balance summary: ${key}`, { error });
     }
     return null;
   }
@@ -153,7 +153,7 @@ export class BalanceSummaryCache {
       await redis.setex(key, CACHE_CONFIG.balance_summary.ttl, JSON.stringify(summary));
       logger.debug(`[CACHE SET] Balance summary: ${key} (TTL: ${CACHE_CONFIG.balance_summary.ttl}s)`);
     } catch (error) {
-      logger.warn(`[CACHE ERROR] Failed to set balance summary: ${key}`, error);
+      logger.warn(`[CACHE ERROR] Failed to set balance summary: ${key}`, { error });
     }
   }
 
@@ -165,7 +165,7 @@ export class BalanceSummaryCache {
       await redis.del(key);
       logger.debug(`[CACHE INVALIDATE] Balance summary: ${key}`);
     } catch (error) {
-      logger.warn(`[CACHE ERROR] Failed to invalidate balance summary: ${key}`, error);
+      logger.warn(`[CACHE ERROR] Failed to invalidate balance summary: ${key}`, { error });
     }
   }
 

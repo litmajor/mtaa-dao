@@ -8,7 +8,7 @@
  * Date: February 13, 2026
  */
 
-import { SimulationService, SimulationResult, SimulationParams, SimulationDepth, SimulationStatus } from './simulationFramework';
+import { SimulationService, type SimulationResult, type SimulationParams, SimulationDepth, SimulationStatus } from './simulationFramework';
 
 /**
  * NFT Minting Simulator

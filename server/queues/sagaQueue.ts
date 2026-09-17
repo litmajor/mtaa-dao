@@ -1,4 +1,4 @@
-import { Queue, Worker, Job } from 'bullmq';
+import { Queue, Worker, type Job } from 'bullmq';
 import IORedis from 'ioredis';
 import { paymentRecoverySAGA } from '../services/PaymentRecoverySAGAOrchestrator';
 import { sagaReconciledCounter } from '../utils/metrics';
@@ -53,7 +53,7 @@ export function startSagaWorker(opts?: { concurrency?: number }) {
     try {
       const result = await paymentRecoverySAGA.reconcileSaga(sagaId);
       sagaReconciledCounter.inc({ saga_id: sagaId, outcome: result?.outcome || 'unknown' } as any);
-      logger.info(`[SagaQueue] Reconcile completed for ${sagaId}`, result);
+      logger.info(`[SagaQueue] Reconcile completed for ${sagaId}`, { result });
       return { success: true, result };
     } catch (err) {
       logger.error(`[SagaQueue] Reconcile failed for ${sagaId}`, err);

@@ -16,7 +16,7 @@
 
 import React, { useState, useEffect, lazy, Suspense } from 'react';
 // lucide-react may lack types in this project; require and cast to any to avoid TS errors
-// eslint-disable-next-line @typescript-eslint/no-var-requires
+ 
 const _lucide = require('lucide-react') as any;
 const TrendingUp = _lucide.TrendingUp as any;
 const Settings = _lucide.Settings as any;

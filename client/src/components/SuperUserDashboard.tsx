@@ -4,6 +4,7 @@ import { Shield, BarChart, Users, Coins, Network, Eye, Loader2, Settings, AlertT
 import { Link } from 'react-router-dom';
 import { useAuth } from '../pages/hooks/useAuth';
 import AdminWorkersCard from './admin/AdminWorkersCard';
+import { authClient } from '@/utils/authClient';
 
 type ChainInfo = {
   chain?: string;

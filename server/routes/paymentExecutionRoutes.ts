@@ -9,7 +9,7 @@ import {
   PaymentSettlementExecutionHandler,
 } from '../services/paymentExecutionService';
 import { ReversibilityService } from '../services/reversibilityService';
-import { ReversalReason } from '../types/reversibility';
+import { type ReversalReason } from '../types/reversibility';
 import { notificationService } from '../notificationService';
 import { isAuthenticated, requireAdmin } from '../auth';
 import { requirePINVerification, optionalPINVerification, checkAmountThreshold } from '../middleware/pin-verification';

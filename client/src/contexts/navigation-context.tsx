@@ -38,7 +38,7 @@ export interface User {
   permissions?: PermissionSet;
 }
 
-interface NavigationContextType {
+export interface NavigationContextType {
   currentUser: User | null;
   setCurrentUser: (user: User | null) => void;
   getFilteredNavItems: (items: NavigationItem[]) => NavigationItem[];
@@ -47,7 +47,7 @@ interface NavigationContextType {
   isAdminUser: () => boolean;
 }
 
-const NavigationContext = createContext<NavigationContextType | undefined>(undefined);
+export const NavigationContext = createContext<NavigationContextType | undefined>(undefined);
 
 /**
  * Default permission sets for each role

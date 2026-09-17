@@ -2,7 +2,7 @@ import { EventEmitter } from 'events';
 import TelegramBot from 'node-telegram-bot-api';
 import { EmailService } from './services/emailService';
 import { db } from './db';
-import { notifications } from '../shared/schema';
+import { type notifications } from '../shared/schema';
 import type { InferSelectModel } from 'drizzle-orm';
 import { storage } from './storage';
 

@@ -6,8 +6,8 @@
 
 import { EventEmitter } from 'events';
 import {
-  OperationalFrameworkConfig,
-  OperationalState,
+  type OperationalFrameworkConfig,
+  type OperationalState,
   ServiceType,
   PrivilegeLevel,
   TrustLevel,

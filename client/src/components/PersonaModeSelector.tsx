@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { usePersona } from '../contexts/persona-context';
 import type { SubprofileType } from '../contexts/persona-context';
 import { Mic, Wrench, DollarSign, Check } from 'lucide-react';
-/* eslint-disable */
+ 
 
 /**
  * PersonaModeSelector Component
@@ -162,7 +162,7 @@ function FullSelector({
             >
               <div className="text-2xl mb-2">{option.icon}</div>
               <div className="font-semibold text-gray-900">{option.name}</div>
-              {/* eslint-disable-next-line */}
+              { }
                   <div className="text-xs font-medium mb-2" data-color={option.color}>
                 {option.displayName}
               </div>
@@ -187,7 +187,7 @@ function FullSelector({
             >
               <div className="text-2xl mb-2">{option.icon}</div>
               <div className="font-semibold text-gray-900">{option.name}</div>
-              {/* eslint-disable-next-line */}
+              { }
                   <div className="text-xs font-medium mb-2" data-color={option.color}>
                 {option.displayName}
               </div>
@@ -238,7 +238,7 @@ function CardsSelector({
                   data-active={true}
             >
               {/* active indicator */}
-              {/* eslint-disable-next-line */}
+              { }
                   <div
                     className="inline-flex items-center justify-center w-5 h-5 rounded-full text-white text-xs font-bold mb-4 ml-auto"
                     data-color={option.color}
@@ -249,7 +249,7 @@ function CardsSelector({
               {/* Icon and Name */}
               <div className="text-4xl mb-4">{option.icon}</div>
               <h3 className="text-xl font-bold text-gray-900 mb-1">{option.name}</h3>
-              {/* eslint-disable-next-line */}
+              { }
                   <p className="text-sm font-medium mb-3" data-color={option.color}>
                 {option.displayName} • {option.role}
               </p>
@@ -286,7 +286,7 @@ function CardsSelector({
               {/* Icon and Name */}
               <div className="text-4xl mb-4">{option.icon}</div>
               <h3 className="text-xl font-bold text-gray-900 mb-1">{option.name}</h3>
-              {/* eslint-disable-next-line */}
+              { }
                   <p className="text-sm font-medium mb-3" data-color={option.color}>
                 {option.displayName} • {option.role}
               </p>

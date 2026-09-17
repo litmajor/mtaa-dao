@@ -4,7 +4,7 @@
  * Detects suspicious patterns in transactions, proposals, and user behavior
  */
 
-import { ThreatPattern, ThreatLevel, PatternMatch } from './types';
+import { type ThreatPattern, ThreatLevel, type PatternMatch } from './types';
 
 export class PatternEngine {
   private patterns: Map<string, ThreatPattern>;

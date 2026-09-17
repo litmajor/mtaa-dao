@@ -4,7 +4,7 @@
  * Acts as gatekeeper for all Gateway data responses
  */
 
-import { GatewayMessage, NormalizedData, GatewayResponse } from "./types";
+import type { GatewayMessage, NormalizedData, GatewayResponse } from "./types";
 
 /**
  * Security assessment result

@@ -6,7 +6,7 @@
  */
 
 import { logger } from '../utils/logger';
-import { graphPropagationEngine, PropagationDelta } from './graphPropagationEngine';
+import { graphPropagationEngine, type PropagationDelta } from './graphPropagationEngine';
 import { propagationMonitoringService } from './propagationMonitoringService';
 import { graphPropagationBus } from './graphPropagationBus';
 

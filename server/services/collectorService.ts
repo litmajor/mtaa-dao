@@ -124,7 +124,9 @@ class CollectorService {
             if (base) symbolSet.add(base);
           }
         } catch (err) {
-          logger.debug(`[Collector] Symbol discovery failed for ${exchange}:`, err);
+          logger.debug(`[Collector] Symbol discovery failed for ${exchange}:`, {
+            error: err instanceof Error ? err.message : String(err)
+          });
         }
       })
     );
@@ -321,7 +323,7 @@ class CollectorService {
       }
       return null;
     } catch (error) {
-      logger.debug(`[Collector] CEX price fetch failed for ${symbol}:`, error);
+      logger.debug(`[Collector] CEX price fetch failed for ${symbol}:`, { error });
       return null;
     }
   }
@@ -361,7 +363,7 @@ class CollectorService {
 
       return null;
     } catch (error) {
-      logger.debug(`[Collector] DEX price fetch failed for ${symbol}:`, error);
+      logger.debug(`[Collector] DEX price fetch failed for ${symbol}:`, { error });
       return null;
     }
   }
@@ -385,7 +387,7 @@ class CollectorService {
       }
       return null;
     } catch (error) {
-      logger.debug(`[Collector] Oracle fetch failed for ${symbol}:`, error);
+      logger.debug(`[Collector] Oracle fetch failed for ${symbol}:`, { error });
       return null;
     }
   }
@@ -409,7 +411,7 @@ class CollectorService {
             }
           }
         } catch (error) {
-          logger.debug(`[Collector] Discovery failed for ${exchange}:`, error);
+          logger.debug(`[Collector] Discovery failed for ${exchange}:`, { error });
         }
       }
 

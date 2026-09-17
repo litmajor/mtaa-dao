@@ -5,7 +5,7 @@
  */
 
 import { BaseAdapter } from "./base-adapter";
-import { AdapterResponse, NormalizedData, BaseAdapterConfig } from "../types";
+import { type AdapterResponse, type NormalizedData, type BaseAdapterConfig } from "../types";
 
 export class CoinGeckoAdapter extends BaseAdapter {
   private baseUrl = "https://api.coingecko.com/api/v3";

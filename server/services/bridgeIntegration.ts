@@ -41,7 +41,7 @@
  * ─────────────────────────────────────────────────────────────────────────
  */
 
-import { SupportedChain, CHAIN_CONFIG } from '../../shared/chainConfiguration';
+import { type SupportedChain, CHAIN_CONFIG } from '../../shared/chainConfiguration';
 import { getMultiChainProvider } from './multiChainProvider';
 import { Logger } from '../utils/logger';
 import { ethers } from 'ethers';

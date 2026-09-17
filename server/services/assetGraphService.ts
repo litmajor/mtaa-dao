@@ -60,7 +60,7 @@ import { db } from '../db';
 import { walletConnections, walletTokenBalances, blockchainNetworks, blockchainTokens } from '@shared/walletIntegrationSchema';
 import { eq, and } from 'drizzle-orm';
 import { redis } from './redis';
-import { EdgeRelationshipType } from '../core/assetGraph/types';
+import { type EdgeRelationshipType } from '../core/assetGraph/types';
 import type {
   UserAssetGraph,
   AssetGraphNode,
@@ -1193,7 +1193,7 @@ class AssetGraphService {
           }
           logger.debug('[AssetGraph] Pruned walletDiscoveryCache');
         } catch (e) {
-          logger.debug('[AssetGraph] Wallet cache prune failed:', e);
+          logger.debug('[AssetGraph] Wallet cache prune failed:', { error: e });
         }
       }, 10 * 60 * 1000); // every 10 minutes
     }

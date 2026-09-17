@@ -221,28 +221,28 @@ class ProductionDexRouting {
       const uniswapRoute = await this.queryUniswapV3(order, chain);
       if (uniswapRoute) results.push(uniswapRoute);
     } catch (error) {
-      logger.warn('[DexRouting] Uniswap V3 routing failed:', error);
+      logger.warn('[DexRouting] Uniswap V3 routing failed:', { error });
     }
 
     try {
       const curveRoute = await this.queryCurve(order, chain);
       if (curveRoute) results.push(curveRoute);
     } catch (error) {
-      logger.warn('[DexRouting] Curve routing failed:', error);
+      logger.warn('[DexRouting] Curve routing failed:', { error });
     }
 
     try {
       const balancerRoute = await this.queryBalancer(order, chain);
       if (balancerRoute) results.push(balancerRoute);
     } catch (error) {
-      logger.warn('[DexRouting] Balancer routing failed:', error);
+      logger.warn('[DexRouting] Balancer routing failed:', { error });
     }
 
     try {
       const cexRoute = await this.queryCexAggregator(order, chain);
       if (cexRoute) results.push(cexRoute);
     } catch (error) {
-      logger.warn('[DexRouting] CEX aggregator failed:', error);
+      logger.warn('[DexRouting] CEX aggregator failed:', { error });
     }
 
     if (results.length === 0) {
@@ -335,7 +335,7 @@ class ProductionDexRouting {
         confidence: 0.95,
       };
     } catch (error) {
-      logger.warn('[DexRouting] Uniswap V3 query failed:', error);
+      logger.warn('[DexRouting] Uniswap V3 query failed:', { error });
       return null;
     }
   }
@@ -384,7 +384,7 @@ class ProductionDexRouting {
         confidence: 0.92,
       };
     } catch (error) {
-      logger.debug('[DexRouting] Curve query failed (no route):', error);
+      logger.debug('[DexRouting] Curve query failed (no route):', { error });
       return null;
     }
   }
@@ -452,7 +452,7 @@ class ProductionDexRouting {
         confidence: 0.9,
       };
     } catch (error) {
-      logger.debug('[DexRouting] Balancer query failed (no route):', error);
+      logger.debug('[DexRouting] Balancer query failed (no route):', { error });
       return null;
     }
   }
@@ -508,7 +508,7 @@ class ProductionDexRouting {
         confidence: 0.88,
       };
     } catch (error) {
-      logger.warn('[DexRouting] 1inch API failed:', error);
+      logger.warn('[DexRouting] 1inch API failed:', { error });
       return null;
     }
   }
@@ -614,7 +614,7 @@ class ProductionDexRouting {
           logger.debug(`[DexRouting] Persisted strategy rebalance ${rebalanceId}`);
         }
       } catch (err) {
-        logger.warn('[DexRouting] Failed to persist strategy rebalance:', err);
+        logger.warn('[DexRouting] Failed to persist strategy rebalance:', { error: err });
       }
 
       return {
@@ -655,7 +655,7 @@ class ProductionDexRouting {
       const gasPrice = receipt.gasPrice ? Number(receipt.gasPrice) : 0;
       return (gasUsed * gasPrice) / 1e18 * nativePriceUsd;
     } catch (error) {
-      logger.warn(`[DexRouting] Gas cost USD lookup failed for ${chain}:`, error);
+      logger.warn(`[DexRouting] Gas cost USD lookup failed for ${chain}:`, { error });
       return null;
     }
   }
@@ -1177,7 +1177,7 @@ class ProductionDexRouting {
         confidence: 0.97,
       };
     } catch (err) {
-      logger.debug('[DexRouting] Mento query failed:', err);
+      logger.debug('[DexRouting] Mento query failed:', { error: err });
       return null;
     }
   }
@@ -1217,7 +1217,7 @@ class ProductionDexRouting {
         confidence: 0.9,
       };
     } catch (err) {
-      logger.debug('[DexRouting] Ubeswap query failed:', err);
+      logger.debug('[DexRouting] Ubeswap query failed:', { error: err });
       return null;
     }
   }
@@ -1410,7 +1410,7 @@ class ProductionDexRouting {
       const poolId = response.data?.data?.pools?.[0]?.id;
       return poolId || null;
     } catch (error) {
-      logger.warn('[DexRouting] Balancer pool lookup failed:', error);
+      logger.warn('[DexRouting] Balancer pool lookup failed:', { error });
       return null;
     }
   }

@@ -1,5 +1,6 @@
 import { logger } from '../utils/logger';
-import { NotificationService, EmailNotification, SMSNotification } from './notificationService';
+import { NotificationService } from './notificationService';
+import type { EmailNotification, SMSNotification } from './notificationService';
 
 /**
  * Payment Error Alert Service

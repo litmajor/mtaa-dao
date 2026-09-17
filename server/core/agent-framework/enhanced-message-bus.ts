@@ -13,7 +13,7 @@
  */
 
 import { EventEmitter } from 'events';
-import Redis from 'ioredis';
+import type Redis from 'ioredis';
 import { Logger } from '../../utils/logger';
 import { v4 as uuidv4 } from 'crypto';
 

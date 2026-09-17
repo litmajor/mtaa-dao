@@ -8,12 +8,12 @@ import { createHash, randomBytes } from 'crypto';
 import { EventEmitter } from 'events';
 import { v4 as uuidv4 } from 'uuid';
 import {
-  SecureCredential,
-  SecureVault,
-  CredentialType,
+  type SecureCredential,
+  type SecureVault,
+  type CredentialType,
   SecretRotationPolicy,
-  DriftDetection,
-  OperationalFrameworkConfig,
+  type DriftDetection,
+  type OperationalFrameworkConfig,
   VaultError,
 } from '../types';
 import { getAuditLogger } from '../audit/logger';

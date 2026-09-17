@@ -214,7 +214,7 @@ class UnifiedStatsUpdater {
       try {
         await this.updateVenueExecutionStats(userId, symbol, venue, timeWindow);
       } catch (err) {
-        logger.warn('[Stats] Scheduled venue update failed:', err);
+        logger.warn('[Stats] Scheduled venue update failed:', { error: err });
       }
     });
   }
@@ -233,7 +233,7 @@ class UnifiedStatsUpdater {
       try {
         await this.updateExchangeBalanceSummary(userId, exchangeId, totalValue, totalAssets, estimatedGasCost);
       } catch (err) {
-        logger.warn('[Stats] Scheduled exchange balance update failed:', err);
+        logger.warn('[Stats] Scheduled exchange balance update failed:', { error: err });
       }
     });
   }
@@ -246,7 +246,7 @@ class UnifiedStatsUpdater {
       try {
         await this.updateOrderExecutionSummary(exchange, symbol, timeWindow);
       } catch (err) {
-        logger.warn('[Stats] Scheduled order execution update failed:', err);
+        logger.warn('[Stats] Scheduled order execution update failed:', { error: err });
       }
     });
   }

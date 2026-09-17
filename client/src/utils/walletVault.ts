@@ -1,4 +1,4 @@
-import { Wallet, HDNodeWallet } from 'ethers';
+import { Wallet, type HDNodeWallet } from 'ethers';
 
 /**
  * ⚠️ ASSUMPTION FLAGGED, NOT CONFIRMED: this treats `passphrase` as the real

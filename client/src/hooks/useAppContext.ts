@@ -1,6 +1,6 @@
 import { useAuth } from '../contexts/auth-context';
 import { useNavigation, useIsAdmin, useCanAccess } from '../contexts/navigation-context';
-import { UserRole } from '../contexts/navigation-context';
+import { type UserRole } from '../contexts/navigation-context';
 
 /**
  * Combined hook for accessing both auth and navigation context

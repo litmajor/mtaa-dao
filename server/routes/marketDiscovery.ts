@@ -8,7 +8,7 @@
  * - Admin controls (jump phase, clear cache)
  */
 
-import express, { Router, Request, Response } from 'express';
+import express, { Router, type Request, type Response } from 'express';
 import { isAuthenticated } from '../auth';
 import { requireRole } from '../middleware/rbac';
 import { automaticPhaseManager } from '../services/automaticPhaseManager';

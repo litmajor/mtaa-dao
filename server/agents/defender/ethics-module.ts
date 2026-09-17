@@ -4,7 +4,7 @@
  * Evaluates defensive actions for ethical compliance
  */
 
-import { ActionType, ThreatLevel, DefenseAction } from './types';
+import { ActionType, ThreatLevel, type DefenseAction } from './types';
 
 export class EthicsModule {
   private ethicalRules = {

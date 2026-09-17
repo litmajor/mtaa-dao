@@ -16,6 +16,7 @@ export interface AuthUser {
   name: string;
   email: string;
   role: UserRole;
+  roles?: UserRole | string[];
   avatar?: string;
   createdAt?: Date;
   lastLogin?: Date;
@@ -27,7 +28,7 @@ interface AuthSession {
   expiresAt: string | Date;
 }
 
-interface AuthContextType {
+export interface AuthContextType {
   user: AuthUser | null;
   isAuthenticated: boolean;
   isLoading: boolean;
@@ -39,7 +40,7 @@ interface AuthContextType {
   refreshSession: () => Promise<void>;
 }
 
-const AuthContext = createContext<AuthContextType | undefined>(undefined);
+export const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
 const AUTH_STORAGE_KEY = 'mtaa_dao_auth_session';
 const API_BASE_URL =

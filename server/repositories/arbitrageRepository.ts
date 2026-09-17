@@ -4,7 +4,7 @@
  */
 
 import { db } from '../db';
-import { ArbitrageOpportunity } from '../../types/cex.types';
+import { type ArbitrageOpportunity } from '../../types/cex.types';
 
 export class ArbitrageRepository {
   /**

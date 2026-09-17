@@ -9,6 +9,7 @@ interface User {
   username: string;
   firstName: string;
   lastName: string;
+  roles: string;
   role: string;
   walletAddress?: string | null;
   isEmailVerified: boolean;

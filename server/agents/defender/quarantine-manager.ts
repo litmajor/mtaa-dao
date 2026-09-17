@@ -4,7 +4,7 @@
  * Manages quarantined agents and their isolation
  */
 
-import { QuarantinePolicy } from './types';
+import { type QuarantinePolicy } from './types';
 
 export class QuarantineManager {
   private quarantinedAgents: Set<string> = new Set();

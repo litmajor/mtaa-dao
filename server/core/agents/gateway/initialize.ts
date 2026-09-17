@@ -6,7 +6,7 @@
 
 import type{ GatewayConfig } from "./types";
 import { GatewayAgentService, setGatewayAgentService } from "./service";
-import { BaseAdapter } from "./adapters/base-adapter";
+import { type BaseAdapter } from "./adapters/base-adapter";
 import { ChainlinkAdapter } from "./adapters/chainlink-adapter";
 import { CurveAdapter } from "./adapters/curve-adapter";
 import { MentoAdapter } from "./adapters/mento-adapter";

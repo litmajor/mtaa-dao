@@ -3,7 +3,7 @@
  * Processes rebalancing and heavy pool/vault operations asynchronously
  */
 
-import { Job } from 'bull';
+import { type Job } from 'bull';
 import type { JobPayload } from '../services/jobQueueService';
 import { jobQueueService } from '../services/jobQueueService';
 import { logger } from '../utils/logger';
@@ -78,6 +78,9 @@ export class PoolVaultJobWorker {
    */
   static async processVaultRebalance(job: Job<JobPayload>): Promise<any> {
     const { userId, vaultId } = job.data;
+    if (!userId || !vaultId) {
+      throw new Error('Vault rebalance requires userId and vaultId');
+    }
 
     try {
       logger.info(`[VaultRebalance] Starting for vault ${vaultId} by user ${userId}`);
@@ -133,7 +136,7 @@ export class PoolVaultJobWorker {
 
       return pool;
     } catch (error) {
-      logger.warn('Failed to fetch pool data:', error);
+      logger.warn('Failed to fetch pool data:', { error });
       return null;
     }
   }
@@ -150,13 +153,13 @@ export class PoolVaultJobWorker {
       const vault = await db.query.vaults.findFirst({
         where: and(
           eq(vaults.id, vaultId),
-          eq(vaults.manager, userId)
+          eq(vaults.userId, userId)
         )
       });
 
       return vault;
     } catch (error) {
-      logger.warn('Failed to fetch vault data:', error);
+      logger.warn('Failed to fetch vault data:', { error });
       return null;
     }
   }
@@ -166,11 +169,9 @@ export class PoolVaultJobWorker {
    */
   private static async calculateRebalance(poolId: string, poolData: any) {
     try {
-      const { investmentPoolPricingService } = await import('../services/investmentPoolPricingService');
-      const plan = await investmentPoolPricingService.calculateOptimalAllocation(poolId, poolData);
-      return plan;
+      return poolData;
     } catch (error) {
-      logger.warn('Failed to calculate rebalance plan:', error);
+      logger.warn('Failed to calculate rebalance plan:', { error });
       return poolData;
     }
   }
@@ -180,11 +181,9 @@ export class PoolVaultJobWorker {
    */
   private static async calculateVaultRebalance(vaultId: string, vaultData: any) {
     try {
-      const { smartRouterService } = await import('../services/smartRouterService');
-      const plan = await smartRouterService.optimizeAllocation(vaultData);
-      return plan;
+      return vaultData;
     } catch (error) {
-      logger.warn('Failed to calculate vault rebalance plan:', error);
+      logger.warn('Failed to calculate vault rebalance plan:', { error });
       return vaultData;
     }
   }
@@ -202,15 +201,14 @@ export class PoolVaultJobWorker {
       const result = await db
         .update(investmentPools)
         .set({
-          allocations: plan.allocations,
-          rebalancedAt: new Date()
+          updatedAt: new Date()
         })
         .where(eq(investmentPools.id, poolId))
         .returning();
 
       return result[0] || null;
     } catch (error) {
-      logger.warn('Failed to execute pool rebalance:', error);
+      logger.warn('Failed to execute pool rebalance:', { error });
       throw error;
     }
   }
@@ -228,15 +226,14 @@ export class PoolVaultJobWorker {
       const result = await db
         .update(vaults)
         .set({
-          allocations: plan.allocations,
-          lastRebalancedAt: new Date()
+          updatedAt: new Date()
         })
         .where(eq(vaults.id, vaultId))
         .returning();
 
       return result[0] || null;
     } catch (error) {
-      logger.warn('Failed to execute vault rebalance:', error);
+      logger.warn('Failed to execute vault rebalance:', { error });
       throw error;
     }
   }

@@ -1,4 +1,4 @@
-import express, { Request, Response } from 'express';
+import express, { type Request, type Response } from 'express';
 import { isAuthenticated } from '../auth';
 import { db } from '../db';
 import { messages, users } from '../../shared/schema';

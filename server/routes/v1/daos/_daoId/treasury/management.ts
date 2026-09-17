@@ -9,7 +9,7 @@
  * - PUT    /v1/daos/:daoId/treasury/management/limits (admin only)
  */
 
-import express, { Request, Response } from 'express';
+import express, { type Request, type Response } from 'express';
 import { authenticate } from '../../../../../auth';
 import { rateLimitPerUser } from '../../../../../middleware/rateLimit';
 import { treasuryAdminGuard } from './security';

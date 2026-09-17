@@ -122,7 +122,7 @@ const auditAdminAccess = async (req: Request, res: Response, next: NextFunction)
       method: req.method,
       timestamp: new Date().toISOString(),
     },
-  }).catch(err => logger.warn('Failed to log admin access:', err));
+  }).catch(err => logger.warn('Failed to log admin access:', { error: err }));
 
   next();
 };

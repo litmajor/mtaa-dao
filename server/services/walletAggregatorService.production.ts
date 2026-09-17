@@ -319,7 +319,7 @@ class ProductionWalletAggregator {
           } catch (tokenError) {
             logger.warn(
               `[WalletAggregator] Failed to fetch ${symbol} on ${chain}:`,
-              tokenError
+              { error: tokenError }
             );
           }
         }
@@ -354,7 +354,7 @@ class ProductionWalletAggregator {
         lastError = error as Error;
         logger.warn(
           `[WalletAggregator] RPC attempt ${attempt + 1}/${config.maxRpcRetries} failed:`,
-          error
+          { error }
         );
 
         if (attempt < config.maxRpcRetries - 1) {

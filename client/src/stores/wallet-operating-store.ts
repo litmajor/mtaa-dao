@@ -92,7 +92,7 @@ function notify() {
     } catch (err) {
       // swallow to avoid breaking other listeners; send to console for observability
       // Replace with logging/observability in production
-      // eslint-disable-next-line no-console
+       
       console.error('listener errored', err)
     }
   }
@@ -152,7 +152,7 @@ function compute(nextState: OperatingState): OperatingState {
     }
   } catch (err) {
     // don't crash the app; log and return previous state shaped values
-    // eslint-disable-next-line no-console
+     
     console.error('compute failed', err)
     return {
       ...nextState,

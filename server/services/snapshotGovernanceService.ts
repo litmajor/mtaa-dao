@@ -263,7 +263,7 @@ export class SnapshotGovernanceService {
         return metrics;
       }
     } catch (error) {
-      logger.warn(`Snapshot.org failed for ${daoId}:`, error);
+      logger.warn(`Snapshot.org failed for ${daoId}:`, { error });
     }
     
     try {
@@ -461,7 +461,7 @@ export class SnapshotGovernanceService {
         topHolderConcentration = 25;
       }
     } catch (error) {
-      logger.warn('Could not fetch token holder concentration:', error);
+      logger.warn('Could not fetch token holder concentration:', { error });
     }
 
     return {

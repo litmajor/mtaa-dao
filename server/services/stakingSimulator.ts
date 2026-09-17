@@ -5,7 +5,7 @@
  * Uses probability models and APY calculations
  */
 
-import { SimulationService, SimulationResult, SimulationStatus, SimulationDepth } from './simulationFramework';
+import { SimulationService, type SimulationResult, SimulationStatus, SimulationDepth } from './simulationFramework';
 
 /**
  * Solo Staking Validator Simulator

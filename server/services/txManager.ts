@@ -101,7 +101,7 @@ export class TransactionLifecycleManager {
       if (!tx.chainId && network?.chainId) tx.chainId = Number(network.chainId);
     } catch (e: unknown) {
       const errMsg = (e as Error)?.message ?? String(e ?? 'unknown');
-      logger.warn('Could not read network chainId before signing', errMsg);
+      logger.warn('Could not read network chainId before signing', { error: errMsg });
     }
 
     let signedTx: string;
@@ -112,7 +112,7 @@ export class TransactionLifecycleManager {
       try {
         const connected = signer.connect ? signer.connect(provider as unknown as Provider) : signer;
         const response = await (connected as any).sendTransaction(tx) as TransactionResponse;
-        this.monitorTransaction(chain, response.hash, tx, signer).catch((err) => logger.warn('monitor error', err));
+        this.monitorTransaction(chain, response.hash, tx, signer).catch((err) => logger.warn('monitor error', { error: err }));
         return response;
       } catch (err) {
         logger.error('sendTransaction via signer failed', (err as Error)?.message ?? err);
@@ -126,7 +126,7 @@ export class TransactionLifecycleManager {
     const response = await getMultiChainProvider().call<TransactionResponse>(chain, (p: any) => (p as any).sendTransaction(signedTx), 'sendTransaction');
 
     // Start monitoring asynchronously (pass signer so we can re-sign if needed)
-    this.monitorTransaction(chain, response.hash, tx, signer).catch((err) => logger.warn('monitor error', err));
+    this.monitorTransaction(chain, response.hash, tx, signer).catch((err) => logger.warn('monitor error', { error: err }));
 
     return response;
   }
@@ -143,7 +143,7 @@ export class TransactionLifecycleManager {
         logger.info(`Tx ${txHash} confirmed on ${chain}`);
         return;
       }
-      logger.warn(`Tx ${txHash} failed or reverted on ${chain}`, receipt);
+      logger.warn(`Tx ${txHash} failed or reverted on ${chain}`, { receipt });
     } catch (err: any) {
       // Consider this a timeout or provider error -> attempt bump & resubmit
       logger.warn(`Tx ${txHash} not confirmed within ${this.WATCHDOG_MS}ms on ${chain}: ${err?.message || err}`);
@@ -176,14 +176,14 @@ export class TransactionLifecycleManager {
           const connected = signer.connect ? signer.connect(provider as unknown as Provider) : signer;
           const response = await (connected as any).sendTransaction(bumpedTx) as TransactionResponse;
           // Monitor the new transaction
-          this.monitorTransaction(chain, response.hash, bumpedTx, signer).catch((err) => logger.warn('monitor error', err));
+          this.monitorTransaction(chain, response.hash, bumpedTx, signer).catch((err) => logger.warn('monitor error', { error: err }));
           return response;
         }
 
         if (typeof signer.signTransaction === 'function') {
           const signed = await signer.signTransaction(bumpedTx as TransactionRequest);
           const response = await getMultiChainProvider().call<TransactionResponse>(chain, (p: any) => (p as any).sendTransaction(signed), 'sendTransaction-bump');
-          this.monitorTransaction(chain, response.hash, bumpedTx, signer).catch((err) => logger.warn('monitor error', err));
+          this.monitorTransaction(chain, response.hash, bumpedTx, signer).catch((err) => logger.warn('monitor error', { error: err }));
           return response;
         }
       } catch (err) {

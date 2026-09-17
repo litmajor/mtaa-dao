@@ -12,7 +12,7 @@
  * Includes liquidity analysis, price impact, funding rate simulation
  */
 
-import { SimulationService, SimulationResult, SimulationParams, SimulationStatus, SimulationDepth } from './simulationFramework';
+import { SimulationService, type SimulationResult, type SimulationParams, SimulationStatus, SimulationDepth } from './simulationFramework';
 
 /**
  * Spot Trade Simulator

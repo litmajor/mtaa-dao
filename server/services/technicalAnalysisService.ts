@@ -28,7 +28,8 @@
  * • Signal acceleration detection (histogram slope, momentum)
  */
 
-import { ohlcvService, OHLCVCandle } from './ohlcvService';
+import { ohlcvService } from './ohlcvService';
+import type { OHLCVCandle } from './ohlcvService';
 import { cacheService } from './cacheService';
 import { logger } from '../utils/logger';
 
@@ -38,11 +39,11 @@ import {
   calculateRSI,
   calculateMACD,
   calculateBollingerBands,
-  TechnicalIndicatorsResult
+  type TechnicalIndicatorsResult
 } from './technicalIndicators';
 
 import {
-  Timeframe,
+  type Timeframe,
   isValidTimeframe,
   validateTimeframeHierarchy,
   getCacheTTL,

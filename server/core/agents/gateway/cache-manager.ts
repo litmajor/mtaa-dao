@@ -5,7 +5,7 @@
 
 import type { RedisClientType } from 'redis';
 import { getRedisInstanceAsync } from '../../../config/redisConnectionManager';
-import { NormalizedData, CacheEntry, CacheConfig } from "./types";
+import { type NormalizedData, type CacheEntry, type CacheConfig } from "./types";
 
 export interface CacheStats {
   hits: number;

@@ -27,7 +27,7 @@
  */
 
 import { logger } from '../utils/logger';
-import { findArbitrageOpportunities, ArbitrageOpportunity } from './arbitrageDetection';
+import { findArbitrageOpportunities, type ArbitrageOpportunity } from './arbitrageDetection';
 import { collectorService } from './collectorService';
 import { engineService } from './engineService';
 import { orderRouter } from './orderRouter';
@@ -128,13 +128,9 @@ class ArbitrageService {
 
       // Try collectorService
       try {
-        const discovered = await collectorService.discoverAllAssets?.();
+        const discovered = await collectorService.getActiveSymbols();
         if (discovered && discovered.length > 0) {
-          const ranked = discovered
-            .sort((a: any) => (a.volume24h || 0) - (b.volume24h || 0))
-            .reverse()
-            .slice(0, 150) // Top 150 assets for comprehensive scanning
-            .map((asset: any) => asset.symbol);
+          const ranked = discovered.slice(0, 150);
 
           this.discoveredAssets = ranked;
           this.assetsLastDiscovered = now;
@@ -143,7 +139,9 @@ class ArbitrageService {
           return this.discoveredAssets;
         }
       } catch (error) {
-        logger.debug('[ArbitrageService] collectorService discovery failed', error);
+        logger.debug('[ArbitrageService] collectorService discovery failed', {
+          error: error instanceof Error ? error.message : String(error)
+        });
       }
 
       // Fall back to TokenRegistry
@@ -162,7 +160,9 @@ class ArbitrageService {
           return this.discoveredAssets;
         }
       } catch (error) {
-        logger.debug('[ArbitrageService] TokenRegistry discovery failed', error);
+        logger.debug('[ArbitrageService] TokenRegistry discovery failed', {
+          error: error instanceof Error ? error.message : String(error)
+        });
       }
 
       return [];
@@ -312,7 +312,7 @@ class ArbitrageService {
 
               return enhanced;
             } catch (error) {
-              logger.debug(`[ArbitrageService] Error scanning ${asset}:`, error);
+              logger.debug(`[ArbitrageService] Error scanning ${asset}:`, { error });
               return [];
             }
           })
@@ -389,7 +389,7 @@ class ArbitrageService {
 
       logger.debug(`[ArbitrageService] Cached ${topOpps.length} top opportunities`);
     } catch (error) {
-      logger.warn('[ArbitrageService] Failed to cache opportunities:', error);
+      logger.warn('[ArbitrageService] Failed to cache opportunities:', { error });
     }
   }
 
@@ -408,7 +408,7 @@ class ArbitrageService {
 
       return [];
     } catch (error) {
-      logger.warn('[ArbitrageService] Failed to get cached opportunities:', error);
+      logger.warn('[ArbitrageService] Failed to get cached opportunities:', { error });
       return [];
     }
   }

@@ -8,7 +8,7 @@
  * Supports multiple chains: Ethereum, Polygon, Arbitrum, Optimism, BSC, Celo
  */
 
-import express, { Request, Response, NextFunction } from 'express';
+import express, { type Request, type Response, type NextFunction } from 'express';
 import { dexService } from '../../../services/dexRoutingService';
 import { rateLimit } from 'express-rate-limit';
 import {
@@ -58,7 +58,7 @@ const searchLimiter = rateLimit({
   windowMs: 60 * 1000,
   max: 60,
   message: 'Too many search requests',
-  skip: (req) => req.user?.isAdmin
+  skip: (req) => Boolean(req.user?.isAdmin)
 });
 
 const pairDetailLimiter = rateLimit({
@@ -401,7 +401,7 @@ router.get('/pools', async (req: Request, res: Response) => {
       // This ensures we discover the latest tokens available on the selected chain
       syncStatus = { synced: true, message: 'Token universe sync initiated for optimal pool discovery' };
     } catch (e) {
-      logger.warn('Token sync not critical for query', e);
+      logger.warn('Token sync not critical for query', { error: e });
     }
 
     // Return instructions to use the discovery endpoints for real data
@@ -472,7 +472,7 @@ router.get('/opportunities', async (req: Request, res: Response) => {
         };
       });
     } catch (e) {
-      logger.warn('Could not fetch price data for opportunities', e);
+      logger.warn('Could not fetch price data for opportunities', { error: e });
     }
 
     // Provide instructions and template response

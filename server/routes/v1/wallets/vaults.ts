@@ -16,7 +16,7 @@
  * - All operations logged to audit trail
  */
 
-import express, { Request, Response } from 'express';
+import express, { type Request, type Response } from 'express';
 import { randomUUID } from 'crypto';
 import { authenticate } from '../../../auth';
 import { rateLimitPerUser } from '../../../middleware/rateLimit';

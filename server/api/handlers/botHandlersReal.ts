@@ -4,11 +4,11 @@
  */
 
 import {
-  DeployBotRequest,
-  DeployBotResponse,
-  BotTradeEvent,
-  UpdateBotConfigRequest,
-  BotPerformanceResponse,
+  type DeployBotRequest,
+  type DeployBotResponse,
+  type BotTradeEvent,
+  type UpdateBotConfigRequest,
+  type BotPerformanceResponse,
 } from '../types/botTypes';
 import * as botService from '../../db/services/botService';
 import { botExecutionEngine } from '../../integrations/bot/executionEngine';

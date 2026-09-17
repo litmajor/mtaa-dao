@@ -12,7 +12,7 @@
  * Agent cascade failures, circuit breaker triggering, recovery analysis
  */
 
-import { SimulationService, SimulationResult, SimulationParams, SimulationStatus, SimulationDepth } from './simulationFramework';
+import { SimulationService, type SimulationResult, type SimulationParams, SimulationStatus, SimulationDepth } from './simulationFramework';
 
 /**
  * Agent Deployment Simulator

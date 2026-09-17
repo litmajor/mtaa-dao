@@ -28,7 +28,7 @@
  * 6. NodeJS.Timer (deprecated alias) replaced with NodeJS.Timeout.
  */
 
-import { Server as HTTPServer, IncomingMessage } from 'http';
+import { type Server as HTTPServer, type IncomingMessage } from 'http';
 import { WebSocket, WebSocketServer } from 'ws';
 import { logger } from '../utils/logger';
 import ccxtService from './ccxtService';

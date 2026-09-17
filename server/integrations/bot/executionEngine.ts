@@ -3,11 +3,11 @@
  * Handles bot lifecycle, strategy execution, and trade management
  */
 
-import { Bot, BotTrade } from '../../db/schema/bots';
+import type { Bot, BotTrade } from '../../db/schema/bots';
 import * as botService from '../../db/services/botService';
 import { recordBotTradeHandler } from '../../api/handlers/botHandlers';
 import { exchangeManager } from '../exchanges/manager';
-import { ExchangeConnector, OrderRequest, OrderResponse } from '../exchanges/types';
+import type { ExchangeConnector, OrderRequest, OrderResponse } from '../exchanges/types';
 
 interface BotExecutor {
   botId: string;
@@ -349,7 +349,7 @@ export class BotExecutionEngine {
     if (!fetchFn) {
       try {
         // dynamic import to avoid forcing dependency at module load
-        // eslint-disable-next-line @typescript-eslint/no-var-requires
+         
         const mod = await import('node-fetch');
         fetchFn = mod.default || mod;
       } catch (err) {

@@ -4,8 +4,8 @@
  * Polls bridge status, updates database, handles completion/failures
  */
 
-import { SupportedChain } from '../../shared/chainConfiguration';
-import { getBridgeIntegration, BridgeProtocol } from './bridgeIntegration';
+import { type SupportedChain } from '../../shared/chainConfiguration';
+import { getBridgeIntegration, type BridgeProtocol } from './bridgeIntegration';
 import { getMultiChainProvider } from './multiChainProvider';
 import { db } from '../db';
 import { crossChainTransfers } from '../../shared/accountSchema';

@@ -1,6 +1,6 @@
 import React from 'react';
-import { Meta, Story } from '@storybook/react';
-import { Surface, SurfaceProps } from './surface';
+import { type Meta, type Story } from '@storybook/react';
+import { Surface, type SurfaceProps } from './surface';
 
 export default { title: 'UI/Surface', component: Surface } as Meta;
 const Template: Story<SurfaceProps> = (args) => <Surface {...args} />;

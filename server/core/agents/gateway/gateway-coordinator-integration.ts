@@ -4,9 +4,9 @@
  * with error handling, metrics tracking, and fault tolerance
  */
 
-import { ElderCoordinator } from "../../elders/coordinator";
+import { type ElderCoordinator } from "../../elders/coordinator";
 import { GatewayAgentService } from "./service";
-import { initializeGatewayAgentWithCoordinator } from "./initialize";
+import { getDefaultGatewayConfig, initializeAdapters } from "./initialize";
 import { Logger } from "../../../utils/logger";
 import { EventEmitter } from "events";
 
@@ -45,7 +45,11 @@ export class GatewayCoordinatorIntegrationManager extends EventEmitter {
 
     try {
       // Initialize Gateway Service
-      await this.gatewayService.initialize(customConfig);
+      await this.gatewayService.initialize(
+        { ...getDefaultGatewayConfig(), ...customConfig },
+        initializeAdapters(customConfig),
+        this.coordinator
+      );
 
       // Setup bidirectional message routing
       await this.setupBidirectionalRouting();
@@ -70,7 +74,9 @@ export class GatewayCoordinatorIntegrationManager extends EventEmitter {
         const delay = this.retryDelay * Math.pow(2, this.retryAttempts - 1);
         logger.warn(`Retrying in ${delay}ms (attempt ${this.retryAttempts}/${this.maxRetries})`);
         
-        setTimeout(() => this.initialize(customConfig), delay);
+        return await new Promise<GatewayAgentService>((resolve, reject) => {
+          setTimeout(() => this.initialize(customConfig).then(resolve).catch(reject), delay);
+        });
       } else {
         this.isConnected = false;
         this.emit("error", error);
@@ -304,11 +310,11 @@ export class GatewayCoordinatorIntegrationManager extends EventEmitter {
     });
 
     this.on("forward_error", ({ messageType, error }: any) => {
-      logger.warn(`Forward error for ${messageType}:`, error);
+      logger.warn(`Forward error for ${messageType}:`, { error });
     });
 
     this.on("receive_error", (error: Error) => {
-      logger.warn("Message receive error:", error);
+      logger.warn("Message receive error:", { error });
     });
   }
 

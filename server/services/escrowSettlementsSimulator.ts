@@ -5,7 +5,7 @@
  * Includes 30-day recovery window for escrow releases
  */
 
-import { SimulationService, SimulationResult, SimulationStatus, SimulationDepth } from './simulationFramework';
+import { SimulationService, type SimulationResult, SimulationStatus, SimulationDepth } from './simulationFramework';
 
 /**
  * Escrow Release Simulator

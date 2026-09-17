@@ -433,7 +433,7 @@ export class DataSourceManager {
           
           return response;
         } catch (error) {
-          logger.warn(`Request to ${sourceId} failed:`, error);
+          logger.warn(`Request to ${sourceId} failed:`, { error });
           
           // Failure: update health, circuit breaker
           this.recordFailure(sourceId, error as Error);

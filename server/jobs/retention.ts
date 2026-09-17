@@ -83,8 +83,9 @@ async function vacuumTable(tableName: string): Promise<void> {
     logger.info(`[Retention] VACUUM ANALYZE ${tableName} done`);
   } catch (err) {
     // Non-fatal: Neon serverless sometimes disallows explicit VACUUM
-    logger.warn(`[Retention] VACUUM skipped for ${tableName}:`,
-      err instanceof Error ? err.message : err);
+    logger.warn(`[Retention] VACUUM skipped for ${tableName}:`, {
+      error: err instanceof Error ? err.message : String(err)
+    });
   }
 }
 
@@ -353,8 +354,9 @@ async function managePartitions(): Promise<void> {
       ));
     } catch (err) {
       // Table may not be partitioned yet (first run before 0011 migration)
-      logger.warn(`[Retention] Partition management skipped for ${table}:`,
-        err instanceof Error ? err.message : err);
+      logger.warn(`[Retention] Partition management skipped for ${table}:`, {
+        error: err instanceof Error ? err.message : String(err)
+      });
     }
   }
 
@@ -373,8 +375,9 @@ async function managePartitions(): Promise<void> {
 
     logger.info(`[Retention] Created system_logs partition: ${partName}`);
   } catch (err) {
-    logger.warn('[Retention] system_logs weekly partition skipped:',
-      err instanceof Error ? err.message : err);
+    logger.warn('[Retention] system_logs weekly partition skipped:', {
+      error: err instanceof Error ? err.message : String(err)
+    });
   }
 }
 

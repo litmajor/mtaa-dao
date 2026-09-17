@@ -11,7 +11,7 @@
 
 import { logger } from '../../observability/logger';
 import type { ProcessedEventRepository } from '../postgres/ProcessedEventRepository';
-import { RedisStreamConsumer} from '../redis/RedisStreamAdapter';
+import { type RedisStreamConsumer} from '../redis/RedisStreamAdapter';
 import type {StreamName } from '../redis/RedisStreamAdapter';
 
 // ---------------------------------------------------------------------------

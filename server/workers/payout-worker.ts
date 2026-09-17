@@ -268,7 +268,7 @@ async function processPendingPayouts(dryRun = false) {
       // increment batch nonce after successful send to avoid collisions
       if (typeof nonce === 'number') nonce++;
       // Metrics: processed count
-      try { metricsCollector.recordWorkerProcessed(1, { worker: 'payouts' }); } catch (e) { logger.debug('metrics record error', e); }
+      try { metricsCollector.recordWorkerProcessed(1, { worker: 'payouts' }); } catch (e) { logger.debug('metrics record error', { error: e }); }
 
     } catch (err: any) {
       const lastError = err?.message || String(err);
@@ -279,7 +279,7 @@ async function processPendingPayouts(dryRun = false) {
 
       logger.error('Payout processing error', { payoutId: p.id, error: lastError, retryCount });
 
-      try { metricsCollector.recordWorkerFailure({ worker: 'payouts' }); } catch (e) { logger.debug('metrics record error', e); }
+      try { metricsCollector.recordWorkerFailure({ worker: 'payouts' }); } catch (e) { logger.debug('metrics record error', { error: e }); }
 
       if (retryCount >= MAX_RETRIES) {
         await sendAdminAlert(`Payout ${p.id} failed after ${retryCount} attempts: ${lastError}`);
@@ -288,7 +288,7 @@ async function processPendingPayouts(dryRun = false) {
   }
 
   const batchDuration = Date.now() - batchStart;
-  try { metricsCollector.recordWorkerDuration(batchDuration, { worker: 'payouts' }); } catch (e) { logger.debug('metrics record error', e); }
+  try { metricsCollector.recordWorkerDuration(batchDuration, { worker: 'payouts' }); } catch (e) { logger.debug('metrics record error', { error: e }); }
 
   // end batch
 }

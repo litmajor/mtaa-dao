@@ -1,4 +1,4 @@
-import { Worker, Job, Queue } from 'bullmq';
+import { Worker, type Job, Queue } from 'bullmq';
 import { Logger } from '../utils/logger';
 import { treasuryOnchainService } from '../services/treasuryOnchainService';
 import { db } from '../db';

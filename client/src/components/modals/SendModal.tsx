@@ -29,6 +29,7 @@ import {
   AlertCircle,
   Copy,
   QrCode,
+  Send,
 } from 'lucide-react';
 import { apiRequest } from '@/lib/queryClient';
 import { useSubprofilePreferences } from '@/contexts/persona-context';
@@ -81,6 +82,27 @@ interface SendReviewData {
   memo: string;
   fee: number;
   total: number;
+}
+
+type SendApiResponse<T> = T | {
+  data?: T;
+  success?: boolean;
+  id?: string;
+};
+
+function isResponseRecord(value: unknown): value is { data?: unknown; success?: boolean; id?: string } {
+  return typeof value === 'object' && value !== null;
+}
+
+async function readSendApiResponse<T>(response: Response): Promise<SendApiResponse<T>> {
+  return await response.json() as SendApiResponse<T>;
+}
+
+function getResponseData<T>(response: SendApiResponse<T>): T {
+  if (isResponseRecord(response) && 'data' in response) {
+    return response.data as T;
+  }
+  return response as T;
 }
 
 /**
@@ -145,8 +167,10 @@ export function SendModal({
    */
   async function loadUserDAOs() {
     try {
-      const response = await apiRequest('GET', '/api/users/my-daos');
-      setUserDAOs(response?.data || response || []);
+      const response = await readSendApiResponse<DAOInfo[]>(
+        await apiRequest('GET', '/api/users/my-daos')
+      );
+      setUserDAOs(getResponseData(response) || []);
     } catch (err) {
       console.error('Failed to load DAOs:', err);
     }
@@ -158,8 +182,10 @@ export function SendModal({
   async function loadDAOMembers(daoId: string) {
     try {
       setLoading(true);
-      const response = await apiRequest('GET', `/api/dao/${daoId}/members`);
-      setDAOMembers(response?.data || response || []);
+      const response = await readSendApiResponse<UserInfo[]>(
+        await apiRequest('GET', `/api/dao/${daoId}/members`)
+      );
+      setDAOMembers(getResponseData(response) || []);
     } catch (err) {
       console.error('Failed to load DAO members:', err);
       setDAOMembers([]);
@@ -179,8 +205,10 @@ export function SendModal({
 
     try {
       setLoading(true);
-      const response = await apiRequest('GET', `/api/users/search?q=${encodeURIComponent(query)}`);
-      setSearchResults(response?.data || response || []);
+      const response = await readSendApiResponse<UserInfo[]>(
+        await apiRequest('GET', `/api/users/search?q=${encodeURIComponent(query)}`)
+      );
+      setSearchResults(getResponseData(response) || []);
     } catch (err) {
       console.error('Failed to search users:', err);
       setSearchResults([]);
@@ -297,9 +325,12 @@ export function SendModal({
         fee,
       };
 
-      const response = await apiRequest('POST', '/api/send', payload);
+      const response = await readSendApiResponse<{ id?: string }>(
+        await apiRequest('POST', '/api/send', payload)
+      );
+      const responseRecord = isResponseRecord(response) ? response : {};
 
-      if (response?.success || response?.id) {
+      if (responseRecord.success || responseRecord.id) {
         // Save to recent recipients
         const recipientLabel =
           context === 'dao' ? userDAOs.find(d => d.id === recipient)?.name || recipient :
@@ -311,7 +342,7 @@ export function SendModal({
         // Show success
         setStep('confirm');
         setTimeout(() => {
-          onSuccess?.(response.id);
+          onSuccess?.(responseRecord.id || recipient);
           resetForm();
           onClose();
         }, 2000);

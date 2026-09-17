@@ -10,7 +10,7 @@
  * - DELETE /v1/daos/:daoId/treasury/multisig/signers/:signerId (admin)
  */
 
-import express, { Request, Response } from 'express';
+import express, { type Request, type Response } from 'express';
 import { authenticate } from '../../../../../auth';
 import { rateLimitPerUser } from '../../../../../middleware/rateLimit';
 import { treasuryAdminGuard } from './security';

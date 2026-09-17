@@ -12,7 +12,7 @@
 
 import { pgTable, text, timestamp, serial, integer, boolean, jsonb, uuid } from 'drizzle-orm/pg-core';
 import { createInsertSchema, createSelectSchema } from 'drizzle-zod';
-import { z } from 'zod';
+import { type z } from 'zod';
 
 // ============================================================================
 // AUDIT EVENTS TABLE

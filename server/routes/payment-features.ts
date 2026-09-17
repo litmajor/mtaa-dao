@@ -14,7 +14,7 @@
  * POST /api/wallet/recurring-payment/:id/resume - Resume payment
  */
 
-import express, { Router, Request, Response } from "express";
+import express, { Router, type Request, type Response } from "express";
 import { isAuthenticated } from "../auth";
 import { z } from "zod";
 import { v4 as uuidv4 } from "uuid";

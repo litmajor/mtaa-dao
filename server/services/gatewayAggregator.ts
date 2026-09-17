@@ -565,7 +565,9 @@ class UniswapV3Adapter implements DexAdapter {
       await cacheService.set(cacheKey, { pools: normalizedPools }, ttlSeconds);
       return normalizedPools;
     } catch (error) {
-      logger.warn('Uniswap V3 subgraph failed', error);
+      logger.warn('Uniswap V3 subgraph failed', {
+        error: error instanceof Error ? error.message : String(error)
+      });
       return [];
     }
   }
@@ -620,7 +622,7 @@ class MentoAdapter implements DexAdapter {
       const exchanges = await broker.getExchangeProviders();
       return exchanges && exchanges.length > 0;
     } catch (error) {
-      logger.warn('Mento availability check failed:', error);
+      logger.warn('Mento availability check failed:', { error });
       return false;
     }
   }
@@ -671,7 +673,7 @@ class MentoAdapter implements DexAdapter {
             };
           }
         } catch (providerError) {
-          logger.debug(`Mento provider ${providerAddr} failed:`, providerError);
+          logger.debug(`Mento provider ${providerAddr} failed:`, { error: providerError });
           continue;
         }
       }
@@ -703,7 +705,7 @@ class MentoAdapter implements DexAdapter {
         timestamp: new Date(),
       };
     } catch (error) {
-      logger.warn('Mento liquidity check failed:', error);
+      logger.warn('Mento liquidity check failed:', { error });
       return {
         protocol: 'mento',
         token,
@@ -890,7 +892,7 @@ class UbeswapAdapter implements DexAdapter {
         timestamp: new Date(),
       };
     } catch (error) {
-      logger.warn('Ubeswap liquidity query failed:', error);
+      logger.warn('Ubeswap liquidity query failed:', { error });
       return { protocol: 'ubeswap', token, totalLiquidity: 0, pools: [], timestamp: new Date() };
     }
   }
@@ -1073,7 +1075,7 @@ class SushiSwapAdapter implements DexAdapter {
         timestamp: new Date(),
       };
     } catch (error) {
-      logger.warn(`SushiSwap subgraph failed, returning placeholder:`, error);
+      logger.warn(`SushiSwap subgraph failed, returning placeholder:`, { error });
       return {
         protocol: 'sushiswap-eth',
         token,
@@ -1276,7 +1278,7 @@ class PancakeSwapAdapter implements DexAdapter {
         timestamp: new Date(),
       };
     } catch (error) {
-      logger.warn(`PancakeSwap subgraph failed, returning placeholder:`, error);
+      logger.warn(`PancakeSwap subgraph failed, returning placeholder:`, { error });
       return {
         protocol: 'pancakeswap',
         token,
@@ -1442,7 +1444,7 @@ class MoolaAdapter implements DexAdapter {
         timestamp: new Date(),
       };
     } catch (error) {
-      logger.warn('Moola liquidity check failed:', error);
+      logger.warn('Moola liquidity check failed:', { error });
       return { protocol: 'moola', token, totalLiquidity: 0, pools: [], timestamp: new Date() };
     }
   }
@@ -1567,7 +1569,7 @@ export class GatewayAggregator {
         logger.debug(`✓ Got valid quote from ${adapter.name}: ${quote.outputAmount}`);
         return quote;
       } catch (error) {
-        logger.warn(`Quote from ${adapter.name} failed:`, error);
+        logger.warn(`Quote from ${adapter.name} failed:`, { error });
         continue;
       }
     }
@@ -1591,7 +1593,7 @@ export class GatewayAggregator {
         const depth = await adapter.getLiquidity(token);
         results.push(depth);
       } catch (error) {
-        logger.warn(`Liquidity from ${adapter.name} failed:`, error);
+        logger.warn(`Liquidity from ${adapter.name} failed:`, { error });
       }
     }
 

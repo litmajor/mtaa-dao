@@ -9,7 +9,7 @@
 import type { UserContext } from '../../../core/nuru/types';
 import type { Action, MorioConfig } from '../types';
 import { responses, onboardingGuides } from '../config/responses';
-import { createLLMProvider, LLMResponseGenerator, LLMConfig } from './llm_provider';
+import { createLLMProvider, LLMResponseGenerator, type LLMConfig } from './llm_provider';
 import { Logger } from '../../../utils/logger';
 import { kwetu } from '../../../core/kwetu';
 import { storage } from '../../../storage';
@@ -32,7 +32,7 @@ export class ResponseGenerator {
         this.llmGenerator = new LLMResponseGenerator(llmProvider);
         logger.info('LLM provider initialized');
       } catch (error) {
-        logger.warn('Failed to initialize LLM provider, using template responses:', error);
+        logger.warn('Failed to initialize LLM provider, using template responses:', { error });
       }
     }
   }
@@ -79,7 +79,7 @@ export class ResponseGenerator {
           actions: await this.generateActions(intent, entities)
         };
       } catch (error) {
-        logger.warn('LLM generation failed, falling back to templates:', error);
+        logger.warn('LLM generation failed, falling back to templates:', { error });
       }
     }
 
@@ -123,7 +123,7 @@ export class ResponseGenerator {
           suggestions = this.generateSuggestions(intent, context);
           actions = await this.generateActions(intent, { ...entities, balance: treasuryData.balance });
         } catch (error) {
-          logger.warn('Failed to fetch treasury balance, using template:', error);
+          logger.warn('Failed to fetch treasury balance, using template:', { error });
           responseText = this.personalizeResponse(template.text, context, entities);
           suggestions = this.generateSuggestions(intent, context);
           actions = await this.generateActions(intent, entities);
@@ -156,7 +156,7 @@ export class ResponseGenerator {
             }];
           }
         } catch (error) {
-          logger.warn('Failed to create proposal, using template:', error);
+          logger.warn('Failed to create proposal, using template:', { error });
           responseText = this.personalizeResponse(template.text, context, entities);
           suggestions = this.generateSuggestions(intent, context);
           actions = await this.generateActions(intent, entities);

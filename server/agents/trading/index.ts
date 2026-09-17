@@ -14,7 +14,8 @@
  * [DESIGN]   detectArbOpportunities() guards against zero-price entries before division.
  */
 
-import { BaseAgent, AgentConfig, AgentStatus } from '../framework/base-agent';
+import { BaseAgent, AgentStatus } from '../framework/base-agent';
+import type { AgentConfig } from '../framework/base-agent';
 import { Logger } from '../../utils/logger';
 import { healthRegistry } from '../../core/consolidation/HealthRegistryConsolidation';
 import { circuitBreakerRegistry } from '../../core/consolidation/CircuitBreakerConsolidation';
@@ -22,13 +23,13 @@ import { AgentCommunicator } from '../../core/agent-framework/agent-communicator
 import { MessageType } from '../../core/agent-framework/message-bus';
 import {
   TradingRouteType,
-  LiquiditySource,
-  RoutingPath,
-  TradeQuote,
-  ExecutionResult,
-  ArbOpportunity,
-  TradingMetrics,
-  PriceData,
+  type LiquiditySource,
+  type RoutingPath,
+  type TradeQuote,
+  type ExecutionResult,
+  type ArbOpportunity,
+  type TradingMetrics,
+  type PriceData,
 } from './types';
 
 // Inject a real executor — replace with your DEX/CEX adapter implementation.

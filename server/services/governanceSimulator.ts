@@ -12,7 +12,7 @@
  * Agent behavior simulation, multi-step execution sequences
  */
 
-import { SimulationService, SimulationResult, SimulationParams, SimulationStatus, SimulationDepth } from './simulationFramework';
+import { SimulationService, type SimulationResult, type SimulationParams, SimulationStatus, SimulationDepth } from './simulationFramework';
 
 /**
  * Create Proposal Simulator

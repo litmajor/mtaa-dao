@@ -10,7 +10,8 @@
  */
 
 import * as crypto from 'crypto';
-import { encrypt, decrypt, EncryptedData } from '../utils/encryption';
+import { encrypt, decrypt } from '../utils/encryption';
+import type { EncryptedData } from '../utils/encryption';
 import { pool } from '../db';
 
 export interface KeyVersion {

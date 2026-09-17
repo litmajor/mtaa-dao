@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { authClient } from '@/utils/authClient';
-import { Socket } from 'socket.io-client';
+import { type Socket } from 'socket.io-client';
 import { API_CONFIG } from '@/config/apiConfig';
 import { getSharedSocket } from '@/hooks/useSharedSocket';
 

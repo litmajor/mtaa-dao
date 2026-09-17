@@ -64,7 +64,7 @@ export class TodoScanner {
           }
         }
       } catch (error) {
-        logger.warn(`Failed to scan ${dir}:`, error);
+        logger.warn(`Failed to scan ${dir}:`, { error });
       }
     };
 
@@ -109,7 +109,7 @@ export class TodoScanner {
         }
       }
     } catch (error) {
-      logger.warn(`Failed to scan ${filePath}:`, error);
+      logger.warn(`Failed to scan ${filePath}:`, { error });
     }
 
     return todos;

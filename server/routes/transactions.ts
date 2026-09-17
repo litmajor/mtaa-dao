@@ -3,7 +3,7 @@
  * REST API endpoints for batching, smart contracts, DEX swaps, yield farming, and DeFi operations
  */
 
-import { Router, Request, Response, NextFunction } from "express";
+import { Router, type Request, type Response, type NextFunction } from "express";
 import {
   createTransactionBatch,
   addToBatch,

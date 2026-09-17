@@ -1,6 +1,6 @@
 import { WebSocketServer, WebSocket } from 'ws';
 import { freemem } from 'os';
-import { Server as HttpServer } from 'http';
+import { type Server as HttpServer } from 'http';
 import { logger } from '../utils/logger';
 import { wsConnectionManager } from './WebSocketConnectionManager';
 import { wsHealthMonitor } from './WebSocketHealthMonitor';

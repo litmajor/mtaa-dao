@@ -4,7 +4,8 @@
  */
 
 import ccxtService from './ccxtService';
-import { analyzeOrderBook, OrderBookMetrics } from './orderBookAnalyzer';
+import { analyzeOrderBook } from './orderBookAnalyzer';
+import type { OrderBookMetrics } from './orderBookAnalyzer';
 import { logger } from '../utils/logger';
 import pLimit from 'p-limit';
 import NodeCache from 'node-cache';

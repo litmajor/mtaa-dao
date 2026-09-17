@@ -43,7 +43,7 @@ const auditHealthAccess = async (req: Request, res: Response, next: NextFunction
     metadata: {
       component: req.path.split('/').pop() || 'unknown',
     },
-  }).catch(err => logger.warn('[Health] Audit log failed:', err));
+  }).catch(err => logger.warn('[Health] Audit log failed:', { error: err }));
 
   next();
 };

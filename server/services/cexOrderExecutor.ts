@@ -15,7 +15,7 @@ import { CEXCredentialRepository } from '../repositories/cexCredentialRepository
 import { CEXOrderRepository } from '../repositories/cexOrderRepository';
 import { CEXPriceBackgroundJob } from './cexPriceBackgroundJob';
 import { SmartRouter } from './smartRouter';
-import { Pool } from 'pg';
+import { type Pool } from 'pg';
 
 export interface PlaceOrderRequest {
   userId: string;

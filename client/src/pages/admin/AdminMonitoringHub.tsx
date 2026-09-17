@@ -5,7 +5,7 @@
 
 import React from 'react';
 import { useNavigate } from 'react-router-dom';
-import { BarChart3, TrendingUp, AlertTriangle, Zap, Activity, Droplet, DollarSign, CreditCard, Bot, CheckCircle, ArrowRight, Users, Coins, Ticket, Trophy, Gift, Megaphone, Building2 } from 'lucide-react';
+import { BarChart3, TrendingUp, AlertTriangle, Zap, Activity, Droplet, DollarSign, CreditCard, Bot, CheckCircle, ArrowRight, Users, Coins, Ticket, Trophy, Gift, Megaphone, Building2, Share2, Target } from 'lucide-react';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 

@@ -10,7 +10,7 @@
  * Includes basic risk settings routes to support useYukiStore.
  */
 
-import { Router, Request, Response } from 'express';
+import { Router, type Request, type Response } from 'express';
 import { authenticateToken } from '../../../middleware/auth';
 import { ApiResponse } from '../../../utils/apiResponse';
 import { logger } from '../../../utils/logger';

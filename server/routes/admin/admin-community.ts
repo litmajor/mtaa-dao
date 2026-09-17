@@ -66,7 +66,7 @@ async function getCached<T>(key: string, loader: () => Promise<T>): Promise<T> {
 }
 
 function invalidateCommunityCache(): void {
-  void communityCache.clear().catch(error => logger.warn('Community cache invalidation failed:', error));
+  void communityCache.clear().catch(error => logger.warn('Community cache invalidation failed:', { error }));
 }
 
 router.get('/referrals/metrics', requireSuperAdmin, async (_req: Request, res: Response) => {

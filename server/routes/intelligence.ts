@@ -5,7 +5,7 @@
  * Single endpoint for all asset intelligence
  */
 
-import { Router, Request, Response } from 'express';
+import { Router, type Request, type Response } from 'express';
 import { assetStateEngine } from '../services/assetStateEngine';
 import { logger } from '../utils/logger';
 

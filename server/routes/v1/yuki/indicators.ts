@@ -15,7 +15,7 @@
  *   GET /:symbol/chart          → Time-series arrays for chart rendering
  */
 
-import { Router, Request, Response } from 'express';
+import { Router, type Request, type Response } from 'express';
 import { rateLimit } from 'express-rate-limit';
 import { authenticateToken } from '../../../middleware/auth';
 import { technicalAnalysisService } from '../../../services/technicalAnalysisService';

@@ -5,7 +5,7 @@
 
 import { Router } from 'express';
 import type { Request, Response, NextFunction } from 'express';
-import { GatewayService } from './gateway';
+import { type GatewayService } from './gateway';
 import type { GatewayQuoteRequest } from './types';
 import { authenticateToken } from '../../middleware/auth';
 import { rateLimitPerUser } from '../../middleware/rateLimit';

@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { io, Socket } from 'socket.io-client';
+import { io, type Socket } from 'socket.io-client';
 import { API_CONFIG } from '@/config/apiConfig';
 import { WS_PATHS } from '../../../server/websocket/websocket-events';
 

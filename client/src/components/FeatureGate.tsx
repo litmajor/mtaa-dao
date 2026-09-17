@@ -1,5 +1,5 @@
-import React, { ReactNode } from 'react';
-import { useFeatureFlags, FeatureFlagNameExplicit } from '@/hooks/useFeatureFlags';
+import React, { type ReactNode } from 'react';
+import { useFeatureFlags, type FeatureFlagNameExplicit } from '@/hooks/useFeatureFlags';
 import { useFeatureGating } from '@/hooks/useFeatureGating';
 import { AlertCircle, Clock, DollarSign } from 'lucide-react';
 

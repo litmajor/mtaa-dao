@@ -14,7 +14,7 @@
  * ═══════════════════════════════════════════════════════════════════════════════
  */
 
-import express, { Request, Response } from 'express';
+import express, { type Request, type Response } from 'express';
 import { strategyDashboardService } from '../../../services/strategyDashboardService';
 import { strategyFreqtradeIntegration } from '../../../services/strategyFreqtradeIntegration';
 import { Logger } from '../../../utils/logger';

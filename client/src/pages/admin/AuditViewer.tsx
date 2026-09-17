@@ -37,8 +37,8 @@ import {
   CheckCircle,
   ChevronDown,
 } from 'lucide-react';
-import formatDistanceToNow from 'date-fns/formatDistanceToNow';
-import format from 'date-fns/format';
+import { formatDistanceToNow, format } from 'date-fns';
+
 
 interface AuditLog {
   id: string;

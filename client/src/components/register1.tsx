@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-/* eslint-disable */
+ 
 import { Eye, EyeOff, Mail, Lock, AlertCircle, UserPlus, Check, Phone, Send } from 'lucide-react';
 
 const IconFallback = (emoji: string) => (props: any) => (

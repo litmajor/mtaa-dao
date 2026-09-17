@@ -16,7 +16,7 @@
  * - Periodic flush jobs (metrics to DB)
  */
 
-import { Worker } from 'worker_threads';
+import { type Worker } from 'worker_threads';
 import { logger } from '../utils/logger';
 import { PerformanceOptimizerBufferedWriter } from './PerformanceOptimizerBufferedWriter';
 import type { PerformanceOptimizerAgent } from '../agents/performanceOptimizerAgent';

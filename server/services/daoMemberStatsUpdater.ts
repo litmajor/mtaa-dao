@@ -101,7 +101,7 @@ class DaoMemberStatsUpdater {
         [daoId, memberId]
       );
     } catch (error) {
-      logger.warn(`[DAO STATS] Failed to update rank_score:`, error);
+      logger.warn(`[DAO STATS] Failed to update rank_score:`, { error });
     }
   }
 
@@ -117,7 +117,7 @@ class DaoMemberStatsUpdater {
         [daoId, memberId]
       );
     } catch (error) {
-      logger.warn(`[DAO STATS] Failed to ensure stats row:`, error);
+      logger.warn(`[DAO STATS] Failed to ensure stats row:`, { error });
     }
   }
 

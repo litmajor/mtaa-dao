@@ -4,10 +4,10 @@
  */
 
 import {
-  TransferRoute,
-  CrossChainSwapRoute,
-  RouteStep,
-  GatewayQuoteRequest,
+  type TransferRoute,
+  type CrossChainSwapRoute,
+  type RouteStep,
+  type GatewayQuoteRequest,
 } from './types';
 
 export interface IRouteOptimizer {
@@ -337,7 +337,7 @@ export class MultiChainRouteOptimizer implements IRouteOptimizer {
  * Validates routes for security risks
  */
 
-import { SecurityAudit } from './types';
+import { type SecurityAudit } from './types';
 
 export interface ISecurityValidator {
   validate(route: TransferRoute): Promise<SecurityAudit>;

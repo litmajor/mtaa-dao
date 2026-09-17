@@ -50,7 +50,7 @@
  */
 
 import { BaseAdapter } from "./base-adapter";
-import { AdapterResponse, NormalizedData, BaseAdapterConfig } from "../types";
+import { type AdapterResponse, type NormalizedData, type BaseAdapterConfig } from "../types";
 
 // Verified directly against docs.uniswap.org/api/subgraph/overview.
 // Each chain has its own dedicated V3 subgraph — there is no single

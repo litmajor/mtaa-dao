@@ -23,7 +23,7 @@ import {
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
 import { useToast } from '@/hooks/use-toast';
-import { Shield, TriangleAlert, CheckCircle, CircleX, LoaderCircle, LogOut, Monitor, Smartphone, Tablet, Laptop } from 'lucide-react';
+import { Shield, TriangleAlert, CheckCircle, CircleX, LoaderCircle, LogOut, Monitor, Smartphone, Tablet, Laptop, XCircle, AlertTriangle, Loader2 } from 'lucide-react';
 
 interface Session {
   id: string;

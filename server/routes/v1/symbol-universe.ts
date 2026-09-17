@@ -8,7 +8,7 @@
  * NOT included in YUKI router - kept at top-level /v1/ for accessibility
  */
 
-import express, { Request, Response } from 'express';
+import express, { type Request, type Response } from 'express';
 // TODO: Implement dex-screener API module at server/api/dex-screener.ts
 // Currently missing handler: syncSymbolUniverse
 /*

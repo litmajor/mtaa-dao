@@ -5,7 +5,7 @@
  * Detects suspicious patterns and anomalies in real-time
  */
 
-import { PerformanceMetrics } from '../kaizen/performance-tracker';
+import type { PerformanceMetrics } from '../kaizen/performance-tracker';
 
 export interface Activity {
   activityId: string;

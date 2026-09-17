@@ -10,7 +10,7 @@
  * - Order history and analytics
  */
 
-import { Pool } from 'pg';
+import { type Pool } from 'pg';
 import { CEXOrderRepository } from '../repositories/cexOrderRepository';
 import { SmartRouter } from './smartRouter';
 import { ExchangeFeeService } from './exchangeFeeService';

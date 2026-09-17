@@ -308,7 +308,7 @@ export class AnomalyDetectionAgent extends BaseAgent {
       try {
         await this.process();
       } catch (error) {
-        logger.warn('Periodic anomaly check failed:', error);
+        logger.warn('Periodic anomaly check failed:', { error });
         // Circuit breaker handles failure tracking automatically in execute()
       }
     }, 60_000);

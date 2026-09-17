@@ -20,8 +20,8 @@
  *    emits into the per-DAO room instead of a single flat global room.
  */
 
-import { Server as HTTPServer } from 'http';
-import { Server as SocketIOServer, Socket } from 'socket.io';
+import { type Server as HTTPServer } from 'http';
+import { Server as SocketIOServer, type Socket } from 'socket.io';
 import jwt from 'jsonwebtoken';
 import { elderCoordinator } from '../core/elders/coordinator';
 import { coordinatorMessageBus } from '../core/elders/coordinator/message-bus';

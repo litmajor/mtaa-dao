@@ -11,7 +11,8 @@
  * - Risk assessment for proposals
  */
 
-import { BaseAgent, AgentConfig, AgentStatus } from '../framework/base-agent';
+import { BaseAgent, AgentStatus } from '../framework/base-agent';
+import type { AgentConfig } from '../framework/base-agent';
 import { Logger } from '../../utils/logger';
 import { healthRegistry } from '../../core/consolidation/HealthRegistryConsolidation';
 import { circuitBreakerRegistry } from '../../core/consolidation/CircuitBreakerConsolidation';
@@ -450,7 +451,7 @@ export class GovernanceAnalyticsAgent extends BaseAgent {
       try {
         await this.process();
       } catch (error) {
-        logger.warn('Periodic analysis failed:', error);
+        logger.warn('Periodic analysis failed:', { error });
       }
     }, 5 * 60 * 1000);
   }

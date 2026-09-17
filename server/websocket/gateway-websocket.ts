@@ -25,13 +25,13 @@
  * 6. Basic payload validation before creating a subscription.
  */
 
-import { Server as HTTPServer } from "http";
-import { Server as SocketIOServer, Socket } from "socket.io";
+import { type Server as HTTPServer } from "http";
+import { Server as SocketIOServer, type Socket } from "socket.io";
 import type {DefaultEventsMap} from "socket.io";
 import socketAuthMiddleware from "../middleware/socketAuth";
-import { GatewayAgentService } from "../core/agents/gateway/service";
+import { type GatewayAgentService } from "../core/agents/gateway/service";
 import { getGatewayAgentService } from "../core/agents/gateway/service";
-import { MessageBusAdapter, getMessageBus } from "../core/agents/gateway/message-bus";
+import { type MessageBusAdapter, getMessageBus } from "../core/agents/gateway/message-bus";
 import type { GatewayMessage } from "../core/agents/gateway/types";
 import { WS_PATHS } from "./websocket-events";
 import { corsAllowedOrigins } from "../../shared/config.js";

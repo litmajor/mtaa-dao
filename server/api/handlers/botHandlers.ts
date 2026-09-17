@@ -3,7 +3,7 @@
  * Handles all bot deployment and management operations
  */
 
-import { DeployBotRequest, DeployBotResponse, BotTradeEvent, UpdateBotConfigRequest } from '../types/botTypes';
+import { type DeployBotRequest, type DeployBotResponse, type BotTradeEvent, type UpdateBotConfigRequest } from '../types/botTypes';
 
 /**
  * Deploy a new trading bot

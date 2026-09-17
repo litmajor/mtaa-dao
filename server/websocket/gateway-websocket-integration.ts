@@ -1,4 +1,4 @@
-import WebSocketManager from './websocket';
+import type WebSocketManager from './websocket';
 import { AdminWS } from './websocket-events';
 
 /**

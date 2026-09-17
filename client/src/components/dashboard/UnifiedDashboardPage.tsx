@@ -3,7 +3,11 @@ import {
   RefreshCcw,
   Settings,
   Wifi,
+  Search,
+  EyeOff,
+  Eye,
 } from 'lucide-react';
+import { Button } from '@/components/ui/button';
 import PlatformOverviewCard from './PlatformOverviewCard';
 import DaoTreeSection from './DaoTreeSection';
 import UserBalanceSection from './UserBalanceSection';

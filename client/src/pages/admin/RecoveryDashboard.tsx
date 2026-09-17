@@ -36,7 +36,7 @@ import {
   ChevronDown,
   Info
 } from 'lucide-react';
-import formatDistanceToNow from 'date-fns/formatDistanceToNow';
+import { formatDistanceToNow } from 'date-fns';
 
 interface RecoveryItem {
   id: string;

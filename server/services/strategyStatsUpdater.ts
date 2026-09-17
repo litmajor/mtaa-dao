@@ -84,7 +84,7 @@ class StrategyStatsUpdater {
         [strategyId]
       );
     } catch (error) {
-      logger.warn(`[STRATEGY STATS] Failed to ensure stats row:`, error);
+      logger.warn(`[STRATEGY STATS] Failed to ensure stats row:`, { error });
     }
   }
 

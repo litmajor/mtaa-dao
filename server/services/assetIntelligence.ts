@@ -12,7 +12,7 @@
  * - Detect patterns and anomalies
  */
 
-import { NormalizedAsset, AssetEducation, AssetCategory } from '../types/assetTypes';
+import type { NormalizedAsset, AssetEducation, AssetCategory } from '../types/assetTypes';
 import { logger } from '../utils/logger';
 
 /**

@@ -20,9 +20,9 @@ import {
   recordBotTradeHandler,
 } from '../handlers/botHandlersReal';
 import {
-  DeployBotRequest,
-  UpdateBotConfigRequest,
-  BotTradeEvent,
+  type DeployBotRequest,
+  type UpdateBotConfigRequest,
+  type BotTradeEvent,
 } from '../types/botTypes';
 
 /**

@@ -3,7 +3,7 @@
  * React context for consuming feature visibility flags
  */
 
-import { createContext, useContext, useEffect, useState, ReactNode, useCallback } from 'react';
+import { createContext, useContext, useEffect, useState, type ReactNode, useCallback } from 'react';
 
 export interface FeatureConfig {
   name: string;

@@ -1,5 +1,5 @@
-import { Command } from '../Command';
-import { CommandHandler } from '../CommandBus';
+import type { Command } from '../Command';
+import { type CommandHandler } from '../CommandBus';
 
 export class CommandHandlerRegistry {
   private handlers = new Map<string, CommandHandler<any>>();

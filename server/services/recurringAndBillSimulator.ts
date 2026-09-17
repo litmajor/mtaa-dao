@@ -6,7 +6,7 @@
  * 9 simulators for subscriptions, bounty programs, and shared expenses
  */
 
-import { SimulationService, SimulationResult, SimulationStatus, SimulationDepth } from './simulationFramework';
+import { SimulationService, type SimulationResult, SimulationStatus, SimulationDepth } from './simulationFramework';
 
 // ============================================================================
 // CATEGORY 10: RECURRING PAYMENTS (3 simulators)

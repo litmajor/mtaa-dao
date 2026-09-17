@@ -11,7 +11,7 @@
  * GET  /api/dashboard/yields            → Yield tracking
  */
 
-import express, { Request, Response } from 'express';
+import express, { type Request, type Response } from 'express';
 import { isAuthenticated } from '../auth';
 import { assetGraphService } from '../services/assetGraphService';
 import { Logger } from '../utils/logger';

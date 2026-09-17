@@ -3,14 +3,15 @@
  * Integrates with MtaaDAO ecosystem for real-time analysis
  */
 
-import { BaseAgent, AgentConfig, AgentStatus } from '../framework/base-agent';
+import { BaseAgent, AgentStatus } from '../framework/base-agent';
+import type { AgentConfig } from '../framework/base-agent';
 import { PatternEngine } from './pattern-engine';
 import { AnomalyDetector } from './anomaly-detector';
 import { 
-  AnalysisResult, 
+  type AnalysisResult, 
   AnalysisType, 
   ThreatLevel, 
-  Finding 
+  type Finding 
 } from './types';
 import { Logger } from '../../utils/logger';
 import { healthRegistry } from '../../core/consolidation/HealthRegistryConsolidation';

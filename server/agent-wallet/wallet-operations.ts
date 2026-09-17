@@ -4,7 +4,7 @@
  * Handles wallet transactions: sending tokens, approvals, transfers, batch operations
  */
 
-import Web3 from 'web3';
+import type Web3 from 'web3';
 type Web3Type = InstanceType<typeof Web3>;
 
 type TxObject = Record<string, unknown>;

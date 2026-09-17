@@ -31,7 +31,7 @@
 
 import { ethers } from "ethers";
 import { BaseAdapter } from "./base-adapter";
-import { AdapterResponse, NormalizedData, BaseAdapterConfig } from "../types";
+import { type AdapterResponse, type NormalizedData, type BaseAdapterConfig } from "../types";
 import { TokenRegistry } from "../../../../../shared/tokenRegistry";
 import { getBestMentoQuote } from "../../../../../shared/mentoInfrastructure";
 

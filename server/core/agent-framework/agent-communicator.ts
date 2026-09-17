@@ -5,7 +5,7 @@
  * Wraps the message bus with agent-specific helpers
  */
 
-import { messageBus, MessageBus, MessageType, AgentMessage, MessagePriority } from './message-bus';
+import { messageBus, type MessageBus, MessageType, type AgentMessage, type MessagePriority } from './message-bus';
 import { Logger } from '../../utils/logger';
 
 const logger = new Logger('agent-communicator');

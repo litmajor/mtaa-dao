@@ -5,7 +5,7 @@
  * Uses Monte Carlo simulation and risk analytics
  */
 
-import { SimulationService, SimulationResult, SimulationStatus, SimulationDepth } from './simulationFramework';
+import { SimulationService, type SimulationResult, SimulationStatus, SimulationDepth } from './simulationFramework';
 
 /**
  * Portfolio Rebalance Simulator

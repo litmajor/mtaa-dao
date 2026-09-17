@@ -5,7 +5,7 @@
  */
 
 import * as prometheus from 'prom-client';
-import { EnhancedMessageBus, MessageType } from './enhanced-message-bus';
+import { type EnhancedMessageBus, MessageType } from './enhanced-message-bus';
 import { Logger } from '../../utils/logger';
 
 const logger = new Logger('message-bus-metrics');

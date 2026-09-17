@@ -1,7 +1,7 @@
 import { ethers } from 'ethers';
 import { logger } from '../utils/logger';
 import { priceOracle } from './priceOracle';
-import { productionDexRouting, SwapOrder, RoutingResult } from './dexRoutingExecution.production';
+import { productionDexRouting, type SwapOrder, type RoutingResult } from './dexRoutingExecution.production';
 import { executeTreasurySwap, routeTreasuryOrder } from './treasuryDexRouting';
 
 export interface SwapQuote {
@@ -128,7 +128,7 @@ class DexRoutingService {
         dex: route.venue,
       };
     } catch (error) {
-      logger.warn(`[DexRoutingService] Quote generation failed for ${fromAsset}→${toAsset}:`, error);
+      logger.warn(`[DexRoutingService] Quote generation failed for ${fromAsset}→${toAsset}:`, { error });
       return null;
     }
   }

@@ -19,7 +19,7 @@ import {
 } from './routeUsageLogger';
 import {
   externalAPITracker,
-  ExternalAPIType,
+  type ExternalAPIType,
 } from '../services/externalAPITracker';
 import fs from 'fs';
 import path from 'path';

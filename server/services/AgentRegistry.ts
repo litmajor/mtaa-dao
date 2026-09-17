@@ -3,9 +3,9 @@
  * Manages initialization and lifecycle of all system agents
  */
 
-import { BaseAgent } from '../agents/framework/base-agent';
+import { type BaseAgent } from '../agents/framework/base-agent';
 import { SynchronizerAgent } from '../agents/synchronizer';
-import { TradingAgentBase, IRouteExecutor } from '../agents/trading';
+import { TradingAgentBase, type IRouteExecutor } from '../agents/trading';
 import { AnomalyDetectionAgent } from '../agents/anomaly-detection';
 import { ComplianceAgent } from '../agents/compliance';
 import { GovernanceAnalyticsAgent } from '../agents/governance';

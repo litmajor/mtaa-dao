@@ -20,6 +20,7 @@ import {
   Trophy,
   AlertTriangle,
   Clock,
+  BarChart3,
 } from 'lucide-react';
 
 import { VaultAnalyticsTab } from '@/components/analytics/VaultAnalyticsTab';
@@ -92,8 +93,8 @@ const AnalyticsDashboardContent: React.FC<{
     staleTime: 5 * 60 * 1000,
   });
 
-  const dao = daoInfo || fetchedDaoInfo;
-  const vault = vaultInfo || fetchedVaultInfo;
+  const dao = (daoInfo || fetchedDaoInfo) as DaoInfo | undefined;
+  const vault = (vaultInfo || fetchedVaultInfo) as VaultInfo | undefined;
 
   const tierColors = {
     founder: 'bg-yellow-100 text-yellow-800',

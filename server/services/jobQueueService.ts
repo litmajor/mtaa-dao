@@ -27,7 +27,7 @@
  *    completion. Still configurable per call.
  */
 
-import Queue, { Job, JobOptions } from 'bull';
+import Queue, { type Job, type JobOptions } from 'bull';
 import { redis } from './redis';
 import { logger } from '../utils/logger';
 

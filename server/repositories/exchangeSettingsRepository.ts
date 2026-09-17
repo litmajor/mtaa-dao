@@ -4,7 +4,7 @@
  */
 
 import { db } from '../db';
-import { ExchangeSetting } from '../../types/cex.types';
+import { type ExchangeSetting } from '../../types/cex.types';
 
 export class ExchangeSettingsRepository {
   /**

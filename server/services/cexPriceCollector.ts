@@ -25,7 +25,7 @@ import { cacheManager } from '../core/consolidation/DataCacheConsolidation';
 import { ccxtService, CCXTSymbolError } from './ccxtService';
 import { symbolUniverseService } from './symbolUniverseService';
 import { logger } from '../utils/logger';
-import { Pool } from 'pg';
+import { type Pool } from 'pg';
 
 export interface PriceData {
   exchange: string;

@@ -3,7 +3,7 @@
  * Processes AI analysis and chat jobs asynchronously
  */
 
-import { Job } from 'bull';
+import { type Job } from 'bull';
 import type { JobPayload } from '../services/jobQueueService';
 import { jobQueueService } from '../services/jobQueueService';
 import { logger } from '../utils/logger';
@@ -99,6 +99,9 @@ export class MorioJobWorker {
    */
   static async processChat(job: Job<JobPayload>): Promise<any> {
     const { userId, daoId, message, context = {} } = job.data;
+    if (!userId || !message) {
+      throw new Error('Morio chat job requires userId and message');
+    }
 
     try {
       logger.info(`[MorioChat] Processing message from user ${userId}`);
@@ -121,7 +124,7 @@ export class MorioJobWorker {
           result: { type: 'trace', step: 'context_enriched', message: 'Context enriched for processing' }
         });
       } catch (e) {
-        logger.warn('Failed to publish intermediate job status:', e);
+        logger.warn('Failed to publish intermediate job status:', { error: e });
       }
 
       // Attempt to get NURU understanding early to provide a thinking-chain trace
@@ -134,7 +137,7 @@ export class MorioJobWorker {
           result: { type: 'trace', step: 'nuru_understanding', data: { intent: understanding.intent, confidence: understanding.confidence, sentiment: understanding.sentiment } }
         });
       } catch (e) {
-        logger.warn('NURU early understanding failed (non-fatal):', e);
+        logger.warn('NURU early understanding failed (non-fatal):', { error: e });
       }
 
       // Process chat via AI
@@ -148,7 +151,7 @@ export class MorioJobWorker {
           result: { type: 'trace', step: 'response_generated', data: { preview: response?.response?.text || response } }
         });
       } catch (e) {
-        logger.warn('Failed to publish response preview status:', e);
+        logger.warn('Failed to publish response preview status:', { error: e });
       }
 
       await job.progress(95);
@@ -166,7 +169,7 @@ export class MorioJobWorker {
       try {
         await jobQueueService.setJobResult(job.id as any, result);
       } catch (e) {
-        logger.warn('Failed to persist job result via jobQueueService:', e);
+        logger.warn('Failed to persist job result via jobQueueService:', { error: e });
       }
 
       logger.info(`[MorioChat] Completed for user ${userId}`);
@@ -201,7 +204,7 @@ export class MorioJobWorker {
         memberCount: memberCount.length
       };
     } catch (error) {
-      logger.warn('Failed to fetch DAO context:', error);
+      logger.warn('Failed to fetch DAO context:', { error });
       return { daoId };
     }
   }
@@ -214,7 +217,7 @@ export class MorioJobWorker {
       // Avoid tight coupling to schema; return empty prefs or extend to use storage later
       return {};
     } catch (error) {
-      logger.warn('Failed to fetch user preferences:', error);
+      logger.warn('Failed to fetch user preferences:', { error });
       return {};
     }
   }
@@ -227,7 +230,7 @@ export class MorioJobWorker {
       // Treasury lookup postponed; return null for now to avoid schema mismatches
       return null;
     } catch (error) {
-      logger.warn('Failed to fetch treasury data:', error);
+      logger.warn('Failed to fetch treasury data:', { error });
       return null;
     }
   }

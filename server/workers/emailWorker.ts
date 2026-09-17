@@ -36,7 +36,7 @@ async function workerLoop() {
     if (!job) break
     // basic try/catch + backoff could be added here
     // process without blocking other async tasks
-    // eslint-disable-next-line no-await-in-loop
+     
     await processJob(job)
   }
   processing = false

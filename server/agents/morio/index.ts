@@ -9,7 +9,7 @@ import { nuru } from '../../core/nuru';
 import { SessionManager } from './api/session_manager';
 import { ResponseGenerator } from './api/response_generator';
 import { UserGenerator } from './api/user_generator';
-import { createLLMProvider, LLMConfig } from './api/llm_provider';
+import { createLLMProvider, type LLMConfig } from './api/llm_provider';
 import type { ChatMessage, ChatResponse, MorioConfig, Session } from './types';
 import { AgentCommunicator } from '../../core/agent-framework/agent-communicator';
 import { MessageType } from '../../core/agent-framework/message-bus';

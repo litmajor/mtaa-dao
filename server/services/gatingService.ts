@@ -1,4 +1,4 @@
-import { User } from '../../shared/schema';
+import { type User } from '../../shared/schema';
 import { create } from 'zustand';
 import { exchangeRateService } from './exchangeRateService';
 

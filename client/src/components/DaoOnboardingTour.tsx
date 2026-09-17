@@ -19,7 +19,8 @@ import {
   Shield,
   FileText,
   Clock,
-  Zap
+  Zap,
+  BarChart3
 } from 'lucide-react';
 import { t } from '@/lib/uiLabels';
 

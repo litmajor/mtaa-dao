@@ -15,7 +15,7 @@
  * ═══════════════════════════════════════════════════════════════════════════════
  */
 
-import express, {Router } from 'express';
+import express, {type Router } from 'express';
 import type { Request, Response } from 'express';
 import { db } from '../../storage';
 import { logger } from '../../utils/logger';

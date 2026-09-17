@@ -6,10 +6,10 @@
  */
 
 import { EventEmitter } from 'events';
-import { SmartRouter } from './smart-router';
-import { DexIntegrationService } from './dex-integration-service';
-import { CCXTService } from './ccxt-service';
-import { CrossChainService } from './cross-chain-service';
+import { type SmartRouter } from './smart-router';
+import { type DexIntegrationService } from './dex-integration-service';
+import { type CCXTService } from './ccxt-service';
+import { type CrossChainService } from './cross-chain-service';
 import { publishExecutionEvent } from './executionEvents';
 
 interface VaultState {

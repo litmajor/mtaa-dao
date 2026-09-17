@@ -1,6 +1,6 @@
 import React from 'react';
-import { Meta, Story } from '@storybook/react';
-import { Modal, ModalProps } from './modal';
+import { type Meta, type Story } from '@storybook/react';
+import { Modal, type ModalProps } from './modal';
 
 export default { title: 'UI/Modal', component: Modal } as Meta;
 const Template: Story<ModalProps> = (args) => <Modal {...args} />;

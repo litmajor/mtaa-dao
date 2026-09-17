@@ -61,7 +61,7 @@ class KwetuService {
           timestamp: new Date()
         });
       } catch (e) {
-        logger.warn('Failed to write audit log for pending action:', e);
+        logger.warn('Failed to write audit log for pending action:', { error: e });
       }
 
       return result;
@@ -78,7 +78,7 @@ class KwetuService {
           timestamp: new Date()
         });
       } catch (e) {
-        logger.warn('Failed to write failed audit log for pending action:', e);
+        logger.warn('Failed to write failed audit log for pending action:', { error: e });
       }
       throw error;
     }

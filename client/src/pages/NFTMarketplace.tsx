@@ -7,6 +7,7 @@ import { Input } from '../components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../components/ui/select';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '../components/ui/tabs';
 import { apiGet, apiPost } from '@/lib/api';
+import { TrendingUp, ShoppingCart, Award, Search } from 'lucide-react';
 
 interface NFTListing {
   tokenId: number;

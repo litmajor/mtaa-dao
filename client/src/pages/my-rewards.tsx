@@ -6,7 +6,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { RewardCard } from "@/components/rewards/RewardsCard";
-import { Trophy, TrendingUp, Calendar, Gift, LoaderCircle, AlertCircle, Sparkles, Crown, Award } from "lucide-react";
+import { Trophy, TrendingUp, Calendar, Gift, LoaderCircle, AlertCircle, Sparkles, Crown, Award, Loader2 } from "lucide-react";
 import { useAuth } from "./hooks/useAuth";
 import { useToast } from "@/hooks/use-toast";
 import { authClient } from "@/utils/authClient";

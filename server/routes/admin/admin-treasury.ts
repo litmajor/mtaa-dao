@@ -1,6 +1,6 @@
 import { DaoStorage } from '../../storage/storage-dao';
 import { Router } from 'express';
-import type { Request, Response } from 'express';
+import { type Request, type Response } from 'express';
 import { db } from '../../db';
 import { logger } from '../../utils/logger';
 import { daos, daoMemberships, daoSettings, vaults, vaultTransactions } from '../../../shared/schema';

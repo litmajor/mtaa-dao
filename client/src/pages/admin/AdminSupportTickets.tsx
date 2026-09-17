@@ -6,6 +6,7 @@
 import React, { useState, useEffect } from 'react';
 import ChartJS from '@/components/charts/ChartJSSetup';
 import { Chart } from 'react-chartjs-2';
+import { ResponsiveContainer, LineChart, CartesianGrid, XAxis, YAxis, Tooltip, Line } from 'recharts';
 import { AlertCircle, CheckCircle, Clock, Users, MessageSquare, Filter, RefreshCw, ChevronRight } from 'lucide-react';
 import { Card } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';

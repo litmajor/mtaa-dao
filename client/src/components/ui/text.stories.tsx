@@ -1,6 +1,6 @@
 import React from 'react';
-import { Meta, Story } from '@storybook/react';
-import { Text, TextProps } from './text';
+import { type Meta, type Story } from '@storybook/react';
+import { Text, type TextProps } from './text';
 
 export default { title: 'UI/Text', component: Text } as Meta;
 const Template: Story<TextProps> = (args) => <Text {...args} />;

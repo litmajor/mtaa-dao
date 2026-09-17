@@ -44,7 +44,7 @@ export class SessionManager {
       await storage.createAuditLog({ level: 'info', service: 'morio.session', message: 'session_created', metadata: { userId, sessionId: newSession.id, snapshot: newSession } });
     } catch (e) {
       // non-fatal
-      // eslint-disable-next-line no-console
+       
       console.warn('Failed to persist session snapshot:', e);
     }
     return newSession;
@@ -68,7 +68,7 @@ export class SessionManager {
     try {
       await storage.createAuditLog({ level: 'info', service: 'morio.session', message: 'session_updated', metadata: { userId, sessionId: session.id, snapshot: session, updates } });
     } catch (e) {
-      // eslint-disable-next-line no-console
+       
       console.warn('Failed to persist session update:', e);
     }
   }

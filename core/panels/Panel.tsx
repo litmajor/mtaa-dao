@@ -1,4 +1,5 @@
-import React, { ReactNode, useEffect } from 'react';
+import React, { useEffect } from 'react';
+import type { ReactNode } from 'react';
 import useSystemStore from '../system/systemStore';
 import useWorkspaceStore from '../workspace/workspaceStore';
 

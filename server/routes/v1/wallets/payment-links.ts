@@ -14,7 +14,7 @@
  * DELETE /api/v1/wallets/payment-links/:id               Delete payment link
  */
 
-import express, { Request, Response } from 'express';
+import express, { type Request, type Response } from 'express';
 import { z } from 'zod';
 import Decimal from 'decimal.js';
 import { isAuthenticated } from '../../../auth';

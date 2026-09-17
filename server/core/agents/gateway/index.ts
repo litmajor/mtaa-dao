@@ -17,7 +17,7 @@ import type {
   NormalizedData,
   BaseAdapterConfig,
 } from "./types";
-import { BaseAdapter } from "./adapters/base-adapter";
+import { type BaseAdapter } from "./adapters/base-adapter";
 
 export class GatewayAgent {
   private name = "GATEWAY-AGENT";

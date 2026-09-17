@@ -6,17 +6,18 @@
 
 import crypto from 'crypto';
 import { EventEmitter } from 'events';
-import { BaseAgent, AgentConfig, AgentStatus as BaseAgentStatus } from '../framework/base-agent';
+import { BaseAgent, AgentStatus as BaseAgentStatus } from '../framework/base-agent';
+import type { AgentConfig } from '../framework/base-agent';
 import { VectorClock } from './vector-clock';
 import { StateDiffer } from './state-differ';
 import { RecoveryManager } from './recovery-manager';
 import {
   SyncMode,
   AgentStatus,
-  SyncBeat,
-  StateSnapshot,
-  SyncResult,
-  SyncMetrics
+  type SyncBeat,
+  type StateSnapshot,
+  type SyncResult,
+  type SyncMetrics
 } from './types';
 import { Logger } from '../../utils/logger';
 import { healthRegistry } from '../../core/consolidation/HealthRegistryConsolidation';
@@ -138,7 +139,7 @@ export class SynchronizerAgent extends BaseAgent<SyncMetrics> {
       // record an initial heartbeat with zero latency
       healthRegistry.recordAgentHeartbeat(this.config.id, 0, 'healthy');
     } catch (error) {
-      logger.warn('Failed to register agent with health registry:', error);
+      logger.warn('Failed to register agent with health registry:', { error });
     }
     
     logger.info('Synchronizer Agent initialized successfully');

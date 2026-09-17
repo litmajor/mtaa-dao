@@ -13,13 +13,13 @@
  */
 
 import {
-  NormalizedAsset,
-  ExchangePresence,
-  RawMarketData,
-  NormalizationResult,
-  CategorizationResult,
-  AssetCategory,
-  AssetEducation,
+  type NormalizedAsset,
+  type ExchangePresence,
+  type RawMarketData,
+  type NormalizationResult,
+  type CategorizationResult,
+  type AssetCategory,
+  type AssetEducation,
 } from '../types/assetTypes';
 
 /**

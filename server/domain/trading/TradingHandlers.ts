@@ -14,7 +14,7 @@
 
 import { v4 as uuid } from 'uuid';
 import type { CommandHandler, CommandResult, CommandContext } from '../commands/CommandBus';
-import { OrderRepository, OptimisticLockError } from './OrderRepository';
+import { type OrderRepository, OptimisticLockError } from './OrderRepository';
 import type {  OrderStatusType } from './OrderStateMachine';
 import {
   OrderStatus,

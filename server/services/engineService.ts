@@ -438,7 +438,7 @@ export class EngineService {
             }
           }
         } catch (error) {
-          logger.warn(`[Engine] Failed to fetch missing prices from collector:`, error);
+          logger.warn(`[Engine] Failed to fetch missing prices from collector:`, { error });
         }
       }
 
@@ -531,7 +531,9 @@ export class EngineService {
           ]);
         }
       } catch (error) {
-        logger.debug(`[Engine] Production OHLCV service unavailable:`, (error as Error).message);
+        logger.debug(`[Engine] Production OHLCV service unavailable:`, {
+          error: error instanceof Error ? error.message : String(error)
+        });
       }
 
       // Fallback: Try foundation OHLCV service
@@ -558,7 +560,7 @@ export class EngineService {
       logger.debug(`[Engine] No OHLC data available for ${symbol}/${timeframe}`);
       return null;
     } catch (error) {
-      logger.warn(`[Engine] Failed to get OHLC data via any service for ${symbol}:`, error);
+      logger.warn(`[Engine] Failed to get OHLC data via any service for ${symbol}:`, { error });
       return null;
     }
   }
@@ -583,7 +585,7 @@ export class EngineService {
         this.getOHLCDataMultiService(symbol, tf, limit)
           .then((data) => ({ timeframe: tf, data }))
           .catch((error) => {
-            logger.warn(`[Engine] Failed to fetch OHLCV for ${symbol}:${tf}`, error);
+            logger.warn(`[Engine] Failed to fetch OHLCV for ${symbol}:${tf}`, { error });
             return { timeframe: tf, data: null };
           })
       );
@@ -624,7 +626,7 @@ export class EngineService {
         this.calculateIndicators(ohlcData, symbol)
           .then((indicators) => ({ timeframe, indicators }))
           .catch((error) => {
-            logger.warn(`[Engine] Indicator calculation failed for ${symbol}:${timeframe}`, error);
+            logger.warn(`[Engine] Indicator calculation failed for ${symbol}:${timeframe}`, { error });
             return { timeframe, indicators: {} };
           })
       );
@@ -677,7 +679,7 @@ export class EngineService {
         }
         return indicators;
       } catch (error) {
-        logger.warn(`[Engine] Failed to calculate indicators for ${symbol}:`, error);
+        logger.warn(`[Engine] Failed to calculate indicators for ${symbol}:`, { error });
         return null;
       }
     } catch (error) {
@@ -759,7 +761,7 @@ export class EngineService {
         this.getTechnicalIndicators(symbol, tf)
           .then((indicators) => ({ timeframe: tf, indicators }))
           .catch((error) => {
-            logger.warn(`[Engine] Failed to get indicators for ${symbol}:${tf}`, error);
+            logger.warn(`[Engine] Failed to get indicators for ${symbol}:${tf}`, { error });
             return { timeframe: tf, indicators: null };
           })
       );
@@ -819,7 +821,7 @@ export class EngineService {
             this.getTechnicalIndicatorsMultiTimeframe(symbol, timeframes)
               .then((timeframeIndicators) => ({ symbol, timeframeIndicators }))
               .catch((error) => {
-                logger.warn(`[Engine] Failed to get multi-timeframe for ${symbol}:`, error);
+                logger.warn(`[Engine] Failed to get multi-timeframe for ${symbol}:`, { error });
                 return { symbol, timeframeIndicators: new Map() };
               })
           )

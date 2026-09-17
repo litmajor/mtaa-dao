@@ -11,7 +11,7 @@
  * Rate Limiting: Higher for public endpoints (300/min), lower for user-specific (60/min)
  */
 
-import express, { Request, Response } from 'express';
+import express, { type Request, type Response } from 'express';
 import { z } from 'zod';
 import { isAuthenticated } from '../../../auth';
 import { logger } from '../../../utils/logger';
@@ -388,13 +388,13 @@ router.get('/opportunities', isAuthenticated, async (req: Request, res: Response
               try {
                 await VenueStatsCache.set(userId, row.symbol, row.venue, row);
               } catch (e) {
-                logger.warn('[MARKET] Failed to cache individual stat:', e);
+                logger.warn('[MARKET] Failed to cache individual stat:', { error: e });
               }
             });
           }
         }
       } catch (cacheErr) {
-        logger.warn('[MARKET] Failed to update cache (non-blocking):', cacheErr);
+        logger.warn('[MARKET] Failed to update cache (non-blocking):', { error: cacheErr });
       }
     }
 
@@ -500,7 +500,7 @@ router.get('/opportunities', isAuthenticated, async (req: Request, res: Response
           }
         }
       } catch (e) {
-        logger.warn('[MARKET] Failed to record arbitrage routes or update unified venue stats:', e);
+        logger.warn('[MARKET] Failed to record arbitrage routes or update unified venue stats:', { error: e });
       }
     });
 

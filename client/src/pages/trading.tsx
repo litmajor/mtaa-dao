@@ -752,7 +752,7 @@ function HeatmapView({ exchanges, bestPrice = 0 }: ViewComponentProps) {
         return (
             <div key={ex.name} className="flex items-center gap-4">
             <div className="w-32 font-semibold">{ex.name}</div>
-            {/* eslint-disable-next-line */}
+            { }
             <div className={`flex-1 h-10 rounded transition-colors ${color}`} style={{opacity: 0.3 + (colorIntensity / 200)}} role="img" aria-label={`Price change visualization: ${pricePercent.toFixed(2)}%`} />
             <div className="w-24 text-right">
               <span className="font-semibold">${ex.price.toFixed(2)}</span>

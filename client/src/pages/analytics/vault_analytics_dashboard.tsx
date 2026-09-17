@@ -1,6 +1,6 @@
 import { useMemo, useState } from "react"
 import { useQuery } from "@tanstack/react-query"
-import { BarChart2, AlertTriangle, Download, Calendar, TrendingUp, TrendingDown, DollarSign, LoaderCircle } from "lucide-react"
+import { BarChart2, AlertTriangle, Download, Calendar, TrendingUp, TrendingDown, DollarSign, LoaderCircle, Loader2 } from "lucide-react"
 import { authClient } from '@/utils/authClient'
 
 interface Transaction {

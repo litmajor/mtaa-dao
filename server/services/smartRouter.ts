@@ -11,7 +11,7 @@
  */
 
 import { CEXPriceBackgroundJob } from './cexPriceBackgroundJob';
-import { ExchangeFeeService, FeeStructure } from './exchangeFeeService';
+import { ExchangeFeeService, type FeeStructure } from './exchangeFeeService';
 
 export interface TradePrice {
   exchange: string;

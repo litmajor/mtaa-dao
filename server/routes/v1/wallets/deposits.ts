@@ -14,7 +14,7 @@
  * POST   /api/v1/wallets/deposits/webhook               Provider webhook (no auth)
  */
 
-import express, { Request, Response, NextFunction } from 'express';
+import express, { type Request, type Response, type NextFunction } from 'express';
 import { z } from 'zod';
 import Decimal from 'decimal.js';
 import { isAuthenticated } from '../../../auth';

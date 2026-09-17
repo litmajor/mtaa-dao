@@ -5,7 +5,7 @@
  * Leverages normalization and intelligence services
  */
 
-import express, { Router, Request, Response, NextFunction } from 'express';
+import express, { type Router, type Request, type Response, type NextFunction } from 'express';
 import AssetDiscoveryService from '../services/assetDiscovery';
 import AssetIntelligenceService from '../services/assetIntelligence';
 import AssetNormalizationService from '../services/assetNormalization';
@@ -13,9 +13,9 @@ import ArbitrageDetectionService from '../services/arbitrageDetector';
 import ccxtService from '../services/ccxtService';
 import { logger } from '../utils/logger';
 import {
-  NormalizedAsset,
-  AssetQueryFilters,
-  RawMarketData,
+  type NormalizedAsset,
+  type AssetQueryFilters,
+  type RawMarketData,
 } from '../types/assetTypes';
 
 const router: Router = express.Router();

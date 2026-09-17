@@ -1,4 +1,5 @@
-import React, { useEffect } from 'react';
+import type React from 'react';
+import { useEffect } from 'react';
 import { useSharedSocket } from '@/hooks/useSharedSocket';
 import useToast from '@/components/ui/use-toast';
 import { AlertCircle, CheckCircle, AlertTriangle, Info } from 'lucide-react';

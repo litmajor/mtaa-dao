@@ -6,7 +6,7 @@
 import React, { useState, useEffect } from 'react';
 import ChartJS from '@/components/charts/ChartJSSetup';
 import { Chart } from 'react-chartjs-2';
-import { CheckCircle, TrendingUp, DollarSign, RefreshCw } from 'lucide-react';
+import { CheckCircle, TrendingUp, DollarSign, RefreshCw, AlertTriangle } from 'lucide-react';
 import { Card } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';

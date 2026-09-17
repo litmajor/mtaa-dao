@@ -11,9 +11,9 @@ import {
   billSplits,
   billSplitParticipants,
   billSplitPayments,
-  BillSplit,
-  BillSplitParticipant,
-  BillSplitPayment,
+  type BillSplit,
+  type BillSplitParticipant,
+  type BillSplitPayment,
 } from "../../shared/schema";
 import { eq, and, or, desc } from "drizzle-orm";
 

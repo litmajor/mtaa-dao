@@ -16,20 +16,20 @@ import { Logger } from '../../utils/logger';
 import {
   initializeMessageBus,
   getMessageBus,
-  EnhancedMessageBus,
+  type EnhancedMessageBus,
   MessageType,
 } from './enhanced-message-bus';
 import {
   initializeMetricsExporter,
-  MessageBusMetricsExporter,
+  type MessageBusMetricsExporter,
 } from './message-bus-metrics';
 import {
   registerMessageBusObservability,
 } from './message-bus-observability';
 import {
   MessageBusBridge,
-  CoordinatorBridgeAdapter,
-  GatewayBridgeAdapter,
+  type CoordinatorBridgeAdapter,
+  type GatewayBridgeAdapter,
 } from './message-bus-bridge';
 
 const logger = new Logger('message-bus-system');
@@ -71,7 +71,7 @@ export async function initializeMessageBusSystem(
         await redis.ping();
         logger.info('✅ Redis connected for message bus persistence');
       } catch (error) {
-        logger.warn('Failed to connect to Redis - message bus will operate without persistence:', error);
+        logger.warn('Failed to connect to Redis - message bus will operate without persistence:', { error });
         redis = undefined;
       }
     } else {

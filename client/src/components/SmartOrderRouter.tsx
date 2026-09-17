@@ -21,6 +21,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
+import { AlertTriangle, Target } from 'lucide-react';
 // Lightweight icon placeholders to avoid strict lucide typing issues in migration
 const Icon: React.FC<{ className?: string; children?: React.ReactNode }> = ({ className, children }) => (
   <span className={className} aria-hidden>{children}</span>

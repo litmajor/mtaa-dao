@@ -3,7 +3,7 @@
  * Unified smart routing for DEX/CEX fragmentation
  */
 
-import { AgentMetrics } from '../framework/base-agent';
+import { type AgentMetrics } from '../framework/base-agent';
 
 export enum TradingRouteType {
   DIRECT_DEX = 'direct_dex',           // Single DEX swap

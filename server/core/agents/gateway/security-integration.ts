@@ -3,16 +3,16 @@
  * Applies ELD-SCRY and ELD-LUMEN security checks to all Gateway responses
  */
 
-import { GatewayAgentService } from "./service";
+import { type GatewayAgentService } from "./service";
 import {
-  GatewaySecurityWrapper,
+  type GatewaySecurityWrapper,
   createSecurityWrapper,
   productionSecurityConfig,
   strictSecurityConfig,
-  SecurityConfig,
-  SecurityAssessment,
+  type SecurityConfig,
+  type SecurityAssessment,
 } from "./security-wrapper";
-import { GatewayMessage, GatewayMessageType } from "./types";
+import { type GatewayMessage, type GatewayMessageType } from "./types";
 
 /**
  * Secure Gateway Service - wraps GatewayAgentService with security layer

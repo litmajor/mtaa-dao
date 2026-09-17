@@ -303,7 +303,7 @@ export class AuditService {
       try {
         await Promise.resolve(listener(event));
       } catch (error) {
-        this.logger.warn('[AuditService] Listener error:', error);
+        this.logger.warn('[AuditService] Listener error:', { error });
       }
     }
 

@@ -1,11 +1,11 @@
 import { sql } from 'drizzle-orm';
 import {
   ReversibilityStatus,
-  CircuitBreakerState,
+  type CircuitBreakerState,
   ActorType,
   ReversalReason,
 } from '../types/reversibility';
-import ReversibilityService from './reversibilityService';
+import type ReversibilityService from './reversibilityService';
 
 /**
  * Emergency Stop Service

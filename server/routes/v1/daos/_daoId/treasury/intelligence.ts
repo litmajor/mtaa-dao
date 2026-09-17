@@ -13,7 +13,7 @@
  * - GET    /v1/daos/:daoId/treasury/intelligence/governance-analysis
  */
 
-import express, { Request, Response } from 'express';
+import express, { type Request, type Response } from 'express';
 import { authenticate } from '../../../../../auth';
 import { rateLimitPerUser } from '../../../../../middleware/rateLimit';
 import { treasuryAdminGuard } from './security';

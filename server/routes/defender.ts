@@ -7,7 +7,7 @@ import { Router } from 'express';
 import { isAuthenticated } from '../auth';
 import { requireRole } from '../middleware/rbac';
 import { DefenderAgent } from '../agents/defender';
-import { AgentBehavior } from '../agents/defender/types';
+import { type AgentBehavior } from '../agents/defender/types';
 
 const router = Router();
 const defender = new DefenderAgent('MTAA-001');

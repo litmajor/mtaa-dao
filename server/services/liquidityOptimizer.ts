@@ -4,9 +4,10 @@
  * Finds cheapest, fastest, and balanced routes
  */
 
-import { SupportedChain, CHAIN_CONFIG } from '../../shared/chainConfiguration';
-import { getFeeCalculator, AllRoutingCosts } from './feeCalculator';
-import { getBridgeIntegration, BridgeProtocol } from './bridgeIntegration';
+import { type SupportedChain, CHAIN_CONFIG } from '../../shared/chainConfiguration';
+import { getFeeCalculator } from './feeCalculator';
+import type { AllRoutingCosts } from './feeCalculator';
+import { getBridgeIntegration, type BridgeProtocol } from './bridgeIntegration';
 import { getServiceAccountManager } from './serviceAccountManager';
 import { Logger } from '../utils/logger';
 

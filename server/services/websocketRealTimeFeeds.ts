@@ -1,5 +1,5 @@
 import { EventEmitter } from 'events';
-import WebSocket from 'ws';
+import type WebSocket from 'ws';
 import { cacheService } from './cacheService';
 import { ccxtService } from './ccxtService';
 import { volatilityMetricsService } from './volatilityMetricsService';

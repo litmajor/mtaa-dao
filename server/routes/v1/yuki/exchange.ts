@@ -1,4 +1,4 @@
-import { Router, Request, Response } from 'express';
+import { Router, type Request, type Response } from 'express';
 import { cacheManager } from '../../../core/consolidation/DataCacheConsolidation';
 import { authenticate } from '../../../auth';
 import advancedModeGuard from '../../../middleware/advancedModeGuard';

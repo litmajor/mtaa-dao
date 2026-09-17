@@ -1,5 +1,6 @@
 import pLimit from 'p-limit';
 import type { Provider, TransactionReceipt } from 'ethers';
+import type * as EthersType from 'ethers';
 
 type ProviderTransactionReceipt = TransactionReceipt | null;
 
@@ -95,7 +96,7 @@ export class MultiChainProvider {
   private connections: Map<SupportedChain, RpcConnection> = new Map();
   private rateLimiters: Map<SupportedChain, ReturnType<typeof pLimit>> = new Map();
   private healthCheckInterval: NodeJS.Timeout | null = null;
-  private ethersModule?: typeof import('ethers');
+  private ethersModule?: typeof EthersType;
   private prewarmPromise: Promise<void> | null = null;
 
   private readonly HEALTH_CHECK_INTERVAL = 30 * 1000;

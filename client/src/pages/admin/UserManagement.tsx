@@ -31,7 +31,7 @@ import {
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
 import { useToast } from '@/hooks/use-toast';
-import { Search, UserX, UserCheck, Trash2, Shield, LoaderCircle, ChevronLeft, ChevronRight } from 'lucide-react';
+import { Search, UserX, UserCheck, Trash2, Shield, LoaderCircle, Loader2, ChevronLeft, ChevronRight } from 'lucide-react';
 
 interface User {
   id: string;

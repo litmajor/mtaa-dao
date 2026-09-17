@@ -3,7 +3,7 @@
  * Recovery Manager - Maintains commit logs and rollback checkpoints
  */
 
-import { CommitEntry, StateSnapshot, VectorClockData } from './types';
+import { type CommitEntry, type StateSnapshot, type VectorClockData } from './types';
 import { Logger } from '../../utils/logger';
 
 const logger = new Logger('recovery-manager');

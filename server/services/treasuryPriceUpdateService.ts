@@ -7,7 +7,7 @@
 
 import { EventEmitter } from 'events';
 import { pool } from '../db';
-import { symbolUniverseService, PriceUpdate } from './symbolUniverseService';
+import { symbolUniverseService, type PriceUpdate } from './symbolUniverseService';
 import { logger } from '../utils/logger';
 
 export interface TreasuryPositionUpdate {

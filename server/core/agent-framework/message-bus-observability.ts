@@ -7,8 +7,8 @@
 
 import { Router} from 'express';
 import type { Request, Response } from 'express';
-import { EnhancedMessageBus } from './enhanced-message-bus';
-import { MessageBusMetricsExporter } from './message-bus-metrics';
+import { type EnhancedMessageBus } from './enhanced-message-bus';
+import { type MessageBusMetricsExporter } from './message-bus-metrics';
 import { Logger } from '../../utils/logger';
 import * as prometheus from 'prom-client';
 

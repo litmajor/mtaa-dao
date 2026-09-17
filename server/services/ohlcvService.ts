@@ -752,7 +752,7 @@ class OHLCVService {
 
       logger.debug(`Backed up stale cache for ${symbol}/${timeframe} (keys: ${keys.length})`);
     } catch (error) {
-      logger.debug(`Stale cache backup failed for ${symbol}:`, error);
+      logger.debug(`Stale cache backup failed for ${symbol}:`, { error });
     }
   }
 

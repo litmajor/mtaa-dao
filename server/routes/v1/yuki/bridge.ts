@@ -26,7 +26,7 @@ import advancedModeGuard from '../../../middleware/advancedModeGuard';
 import { requirePINVerification, checkAmountThreshold } from '../../../middleware/pin-verification';
 import { createRateLimiter } from '../../../middleware/rateLimiting';
 import { z } from 'zod';
-import { SupportedChain } from '../../../../shared/chainRegistry';
+import { type SupportedChain } from '../../../../shared/chainRegistry';
 import type { SwapQuote } from '../../../services/crossChainSwapService';
 
 const router = Router();

@@ -11,7 +11,7 @@
  * Rate Limiting: 60 req/min per user
  */
 
-import express, { Request, Response } from 'express';
+import express, { type Request, type Response } from 'express';
 import { z } from 'zod';
 import { isAuthenticated } from '../../../auth';
 import { logger } from '../../../utils/logger';

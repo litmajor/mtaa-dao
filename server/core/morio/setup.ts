@@ -8,7 +8,7 @@
  * This serves as a template for future integration.
  */
 
-import express, { Express } from 'express';
+import express, { type Express } from 'express';
 import { createServer } from 'http';
 
 /**

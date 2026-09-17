@@ -4,7 +4,7 @@
  * Handles wallet information retrieval, balance checking, and account status
  */
 
-import Web3 from 'web3';
+import type Web3 from 'web3';
 type Web3Type = InstanceType<typeof Web3>;
 import { isAddress } from 'web3-validator';
 import type { WalletBalance, AccountInfo } from './types';

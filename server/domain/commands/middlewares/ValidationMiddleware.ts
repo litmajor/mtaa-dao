@@ -1,9 +1,9 @@
-import { Command } from '../Command';
-import { CommandResult } from '../CommandBus';
-import { CommandMiddleware, NextFn } from './AuthorizationMiddleware';
-import { z } from 'zod';
+import { type Command } from '../Command';
+import { type CommandResult } from '../CommandBus';
+import { type CommandMiddleware, type NextFn } from './AuthorizationMiddleware';
+import { type z } from 'zod';
 
-import { CommandContext } from '../CommandBus';
+import { type CommandContext } from '../CommandBus';
 
 export interface CommandValidatorRegistry {
   getSchema(commandType: string): z.ZodType<any> | undefined;

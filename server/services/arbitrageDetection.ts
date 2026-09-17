@@ -4,7 +4,8 @@
  */
 
 import ccxtService from './ccxtService';
-import { analyzeOrderBook, OrderBookMetrics } from './orderBookAnalyzer';
+import { analyzeOrderBook } from './orderBookAnalyzer';
+import type { OrderBookMetrics } from './orderBookAnalyzer';
 import { logger } from '../utils/logger';
 // Note: concurrency is managed at the CCXT service layer; avoid a global limiter here
 import NodeCache from 'node-cache';

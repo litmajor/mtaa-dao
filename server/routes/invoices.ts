@@ -3,7 +3,8 @@ import express from 'express';
 import { db } from '../storage';
 import { invoices, invoicePayments } from '../../shared/invoiceSchema';
 import { walletTransactions } from '../../shared/schema';
-import { eq, or, desc } from 'drizzle-orm';
+import { and, eq, or, desc, sql } from 'drizzle-orm';
+import type { SQL } from 'drizzle-orm';
 import { authenticate } from '../auth';
 import { notificationService } from '../notificationService';
 
@@ -196,27 +197,28 @@ router.get('/list/all', authenticate, async (req, res) => {
     const userId = req.user!.id;
     const { type, status, daoId, limit = 50, offset = 0, sortBy = 'createdAt', sortOrder = 'desc' } = req.query;
 
-    let query = db.select().from(invoices);
+    const filters: SQL[] = [];
 
     // Filter by user's involvement
     if (type === 'sent') {
-      query = query.where(eq(invoices.fromUserId, userId));
+      filters.push(eq(invoices.fromUserId, userId));
     } else if (type === 'received') {
-      query = query.where(eq(invoices.toUserId, userId));
+      filters.push(eq(invoices.toUserId, userId));
     } else {
-      query = query.where(or(
-        eq(invoices.fromUserId, userId),
-        eq(invoices.toUserId, userId)
-      ));
+      filters.push(sql`(${invoices.fromUserId} = ${userId} OR ${invoices.toUserId} = ${userId})`);
     }
 
     // Apply additional filters
     if (status) {
-      query = query.where(eq(invoices.status, String(status)));
+      filters.push(eq(invoices.status, String(status)));
     }
     if (daoId) {
-      query = query.where(eq(invoices.daoId, String(daoId)));
+      filters.push(eq(invoices.daoId, String(daoId)));
     }
+
+    const query = db.select()
+      .from(invoices)
+      .where(and(...filters));
 
     // Get total count
     const allResults = await query;
@@ -224,10 +226,7 @@ router.get('/list/all', authenticate, async (req, res) => {
 
     // Apply sorting and pagination
     const results = await query
-      .orderBy(
-        invoices[sortBy as keyof typeof invoices] || invoices.createdAt,
-        sortOrder === 'asc' ? 'asc' : 'desc'
-      )
+      .orderBy(sortOrder === 'asc' ? invoices.createdAt : desc(invoices.createdAt))
       .limit(Number(limit))
       .offset(Number(offset));
 
@@ -252,20 +251,20 @@ router.get('/my', authenticate, async (req, res) => {
     const userId = req.user!.id;
     const { type } = req.query; // 'sent' or 'received'
 
-    let query = db.select().from(invoices);
+    const filters: SQL[] = [];
 
     if (type === 'sent') {
-      query = query.where(eq(invoices.fromUserId, userId));
+      filters.push(eq(invoices.fromUserId, userId));
     } else if (type === 'received') {
-      query = query.where(eq(invoices.toUserId, userId));
+      filters.push(eq(invoices.toUserId, userId));
     } else {
-      query = query.where(or(
-        eq(invoices.fromUserId, userId),
-        eq(invoices.toUserId, userId)
-      ));
+      filters.push(sql`(${invoices.fromUserId} = ${userId} OR ${invoices.toUserId} = ${userId})`);
     }
 
-    const userInvoices = await query.orderBy(desc(invoices.createdAt));
+    const userInvoices = await db.select()
+      .from(invoices)
+      .where(and(...filters))
+      .orderBy(desc(invoices.createdAt));
 
     res.json({ success: true, invoices: userInvoices });
   } catch (error: any) {

@@ -1,6 +1,6 @@
-import { Command } from '../Command';
-import { CommandResult, CommandContext } from '../CommandBus';
-import { CommandMiddleware, NextFn } from './AuthorizationMiddleware';
+import { type Command } from '../Command';
+import { type CommandResult, type CommandContext } from '../CommandBus';
+import { type CommandMiddleware, type NextFn } from './AuthorizationMiddleware';
 
 // ---------------------------------------------------------------------------
 // Command Status State Machine

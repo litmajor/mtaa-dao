@@ -7,10 +7,10 @@
 import { createHash } from 'crypto';
 import { EventEmitter } from 'events';
 import {
-  AuditEvent,
-  AuditActionType,
-  AuditTrail,
-  OperationalFrameworkConfig,
+  type AuditEvent,
+  type AuditActionType,
+  type AuditTrail,
+  type OperationalFrameworkConfig,
   AuditIntegrityError,
 } from '../types';
 import { v4 as uuidv4 } from 'uuid';

@@ -1,9 +1,9 @@
 import { sql } from 'drizzle-orm';
 import {
   ReversibilityStatus,
-  ActionSeverity,
+  type ActionSeverity,
   ActorType,
-  ReversalReason,
+  type ReversalReason,
 } from '../types/reversibility';
 import type {ReversibleAction,  CreateReversibleActionDTO,ReverseActionDTO,ConfirmActionDTO,ExecuteActionDTO,ReversibilityReport,} from '../types/reversibility';
 import { v4 as uuidv4 } from 'uuid';

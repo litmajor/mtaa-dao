@@ -13,13 +13,13 @@
  */
 
 import {
-  NormalizedAsset,
-  DiscoveryEvent,
-  AssetStats,
-  AssetQueryFilters,
-  AssetSnapshot,
-  VolumeTrend,
-  AssetCategory,
+  type NormalizedAsset,
+  type DiscoveryEvent,
+  type AssetStats,
+  type AssetQueryFilters,
+  type AssetSnapshot,
+  type VolumeTrend,
+  type AssetCategory,
 } from '../types/assetTypes';
 import { logger } from '../utils/logger';
 

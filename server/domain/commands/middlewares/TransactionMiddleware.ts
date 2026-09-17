@@ -1,6 +1,6 @@
-import { Command } from '../Command';
-import { CommandResult } from '../CommandBus';
-import { CommandMiddleware, NextFn } from './AuthorizationMiddleware';
+import { type Command } from '../Command';
+import { type CommandResult } from '../CommandBus';
+import { type CommandMiddleware, type NextFn } from './AuthorizationMiddleware';
 import { db } from '../../../db';
 
 /**

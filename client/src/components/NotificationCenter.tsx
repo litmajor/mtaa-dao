@@ -2,7 +2,7 @@
 import React, { useState, useEffect } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useNotifications, useNotificationData } from '../hooks/useNotifications';
-import { Bell, X, Check, CheckCircle, Trash2, Settings, Search, FileText, DollarSign, Users, ArrowDown, ArrowUp } from 'lucide-react';
+import { Bell, X, Check, CheckCircle, Trash2, Settings, Search, FileText, DollarSign, Users, ArrowDown, ArrowUp, CheckCheck, Clipboard as ClipboardIcon } from 'lucide-react';
 import { buildNotificationEndpoint } from '../lib/notificationEndpoints';
 import { Button } from './ui/button';
 import { Input } from './ui/input';
@@ -21,7 +21,7 @@ interface Notification {
   message: string;
   read: boolean;
   priority: 'low' | 'medium' | 'high' | 'urgent';
-  metadata?: Record<string, any>;
+  metadata?: Record<string, unknown>;
   createdAt: string;
   // Optional navigation fields
   entityType?: string;
@@ -182,8 +182,8 @@ export default function NotificationCenter({ trigger }: NotificationCenterProps)
   const getTypeIcon = (type: string) => {
     switch (type) {
       case 'proposal_created': return <FileText className="w-5 h-5 text-slate-400" />;
-      case 'proposal_voted': return <Clipboard className="w-5 h-5 text-slate-400" />;
-      case 'task_assigned': return <Clipboard className="w-5 h-5 text-slate-400" />;
+      case 'proposal_voted': return <ClipboardIcon className="w-5 h-5 text-slate-400" />;
+      case 'task_assigned': return <ClipboardIcon className="w-5 h-5 text-slate-400" />;
       case 'task_completed': return <CheckCircle className="w-5 h-5 text-green-400" />;
       case 'payment_received': return <DollarSign className="w-5 h-5 text-yellow-400" />;
       case 'membership_approved': return <Users className="w-5 h-5 text-indigo-400" />;

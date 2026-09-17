@@ -18,7 +18,7 @@
  * ═══════════════════════════════════════════════════════════════════════════════
  */
 
-import express, { Request, Response } from 'express';
+import express, { type Request, type Response } from 'express';
 import { strategyDashboardService } from '../../../services/strategyDashboardService';
 import { Logger } from '../../../utils/logger';
 import { rateLimitPerUser } from '../../../middleware/rateLimit';

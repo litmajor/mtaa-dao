@@ -1,5 +1,5 @@
 import { createLogger, format, transports } from 'winston';
-import { Logger as WinstonLogger } from 'winston';
+import { type Logger as WinstonLogger } from 'winston';
 import { env, isDevelopment, isProduction } from '../../shared/config.ts';
 import fs from 'fs';
 import path from 'path';

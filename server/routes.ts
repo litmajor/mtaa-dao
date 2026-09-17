@@ -1,6 +1,6 @@
-import express from 'express';
+import type express from 'express';
 import type { RequestHandler } from 'express';
-import { Server as HTTPServer } from 'http';
+import { type Server as HTTPServer } from 'http';
 import { isAuthenticated } from './auth';
 import { logger } from './utils/logger';
 import Stripe from "stripe"; // Stripe integration

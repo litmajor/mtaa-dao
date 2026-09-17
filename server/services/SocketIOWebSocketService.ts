@@ -10,8 +10,8 @@
  * Eliminates: ws.router warning
  */
 
-import { Server as HttpServer } from 'http';
-import { Server as SocketIOServer, Socket } from 'socket.io';
+import { type Server as HttpServer } from 'http';
+import { Server as SocketIOServer, type Socket } from 'socket.io';
 import { logger } from '../utils/logger';
 import { wsConnectionManager } from './WebSocketConnectionManager';
 import { wsHealthMonitor } from './WebSocketHealthMonitor';

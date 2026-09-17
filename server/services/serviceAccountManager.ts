@@ -5,8 +5,8 @@
  */
 
 import { db } from '../db';
-import { getMultiChainProvider, MultiChainProvider } from './multiChainProvider';
-import { CHAIN_CONFIG, SupportedChain, getAllChains, estimateGasCostUSD } from '../../shared/chainConfiguration';
+import { getMultiChainProvider, type MultiChainProvider } from './multiChainProvider';
+import { CHAIN_CONFIG, type SupportedChain, getAllChains, estimateGasCostUSD } from '../../shared/chainConfiguration';
 import { Logger } from '../utils/logger';
 import { chainAccounts, crossChainTransfers, chainMetrics } from '../../shared/accountSchema';
 import { eq, and, desc } from 'drizzle-orm';

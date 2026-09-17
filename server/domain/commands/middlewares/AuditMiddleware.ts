@@ -1,9 +1,9 @@
-import { Command } from '../Command';
-import { CommandResult } from '../CommandBus';
-import { CommandMiddleware, NextFn } from './AuthorizationMiddleware';
+import { type Command } from '../Command';
+import { type CommandResult } from '../CommandBus';
+import { type CommandMiddleware, type NextFn } from './AuthorizationMiddleware';
 import { logger } from '../../../observability/logger';
 
-import { CommandContext } from '../CommandBus';
+import { type CommandContext } from '../CommandBus';
 
 export class AuditMiddleware implements CommandMiddleware {
   async handle(command: Command, context: CommandContext, next: NextFn): Promise<CommandResult> {

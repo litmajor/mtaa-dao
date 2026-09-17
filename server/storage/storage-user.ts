@@ -2,7 +2,8 @@ import { db } from '../db';
 import { eq, or, and, desc, sql } from 'drizzle-orm';
 import { users, sessions } from '../../shared/schema';
 import { walletConnections } from '../../shared/walletIntegrationSchema';
-import { sessionAudits, SessionAudit } from '../../shared/securityEnhancedSchema';
+import { sessionAudits } from '../../shared/securityEnhancedSchema';
+import type { SessionAudit } from '../../shared/securityEnhancedSchema';
 
 // Type aliases
 type User = typeof users.$inferSelect;

@@ -72,7 +72,7 @@ export class RouteAuditor {
           }
         }
       } catch (error) {
-        logger.warn(`Failed to scan routes in ${scanPath}:`, error);
+        logger.warn(`Failed to scan routes in ${scanPath}:`, { error });
       }
     };
 
@@ -112,7 +112,7 @@ export class RouteAuditor {
         }
       }
     } catch (error) {
-      logger.warn(`Failed to extract routes from ${filePath}:`, error);
+      logger.warn(`Failed to extract routes from ${filePath}:`, { error });
     }
 
     return routes;
@@ -272,7 +272,7 @@ export class RouteAuditor {
         }
       }
     } catch (error) {
-      logger.warn(`Failed to find orphaned routes:`, error);
+      logger.warn(`Failed to find orphaned routes:`, { error });
     }
 
     return violations;

@@ -11,7 +11,7 @@
  * • Multi-chain price aggregation
  */
 
-import { Server as SocketIOServer, Socket } from 'socket.io';
+import { type Server as SocketIOServer, type Socket } from 'socket.io';
 import { Logger } from '../utils/logger';
 
 const logger = Logger.getLogger();

@@ -9,14 +9,14 @@ import {
   botTrades,
   botPerformance,
   botActionLog,
-  Bot,
-  BotInsert,
-  BotTrade,
-  BotTradeInsert,
-  BotPerformance,
-  BotPerformanceInsert,
-  BotActionLog,
-  BotActionLogInsert,
+  type Bot,
+  type BotInsert,
+  type BotTrade,
+  type BotTradeInsert,
+  type BotPerformance,
+  type BotPerformanceInsert,
+  type BotActionLog,
+  type BotActionLogInsert,
 } from '../schema/bots';
 import { eq, and, desc, asc, gte, lte, inArray } from 'drizzle-orm';
 

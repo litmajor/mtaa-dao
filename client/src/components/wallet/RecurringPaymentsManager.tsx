@@ -6,7 +6,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
-import { Plus, Trash2, Pause, Play, AlertCircle, CheckCircle } from 'lucide-react';
+import { Plus, Trash2, Pause, Play, AlertCircle, CheckCircle, Calendar } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { apiPost, apiDelete, apiPut } from '@/lib/api';
 import { useSharedSocket } from '@/hooks/useSharedSocket';

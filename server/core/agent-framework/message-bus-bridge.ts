@@ -6,7 +6,7 @@
  */
 
 import { Logger } from '../../utils/logger';
-import { EnhancedMessageBus, MessageType } from './enhanced-message-bus';
+import { type EnhancedMessageBus, MessageType } from './enhanced-message-bus';
 import type {AgentMessage} from './enhanced-message-bus';
 const logger = new Logger('message-bus-bridge');
 

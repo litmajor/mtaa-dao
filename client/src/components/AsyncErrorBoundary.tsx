@@ -1,5 +1,5 @@
 
-import React, { ReactNode, useState, useEffect } from 'react';
+import React, { type ReactNode, useState, useEffect } from 'react';
 import ErrorBoundary from './ErrorBoundary';
 
 interface AsyncErrorBoundaryProps {

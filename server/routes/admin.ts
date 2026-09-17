@@ -336,7 +336,7 @@ router.get('/analytics', requireSuperAdmin, async (req, res) => {
       }
     } catch (err) {
       systemHealth.blockchain = 'warning';
-      logger.warn('Blockchain health check failed', err);
+      logger.warn('Blockchain health check failed', { error: err });
     }
 
     // Check payment processor health (mock for now - would integrate with actual provider)
@@ -353,7 +353,7 @@ router.get('/analytics', requireSuperAdmin, async (req, res) => {
       }
     } catch (err) {
       systemHealth.payments = 'warning';
-      logger.warn('Payments health check failed', err);
+      logger.warn('Payments health check failed', { error: err });
     }
 
     // System info
@@ -698,7 +698,7 @@ router.get('/analytics', requireSuperAdmin, async (req, res) => {
         blockchainData.networkStatus = 'Connected';
       }
     } catch (err) {
-      logger.warn('Could not fetch blockchain data:', err);
+      logger.warn('Could not fetch blockchain data:', { error: err });
       blockchainData.networkStatus = 'Disconnected';
     }
 

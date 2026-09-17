@@ -36,7 +36,7 @@
 
 import fs from 'fs';
 import path from 'path';
-import { ReportGenerator, AuditResult } from './ReportGenerator';
+import { ReportGenerator, type AuditResult } from './ReportGenerator';
 
 // ─────────────────────────────────────────────────────────────
 // TYPES

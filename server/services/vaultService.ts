@@ -640,7 +640,7 @@ export class VaultService {
           }
         } catch (error) {
           const msg = getErrorMessage(error);
-          Logger.getLogger().warn(`Rebalance failed for vault ${validatedRequest.vaultId} after deposit: ${msg}`, error);
+          Logger.getLogger().warn(`Rebalance failed for vault ${validatedRequest.vaultId} after deposit: ${msg}`, { error });
         }
       }
 

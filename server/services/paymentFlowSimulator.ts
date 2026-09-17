@@ -12,7 +12,7 @@
  * No volatility modeling, no historical backtesting, no Monte Carlo
  */
 
-import { SimulationService, SimulationResult, SimulationParams, SimulationStatus, SimulationDepth } from './simulationFramework';
+import { SimulationService, type SimulationResult, type SimulationParams, SimulationStatus, SimulationDepth } from './simulationFramework';
 
 /**
  * Payment Deposit Simulator

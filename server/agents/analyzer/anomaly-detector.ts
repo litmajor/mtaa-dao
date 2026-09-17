@@ -4,7 +4,7 @@
  * Uses statistical methods to detect unusual behavior
  */
 
-import { AnomalyDetectionResult } from './types';
+import { type AnomalyDetectionResult } from './types';
 
 export class AnomalyDetector {
   private historicalData: Map<string, number[]>;

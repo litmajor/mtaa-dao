@@ -3,7 +3,7 @@ import { crossChainTransfers } from '../../shared/accountSchema';
 import { eq, inArray } from 'drizzle-orm';
 import { Logger } from '../utils/logger';
 import { AppError } from '../middleware/errorHandler';
-import { getBridgeIntegration, BridgeChain, BridgeProtocol } from './bridgeIntegration';
+import { getBridgeIntegration, type BridgeChain, type BridgeProtocol } from './bridgeIntegration';
 
 export class BridgeRelayerService {
   private logger = Logger.getLogger();

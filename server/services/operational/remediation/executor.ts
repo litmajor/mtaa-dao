@@ -7,11 +7,11 @@
 import { EventEmitter } from 'events';
 import { v4 as uuidv4 } from 'uuid';
 import {
-  RemediationAction,
+  type RemediationAction,
   RemediationType,
-  ArchitectureGap,
-  ServiceInstance,
-  OperationalFrameworkConfig,
+  type ArchitectureGap,
+  type ServiceInstance,
+  type OperationalFrameworkConfig,
   RemediationError,
 } from '../types';
 import { getAuditLogger } from '../audit/logger';

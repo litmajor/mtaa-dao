@@ -39,7 +39,7 @@ export class SystemMetricsCollector {
       
       return Math.round(cpuUsagePercent * 100) / 100; // Round to 2 decimals
     } catch (error) {
-      logger.warn('Failed to calculate CPU usage:', error instanceof Error ? error.message : String(error));
+      logger.warn('Failed to calculate CPU usage:', { error: error instanceof Error ? error.message : String(error) });
       return 0;
     }
   }
@@ -56,7 +56,7 @@ export class SystemMetricsCollector {
       const memoryUsagePercent = (usedMem / totalMem) * 100;
       return Math.round(memoryUsagePercent * 100) / 100; // Round to 2 decimals
     } catch (error) {
-      logger.warn('Failed to calculate memory usage:', error instanceof Error ? error.message : String(error));
+      logger.warn('Failed to calculate memory usage:', { error: error instanceof Error ? error.message : String(error) });
       return 0;
     }
   }
@@ -85,7 +85,7 @@ export class SystemMetricsCollector {
       
       return 0;
     } catch (error) {
-      logger.warn('Failed to calculate disk usage:', error instanceof Error ? error.message : String(error));
+      logger.warn('Failed to calculate disk usage:', { error: error instanceof Error ? error.message : String(error) });
       return 0;
     }
   }
@@ -99,7 +99,7 @@ export class SystemMetricsCollector {
       const heapUsedMB = Math.round(memUsage.heapUsed / 1024 / 1024);
       return heapUsedMB;
     } catch (error) {
-      logger.warn('Failed to get process memory:', error instanceof Error ? error.message : String(error));
+      logger.warn('Failed to get process memory:', { error: error instanceof Error ? error.message : String(error) });
       return 0;
     }
   }
@@ -112,7 +112,7 @@ export class SystemMetricsCollector {
       const totalMem = os.totalmem();
       return Math.round(totalMem / 1024 / 1024);
     } catch (error) {
-      logger.warn('Failed to get total memory:', error instanceof Error ? error.message : String(error));
+      logger.warn('Failed to get total memory:', { error: error instanceof Error ? error.message : String(error) });
       return 0;
     }
   }
@@ -127,7 +127,7 @@ export class SystemMetricsCollector {
       const usedMem = totalMem - freeMem;
       return Math.round(usedMem / 1024 / 1024);
     } catch (error) {
-      logger.warn('Failed to get used memory:', error instanceof Error ? error.message : String(error));
+      logger.warn('Failed to get used memory:', { error: error instanceof Error ? error.message : String(error) });
       return 0;
     }
   }
@@ -157,7 +157,7 @@ export class SystemMetricsCollector {
       // using dns lookup times or HTTP ping to a monitoring endpoint
       return 0;
     } catch (error) {
-      logger.warn('Failed to measure network latency:', error instanceof Error ? error.message : String(error));
+      logger.warn('Failed to measure network latency:', { error: error instanceof Error ? error.message : String(error) });
       return 0;
     }
   }
