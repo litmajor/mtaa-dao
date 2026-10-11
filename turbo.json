@@ -1,0 +1,47 @@
+{
+  "$schema": "https://turborepo.dev/schema.json",
+  "envMode": "strict",
+  "agentGuidance": false,
+  "futureFlags": {
+    "strictTaskEntrypointSelection": true
+  },
+  "tasks": {
+    "build": {
+      "dependsOn": ["^build"],
+      "outputs": [".next/**", "!.next/cache/**", "!.next/dev/**"],
+      "env": ["NODE_ENV", "NEXT_PUBLIC_*", "NEXTAUTH_URL"],
+      "inputs": ["$TURBO_DEFAULT$", ".env*"]
+    },
+    "//#build:root": {
+      "outputs": ["dist/public/**", "server/dist/**"],
+      "env": ["NODE_ENV", "VITE_*"],
+      "passThroughEnv": ["NODE_OPTIONS"],
+      "inputs": ["$TURBO_DEFAULT$", "client/.env*"]
+    },
+    "dev": {
+      "cache": false,
+      "persistent": true,
+      "passThroughEnv": ["*"]
+    },
+    "//#dev:root": {
+      "cache": false,
+      "persistent": true,
+      "passThroughEnv": ["*"]
+    },
+    "typecheck": {
+      "dependsOn": ["^typecheck"]
+    },
+    "//#typecheck:root": {},
+    "lint": {
+      "dependsOn": ["^lint"]
+    },
+    "//#lint:root": {},
+    "test": {
+      "cache": false
+    },
+    "//#test:root": {
+      "cache": false,
+      "passThroughEnv": ["*"]
+    }
+  }
+}

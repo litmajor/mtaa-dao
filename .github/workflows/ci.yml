@@ -19,7 +19,7 @@ jobs:
       - name: Lint
         run: npm run lint
       - name: TypeScript check
-        run: npm run check --if-present
+        run: npm run typecheck
       - name: Test
         run: npm test --if-present
       - name: Build

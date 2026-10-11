@@ -206,6 +206,36 @@ The report is written to visibility/architecture-report.json.
 
 ## 📦 Getting Started
 
+### MtaaDAO Monorepo
+
+- **Package manager:** npm; the root package manages dependencies with npm workspaces.
+- **Workspaces:** the root MtaaDAO application and the `mtaadao-docs` package in `docs-site/`. The main Vite/Express application remains at the repository root; no artificial `apps/` or `packages/` layer is introduced.
+- **Task orchestration:** Turborepo runs the root application tasks and the documentation-site tasks from the same npm workspace graph.
+- **Runtime and infrastructure:** Docker and Docker Compose remain responsible for containers and runtime services.
+
+From the repository root, install dependencies and run the standard tasks:
+
+```bash
+npm install
+npm run dev
+npm run build
+npm run typecheck
+npm run lint
+npm run test
+```
+
+The documentation package can be targeted by its npm workspace name:
+
+```bash
+npx turbo dev --filter=mtaadao-docs
+npx turbo build --filter=mtaadao-docs
+npx turbo typecheck --filter=mtaadao-docs
+```
+
+The root application is intentionally a single root package rather than a separate workspace. Its Turbo tasks are `dev:root`, `build:root`, `typecheck:root`, `lint:root`, and `test:root`; these run together with the corresponding workspace tasks through the root npm commands.
+
+**Tool boundaries:** npm installs dependencies and manages workspaces; Turbo orders tasks and caches safe build outputs; Docker provides containerized application and infrastructure runtimes. Build tasks receive only public frontend build variables (`VITE_*` and `NEXT_PUBLIC_*`); server secrets are not configured as build inputs. Development and test tasks receive runtime environment values but are not cached.
+
 ### Toolchain rule: Hardhat vs Foundry
 
 This repo intentionally uses two different smart-contract toolchains:

@@ -29,6 +29,7 @@ mtaa-dao-whitepaper/.env
 
 # Next.js
 .next
+/.turbo/
 
 # Repl / editor
 .replit

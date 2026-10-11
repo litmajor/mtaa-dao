@@ -1,7 +1,18 @@
 // eslint.config.js
 import tseslint from 'typescript-eslint';
+import nextPlugin from '@next/eslint-plugin-next';
+import jsxA11y from 'eslint-plugin-jsx-a11y';
+import reactHooks from 'eslint-plugin-react-hooks';
 
 export default tseslint.config(
+  {
+    ignores: [
+      '**/*.stories.tsx',
+      '**/*.test.ts',
+      '**/*.test.tsx',
+      '**/__tests__/**',
+    ],
+  },
   {
     files: ['**/*.{ts,tsx}'],
     languageOptions: {
@@ -13,6 +24,9 @@ export default tseslint.config(
     },
     plugins: {
       '@typescript-eslint': tseslint.plugin,
+      '@next/next': nextPlugin,
+      'jsx-a11y': jsxA11y,
+      'react-hooks': reactHooks,
     },
     rules: {
       '@typescript-eslint/consistent-type-imports': [

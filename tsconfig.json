@@ -28,9 +28,8 @@
     }
   },
   "include": [
-    "client/src/**/*",
-    "shared/**/*",
-    "server/**/*"
+    "**/*.ts",
+    "**/*.tsx"
   ],
   "exclude": [
     "node_modules",
