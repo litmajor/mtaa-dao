@@ -67,7 +67,7 @@ export class CacheService<T> {
   private maxSize: number; // Maximum number of entries
   private hitCount: number = 0;
   private missCount: number = 0;
-  private cleanupInterval: NodeJS.Timer | null = null;
+  private cleanupInterval: ReturnType<typeof setInterval> | null = null;
 
   constructor(ttlSeconds: number = 30, maxSize: number = 10000) {
     this.ttl = ttlSeconds * 1000;

@@ -6,8 +6,26 @@
  */
 
 import { shardOrchestrator } from '../../services/intelligenceShards';
-import { assetIntelligence } from '../../services/assetIntelligence';
 import type { AssetStateSnapshot } from '../../types/assetGraph';
+
+export async function getMarketSnapshot(symbol: string): Promise<AssetStateSnapshot> {
+  const now = new Date();
+  const baseline: AssetStateSnapshot = {
+    assetId: symbol,
+    symbol,
+    timestamp: now,
+    graphVersion: 0,
+    isStale: true,
+    completeness: 0,
+    coreState: {
+      priceUsd: 0,
+      priceConfidence: 0,
+      priceSources: [],
+    },
+  };
+
+  return shardOrchestrator.updateSnapshot(baseline);
+}
 
 export interface MarketContext {
   symbol: string;
@@ -99,7 +117,7 @@ export class MarketAwareIntentAnalyzer {
         }
 
         // Get fresh snapshot from shard orchestrator
-        const snapshot = await assetGraphService.getSnapshot(symbol);
+        const snapshot = await getMarketSnapshot(symbol);
         if (snapshot) {
           const context = this.snapshotToMarketContext(symbol, snapshot);
           this.setCache(symbol, context);
@@ -341,7 +359,7 @@ export class CrossAssetRiskAnalyzer {
     const snapshots = new Map<string, AssetStateSnapshot>();
     for (const symbol of symbols) {
       try {
-        const snapshot = await assetGraphService.getSnapshot(symbol);
+        const snapshot = await getMarketSnapshot(symbol);
         if (snapshot) snapshots.set(symbol, snapshot);
       } catch (e) {
         console.warn(`Failed to fetch snapshot for ${symbol}`);

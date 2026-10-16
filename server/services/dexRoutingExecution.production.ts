@@ -642,9 +642,9 @@ class ProductionDexRouting {
     }
 
     try {
-      const prices = await priceOracle.getPrices([nativeSymbol]);
-      const priceEntry = prices.get(nativeSymbol);
-      const nativePriceUsd = priceEntry?.priceUsd ?? (priceEntry as any)?.value;
+      const prices = await priceOracle.getValuationPrices([nativeSymbol]);
+      const priceEntry = prices.get(nativeSymbol.toUpperCase());
+      const nativePriceUsd = priceEntry?.haircutPriceUsd ?? priceEntry?.priceUsd;
 
       if (!nativePriceUsd || !isFinite(nativePriceUsd)) {
         logger.warn(`[DexRouting] Could not resolve ${nativeSymbol} price for gas accounting on ${chain}; gas cost USD omitted`);

@@ -1380,7 +1380,6 @@ const ExchangeMarkets: React.FC = () => {
                             </span>
                           </div>
                           <div className="w-full bg-gray-200 dark:bg-slate-700 rounded-full h-2 overflow-hidden">
-                            {/* eslint-disable-next-line @next/next/no-style-component-with-dynamic-styles */}
                             <div
                               className="bg-gradient-to-r from-emerald-500 to-blue-500 h-2 rounded-full transition-all"
                               style={{

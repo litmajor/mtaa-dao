@@ -339,11 +339,12 @@ export class StrategyOptimizerService {
       const recommendedYield = this._calculateExpectedYield(strategies, recommendedAllocations);
       const yieldImprovement = recommendedYield - currentYield;
 
+      const vaultTotalAssets = Number(vault.totalValueLocked ?? 0);
       // Estimate rebalancing fee (0.25% slippage per swap)
-      const rebalancingFee = vault.totalAssets * 0.0025;
+      const rebalancingFee = vaultTotalAssets * 0.0025;
 
       // Calculate net benefit
-      const annualBenefit = (vault.totalAssets * yieldImprovement) / 100;
+      const annualBenefit = (vaultTotalAssets * yieldImprovement) / 100;
       const netBenefit = annualBenefit - rebalancingFee;
 
       return {
@@ -370,7 +371,7 @@ export class StrategyOptimizerService {
 
     const map = new Map<string, number>();
     for (const alloc of allocations) {
-      map.set(alloc.strategyId, alloc.allocationPercentage);
+      map.set(alloc.strategyId, Number(alloc.allocationPercentage));
     }
     return map;
   }
@@ -378,15 +379,19 @@ export class StrategyOptimizerService {
   /**
    * Internal: Get risk tolerance (0-1, where 0 = no risk, 1 = high risk)
    */
-  private _getRiskTolerance(vaultType: string): number {
-    const riskMap: {[key: string]: number} = {
+  private _getRiskTolerance(vaultType: string | null): number {
+    const riskMap: Record<string, number> = {
       'SAVINGS': 0.1,        // Conservative
       'ESCROW': 0.15,        // Low risk
       'BUSINESS': 0.4,       // Moderate
       'INVESTING': 0.7,      // Aggressive
       'CUSTOM': 0.5,         // Balanced
+      'REGULAR': 0.3,
+      'LOCKED_SAVINGS': 0.1,
+      'YIELD': 0.4,
+      'DAO_TREASURY': 0.25,
     };
-    return riskMap[vaultType] ?? 0.3;
+    return riskMap[vaultType?.toUpperCase() ?? 'REGULAR'] ?? 0.3;
   }
 
   /**
@@ -574,12 +579,13 @@ export class StrategyOptimizerService {
       cutoffDate.setDate(cutoffDate.getDate() - daysBack);
 
       // Get historical strategy metrics from DB
-      const snapshots = await db.execute(sql`
+      const snapshotResult = await db.execute(sql`
         SELECT apy, recorded_at FROM strategy_performance_history
         WHERE strategy_id = ${strategyId}
         AND recorded_at >= ${cutoffDate}
         ORDER BY recorded_at ASC
       `);
+      const snapshots = snapshotResult.rows;
 
       if (snapshots.length === 0) {
         // Fallback: estimate from current metrics with reasonable variance
@@ -595,9 +601,16 @@ export class StrategyOptimizerService {
       } else {
         // Return actual historical data
         for (const snapshot of snapshots) {
+          const recordedAt = snapshot.recorded_at instanceof Date
+            ? snapshot.recorded_at
+            : new Date(String(snapshot.recorded_at));
+          const apy = Number(snapshot.apy);
+          if (!Number.isFinite(apy) || Number.isNaN(recordedAt.getTime())) {
+            throw new Error(`Invalid historical performance snapshot for strategy ${strategyId}`);
+          }
           data.push({
-            apy: snapshot.apy,
-            date: snapshot.recorded_at,
+            apy,
+            date: recordedAt,
           });
         }
       }
@@ -628,9 +641,11 @@ export class StrategyOptimizerService {
       const allocations = await this._getCurrentAllocations(vaultId);
       const currentYield = this._calculateExpectedYield(strategies, allocations);
 
+      const vaultName = String((vault as any).vaultName ?? 'Vault');
+      const vaultTotalAssets = Number((vault as any).totalAssets ?? 0);
       const report = `
 === VAULT STRATEGY PERFORMANCE REPORT ===
-Vault: ${vault.vaultName} (${vaultId})
+Vault: ${vaultName} (${vaultId})
 Period: Last ${periodDays} days
 Generated: ${new Date().toISOString()}
 
@@ -639,7 +654,7 @@ ${Array.from(allocations.entries()).map(([id, pct]) => `  ${id}: ${pct.toFixed(2
 
 Performance:
   Current Expected APY: ${currentYield.toFixed(2)}%
-  Vault Value: $${(vault.totalAssets / 1e6).toFixed(2)}M
+  Vault Value: $${(vaultTotalAssets / 1e6).toFixed(2)}M
 
 Top Performing Strategies:
 ${strategies.slice(0, 5).map(s => `  ${s.strategyName}: ${s.apy.toFixed(2)}% APY (Sharpe: ${s.sharpeRatio.toFixed(2)})`).join('\n')}

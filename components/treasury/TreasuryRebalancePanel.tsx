@@ -211,7 +211,6 @@ export const TreasuryRebalancePanel: React.FC<TreasuryRebalancePanelProps> = ({
                     </span>
                   </div>
                   <div className="item-bar">
-                    {/* eslint-disable-next-line react/style-prop-object */}
                     <div
                       className="bar-current"
                       style={{
@@ -222,7 +221,6 @@ export const TreasuryRebalancePanel: React.FC<TreasuryRebalancePanelProps> = ({
                             : '#4834d4',
                       }}
                     />
-                    {/* eslint-disable-next-line react/style-prop-object */}
                     <div
                       className="bar-target"
                       style={{

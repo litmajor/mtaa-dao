@@ -677,7 +677,9 @@ export class PaymentGatewayService {
         PartyA: formattedPhone,
         PartyB: shortcode,
         PhoneNumber: formattedPhone,
-        CallBackURL: `${process.env.APP_URL}/api/payments/webhooks/mpesa`,
+        CallBackURL: request.callbackUrl ||
+          process.env.MPESA_CALLBACK_URL ||
+          `${process.env.APP_URL || process.env.BACKEND_URL || 'http://localhost:5000'}/api/webhooks/mpesa`,
         AccountReference: `MTAA-${request.userId.slice(0, 8).toUpperCase()}`,
         TransactionDesc: request.metadata?.description || 'DAO System Wallet Deposit Load'
       };
@@ -706,7 +708,11 @@ export class PaymentGatewayService {
           request.currency,
           'mpesa',
           'pending',
-          { checkoutRequestID: data.CheckoutRequestID, merchantRequestID: data.MerchantRequestID }
+          {
+            ...request.metadata,
+            checkoutRequestID: data.CheckoutRequestID,
+            merchantRequestID: data.MerchantRequestID
+          }
         );
 
         return {

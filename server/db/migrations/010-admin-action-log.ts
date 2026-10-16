@@ -1,5 +1,5 @@
 import { sql } from 'drizzle-orm';
-import type { PostgresDB } from 'drizzle-orm/postgres-js';
+import type { NodePgDatabase } from 'drizzle-orm/node-postgres';
 
 /**
  * Migration: Admin Action Log - Immutable Audit Trail (Day 2)
@@ -8,7 +8,7 @@ import type { PostgresDB } from 'drizzle-orm/postgres-js';
  * - admin_action_log: Immutable record of all high-power admin actions
  *   Includes state snapshots, actor info, and comprehensive audit trail
  */
-export async function up(db: PostgresDB) {
+export async function up(db: NodePgDatabase<any>) {
   await db.execute(sql`
     CREATE TABLE IF NOT EXISTS admin_action_log (
       id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -37,6 +37,6 @@ export async function up(db: PostgresDB) {
   `);
 }
 
-export async function down(db: PostgresDB) {
+export async function down(db: NodePgDatabase<any>) {
   await db.execute(sql`DROP TABLE IF EXISTS admin_action_log CASCADE`);
 }

@@ -11,7 +11,7 @@ type WithdrawPayload = { to: string; amount: string; currency?: string };
 type SwapPayload = { fromToken: string; toToken: string; amount: string };
 type StakePayload = { vaultId: string; amount: string };
 type ReceivePayload = { currency?: string };
-type SplitParticipant = { id: string; address?: string }
+type SplitParticipant = { id: string; address?: string; amount?: number | string }
 type SplitBillPayload = { title?: string; participants: Array<SplitParticipant>; currency?: string; totalAmount?: number | string; metadata?: Record<string, unknown> };
 type CreatePaymentLinkPayload = { amount: string; currency?: string; description?: string; expiresAt?: string; metadata?: Record<string, unknown> };
 

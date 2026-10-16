@@ -56,7 +56,7 @@ export default function PoolDiscovery() {
     toast({ title: 'Link Copied!', description: 'Share this link with friends to invite them' });
   };
 
-  const filteredPools = pools.pools?.filter((pool: any) => 
+  const filteredPools = pools.filter((pool: any) =>
     pool.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
     pool.description?.toLowerCase().includes(searchQuery.toLowerCase())
   ) || [];

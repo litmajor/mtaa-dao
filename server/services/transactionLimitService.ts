@@ -174,7 +174,7 @@ export class TransactionLimitService {
 
     if (existing) {
       // Check if we need to reset daily
-      const lastReset = new Date(existing.lastResetDaily);
+      const lastReset = existing.lastResetDaily ? new Date(existing.lastResetDaily) : new Date();
       const today = new Date();
       if (today.toDateString() !== lastReset.toDateString()) {
         await db
@@ -197,7 +197,7 @@ export class TransactionLimitService {
       }
 
       // Check if we need to reset monthly
-      const lastMonthlyReset = new Date(existing.lastResetMonthly);
+      const lastMonthlyReset = existing.lastResetMonthly ? new Date(existing.lastResetMonthly) : new Date();
       if (today.getMonth() !== lastMonthlyReset.getMonth()) {
         await db
           .update(unifiedTransactionLimits)

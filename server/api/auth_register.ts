@@ -5,7 +5,6 @@ import { users } from '../../shared/schema';
 import { eq } from 'drizzle-orm';
 import { generateTokens, hashPassword } from '../auth';
 import { otpService } from '../services/otpService';
-import { walletGenerationService } from '../services/wallet-generation-service';
 
 /**
  * Helper to insert a new user with an automatically generated, unique slug.
@@ -167,21 +166,6 @@ export async function verifyOtpHandler(req: Request, res: Response) {
       updatedAt: new Date(),
     });
 
-    // AUTO-CREATE WALLET FOR NEW USER
-    let walletAddress = null;
-    try {
-      const walletResult = await walletGenerationService.createUserWallet(
-        newUser.id,
-        'USDC',  // Default currency
-        'personal'
-      );
-      walletAddress = walletResult.address;
-      console.log(`✅ Wallet created for user ${newUser.id}: ${walletAddress}`);
-    } catch (walletError) {
-      // Log error but don't fail registration - wallet can be created later
-      console.error(`⚠️ Failed to create wallet for user ${newUser.id}:`, walletError);
-    }
-
     // Clean up OTP from Redis
     await otpService.deleteOTP(identifier);
 
@@ -211,16 +195,12 @@ export async function verifyOtpHandler(req: Request, res: Response) {
           firstName: newUser.firstName,
           lastName: newUser.lastName,
           role: typeof newUser.roles === 'string' ? newUser.roles : 'user',
-          walletAddress: walletAddress || newUser.walletAddress,
+          walletAddress: newUser.walletAddress,
           isEmailVerified: newUser.isEmailVerified,
           isPhoneVerified: newUser.isPhoneVerified,
           profilePicture: newUser.profileImageUrl,
         },
         accessToken: tokens.accessToken,
-        wallet: walletAddress ? {
-          address: walletAddress,
-          message: '🎉 Your wallet has been created! Please save your address.'
-        } : undefined,
       },
     });
   } catch (error) {

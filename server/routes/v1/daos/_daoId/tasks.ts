@@ -19,7 +19,7 @@ import { rateLimitPerUser } from '../../../../middleware/rateLimit';
 import { treasuryAdminGuard } from './treasury/security';
 import { logConsolidatedAuditEvent } from '../../../../services/auditConsolidated';
 import { db } from '../../../../db';
-import { eq, and, desc } from 'drizzle-orm';
+import { eq, and, desc, type SQL } from 'drizzle-orm';
 import { daoTasks } from '@shared/schema';
 
 const router = express.Router({ mergeParams: true });
@@ -36,7 +36,7 @@ router.get(
       const { daoId } = req.params;
       const { status, category } = req.query;
 
-      let filters: typeof daoTasks.$inferSelect[] = [eq(daoTasks.daoId, daoId)];
+      const filters: SQL[] = [eq(daoTasks.daoId, daoId)];
       
       if (status && status !== 'all') {
         filters.push(eq(daoTasks.status, status as string));

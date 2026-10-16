@@ -1,34 +1,58 @@
 /**
- * ═══════════════════════════════════════════════════════════════════════════════
- * NAV ORACLE SERVICE - Automated Vault NAV Calculation & Updates
- * ═══════════════════════════════════════════════════════════════════════════════
+ * NAV Oracle Service (Production)
  *
- * Production implementation with:
- * • Symbol Universe (asset metadata + deployments)
- * • priceOracle (shared, dynamic-registry, Redis-deduped USD pricing)
- * • Strategy Dashboard Service (strategy performance + TVL)
- * • External API Tracker (yield data + liquidation risk)
- * • ECDSA signature generation for blockchain submission
+ * Vault net-asset-value calculation aligned with the shared valuation oracle.
  *
- * NOTE ON PRICING: this service used to run its own independent multi-source
- * pricing stack (CoinGecko + Binance + DEX Screener) in parallel with
- * `priceOracle.ts`. That has been removed. All USD pricing now goes through
- * the shared `priceOracle` singleton so vault NAV calculations can never
- * disagree with prices shown elsewhere in the app, and so new/changed token
- * mappings only need to be registered once (see integration notes below).
+ * Guarantees
+ * ─────────────────────────────────────────────────────────────
+ * • Marks only via priceOracle.getValuationPrice (fail-closed per asset)
+ * • Fixed-point USD math (1e8 NAV scale) — no float share-price path
+ * • Partial NAV supported with explicit unpriced holdings + confidence floor
+ * • Symbol Universe address/chain checks (mismatch fails that holding)
+ * • Correct concentration (HHI) after totals are known
+ * • Durable nonce + last NAV (memory with optional Redis hooks)
+ * • Ethereum-compatible ECDSA (ethers Wallet / EIP-191) for on-chain updates
+ * • Circuit breaker on NAV jumps
+ *
+ * Does not hold long-lived strategy for private keys beyond process env;
+ * prefer KMS in production and inject a Signer.
  */
 
+import { createHash, randomBytes } from 'crypto';
+import { Wallet, TypedDataEncoder, hashMessage, verifyMessage } from 'ethers';
 import { Logger } from '../utils/logger';
 import { symbolUniverse } from '../core/symbol_universe';
 import { strategyDashboardService } from './strategyDashboardService';
 import { priceOracle } from './priceOracle';
-import crypto from 'crypto';
 import type { SupportedChain } from '../types/assetGraph';
 
 const logger = Logger.getLogger();
 
+// ─────────────────────────────────────────────────────────────
+// Constants
+// ─────────────────────────────────────────────────────────────
+
+/** On-chain / API NAV scale: 1 unit = $1e-8 */
+export const NAV_SCALE = 100_000_000n; // 1e8
+const NAV_SCALE_NUMBER = 1e8;
+
+const DEFAULTS = {
+  /** Minimum fraction of portfolio (by count or value intent) that must price */
+  minPricedValueRatio: Number(process.env.NAV_MIN_PRICED_RATIO ?? 0.95),
+  /** Reject updates that move NAV more than this % vs last good */
+  maxNavJumpPct: Number(process.env.NAV_MAX_JUMP_PCT ?? 15),
+  warnNavJumpPct: Number(process.env.NAV_WARN_JUMP_PCT ?? 10),
+  yieldCacheTtlMs: 60 * 60 * 1000,
+  scheduledIntervalMs: Number(process.env.NAV_SCHEDULE_MS ?? 60 * 60 * 1000),
+};
+
+// ─────────────────────────────────────────────────────────────
+// Types
+// ─────────────────────────────────────────────────────────────
+
 export interface VaultHolding {
   symbol: string;
+  /** Raw token amount in smallest units */
   balance: bigint;
   tokenAddress: string;
   decimals: number;
@@ -37,20 +61,34 @@ export interface VaultHolding {
 
 export interface NavComponent {
   symbol: string;
+  /** Human-readable balance string */
   balance: string;
+  balanceRaw: string;
   priceUsd: number;
+  /** Value in USD minor units (1e8) */
+  valueUsdScaled: bigint;
   valueUsd: number;
   yieldApy?: number;
   riskTier: 'tier_1' | 'tier_2' | 'tier_3' | 'tier_4';
   priceConfidence: number;
   sources: string[];
   lastUpdate: number;
+  priced: true;
+}
+
+export interface UnpricedHolding {
+  symbol: string;
+  balanceRaw: string;
+  reason: string;
 }
 
 export interface RiskMetrics {
-  concentrationRisk: number;
-  tierDistribution: Map<string, number>;
-  yieldExposure: number;
+  /** HHI on value shares, 0–1 (1 = fully concentrated) */
+  concentrationHhi: number;
+  /** 1–10, higher = better diversification */
+  diversificationScore: number;
+  tierDistributionPct: Record<string, number>;
+  yieldExposureApySum: number;
   liquidationRiskScore: number;
   liquidationRiskLevel: 'low' | 'medium' | 'high';
   correlationRisk: number;
@@ -58,613 +96,769 @@ export interface RiskMetrics {
 
 export interface VaultNAVResult {
   vaultId: string;
-  nav: bigint;
+  chain: SupportedChain;
+  /** Fixed-point NAV at 1e8 scale */
+  navScaled: bigint;
   navUsd: number;
-  breakdown: Map<string, NavComponent>;
+  breakdown: NavComponent[];
+  unpriced: UnpricedHolding[];
+  pricedValueRatio: number;
   riskMetrics: RiskMetrics;
   confidenceScore: number;
   timestamp: number;
   sources: string[];
   calculationDurationMs: number;
+  partial: boolean;
 }
 
 export interface NavUpdateSignature {
   vaultId: string;
-  nav: string;
+  navScaled: string;
   nonce: number;
   timestamp: number;
+  /** EIP-191 personal_sign style hex signature */
   signature: string;
   signer: string;
+  messageHash: string;
 }
 
-export interface PriceData {
-  usd: number;
-  sources: string[];
-  confidence: number;
-  sourceBreakdown: Map<string, number>;
-  updateTime: number;
+export interface NavOracleOptions {
+  /** ethers Wallet or private key hex (0x…) */
+  signer?: Wallet | string;
+  signerAddress?: string;
+  /** Optional durable store adapters */
+  store?: NavOracleStore;
+  minPricedValueRatio?: number;
+  maxNavJumpPct?: number;
+  enableScheduler?: boolean;
+  /** Called by scheduler — return vaults to refresh */
+  listVaultsForUpdate?: () => Promise<
+    Array<{ vaultId: string; chain: SupportedChain; holdings: VaultHolding[] }>
+  >;
 }
 
-export interface YieldData {
-  symbol: string;
-  apy: number;
-  source: string;
-  protocol: string;
-  riskLevel: 'low' | 'medium' | 'high';
-  updateTime: number;
+export interface NavOracleStore {
+  getNonce(vaultId: string): Promise<number>;
+  incrementNonce(vaultId: string): Promise<number>;
+  getLastNav(vaultId: string): Promise<VaultNAVResult | null>;
+  setLastNav(vaultId: string, result: VaultNAVResult): Promise<void>;
 }
 
-class NavOracleService {
-  private nonces: Map<string, number> = new Map();
-  private updateInterval: any = null;
-  private lastUpdates: Map<string, VaultNAVResult> = new Map();
-  private yieldCache: Map<string, { data: YieldData; timestamp: number }> = new Map();
-  private signerAddress: string = '';
-  private signerPrivateKey: string = '';
+// ─────────────────────────────────────────────────────────────
+// Fixed-point helpers
+// ─────────────────────────────────────────────────────────────
+
+/**
+ * valueScaled (1e8 USD) = balance * priceUsd * 1e8 / 10^decimals
+ * Uses integer path where possible; price has limited decimals from oracle.
+ */
+export function valueUsdScaled(
+  balance: bigint,
+  decimals: number,
+  priceUsd: number
+): bigint {
+  if (balance <= 0n || !(priceUsd > 0) || !Number.isFinite(priceUsd)) {
+    return 0n;
+  }
+  // price → microdollars (1e6) then scale to 1e8 ⇒ factor 1e2 more
+  const priceMicro = BigInt(Math.round(priceUsd * 1_000_000)); // $1 = 1e6
+  // balance * priceMicro * 100 / 10^decimals  => 1e8 USD units
+  const scale = 10n ** BigInt(decimals);
+  return (balance * priceMicro * 100n) / scale;
+}
+
+export function scaledToUsdNumber(scaled: bigint): number {
+  return Number(scaled) / NAV_SCALE_NUMBER;
+}
+
+function formatUnits(balance: bigint, decimals: number): string {
+  const neg = balance < 0n;
+  const abs = neg ? -balance : balance;
+  const base = 10n ** BigInt(decimals);
+  const whole = abs / base;
+  const frac = abs % base;
+  const fracStr = frac.toString().padStart(decimals, '0').replace(/0+$/, '');
+  const body = fracStr.length ? `${whole}.${fracStr}` : whole.toString();
+  return neg ? `-${body}` : body;
+}
+
+// ─────────────────────────────────────────────────────────────
+// In-memory store for isolated tests and explicit local use
+// ─────────────────────────────────────────────────────────────
+
+export class InMemoryNavOracleStore implements NavOracleStore {
+  private nonces = new Map<string, number>();
+  private last = new Map<string, VaultNAVResult>();
+
+  async getNonce(vaultId: string): Promise<number> {
+    return this.nonces.get(vaultId) ?? 0;
+  }
+
+  async incrementNonce(vaultId: string): Promise<number> {
+    const nonce = (this.nonces.get(vaultId) ?? 0) + 1;
+    this.nonces.set(vaultId, nonce);
+    return nonce;
+  }
+
+  async getLastNav(vaultId: string): Promise<VaultNAVResult | null> {
+    return this.last.get(vaultId) ?? null;
+  }
+
+  async setLastNav(vaultId: string, result: VaultNAVResult): Promise<void> {
+    this.last.set(vaultId, result);
+  }
+}
+
+/**
+ * PostgreSQL-backed production store. The nonce update is a single atomic
+ * statement so independent service instances cannot issue duplicate nonces.
+ */
+export class PostgresNavOracleStore implements NavOracleStore {
+  private async getPool() {
+    const { pool } = await import('../db');
+    return pool;
+  }
+
+  async getNonce(vaultId: string): Promise<number> {
+    const pool = await this.getPool();
+    const { rows } = await pool.query<{ nonce: string | number }>(
+      'SELECT nonce FROM nav_oracle_state WHERE vault_id = $1',
+      [vaultId]
+    );
+    return this.toSafeNonce(rows[0]?.nonce ?? 0);
+  }
+
+  async incrementNonce(vaultId: string): Promise<number> {
+    const pool = await this.getPool();
+    const { rows } = await pool.query<{ nonce: string | number }>(
+      `INSERT INTO nav_oracle_state (vault_id, nonce)
+       VALUES ($1, 1)
+       ON CONFLICT (vault_id)
+       DO UPDATE SET nonce = nav_oracle_state.nonce + 1, updated_at = NOW()
+       RETURNING nonce`,
+      [vaultId]
+    );
+    return this.toSafeNonce(rows[0]?.nonce);
+  }
+
+  async getLastNav(vaultId: string): Promise<VaultNAVResult | null> {
+    const pool = await this.getPool();
+    const { rows } = await pool.query<{ last_nav: unknown }>(
+      'SELECT last_nav FROM nav_oracle_state WHERE vault_id = $1',
+      [vaultId]
+    );
+    if (!rows[0]?.last_nav) return null;
+    const stored = typeof rows[0].last_nav === 'string'
+      ? JSON.parse(rows[0].last_nav)
+      : rows[0].last_nav;
+    return this.deserializeNav(stored) as VaultNAVResult;
+  }
+
+  async setLastNav(vaultId: string, result: VaultNAVResult): Promise<void> {
+    const pool = await this.getPool();
+    const serialized = JSON.stringify(result, (_key, value: unknown) =>
+      typeof value === 'bigint' ? { __navBigInt: value.toString() } : value
+    );
+    await pool.query(
+      `INSERT INTO nav_oracle_state (vault_id, nonce, last_nav, last_nav_timestamp)
+       VALUES ($1, 0, $2::jsonb, $3)
+       ON CONFLICT (vault_id)
+       DO UPDATE SET
+         last_nav = EXCLUDED.last_nav,
+         last_nav_timestamp = EXCLUDED.last_nav_timestamp,
+         updated_at = NOW()
+       WHERE nav_oracle_state.last_nav_timestamp IS NULL
+          OR nav_oracle_state.last_nav_timestamp <= EXCLUDED.last_nav_timestamp`,
+      [vaultId, serialized, result.timestamp]
+    );
+  }
+
+  private toSafeNonce(value: string | number): number {
+    const nonce = Number(value);
+    if (!Number.isSafeInteger(nonce) || nonce < 0) {
+      throw new Error(`Stored NAV nonce is outside the safe integer range: ${value}`);
+    }
+    return nonce;
+  }
+
+  private deserializeNav(value: unknown): unknown {
+    if (Array.isArray(value)) return value.map((entry) => this.deserializeNav(entry));
+    if (!value || typeof value !== 'object') return value;
+    const object = value as Record<string, unknown>;
+    if (
+      Object.keys(object).length === 1 &&
+      typeof object.__navBigInt === 'string'
+    ) {
+      return BigInt(object.__navBigInt);
+    }
+    return Object.fromEntries(
+      Object.entries(object).map(([key, entry]) => [key, this.deserializeNav(entry)])
+    );
+  }
+}
+
+// ─────────────────────────────────────────────────────────────
+// Service
+// ─────────────────────────────────────────────────────────────
+
+export class NavOracleService {
+  private store: NavOracleStore;
+  private wallet: Wallet | null = null;
+  private signerAddress: string;
+  private minPricedValueRatio: number;
+  private maxNavJumpPct: number;
+  private yieldCache = new Map<
+    string,
+    { apy: number; protocol: string; at: number }
+  >();
+  private timer: ReturnType<typeof setInterval> | null = null;
+  private listVaultsForUpdate?: NavOracleOptions['listVaultsForUpdate'];
+  private destroyed = false;
+
+  constructor(options: NavOracleOptions = {}) {
+    this.store = options.store ?? new InMemoryNavOracleStore();
+    this.minPricedValueRatio =
+      options.minPricedValueRatio ?? DEFAULTS.minPricedValueRatio;
+    this.maxNavJumpPct = options.maxNavJumpPct ?? DEFAULTS.maxNavJumpPct;
+    this.listVaultsForUpdate = options.listVaultsForUpdate;
+
+    const key =
+      options.signer ??
+      process.env.NAV_ORACLE_SIGNER_KEY ??
+      process.env.NAV_ORACLE_PRIVATE_KEY;
+
+    if (key) {
+      this.wallet =
+        typeof key === 'string' ? new Wallet(key) : (key as Wallet);
+      this.signerAddress =
+        options.signerAddress || this.wallet.address;
+    } else {
+      this.signerAddress =
+        options.signerAddress ||
+        process.env.NAV_ORACLE_SIGNER_ADDRESS ||
+        '';
+      logger.warn('[NavOracle] No signer configured — signatures disabled');
+    }
+  }
 
   async initialize(): Promise<void> {
-    logger.info('[NavOracle] Initializing NAV Oracle Service with production integrations');
-
-    this.signerAddress = process.env.NAV_ORACLE_SIGNER_ADDRESS || '0x0';
-    this.signerPrivateKey = process.env.NAV_ORACLE_SIGNER_KEY || '';
-
-    if (!this.signerPrivateKey) {
-      logger.warn('[NavOracle] No signer key configured - signatures unavailable');
-    }
-
-    this.startAutomatedUpdates();
-    logger.info('[NavOracle] Initialization complete');
+    if (this.destroyed) throw new Error('NavOracleService destroyed');
+    logger.info('[NavOracle] Initialized', {
+      signer: this.signerAddress || null,
+      minPricedValueRatio: this.minPricedValueRatio,
+      maxNavJumpPct: this.maxNavJumpPct,
+    });
   }
 
-  private startAutomatedUpdates(): void {
-    if (this.updateInterval) {
-      clearInterval(this.updateInterval);
+  startScheduler(): void {
+    if (this.timer) clearInterval(this.timer);
+    if (!this.listVaultsForUpdate) {
+      logger.warn(
+        '[NavOracle] Scheduler not started — provide listVaultsForUpdate'
+      );
+      return;
     }
 
-    this.updateInterval = setInterval(async () => {
-      try {
-        logger.info('[NavOracle] Running scheduled NAV updates');
-      } catch (error) {
-        logger.error('[NavOracle] Scheduled update failed:', error);
+    this.timer = setInterval(() => {
+      void this.runScheduledUpdates();
+    }, DEFAULTS.scheduledIntervalMs);
+
+    if (this.timer.unref) this.timer.unref();
+    logger.info('[NavOracle] Scheduler started');
+  }
+
+  private async runScheduledUpdates(): Promise<void> {
+    if (!this.listVaultsForUpdate) return;
+    try {
+      const vaults = await this.listVaultsForUpdate();
+      for (const v of vaults) {
+        try {
+          await this.calculateVaultNAV(
+            v.vaultId,
+            v.chain,
+            v.holdings
+          );
+        } catch (err) {
+          logger.error('[NavOracle] Scheduled NAV failed', {
+            vaultId: v.vaultId,
+            error: err instanceof Error ? err.message : String(err),
+          });
+        }
       }
-    }, 60 * 60 * 1000);
+    } catch (err) {
+      logger.error('[NavOracle] Scheduler tick failed', {
+        error: err instanceof Error ? err.message : String(err),
+      });
+    }
   }
+
+  // ── Core calculation ───────────────────────────────────────
 
   async calculateVaultNAV(
-    vaultAddress: string,
+    vaultId: string,
     chain: SupportedChain,
-    holdings: VaultHolding[]
+    holdings: VaultHolding[],
+    options?: { requireFullPricing?: boolean }
   ): Promise<VaultNAVResult> {
-    const startTime = Date.now();
-    logger.info(`[NavOracle] Calculating NAV for vault ${vaultAddress} on ${chain}`);
+    const start = Date.now();
+    const requireFull = options?.requireFullPricing === true;
 
-    let totalValueUsd = 0;
-    const breakdown = new Map<string, NavComponent>();
+    if (!holdings.length) {
+      throw new Error(`No holdings provided for vault ${vaultId}`);
+    }
+
+    const breakdown: NavComponent[] = [];
+    const unpriced: UnpricedHolding[] = [];
     const sources = new Set<string>();
-    const errors: string[] = [];
+    let navScaled = 0n;
 
     for (const holding of holdings) {
-      try {
-        const assetMetadata = symbolUniverse.getAsset(holding.symbol);
-        if (!assetMetadata) {
-          errors.push(`Asset ${holding.symbol} not found in Symbol Universe`);
-          continue;
-        }
-
-        const deployments = symbolUniverse.getDeployments(holding.symbol);
-        if (deployments.length === 0) {
-          errors.push(`${holding.symbol} has no deployment on ${chain}`);
-          continue;
-        }
-
-        let deployment = deployments.find(d => d.chain === chain);
-        if (!deployment) {
-          deployment = symbolUniverse.getDeploymentOnChain(holding.symbol, chain);
-          if (!deployment) {
-            errors.push(`${holding.symbol} not deployed on ${chain}`);
-            continue;
-          }
-        }
-        if (deployment.contractAddress.toLowerCase() !== holding.tokenAddress.toLowerCase()) {
-          logger.warn(
-            `[NavOracle] Address mismatch for ${holding.symbol}: ` +
-            `Symbol Universe: ${deployment.contractAddress}, Vault: ${holding.tokenAddress}`
-          );
-        }
-
-        const priceData = await this.getPriceForAsset(holding.symbol);
-        for (const source of priceData.sources) {
-          sources.add(source);
-        }
-
-        const yieldData = await this.getYieldForAsset(holding.symbol, chain);
-
-        const balanceDecimal = Number(holding.balance) / Math.pow(10, holding.decimals);
-        const valueUsd = balanceDecimal * priceData.usd;
-        totalValueUsd += valueUsd;
-
-        breakdown.set(holding.symbol, {
+      const priced = await this.tryPriceHolding(holding, chain);
+      if (priced.ok) {
+        breakdown.push(priced.component);
+        navScaled += priced.component.valueUsdScaled;
+        for (const s of priced.component.sources) sources.add(s);
+      } else {
+        unpriced.push({
           symbol: holding.symbol,
-          balance: balanceDecimal.toString(),
-          priceUsd: priceData.usd,
-          valueUsd,
-          yieldApy: yieldData?.apy,
-          riskTier: assetMetadata.tier,
-          priceConfidence: priceData.confidence,
-          sources: priceData.sources,
-          lastUpdate: priceData.updateTime,
+          balanceRaw: holding.balance.toString(),
+          reason: priced.reason,
         });
-
-        logger.debug(
-          `[NavOracle] ${holding.symbol}: $${valueUsd.toFixed(2)} ` +
-          `(price: $${priceData.usd}, confidence: ${priceData.confidence.toFixed(1)}%)`
-        );
-      } catch (error) {
-        const errMsg = `Error pricing ${holding.symbol}: ${error instanceof Error ? error.message : String(error)}`;
-        errors.push(errMsg);
-        logger.error(`[NavOracle] ${errMsg}`);
       }
     }
 
-    if (errors.length > 0) {
-      logger.warn(`[NavOracle] ${errors.length} holdings had pricing errors:`, errors);
+    const totalAttempts = holdings.length;
+    const pricedCount = breakdown.length;
+    // Value ratio: if nothing priced, 0; else by count as proxy when unpriced have unknown value
+    const pricedValueRatio =
+      totalAttempts === 0 ? 0 : pricedCount / totalAttempts;
+
+    if (requireFull && unpriced.length > 0) {
+      throw new Error(
+        `Full pricing required but unpriced: ${unpriced
+          .map((u) => `${u.symbol} (${u.reason})`)
+          .join('; ')}`
+      );
     }
 
-    const riskMetrics = await this.calculateRiskMetrics(breakdown, chain);
-    const confidenceScore = this.calculateConfidenceScore(breakdown);
-    const calculationDurationMs = Date.now() - startTime;
+    if (pricedValueRatio < this.minPricedValueRatio) {
+      throw new Error(
+        `NAV pricing coverage ${(pricedValueRatio * 100).toFixed(1)}% ` +
+          `below minimum ${(this.minPricedValueRatio * 100).toFixed(0)}% ` +
+          `for vault ${vaultId}. Unpriced: ${unpriced
+            .map((u) => u.symbol)
+            .join(', ')}`
+      );
+    }
+
+    if (breakdown.length === 0) {
+      throw new Error(`No holdings could be priced for vault ${vaultId}`);
+    }
+
+    const riskMetrics = this.calculateRiskMetrics(breakdown);
+    const confidenceScore = this.calculateConfidenceScore(
+      breakdown,
+      pricedValueRatio
+    );
 
     const result: VaultNAVResult = {
-      vaultId: vaultAddress,
-      nav: BigInt(Math.floor(totalValueUsd * 1e8)),
-      navUsd: totalValueUsd,
+      vaultId,
+      chain,
+      navScaled,
+      navUsd: scaledToUsdNumber(navScaled),
       breakdown,
+      unpriced,
+      pricedValueRatio,
       riskMetrics,
       confidenceScore,
       timestamp: Date.now(),
       sources: Array.from(sources),
-      calculationDurationMs,
+      calculationDurationMs: Date.now() - start,
+      partial: unpriced.length > 0,
     };
 
-    this.lastUpdates.set(vaultAddress, result);
+    await this.store.setLastNav(vaultId, result);
 
-    logger.info(
-      `[NavOracle] NAV calculated: $${totalValueUsd.toFixed(2)} ` +
-      `(confidence: ${confidenceScore.toFixed(2)}%, duration: ${calculationDurationMs}ms)`
-    );
+    logger.info('[NavOracle] NAV calculated', {
+      vaultId,
+      navUsd: result.navUsd,
+      confidence: confidenceScore,
+      partial: result.partial,
+      unpriced: unpriced.length,
+      ms: result.calculationDurationMs,
+    });
 
     return result;
   }
 
-  /**
-   * Get USD price for a single asset via the shared priceOracle.
-   *
-   * This replaces the old getMultiSourcePrice() stack (CoinGecko + Binance +
-   * DEX Screener run independently in this file). priceOracle already
-   * handles multi-source fallback (Gateway Agent -> CoinGecko), Redis-backed
-   * cross-instance deduplication, and rate-limit backoff internally, so none
-   * of that needs to be duplicated here.
-   *
-   * Confidence is no longer computed from cross-source price variance
-   * (there's only one source now, from this file's point of view).
-   * priceOracle returning a value at all already implies it passed through
-   * its own fallback chain successfully, so a found price is treated as
-   * full confidence. If priceOracle exposes a confidence/variance signal in
-   * the future, wire it through here instead of the flat 100.
-   */
-  private async getPriceForAsset(symbol: string): Promise<PriceData> {
-    const price = await priceOracle.getPrice(symbol);
-
-    if (!price || !(price.priceUsd > 0)) {
-      throw new Error(`No price data available for ${symbol} via priceOracle`);
-    }
-
-    return {
-      usd: price.priceUsd,
-      sources: ['priceOracle'],
-      confidence: 100,
-      sourceBreakdown: new Map([['priceOracle', price.priceUsd]]),
-      updateTime: price.lastUpdated.getTime(),
-    };
-  }
-
-  private async getYieldForAsset(
-    symbol: string,
+  private async tryPriceHolding(
+    holding: VaultHolding,
     chain: SupportedChain
-  ): Promise<YieldData | null> {
+  ): Promise<
+    | { ok: true; component: NavComponent }
+    | { ok: false; reason: string }
+  > {
     try {
-      const cacheKey = `${symbol}:${chain}`;
-      const cached = this.yieldCache.get(cacheKey);
-
-      if (cached && Date.now() - cached.timestamp < 60 * 60 * 1000) {
-        return cached.data;
+      if (holding.decimals < 0 || holding.decimals > 36) {
+        return { ok: false, reason: `invalid decimals ${holding.decimals}` };
+      }
+      if (holding.balance < 0n) {
+        return { ok: false, reason: 'negative balance' };
       }
 
-      const yieldProtocol = this.identifyYieldProtocol(symbol);
-      if (!yieldProtocol) return null;
+      const assetMetadata = symbolUniverse.getAsset(holding.symbol);
+      if (!assetMetadata) {
+        return {
+          ok: false,
+          reason: 'symbol not in Symbol Universe',
+        };
+      }
 
+      const deployment =
+        symbolUniverse.getDeploymentOnChain(holding.symbol, chain) ||
+        symbolUniverse
+          .getDeployments(holding.symbol)
+          .find((d) => d.chain === chain);
+
+      if (!deployment) {
+        return { ok: false, reason: `not deployed on ${chain}` };
+      }
+
+      if (
+        deployment.contractAddress.toLowerCase() !==
+        holding.tokenAddress.toLowerCase()
+      ) {
+        return {
+          ok: false,
+          reason: `address mismatch universe=${deployment.contractAddress} vault=${holding.tokenAddress}`,
+        };
+      }
+
+      const valuation = await priceOracle.getValuationPrice(holding.symbol);
+      const markUsd = valuation?.haircutPriceUsd ?? valuation?.priceUsd;
+
+      if (
+        !valuation ||
+        markUsd === undefined ||
+        !Number.isFinite(markUsd) ||
+        !(markUsd > 0)
+      ) {
+        return { ok: false, reason: 'no reliable valuation price' };
+      }
+
+      const valueScaled = valueUsdScaled(
+        holding.balance,
+        holding.decimals,
+        markUsd
+      );
+
+      const confidence =
+        valuation.confidence === 'high'
+          ? 95
+          : valuation.confidence === 'medium'
+            ? 75
+            : 55;
+
+      const yieldApy = await this.getYieldApy(holding.symbol, chain);
+
+      const component: NavComponent = {
+        symbol: holding.symbol,
+        balance: formatUnits(holding.balance, holding.decimals),
+        balanceRaw: holding.balance.toString(),
+        priceUsd: markUsd,
+        valueUsdScaled: valueScaled,
+        valueUsd: scaledToUsdNumber(valueScaled),
+        yieldApy: yieldApy ?? undefined,
+        riskTier: assetMetadata.tier,
+        priceConfidence: confidence,
+        sources: valuation.sourcesUsed.map((s) => s.source),
+        lastUpdate: valuation.asOf.getTime(),
+        priced: true,
+      };
+
+      return { ok: true, component };
+    } catch (err) {
+      return {
+        ok: false,
+        reason: err instanceof Error ? err.message : String(err),
+      };
+    }
+  }
+
+  // ── Yield (non-blocking enrichment) ────────────────────────
+
+  private async getYieldApy(
+    symbol: string,
+    chain: SupportedChain
+  ): Promise<number | null> {
+    const cacheKey = `${symbol}:${chain}`;
+    const cached = this.yieldCache.get(cacheKey);
+    if (cached && Date.now() - cached.at < DEFAULTS.yieldCacheTtlMs) {
+      return cached.apy;
+    }
+
+    try {
       const strategies = await strategyDashboardService.listStrategies({
         skip: 0,
-        limit: 100,
-        filters: {
-          assets: [symbol],
-        },
+        limit: 50,
+        filters: { assets: [symbol] },
         sortBy: 'ytdReturn',
       });
 
-      if (strategies && strategies.length > 0) {
-        let totalApy = 0;
-        let totalWeight = 0;
-
-        for (const strategy of strategies) {
-          if (strategy.ytdReturn && strategy.aum) {
-            const strategyApy = strategy.ytdReturn;
-            const weight = strategy.aum || 1;
-            totalApy += strategyApy * weight;
-            totalWeight += weight;
+      if (strategies?.length) {
+        let num = 0;
+        let den = 0;
+        for (const s of strategies) {
+          if (s.ytdReturn != null && s.aum) {
+            num += s.ytdReturn * s.aum;
+            den += s.aum;
           }
         }
-
-        if (totalWeight > 0) {
-          const yieldData: YieldData = {
-            symbol,
-            apy: totalApy / totalWeight,
-            source: 'strategy_performance',
-            protocol: yieldProtocol,
-            riskLevel: 'medium',
-            updateTime: Date.now(),
-          };
-
+        if (den > 0) {
+          const apy = num / den;
           this.yieldCache.set(cacheKey, {
-            data: yieldData,
-            timestamp: Date.now(),
+            apy,
+            protocol: 'strategy_performance',
+            at: Date.now(),
           });
-
-          logger.debug(`[NavOracle] Yield for ${symbol}: ${yieldData.apy.toFixed(2)}% APY`);
-          return yieldData;
+          return apy;
         }
       }
-
-      const externalYield = await this.getYieldFromProtocol(symbol, yieldProtocol);
-      if (externalYield) {
-        this.yieldCache.set(cacheKey, {
-          data: externalYield,
-          timestamp: Date.now(),
-        });
-        return externalYield;
-      }
-
-      return null;
-    } catch (error) {
-      logger.debug(`[NavOracle] Yield fetch failed for ${symbol}:`, error instanceof Error ? error.message : '');
-      return null;
+    } catch {
+      /* optional */
     }
+
+    return null;
   }
 
-  private identifyYieldProtocol(symbol: string): string | null {
-    const yieldAssets: { [key: string]: string } = {
-      'stETH': 'lido',
-      'aUSDC': 'aave',
-      'aDAI': 'aave',
-      'aETH': 'aave',
-      'cUSDC': 'compound',
-      'cDAI': 'compound',
-      'yvUSDC': 'yearn',
-      'yvDAI': 'yearn',
-    };
+  // ── Risk ───────────────────────────────────────────────────
 
-    return yieldAssets[symbol] || null;
-  }
+  private calculateRiskMetrics(breakdown: NavComponent[]): RiskMetrics {
+    const total = breakdown.reduce((s, c) => s + c.valueUsdScaled, 0n);
+    const totalNum = total > 0n ? Number(total) : 1;
 
-  private async getYieldFromProtocol(symbol: string, protocol: string): Promise<YieldData | null> {
-    try {
-      switch (protocol.toLowerCase()) {
-        case 'aave':
-          return await this.getAaveYield(symbol);
-        case 'compound':
-          return await this.getCompoundYield(symbol);
-        case 'lido':
-          return await this.getLidoYield(symbol);
-        case 'yearn':
-          return await this.getYearnYield(symbol);
-        default:
-          return null;
-      }
-    } catch (error) {
-      logger.debug(`[NavOracle] Protocol yield fetch failed for ${symbol}:`, error instanceof Error ? error.message : '');
-      return null;
-    }
-  }
+    const tierValue = new Map<string, number>();
+    let hhi = 0;
 
-  private async getAaveYield(symbol: string): Promise<YieldData | null> {
-    try {
-      const axios = (await import('axios')).default;
-      const response = await axios.get(
-        'https://api.aave.com/data/rates.json',
-        { timeout: 5000 }
+    for (const c of breakdown) {
+      const share = Number(c.valueUsdScaled) / totalNum;
+      hhi += share * share;
+      tierValue.set(
+        c.riskTier,
+        (tierValue.get(c.riskTier) || 0) + Number(c.valueUsdScaled)
       );
-
-      const asset = response.data.find((a: any) => a.symbol === symbol.replace('a', ''));
-      if (asset) {
-        return {
-          symbol,
-          apy: parseFloat(asset.supplyAPY) * 100,
-          source: 'aave',
-          protocol: 'aave',
-          riskLevel: 'low',
-          updateTime: Date.now(),
-        };
-      }
-      return null;
-    } catch (error) {
-      return null;
-    }
-  }
-
-  private async getCompoundYield(symbol: string): Promise<YieldData | null> {
-    try {
-      const axios = (await import('axios')).default;
-      const response = await axios.get(
-        'https://api.compound.finance/api/v3/markets',
-        { timeout: 5000 }
-      );
-
-      const market = response.data.find((m: any) => m.symbol === symbol);
-      if (market) {
-        return {
-          symbol,
-          apy: parseFloat(market.supplyApy) * 100,
-          source: 'compound',
-          protocol: 'compound',
-          riskLevel: 'low',
-          updateTime: Date.now(),
-        };
-      }
-      return null;
-    } catch (error) {
-      return null;
-    }
-  }
-
-  private async getLidoYield(symbol: string): Promise<YieldData | null> {
-    try {
-      return {
-        symbol,
-        apy: 3.5,
-        source: 'lido',
-        protocol: 'lido',
-        riskLevel: 'low',
-        updateTime: Date.now(),
-      };
-    } catch (error) {
-      return null;
-    }
-  }
-
-  private async getYearnYield(symbol: string): Promise<YieldData | null> {
-    try {
-      const axios = (await import('axios')).default;
-      const response = await axios.get(
-        'https://yearn.finance/api/v1/chains/1/vaults/all',
-        { timeout: 5000 }
-      );
-
-      const vault = response.data.find((v: any) => v.symbol === symbol);
-      if (vault) {
-        return {
-          symbol,
-          apy: vault.apy?.net_apy || 0,
-          source: 'yearn',
-          protocol: 'yearn',
-          riskLevel: 'medium',
-          updateTime: Date.now(),
-        };
-      }
-      return null;
-    } catch (error) {
-      return null;
-    }
-  }
-
-  private async calculateRiskMetrics(
-    breakdown: Map<string, NavComponent>,
-    chain: SupportedChain
-  ): Promise<RiskMetrics> {
-    const tierDistribution = new Map<string, number>();
-    let totalValue = 0;
-    const weights: number[] = [];
-    const symbols: string[] = [];
-
-    for (const component of breakdown.values()) {
-      totalValue += component.valueUsd;
-      symbols.push(component.symbol);
-      const tier = component.riskTier;
-      const current = tierDistribution.get(tier) || 0;
-      tierDistribution.set(tier, current + component.valueUsd);
-      weights.push(component.valueUsd / totalValue);
     }
 
-    for (const [tier, value] of tierDistribution.entries()) {
-      tierDistribution.set(tier, (value / totalValue) * 100);
+    const n = Math.max(breakdown.length, 1);
+    const minHhi = 1 / n;
+    const diversificationScore =
+      total === 0n
+        ? 0
+        : Math.max(
+            1,
+            Math.min(
+              10,
+              Math.round(
+                (1 + ((1 - hhi) / (1 - minHhi || 1)) * 9) * 2
+              ) / 2
+            )
+          );
+
+    const tierDistributionPct: Record<string, number> = {};
+    for (const [tier, v] of tierValue) {
+      tierDistributionPct[tier] = (v / totalNum) * 100;
     }
 
-    let concentrationRisk = 0;
-    for (const weight of weights) {
-      concentrationRisk += weight * weight;
-    }
-    const n = weights.length || 1;
-    concentrationRisk = Math.min(concentrationRisk / (1 / n), 1);
-
-    const yieldExposure = Array.from(breakdown.values()).reduce(
-      (sum, c) => sum + (c.yieldApy || 0),
+    const yieldExposureApySum = breakdown.reduce(
+      (s, c) => s + (c.yieldApy || 0),
       0
     );
 
-    const liquidationRisk = await this.assessLiquidationRisk(symbols, breakdown);
-    const correlationRisk = this.calculateCorrelationRisk(symbols);
+    const tierWeights: Record<string, number> = {
+      tier_1: 0.05,
+      tier_2: 0.15,
+      tier_3: 0.35,
+      tier_4: 0.65,
+    };
+
+    let liq = 0;
+    for (const c of breakdown) {
+      const w = tierWeights[c.riskTier] ?? 0.35;
+      liq += w * (Number(c.valueUsdScaled) / totalNum);
+    }
+    const liquidationRiskLevel: RiskMetrics['liquidationRiskLevel'] =
+      liq < 0.2 ? 'low' : liq < 0.5 ? 'medium' : 'high';
+
+    const categories = breakdown.map((c) => this.assetCategory(c.symbol));
+    const unique = new Set(categories).size;
+    const correlationRisk =
+      categories.length <= 1
+        ? 0
+        : (categories.length - unique) / categories.length;
 
     return {
-      concentrationRisk,
-      tierDistribution,
-      yieldExposure,
-      liquidationRiskScore: liquidationRisk.score,
-      liquidationRiskLevel: liquidationRisk.level,
+      concentrationHhi: hhi,
+      diversificationScore,
+      tierDistributionPct,
+      yieldExposureApySum,
+      liquidationRiskScore: liq,
+      liquidationRiskLevel,
       correlationRisk,
     };
   }
 
-  private async assessLiquidationRisk(
-    symbols: string[],
-    breakdown: Map<string, NavComponent>
-  ): Promise<{ score: number; level: 'low' | 'medium' | 'high' }> {
-    let riskScore = 0;
-    const tierWeights: { [key: string]: number } = {
-      'tier_1': 0.05,
-      'tier_2': 0.15,
-      'tier_3': 0.35,
-      'tier_4': 0.65,
+  private assetCategory(symbol: string): string {
+    const map: Record<string, string> = {
+      BTC: 'layer1',
+      ETH: 'layer1',
+      SOL: 'layer1',
+      CELO: 'layer1',
+      USDC: 'stablecoin',
+      USDT: 'stablecoin',
+      DAI: 'stablecoin',
+      CUSD: 'stablecoin',
+      CEUR: 'stablecoin',
     };
-
-    const totalValue = Array.from(breakdown.values())
-      .reduce((sum, c) => sum + c.valueUsd, 0) || 1;
-
-    for (const symbol of symbols) {
-      const component = breakdown.get(symbol);
-      if (component) {
-        const tierWeight = tierWeights[component.riskTier] || 0.35;
-        riskScore += tierWeight * (component.valueUsd / totalValue);
-      }
-    }
-
-    const level = riskScore < 0.2 ? 'low' : riskScore < 0.5 ? 'medium' : 'high';
-    return { score: riskScore, level };
+    return map[symbol.toUpperCase()] || 'other';
   }
 
-  private calculateCorrelationRisk(symbols: string[]): number {
-    const assetCategories: { [key: string]: string } = {
-      'BTC': 'layer1',
-      'ETH': 'layer1',
-      'SOL': 'layer1',
-      'USDC': 'stablecoin',
-      'DAI': 'stablecoin',
-      'USDT': 'stablecoin',
-      'AAVE': 'defi',
-      'COMPOUND': 'defi',
-    };
-
-    const categories = symbols.map(s => assetCategories[s] || 'other');
-    const uniqueCategories = new Set(categories);
-
-    return (categories.length - uniqueCategories.size) / (categories.length || 1);
+  private calculateConfidenceScore(
+    breakdown: NavComponent[],
+    pricedValueRatio: number
+  ): number {
+    if (!breakdown.length) return 0;
+    const avg =
+      breakdown.reduce((s, c) => s + c.priceConfidence, 0) / breakdown.length;
+    const sourceCount = new Set(breakdown.flatMap((c) => c.sources)).size;
+    const sourceBonus = Math.min(Math.max(sourceCount - 1, 0) * 5, 15);
+    const coveragePenalty = (1 - pricedValueRatio) * 30;
+    return Math.max(
+      0,
+      Math.min(100, Math.round(avg + sourceBonus - coveragePenalty))
+    );
   }
 
-  private calculateConfidenceScore(breakdown: Map<string, NavComponent>): number {
-    if (breakdown.size === 0) return 0;
+  // ── Signing (EIP-191) ──────────────────────────────────────
 
-    const scores = Array.from(breakdown.values()).map(c => c.priceConfidence);
-    const avgConfidence = scores.reduce((a, b) => a + b, 0) / scores.length;
-
-    const sourceCount = new Set(
-      Array.from(breakdown.values()).flatMap(c => c.sources)
-    ).size;
-    const sourceBonus = Math.min((sourceCount - 1) * 5, 20);
-
-    return Math.min(avgConfidence + sourceBonus, 100);
-  }
-
+  /**
+   * Message format (deterministic):
+   *   nav_update:<vaultId>:<navScaled>:<nonce>:<timestamp>
+   * Signed with ethers personal_sign (EIP-191).
+   */
   async generateNAVSignature(
     vaultId: string,
-    nav: bigint
+    navScaled: bigint
   ): Promise<NavUpdateSignature> {
-    const nonce = (this.nonces.get(vaultId) || 0) + 1;
-    this.nonces.set(vaultId, nonce);
-
-    const timestamp = Math.floor(Date.now() / 1000);
-
-    if (!this.signerPrivateKey) {
-      logger.error('[NavOracle] No signer key configured');
-      throw new Error('NAV_ORACLE_SIGNER_KEY not configured');
+    if (!this.wallet) {
+      throw new Error('NAV oracle signer not configured');
     }
 
+    const nonce = await this.store.incrementNonce(vaultId);
+    const timestamp = Math.floor(Date.now() / 1000);
+    const message = `nav_update:${vaultId}:${navScaled.toString()}:${nonce}:${timestamp}`;
+
+    const signature = await this.wallet.signMessage(message);
+    const messageHash = hashMessage(message);
+
+    return {
+      vaultId,
+      navScaled: navScaled.toString(),
+      nonce,
+      timestamp,
+      signature,
+      signer: this.wallet.address,
+      messageHash,
+    };
+  }
+
+  /** Offline verify helper for tests / relayers */
+  static verifyNAVSignature(
+    payload: Omit<NavUpdateSignature, 'signature' | 'signer' | 'messageHash'> & {
+      signature: string;
+    },
+    expectedSigner: string
+  ): boolean {
+    const message = `nav_update:${payload.vaultId}:${payload.navScaled}:${payload.nonce}:${payload.timestamp}`;
     try {
-      const messageData = `${vaultId}:${nav.toString()}:${nonce}:${timestamp}`;
-      const messageHash = crypto
-        .createHash('sha256')
-        .update(messageData)
-        .digest();
-
-      const signer = crypto.createPrivateKey({
-        key: this.signerPrivateKey,
-        format: 'pem',
-      });
-
-      const signature = crypto
-        .sign('sha256', messageHash, signer)
-        .toString('hex');
-
-      return {
-        vaultId,
-        nav: nav.toString(),
-        nonce,
-        timestamp,
-        signature: '0x' + signature,
-        signer: this.signerAddress,
-      };
-    } catch (error) {
-      logger.error('[NavOracle] Signature generation failed:', error);
-      throw error;
+      const recovered = verifyMessage(message, payload.signature);
+      return recovered.toLowerCase() === expectedSigner.toLowerCase();
+    } catch {
+      return false;
     }
   }
+
+  // ── Circuit breaker ────────────────────────────────────────
 
   async validateNAVUpdate(
     vaultId: string,
-    newNav: bigint
+    newNavScaled: bigint
   ): Promise<{ valid: boolean; reason?: string; changePercent: number }> {
-    const lastUpdate = this.lastUpdates.get(vaultId);
-    if (!lastUpdate) {
+    const last = await this.store.getLastNav(vaultId);
+    if (!last || last.navScaled === 0n) {
       return { valid: true, changePercent: 0 };
     }
 
-    const lastNavNumber = Number(lastUpdate.nav) / 1e8;
-    const newNavNumber = Number(newNav) / 1e8;
+    const prev = Number(last.navScaled);
+    const next = Number(newNavScaled);
+    if (!(prev > 0)) {
+      return { valid: true, changePercent: 0 };
+    }
 
-    const changePercent =
-      Math.abs((newNavNumber - lastNavNumber) / lastNavNumber) * 100;
+    const changePercent = (Math.abs(next - prev) / prev) * 100;
 
-    if (changePercent > 15) {
+    if (changePercent > this.maxNavJumpPct) {
       return {
         valid: false,
-        reason: `NAV change ${changePercent.toFixed(2)}% exceeds 15% threshold`,
+        reason: `NAV change ${changePercent.toFixed(2)}% exceeds ${this.maxNavJumpPct}% threshold`,
         changePercent,
       };
     }
 
-    if (changePercent > 10) {
-      logger.warn(
-        `[NavOracle] Large NAV change detected: ${changePercent.toFixed(2)}%`
-      );
+    if (changePercent > DEFAULTS.warnNavJumpPct) {
+      logger.warn('[NavOracle] Large NAV change', {
+        vaultId,
+        changePercent,
+      });
     }
 
     return { valid: true, changePercent };
   }
 
-  getLastNAV(vaultId: string): VaultNAVResult | undefined {
-    return this.lastUpdates.get(vaultId);
+  /**
+   * Calculate → validate → sign pipeline for on-chain submission.
+   */
+  async buildSignedNavUpdate(
+    vaultId: string,
+    chain: SupportedChain,
+    holdings: VaultHolding[]
+  ): Promise<{ nav: VaultNAVResult; signature: NavUpdateSignature }> {
+    const nav = await this.calculateVaultNAV(vaultId, chain, holdings);
+    const check = await this.validateNAVUpdate(vaultId, nav.navScaled);
+    if (!check.valid) {
+      throw new Error(check.reason || 'NAV update rejected by circuit breaker');
+    }
+    const signature = await this.generateNAVSignature(vaultId, nav.navScaled);
+    return { nav, signature };
   }
 
-  getNonce(vaultId: string): number {
-    return this.nonces.get(vaultId) || 0;
+  async getLastNAV(vaultId: string): Promise<VaultNAVResult | null> {
+    return this.store.getLastNav(vaultId);
+  }
+
+  async getNonce(vaultId: string): Promise<number> {
+    return this.store.getNonce(vaultId);
   }
 
   destroy(): void {
-    if (this.updateInterval) {
-      clearInterval(this.updateInterval);
+    this.destroyed = true;
+    if (this.timer) {
+      clearInterval(this.timer);
+      this.timer = null;
     }
-    this.lastUpdates.clear();
-    this.nonces.clear();
     this.yieldCache.clear();
   }
 }
 
-export { NavOracleService };
-export const navOracleService = new NavOracleService();
+export const navOracleService = new NavOracleService({
+  store: new PostgresNavOracleStore(),
+});

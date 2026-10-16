@@ -47,6 +47,7 @@ export interface CachedPrice {
   ask: number;
   last: number;
   volume: number;
+  percentage?: number;
   timestamp: number;
 }
 
@@ -460,6 +461,9 @@ export class CCXTAggregator {
               ask: ticker['ask'] || 0,
               last: ticker['last'] || 0,
               volume,                            // FIX #6
+              percentage: typeof ticker['percentage'] === 'number'
+                ? ticker['percentage']
+                : undefined,
               timestamp: ticker['timestamp'] || Date.now(),
             };
 
@@ -799,6 +803,56 @@ export class CCXTAggregator {
         throw error;
       }
     });
+  }
+
+  async fetchFundingRate(symbol: string, exchangeName: string): Promise<Record<string, unknown>> {
+    const { exchange, formattedSymbol } = await this.getFuturesExchange(exchangeName, symbol, 'fetchFundingRate');
+    return this.privateLimiter(() => exchange.fetchFundingRate(formattedSymbol)) as Promise<Record<string, unknown>>;
+  }
+
+  async fetchFundingRateHistory(symbol: string, exchangeName: string, since: number, limit = 100): Promise<Array<Record<string, unknown>>> {
+    const { exchange, formattedSymbol } = await this.getFuturesExchange(exchangeName, symbol, 'fetchFundingRateHistory');
+    return this.privateLimiter(() => exchange.fetchFundingRateHistory(formattedSymbol, since, limit)) as Promise<Array<Record<string, unknown>>>;
+  }
+
+  async fetchLiquidations(symbol: string, exchangeName: string, since: number, limit = 100): Promise<Array<Record<string, unknown>>> {
+    const { exchange, formattedSymbol } = await this.getFuturesExchange(exchangeName, symbol, 'fetchLiquidations');
+    return this.privateLimiter(() => exchange.fetchLiquidations(formattedSymbol, since, limit)) as Promise<Array<Record<string, unknown>>>;
+  }
+
+  async fetchOpenInterest(symbol: string, exchangeName: string): Promise<Record<string, unknown>> {
+    const { exchange, formattedSymbol } = await this.getFuturesExchange(exchangeName, symbol, 'fetchOpenInterest');
+    return this.privateLimiter(() => exchange.fetchOpenInterest(formattedSymbol)) as Promise<Record<string, unknown>>;
+  }
+
+  async fetchOpenInterestHistory(symbol: string, exchangeName: string, since: number, limit = 100): Promise<Array<Record<string, unknown>>> {
+    const { exchange, formattedSymbol } = await this.getFuturesExchange(exchangeName, symbol, 'fetchOpenInterestHistory');
+    return this.privateLimiter(() => exchange.fetchOpenInterestHistory(formattedSymbol, since, limit)) as Promise<Array<Record<string, unknown>>>;
+  }
+
+  async fetchTicker(symbol: string, exchangeName: string): Promise<CachedPrice> {
+    const ticker = await this.getTickerFromExchange(exchangeName, symbol);
+    if (!ticker || !Number.isFinite(ticker.last)) {
+      throw new Error(`No current ticker price available for ${symbol} on ${exchangeName}`);
+    }
+    return ticker;
+  }
+
+  private async getFuturesExchange(
+    exchangeName: string,
+    symbol: string,
+    capability: 'fetchFundingRate' | 'fetchFundingRateHistory' | 'fetchLiquidations' | 'fetchOpenInterest' | 'fetchOpenInterestHistory'
+  ): Promise<{ exchange: any; formattedSymbol: string }> {
+    const exchange = this.exchanges.get(exchangeName.toLowerCase());
+    if (!exchange) throw new Error(`Exchange ${exchangeName} is not initialized`);
+    const capabilityValue = exchange.has?.[capability];
+    if (capabilityValue !== true && capabilityValue !== 'emulated') {
+      throw new Error(`${exchangeName} does not support ${capability}`);
+    }
+    await this.ensureMarketsLoaded(exchangeName.toLowerCase());
+    const formattedSymbol = await this.formatSymbolForExchange(exchangeName.toLowerCase(), symbol);
+    if (!formattedSymbol) throw new Error(`Symbol ${symbol} is not listed on ${exchangeName}`);
+    return { exchange, formattedSymbol };
   }
 
   async fetchTrades(

@@ -194,7 +194,7 @@ class VolatilityMetricsService {
       const volatilityFactor = Math.min(volatility.volatilityIndex * 0.4, 40);
       
       // Liquidity factor: based on order book depth
-      const totalBidVolume = orderBook.bids.reduce((sum, bid) => sum + (bid[0] * bid[1]), 0);
+      const totalBidVolume = orderBook.bids.reduce((sum: number, bid: [number, number]) => sum + (bid[0] * bid[1]), 0);
       const liquidityFactor = Math.max(0, Math.min(30, 30 - (desiredOrderSize / totalBidVolume) * 100));
       
       // Spread factor: impact of bid-ask spread

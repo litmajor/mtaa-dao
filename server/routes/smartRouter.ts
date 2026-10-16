@@ -29,9 +29,9 @@ function handleError(res: Response, error: unknown, defaultMessage: string): Res
  * POST /api/smart-route
  * Calculate optimal trading route
  */
-router.post('/', async (req: Request, res: Response) => {
+router.post('/smart-route', async (req: Request, res: Response) => {
   try {
-    const { pair, amount, isMaker = false, userVolume30Day = 0 } = req.body;
+    const { pair, amount, side = 'buy', isMaker = false } = req.body;
 
     // Validation
     if (!pair || typeof pair !== 'string') {
@@ -49,13 +49,23 @@ router.post('/', async (req: Request, res: Response) => {
         example: 100000,
       });
     }
+    if (side !== 'buy' && side !== 'sell') {
+      return res.status(400).json({
+        success: false,
+        error: 'Invalid parameter: side (must be "buy" or "sell")',
+      });
+    }
 
     const smartRouter = SmartRouter.getInstance();
+    const user = (req as Request & {
+      user?: { id?: string; userId?: string; claims?: { sub?: string } };
+    }).user;
     const route = await smartRouter.calculateOptimalRoute(
       pair.toUpperCase(),
       amount,
+      side,
       Boolean(isMaker),
-      Math.max(0, Number(userVolume30Day) || 0)
+      user?.userId || user?.claims?.sub || user?.id
     );
 
     return res.json({
@@ -165,10 +175,14 @@ router.post('/execution-strategy', async (req: Request, res: Response) => {
     }
 
     const smartRouter = SmartRouter.getInstance();
+    const user = (req as Request & {
+      user?: { id?: string; userId?: string; claims?: { sub?: string } };
+    }).user;
     const strategy = await smartRouter.getExecutionStrategy(
       pair.toUpperCase(),
       amount,
-      side.toLowerCase() as 'buy' | 'sell'
+      side.toLowerCase() as 'buy' | 'sell',
+      user?.userId || user?.claims?.sub || user?.id
     );
 
     return res.json({
@@ -187,13 +201,33 @@ router.post('/execution-strategy', async (req: Request, res: Response) => {
  */
 router.get('/fees', (req: Request, res: Response) => {
   try {
-    const { pair, exchange, isMaker = 'false' } = req.query;
+    const { pair, exchange, isMaker = 'false', side = 'buy' } = req.query;
     const feeService = ExchangeFeeService.getInstance();
     const isMakerOrder = String(isMaker).toLowerCase() === 'true';
+    const tradeSide = String(side).toLowerCase();
+    const user = (req as Request & {
+      user?: { id?: string; userId?: string; claims?: { sub?: string } };
+    }).user;
+    const userId = user?.userId || user?.claims?.sub || user?.id;
+    if (tradeSide !== 'buy' && tradeSide !== 'sell') {
+      return res.status(400).json({
+        success: false,
+        error: 'Invalid parameter: side (must be "buy" or "sell")',
+      });
+    }
 
     if (exchange && typeof exchange === 'string') {
       const selectedPair = (pair as string) || 'BTC/USDT';
-      const fees = feeService.getFeeStructure(exchange, selectedPair);
+      const fees = feeService.resolveFees(exchange, selectedPair, tradeSide, {
+        isMaker: isMakerOrder,
+        userId,
+      });
+      if (!fees) {
+        return res.status(404).json({
+          success: false,
+          error: `No fee schedule configured for exchange: ${exchange}`,
+        });
+      }
 
       return res.json({
         success: true,
@@ -203,17 +237,26 @@ router.get('/fees', (req: Request, res: Response) => {
         summary: {
           maker: `${(fees.maker * 100).toFixed(3)}%`,
           taker: `${(fees.taker * 100).toFixed(3)}%`,
+          applied: `${(fees.feeRate * 100).toFixed(3)}%`,
         },
         timestamp: Date.now(),
       });
     }
 
     if (pair && typeof pair === 'string') {
-      const comparison = feeService.getFeeComparison(pair.toUpperCase(), isMakerOrder);
+      const comparison = feeService.getFeeComparison(
+        pair.toUpperCase(),
+        tradeSide,
+        0,
+        new Date(),
+        isMakerOrder,
+        userId
+      );
 
       return res.json({
         success: true,
         pair: pair.toUpperCase(),
+        side: tradeSide,
         isMaker: isMakerOrder,
         comparison: comparison.map((c) => ({
           exchange: c.exchange,
@@ -227,13 +270,14 @@ router.get('/fees', (req: Request, res: Response) => {
     }
 
     // Default: Get base fees for all exchanges
-    const allFees = feeService.getExchangeFeeSummary();
-    const formatted: Record<string, { maker: string; taker: string }> = {};
-
-    for (const [ex, fees] of Object.entries(allFees)) {
+    const formatted: Record<string, { maker: string; taker: string; asOf: string }> = {};
+    for (const ex of feeService.getSupportedExchanges()) {
+      const schedule = feeService.getSchedule(ex);
+      if (!schedule) continue;
       formatted[ex] = {
-        maker: `${(fees.maker * 100).toFixed(3)}%`,
-        taker: `${(fees.taker * 100).toFixed(3)}%`,
+        maker: `${(schedule.baseStructure.maker * 100).toFixed(3)}%`,
+        taker: `${(schedule.baseStructure.taker * 100).toFixed(3)}%`,
+        asOf: schedule.asOf,
       };
     }
 

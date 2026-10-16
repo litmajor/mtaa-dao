@@ -14,6 +14,7 @@ import {
   SecretRotationPolicy,
   type DriftDetection,
   type OperationalFrameworkConfig,
+  AuditActionType,
   VaultError,
 } from '../types';
 import { getAuditLogger } from '../audit/logger';
@@ -95,7 +96,7 @@ export class SecureVaultManager extends EventEmitter {
 
     // Log registration in audit trail
     await getAuditLogger().logEvent(
-      'credential_rotated',
+      AuditActionType.CREDENTIAL_ROTATED,
       'vault_manager',
       serviceId,
       `credential_${credentialId}`,
@@ -165,7 +166,7 @@ export class SecureVaultManager extends EventEmitter {
     }
 
     await getAuditLogger().logEvent(
-      'secret_accessed',
+      AuditActionType.SECRET_ACCESSED,
       accessedByService,
       undefined,
       `credential_${credentialId}`,
@@ -207,7 +208,7 @@ export class SecureVaultManager extends EventEmitter {
 
     // Log rotation
     await getAuditLogger().logEvent(
-      'credential_rotated',
+      AuditActionType.CREDENTIAL_ROTATED,
       'vault_manager',
       credential.serviceId,
       `credential_${credentialId}`,
@@ -246,7 +247,7 @@ export class SecureVaultManager extends EventEmitter {
     this.secretsMemory.delete(credentialId);
 
     await getAuditLogger().logEvent(
-      'credential_rotated', // Uses existing action type
+      AuditActionType.CREDENTIAL_ROTATED,
       'vault_manager',
       credential.serviceId,
       `credential_${credentialId}`,
@@ -366,7 +367,7 @@ export class SecureVaultManager extends EventEmitter {
     drift.resolved = true;
 
     await getAuditLogger().logEvent(
-      'config_changed',
+      AuditActionType.CONFIG_CHANGED,
       'vault_manager',
       undefined,
       `drift_${driftId}`,

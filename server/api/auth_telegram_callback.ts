@@ -3,7 +3,7 @@ import crypto from 'crypto';
 import { db } from '../db';
 import { users, userIdentities } from '../../shared/schema';
 import { eq, and } from 'drizzle-orm';
-import { generateTokens, TokenPayload } from './auth';
+import { generateTokens } from '../auth';
 
 const TELEGRAM_BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN;
 const APP_URL = process.env.APP_URL || 'http://localhost:5000';
@@ -131,8 +131,8 @@ export async function authTelegramCallbackHandler(req: Request, res: Response) {
 
       // Generate tokens and login
       const tokens = generateTokens({
-        userId: existingUser.id,
-        role: existingUser.role || 'user',
+        sub: existingUser.id,
+        role: existingUser.roles || 'user',
       });
 
       // Store access token in secure cookie
@@ -172,7 +172,7 @@ export async function authTelegramCallbackHandler(req: Request, res: Response) {
       const pendingIdentity = {
         provider: 'telegram',
         providerUserId: telegramId,
-        providerUsername: telegramUsername,
+        username: telegramUsername,
         firstName: telegramData.first_name,
         lastName: telegramData.last_name,
       };
@@ -198,21 +198,28 @@ export async function authTelegramCallbackHandler(req: Request, res: Response) {
           const [newUser] = await tx
             .insert(users)
             .values({
-              email: `telegram_${telegramId}@mtaadao.local`, // Use placeholder email
+              id: crypto.randomUUID(),
+              name: telegramUsername || `${telegramData.first_name} ${telegramData.last_name || ''}`.trim(),
+              email: `telegram_${telegramId}@mtaadao.local`,
               firstName: telegramData.first_name,
               lastName: telegramData.last_name || null,
+              username: telegramUsername,
               telegramUsername: telegramUsername,
-              telegramChatId: null, // Will be set when user links via bot
-              role: 'user',
+              telegramChatId: null,
+              roles: 'user',
+              password: crypto.randomBytes(16).toString('hex'),
             })
             .returning();
 
-          // Link Telegram identity
           await tx.insert(userIdentities).values({
             userId: newUser.id,
             provider: 'telegram',
             providerUserId: telegramId,
-            providerUsername: telegramUsername,
+            profile: {
+              username: telegramUsername,
+              firstName: telegramData.first_name,
+              lastName: telegramData.last_name,
+            },
           });
 
           return newUser;
@@ -220,8 +227,8 @@ export async function authTelegramCallbackHandler(req: Request, res: Response) {
 
         // Generate tokens
         const tokens = generateTokens({
-          userId: result.id,
-          role: result.role || 'user',
+          sub: result.id,
+          role: result.roles || 'user',
         });
 
         // Store tokens in secure cookies

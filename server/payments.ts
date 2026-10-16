@@ -17,7 +17,7 @@
 import express, { type Request, type Response } from 'express';
 import crypto from 'crypto';
 import { db } from './db';
-import { paymentTransactions, accounts, users } from '../shared/schema';
+import { paymentTransactions, accounts, users, daoContributions } from '../shared/schema';
 import { eq, sql, and } from 'drizzle-orm';
 import { paymentGatewayService } from './services/paymentGatewayService';
 import { paymentRecoveryWorkflowService } from './services/paymentRecoveryWorkflowService';
@@ -178,6 +178,143 @@ async function processWebhook(
 
   await sharedIdempotencyManager.recordResult(idempotencyKey, { processed: result, status }, 86400);
   return result;
+}
+
+export async function reconcileMpesaCallback(callbackData: Record<string, any>, callbackToken?: string) {
+  const checkoutRequestId = callbackData?.CheckoutRequestID;
+  const resultCode = callbackData?.ResultCode;
+  if (typeof checkoutRequestId !== 'string' || !checkoutRequestId || typeof resultCode !== 'number') {
+    throw new Error('M-Pesa callback is missing CheckoutRequestID or ResultCode');
+  }
+
+  const items = Array.isArray(callbackData.CallbackMetadata?.Item)
+    ? callbackData.CallbackMetadata.Item as Array<{ Name: string; Value: string | number }>
+    : [];
+  const amountItem = items.find((item) => item.Name === 'Amount');
+  const receiptItem = items.find((item) => item.Name === 'MpesaReceiptNumber');
+  const phoneItem = items.find((item) => item.Name === 'PhoneNumber');
+  const result = await db.transaction(async (tx) => {
+    const [record] = await tx
+      .select()
+      .from(paymentTransactions)
+      .where(sql`COALESCE(
+        metadata->>'checkoutRequestID',
+        metadata->>'checkoutRequestId',
+        metadata->>'CheckoutRequestID'
+      ) = ${checkoutRequestId}`)
+      .for('update')
+      .limit(1);
+
+    if (!record) throw new Error(`M-Pesa transaction not found for checkout request ${checkoutRequestId}`);
+
+    const metadata = (record.metadata || {}) as Record<string, any>;
+    const isContribution = metadata.purpose === 'dao_contribution';
+    const isSuccess = resultCode === 0;
+    if (isContribution) {
+      const expectedToken = metadata.callbackToken;
+      const supplied = typeof callbackToken === 'string' ? callbackToken : '';
+      if (typeof expectedToken !== 'string' || !expectedToken ||
+          supplied.length !== expectedToken.length ||
+          !crypto.timingSafeEqual(Buffer.from(supplied), Buffer.from(expectedToken))) {
+        throw new Error('Invalid callback authorization token for DAO contribution');
+      }
+    }
+    if (record.status === 'completed' && !isSuccess) {
+      return { record, isContribution, isSuccess: true };
+    }
+
+    if (record.status !== 'completed' && isSuccess) {
+      const paidAmount = amountItem ? Number(amountItem.Value) : NaN;
+      if (!Number.isFinite(paidAmount) || paidAmount !== Math.round(Number(record.amount))) {
+        throw new Error(`M-Pesa amount mismatch for checkout request ${checkoutRequestId}`);
+      }
+
+      const expectedPhone = String(metadata.phone || '').replace(/\D/g, '').slice(-9);
+      const callbackPhone = phoneItem ? String(phoneItem.Value).replace(/\D/g, '').slice(-9) : '';
+      if (expectedPhone && callbackPhone && expectedPhone !== callbackPhone) {
+        throw new Error(`M-Pesa phone mismatch for checkout request ${checkoutRequestId}`);
+      }
+    }
+
+    const callbackMetadata = {
+      mpesaResultCode: resultCode,
+      mpesaResultDesc: String(callbackData.ResultDesc || ''),
+      checkoutRequestID: checkoutRequestId,
+      ...(receiptItem ? { mpesaReceipt: String(receiptItem.Value) } : {}),
+      ...(amountItem ? { mpesaPaidAmount: Number(amountItem.Value) } : {}),
+      ...(phoneItem ? { mpesaPaidPhone: String(phoneItem.Value) } : {}),
+    };
+
+    if (record.status !== 'completed') {
+      await tx
+        .update(paymentTransactions)
+        .set({
+          status: isSuccess ? 'completed' : 'failed',
+          metadata: { ...metadata, ...callbackMetadata },
+          updatedAt: new Date(),
+        })
+        .where(eq(paymentTransactions.id, record.id));
+    }
+
+    if (isContribution) {
+      const contributionId = metadata.contributionId;
+      if (typeof contributionId !== 'string' || !contributionId) {
+        throw new Error(`M-Pesa DAO contribution transaction ${record.reference} has no contributionId`);
+      }
+      const [contribution] = await tx
+        .select()
+        .from(daoContributions)
+        .where(and(
+          eq(daoContributions.id, contributionId),
+          eq(daoContributions.daoId, String(metadata.daoId || ''))
+        ))
+        .for('update')
+        .limit(1);
+      if (!contribution || contribution.contributorId !== record.userId) {
+        throw new Error(`M-Pesa contribution ${contributionId} does not match its payment transaction`);
+      }
+      if (Number(contribution.amount) !== Math.round(Number(record.amount))) {
+        throw new Error(`M-Pesa contribution amount mismatch for ${contributionId}`);
+      }
+
+      const currentContributionMetadata = (contribution.metadata || {}) as Record<string, unknown>;
+      const contributionAlreadyCredited = ['approved', 'completed', 'rotation_pending'].includes(contribution.status || '');
+      await tx
+        .update(daoContributions)
+        .set({
+          status: contributionAlreadyCredited ? contribution.status : isSuccess ? 'pending' : 'rejected',
+          rejectionReason: contributionAlreadyCredited || isSuccess
+            ? null
+            : String(callbackData.ResultDesc || 'M-Pesa payment failed'),
+          metadata: {
+            ...currentContributionMetadata,
+            ...callbackMetadata,
+            paymentStatus: contributionAlreadyCredited || isSuccess ? 'confirmed' : 'failed',
+          },
+          updatedAt: new Date(),
+        })
+        .where(eq(daoContributions.id, contributionId));
+    }
+
+    return { record, isContribution, isSuccess };
+  });
+
+  if (result.isSuccess && !result.isContribution && result.record.status !== 'completed') {
+    await dispatchPaymentSAGA(
+      result.record.reference,
+      result.record.userId,
+      Number(result.record.amount),
+      result.record.currency,
+      { provider: 'mpesa', mpesaCheckoutRequestId: checkoutRequestId }
+    );
+  }
+
+  return {
+    reference: result.record.reference,
+    status: result.isSuccess ? 'completed' : 'failed',
+    contributionCredited: result.isContribution && result.isSuccess,
+    alreadyCompleted: result.record.status === 'completed',
+  };
 }
 
 // ===== DEPOSIT / WITHDRAWAL (via PaymentGatewayService) =====
@@ -634,38 +771,16 @@ router.post('/webhooks/mpesa', async (req: Request, res: Response) => {
       return res.status(400).json({ success: false, message: 'Invalid callback structure' });
     }
 
-    const { CheckoutRequestID, ResultCode, ResultDesc } = callbackData;
-    const status = ResultCode === 0 ? 'completed' : 'failed';
-
-    // Find by CheckoutRequestID in metadata
-    const [record] = await db
-      .select()
-      .from(paymentTransactions)
-      .where(sql`metadata->>'CheckoutRequestID' = ${CheckoutRequestID}`)
-      .limit(1);
-
-    if (!record) {
-      logger.warn('M-Pesa callback: transaction not found', { CheckoutRequestID });
-      return res.json({ ResultCode: '0', ResultDesc: 'Accepted' });
-    }
-
-    const shouldDispatch = await processWebhook('mpesa', record.reference, status, {
-      mpesaResultCode: ResultCode,
-      mpesaResultDesc: ResultDesc,
-      mpesaCallback: callbackData
+    const result = await reconcileMpesaCallback(callbackData, req.query.token as string | undefined);
+    res.json({
+      ResultCode: '0',
+      ResultDesc: 'Accepted',
+      paymentStatus: result.status,
+      contributionCredited: result.contributionCredited,
     });
-
-    if (shouldDispatch) {
-      await dispatchPaymentSAGA(record.reference, record.userId, Number(record.amount), record.currency, {
-        provider: 'mpesa',
-        mpesaCheckoutRequestId: CheckoutRequestID
-      });
-    }
-
-    res.json({ ResultCode: '0', ResultDesc: 'Accepted' });
   } catch (error: any) {
     logger.error('M-Pesa webhook error', { message: error.message });
-    res.status(500).json({ success: false, message: error.message });
+    res.status(500).json({ ResultCode: '1', ResultDesc: error.message });
   }
 });
 

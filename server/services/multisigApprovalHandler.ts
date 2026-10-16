@@ -22,6 +22,8 @@ import {
 } from '@shared/schema';
 import { logConsolidatedAuditEvent } from './auditConsolidated';
 
+export type ApprovalStatus = 'pending' | 'approved' | 'rejected' | 'executed' | 'expired';
+
 export interface ApprovalRequest {
   id: string;
   vaultId: string;
@@ -29,7 +31,7 @@ export interface ApprovalRequest {
   userId: string;
   amount: number;
   destination: string;
-  status: 'pending' | 'approved' | 'rejected' | 'executed' | 'expired';
+  status: ApprovalStatus;
   requiredSignatures: number;
   currentSignatures: number;
   signers: SignerInfo[];
@@ -64,6 +66,37 @@ export interface ApprovalSignatureInput {
  * Create a new withdrawal approval request
  * Called by withdrawal endpoint when multisig is required
  */
+function normalizeApprovalStatus(raw: string | null | undefined): ApprovalStatus {
+  const value = raw ?? 'pending';
+  if (value === 'pending' || value === 'approved' || value === 'rejected' || value === 'executed' || value === 'expired') {
+    return value;
+  }
+  return 'pending';
+}
+
+function parseSignerList(raw: unknown): SignerInfo[] {
+  if (Array.isArray(raw)) {
+    return raw.filter((item): item is SignerInfo => Boolean(item && typeof item === 'object')) as SignerInfo[];
+  }
+
+  if (typeof raw === 'string') {
+    try {
+      return parseSignerList(JSON.parse(raw));
+    } catch {
+      return [];
+    }
+  }
+
+  if (raw && typeof raw === 'object') {
+    const maybeArray = raw as { signers?: unknown };
+    if (Array.isArray(maybeArray.signers)) {
+      return parseSignerList(maybeArray.signers);
+    }
+  }
+
+  return [];
+}
+
 export async function createApprovalRequest(
   vaultId: string,
   daoId: string,
@@ -98,7 +131,7 @@ export async function createApprovalRequest(
       status: 'pending' as any,
       requiredSignatures: requiredSignatures as any,
       currentSignatures: 0 as any,
-      signers: JSON.stringify(signersData) as any,
+      signers: signersData as any,
       expiresAt: expiresAt,
       createdAt: now,
       updatedAt: now,
@@ -177,8 +210,8 @@ export async function addSignature(
     }
 
     // 2. Verify signer is authorized
-    const signers = JSON.parse(approval.signers || '[]');
-    const signerRecord = signers.find((s: any) => s.userId === signerId);
+    const signers = parseSignerList(approval.signers);
+    const signerRecord = signers.find((s: SignerInfo) => s.userId === signerId);
 
     if (!signerRecord) {
       throw new Error('Signer not authorized for this approval');
@@ -207,25 +240,25 @@ export async function addSignature(
       id: signatureId as any,
       approvalId: approvalId as any,
       signerId: signerId as any,
-      signer_role: signerRecord.userRole as any,
+      signerRole: signerRecord.userRole as any,
       signature: signature as any,
-      signed_at: now,
-      ip_address: ipAddress,
-      is_valid: true,
-      verification_error: null,
+      signedAt: now,
+      ipAddress: ipAddress ?? null,
+      isValid: true,
+      verificationError: null,
       createdAt: now,
       updatedAt: now,
     } as any);
 
     // 4. Update signer status in approval
-    const updatedSigners = signers.map((s: any) => {
+    const updatedSigners: SignerInfo[] = signers.map((s: SignerInfo) => {
       if (s.userId === signerId) {
         return {
           ...s,
           approved: approved,
           rejected: !approved,
           signature,
-          signedAt: now.toISOString(),
+          signedAt: now,
           ipAddress,
         };
       }
@@ -237,7 +270,7 @@ export async function addSignature(
     const rejectionCount = updatedSigners.filter((s: any) => s.rejected).length;
 
     // 6. Check if threshold met or rejected
-    let newStatus = 'pending';
+    let newStatus: ApprovalStatus = 'pending';
     if (approvalCount >= approval.requiredSignatures) {
       newStatus = 'approved';
     } else if (rejectionCount > signers.length - approval.requiredSignatures) {
@@ -247,7 +280,7 @@ export async function addSignature(
     // Update approval with new signer data
     await db.update(withdrawalApprovals)
       .set({
-        signers: JSON.stringify(updatedSigners) as any,
+        signers: updatedSigners as any,
         currentSignatures: approvalCount as any,
         status: newStatus as any,
         updatedAt: now,
@@ -381,8 +414,8 @@ export async function executeWithdrawal(approvalId: string): Promise<void> {
 
     const signersList = signatures.map((sig) => ({
       userId: sig.signerId,
-      role: sig.signer_role,
-      signedAt: sig.signed_at,
+      role: sig.signerRole,
+      signedAt: sig.signedAt,
     }));
 
     // 8. Log execution
@@ -419,7 +452,7 @@ export async function executeWithdrawal(approvalId: string): Promise<void> {
  */
 export async function updateApprovalStatus(
   approvalId: string,
-  newStatus: 'pending' | 'approved' | 'rejected' | 'executed' | 'expired'
+  newStatus: ApprovalStatus
 ): Promise<void> {
   try {
     await db.update(withdrawalApprovals)
@@ -517,13 +550,13 @@ export async function getApprovalRequest(approvalId: string): Promise<ApprovalRe
       userId: data.userId,
       amount: parseFloat(data.amount || '0'),
       destination: data.destination,
-      status: data.status,
+      status: normalizeApprovalStatus(data.status),
       requiredSignatures: data.requiredSignatures,
       currentSignatures: data.currentSignatures,
-      signers: JSON.parse(data.signers || '[]'),
+      signers: parseSignerList(data.signers),
       expiresAt: data.expiresAt || new Date(),
       createdAt: data.createdAt || new Date(),
-      executedAt: data.executedAt,
+      executedAt: data.executedAt ?? undefined,
     };
   } catch (error) {
     console.error('Error getting approval request:', error);
@@ -554,13 +587,13 @@ export async function getPendingApprovals(daoId: string): Promise<ApprovalReques
       userId: data.userId,
       amount: parseFloat(data.amount || '0'),
       destination: data.destination,
-      status: data.status,
+      status: normalizeApprovalStatus(data.status),
       requiredSignatures: data.requiredSignatures,
       currentSignatures: data.currentSignatures,
-      signers: JSON.parse(data.signers || '[]'),
+      signers: parseSignerList(data.signers),
       expiresAt: data.expiresAt || new Date(),
       createdAt: data.createdAt || new Date(),
-      executedAt: data.executedAt,
+      executedAt: data.executedAt ?? undefined,
     }));
   } catch (error) {
     console.error('Error getting pending approvals:', error);
@@ -590,9 +623,9 @@ export async function getApprovalsForSigner(
     // Filter for approvals where this user is a signer
     return allApprovals
       .filter((approval) => {
-        const signers = JSON.parse(approval.signers || '[]');
-        const userSigner = signers.find((s: any) => s.userId === userId);
-        return userSigner && !userSigner.approved && !userSigner.rejected; // Not yet signed
+        const signers = parseSignerList(approval.signers);
+        const userSigner = signers.find((s: SignerInfo) => s.userId === userId);
+        return Boolean(userSigner && !userSigner.approved && !userSigner.rejected); // Not yet signed
       })
       .map((data) => ({
         id: data.id,
@@ -601,13 +634,13 @@ export async function getApprovalsForSigner(
         userId: data.userId,
         amount: parseFloat(data.amount || '0'),
         destination: data.destination,
-        status: data.status,
+        status: normalizeApprovalStatus(data.status),
         requiredSignatures: data.requiredSignatures,
         currentSignatures: data.currentSignatures,
-        signers: JSON.parse(data.signers || '[]'),
+        signers: parseSignerList(data.signers),
         expiresAt: data.expiresAt || new Date(),
         createdAt: data.createdAt || new Date(),
-        executedAt: data.executedAt,
+        executedAt: data.executedAt ?? undefined,
       }));
   } catch (error) {
     console.error('Error getting approvals for signer:', error);
@@ -624,17 +657,17 @@ export async function getSignatureHistory(approvalId: string) {
       .select()
       .from(multisigSignatures)
       .where(eq(multisigSignatures.approvalId, approvalId))
-      .orderBy(desc(multisigSignatures.signed_at));
+      .orderBy(desc(multisigSignatures.signedAt));
 
     return signatures.map((sig) => ({
       id: sig.id,
       signerId: sig.signerId,
-      signer_role: sig.signer_role,
+      signerRole: sig.signerRole,
       signature: sig.signature,
-      signedAt: sig.signed_at,
-      ipAddress: sig.ip_address,
-      isValid: sig.is_valid,
-      verificationError: sig.verification_error,
+      signedAt: sig.signedAt,
+      ipAddress: sig.ipAddress,
+      isValid: sig.isValid,
+      verificationError: sig.verificationError,
     }));
   } catch (error) {
     console.error('Error getting signature history:', error);

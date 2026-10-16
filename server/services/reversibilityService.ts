@@ -181,6 +181,31 @@ export class ReversibilityService {
     }
   }
 
+  async cancelUnexecutedAction(actionId: string, userId: string): Promise<ReversibleAction> {
+    const action = await this.getActionById(actionId);
+    if (!action) throw new Error('Action not found');
+    if (action.initiator.id !== userId) throw new Error('Only the action initiator can cancel it');
+    if (![ReversibilityStatus.INITIATED, ReversibilityStatus.PENDING_CONFIRMATION].includes(action.status as ReversibilityStatus)) {
+      throw new Error(`Action cannot be cancelled from status ${action.status}`);
+    }
+    await this.db.execute(sql`
+      UPDATE action_reversals
+      SET status = ${ReversibilityStatus.REVERSED},
+          reversed_at = NOW(),
+          reversed_by_id = ${userId},
+          reversed_by_type = ${ActorType.USER},
+          reversal_reason = ${'USER_REQUESTED'},
+          reversal_reason_text = ${'Cancelled by initiator before execution'},
+          updated_at = NOW()
+      WHERE id = ${actionId}
+        AND initiator_id = ${userId}
+        AND status IN (${ReversibilityStatus.INITIATED}, ${ReversibilityStatus.PENDING_CONFIRMATION})
+    `);
+    const cancelled = await this.getActionById(actionId);
+    if (!cancelled || cancelled.status !== ReversibilityStatus.REVERSED) throw new Error('Action cancellation did not complete');
+    return cancelled;
+  }
+
   async reverseAction(dto: ReverseActionDTO): Promise<ReversibleAction> {
     const action = await this.getActionById(dto.actionId);
     if (!action) throw new Error('Action not found');

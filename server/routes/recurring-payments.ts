@@ -47,7 +47,7 @@ router.post('/', authenticate, async (req, res) => {
     const insertedPayment = await db.insert(walletTransactions).values({
       fromUserId: userId,
       walletAddress: userId, // Use userId as identifier for now
-      amount: parseFloat(amount),
+      amount: String(parseFloat(amount)),
       currency: token,
       type: 'recurring',
       status: 'active',
@@ -79,6 +79,7 @@ router.post('/', authenticate, async (req, res) => {
     
     // Send notification
     await notificationService.sendNotification(userId, {
+      userId,
       type: 'recurring_payment_created',
       title: 'Recurring Payment Created',
       message: `Your recurring ${frequency} payment of ${amount} ${token} has been set up`,
@@ -95,7 +96,7 @@ router.post('/', authenticate, async (req, res) => {
 router.get('/', authenticate, async (req, res) => {
   try {
     const userId = req.user!.id;
-    const { status } = req.query;
+    const status = typeof req.query.status === 'string' ? req.query.status : undefined;
 
     // Query from database with optional status filter
     let query = db.select().from(walletTransactions)
@@ -233,6 +234,7 @@ router.delete('/:id', authenticate, async (req, res) => {
     
     await notificationService.sendNotification(userId, {
       type: 'recurring_payment_deleted',
+      userId,
       title: 'Recurring Payment Cancelled',
       message: 'Your recurring payment has been cancelled',
       metadata: { paymentId: id }

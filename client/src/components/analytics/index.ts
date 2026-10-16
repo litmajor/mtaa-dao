@@ -20,4 +20,4 @@ export type { } from './ContributionAnalyticsTab';
 // export type { LeaderboardProps, MemberTier, LeaderboardEntry } from './LeaderboardDisplay';
 
 // Re-export existing analytics component
-export { AnalyticsDashboard } from './AnalyticsDashboard';
+export { default as AnalyticsDashboard } from './AnalyticsDashboard';

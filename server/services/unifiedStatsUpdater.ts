@@ -16,6 +16,13 @@ import { logger } from '../utils/logger';
 
 class UnifiedStatsUpdater {
   /**
+   * Legacy compatibility method used by older monitoring code.
+   */
+  emitTradeEvent(userId: string, totalUsd: number): void {
+    logger.info(`[Stats] Trade event recorded for ${userId}: $${totalUsd.toFixed(2)} USD`);
+  }
+
+  /**
    * Update venue execution stats (replaces market.ts GROUP BY query)
    * Called when execution_metrics records are inserted for a venue+symbol combo
    */

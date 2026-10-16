@@ -69,7 +69,7 @@ function useSelect(props: UseSelectProps) {
   };
 
   const filteredOptions = props.options.filter(opt =>
-    opt.label.toString().toLowerCase().includes(searchQuery.toLowerCase())
+    (opt.label ?? '').toString().toLowerCase().includes(searchQuery.toLowerCase())
   );
 
   return {

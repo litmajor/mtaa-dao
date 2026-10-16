@@ -150,10 +150,14 @@ export class StableOutflowModule {
       if (rawAmount < 0n) return { success: false, error: 'Raw amount cannot be negative' };
 
       // 2. Perform Arbitrary Precision Matrix Pricing calculations
-      const observedPrice = await priceOracle.getPrice(asset.symbol);
-      const observedPriceUsd = observedPrice?.priceUsd ? observedPrice.priceUsd.toFixed(8) : asset.pegTargetUsd;
+      const observedPrice = await priceOracle.getValuationPrice(asset.symbol);
+      const observedPriceUsd = observedPrice?.haircutPriceUsd ?? observedPrice?.priceUsd;
+      if (!observedPrice || observedPriceUsd === undefined || !Number.isFinite(observedPriceUsd) || observedPriceUsd <= 0) {
+        return { success: false, error: `Reliable valuation unavailable for ${asset.symbol}` };
+      }
+      const observedPriceUsdText = observedPriceUsd.toFixed(8);
 
-      const priceScaled8 = decimalToScaledBigInt(observedPriceUsd, 8);
+      const priceScaled8 = decimalToScaledBigInt(observedPriceUsdText, 8);
       const usdScaled8 = divideRound(rawAmount * priceScaled8, pow10(asset.decimals));
       const stableUnitsMicroUsd = divideRound(usdScaled8, 100n);
       const normalizedTokenAmount = rawToTokenAmount(rawAmount, asset.decimals);
@@ -173,7 +177,7 @@ export class StableOutflowModule {
 
       const pegTarget = Number(asset.pegTargetUsd);
       const pegDeviationBps = pegTarget > 0
-        ? Math.round((Math.abs(Number(observedPriceUsd) - pegTarget) / pegTarget) * 10_000)
+        ? Math.round((Math.abs(observedPriceUsd - pegTarget) / pegTarget) * 10_000)
         : 0;
 
       const riskFlags = computeRiskFlags({
@@ -210,7 +214,7 @@ export class StableOutflowModule {
         delayState,
         observedConfirmationDelaySec: observedDelaySec,
         pegTargetUsd: asset.pegTargetUsd,
-        observedPriceUsd,
+        observedPriceUsd: observedPriceUsdText,
         pegDeviationBps,
         riskFlags,
         status,

@@ -18,7 +18,7 @@ import {
  * Fetch Fear & Greed Index
  */
 export function useFearGreedIndex(): UseQueryResult<{ fearGreedIndex: FearGreedIndex }, Error> {
-  return useQuery({
+  return useQuery<{ fearGreedIndex: FearGreedIndex }, Error>({
     queryKey: ['sentiment:fearGreed'],
     queryFn: async () => {
       const response = await fetch('/api/v1/yuki/exchanges/sentiment/fear-greed');
@@ -32,14 +32,14 @@ export function useFearGreedIndex(): UseQueryResult<{ fearGreedIndex: FearGreedI
     gcTime: 5 * 60 * 1000, // 5 minutes
     staleTime: 60 * 1000, // 1 minute (market sentiment updates frequently)
     refetchInterval: 2 * 60 * 1000 // 2 minute refresh
-  } as any);
+  });
 }
 
 /**
  * Fetch market changes over multiple periods
  */
 export function useMarketChanges(): UseQueryResult<{ marketChanges: MarketChangeMetrics[] }, Error> {
-  return useQuery({
+  return useQuery<{ marketChanges: MarketChangeMetrics[] }, Error>({
     queryKey: ['sentiment:marketChanges'],
     queryFn: async () => {
       const response = await fetch('/api/v1/yuki/exchanges/sentiment/market-changes');
@@ -53,14 +53,14 @@ export function useMarketChanges(): UseQueryResult<{ marketChanges: MarketChange
     gcTime: 5 * 60 * 1000,
     staleTime: 60 * 1000,
     refetchInterval: 5 * 60 * 1000 // 5 minute refresh
-  } as any);
+  });
 }
 
 /**
  * Fetch BTC dominance data
  */
 export function useBtcDominance(): UseQueryResult<{ btcDominance: BtcDominanceData }, Error> {
-  return useQuery({
+  return useQuery<{ btcDominance: BtcDominanceData }, Error>({
     queryKey: ['sentiment:btcDominance'],
     queryFn: async () => {
       const response = await fetch('/api/v1/yuki/exchanges/sentiment/btc-dominance');
@@ -74,14 +74,14 @@ export function useBtcDominance(): UseQueryResult<{ btcDominance: BtcDominanceDa
     gcTime: 5 * 60 * 1000,
     staleTime: 60 * 1000,
     refetchInterval: 5 * 60 * 1000
-  } as any);
+  });
 }
 
 /**
  * Fetch complete market sentiment
  */
 export function useMarketSentiment(): UseQueryResult<{ sentiment: MarketSentimentResponse }, Error> {
-  return useQuery({
+  return useQuery<{ sentiment: MarketSentimentResponse }, Error>({
     queryKey: ['sentiment:complete'],
     queryFn: async () => {
       const response = await fetch('/api/v1/yuki/exchanges/sentiment/complete');
@@ -95,7 +95,7 @@ export function useMarketSentiment(): UseQueryResult<{ sentiment: MarketSentimen
     gcTime: 5 * 60 * 1000,
     staleTime: 60 * 1000,
     refetchInterval: 2 * 60 * 1000
-  } as any);
+  });
 }
 
 /**

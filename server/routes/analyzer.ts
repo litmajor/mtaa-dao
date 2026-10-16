@@ -305,7 +305,7 @@ router.post('/proportional/select/:daoId', isAuthenticated, analyzerLimiter, asy
         selectedUserId,
         selectedMember: {
           userId: selectedMember?.userId,
-          name: selectedMember?.name,
+          name: selectedMember?.userId,
           joinedAt: selectedMember?.joinedAt
         },
         weight: selectedWeight,
@@ -431,7 +431,7 @@ router.post('/rotation/cycle/:daoId', isAuthenticated, analyzerLimiter, async (r
       data: {
         cycleNumber: (dao.currentRotationCycle || 0) + 1,
         selectedRecipient: selectedUserId,
-        recipientName: selectedMember?.name,
+        recipientName: selectedMember?.userId,
         method: method,
         daoId,
         status: 'pending_distribution',

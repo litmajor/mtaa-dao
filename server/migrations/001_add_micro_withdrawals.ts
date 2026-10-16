@@ -1,5 +1,5 @@
 import { sql } from "drizzle-orm";
-import type { PostgresDB } from "drizzle-orm/postgres-js";
+import type { NodePgDatabase } from 'drizzle-orm/node-postgres';
 
 /**
  * Migration: Add Micro-Withdrawals System
@@ -8,7 +8,7 @@ import type { PostgresDB } from "drizzle-orm/postgres-js";
  * - microWithdrawals: Individual user micro-withdrawal requests
  * - microWithdrawalBatches: Consolidated batches of withdrawals
  */
-export async function up(db: PostgresDB) {
+export async function up(db: NodePgDatabase<any>) {
   // Create microWithdrawals table
   await db.execute(sql`
     CREATE TABLE IF NOT EXISTS micro_withdrawals (
@@ -68,7 +68,7 @@ export async function up(db: PostgresDB) {
   `);
 }
 
-export async function down(db: PostgresDB) {
+export async function down(db: NodePgDatabase<any>) {
   // Drop tables in reverse order of creation
   await db.execute(sql`
     DROP TABLE IF EXISTS micro_withdrawals;

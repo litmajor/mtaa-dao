@@ -1,64 +1,100 @@
 import { Worker, type Job, Queue } from 'bullmq';
+import type { RedisOptions } from 'ioredis';
+import { and, eq, inArray, sql } from 'drizzle-orm';
 import { Logger } from '../utils/logger';
-import { treasuryOnchainService } from '../services/treasuryOnchainService';
+import {
+  TreasuryOnchainService,
+  treasuryOnchainService,
+  type TreasuryContractEvent
+} from '../services/treasuryOnchainService';
 import { db } from '../db';
 import {
+  treasuryEventCursors,
   treasuryMultisigTransactions,
   multisigWallets,
   treasuryAuditLog
 } from '../../shared/schema';
-import { eq, and } from 'drizzle-orm';
+import { getEventEmitter } from '../middleware/websocket-event-emitter';
 import { AppError } from '../middleware/errorHandler';
 
+export type TreasuryEventType = TreasuryContractEvent['eventType'];
+
+export interface TreasuryEventJobData {
+  eventType: TreasuryEventType;
+  contractAddress: string;
+  eventData: TreasuryContractEvent;
+  timestamp: string;
+}
+
+function asMetadataRecord(value: unknown): Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value)
+    ? value as Record<string, unknown>
+    : {};
+}
+
+function positiveInteger(value: string | undefined, fallback: number): number {
+  if (value === undefined) return fallback;
+  const parsed = Number(value);
+  if (!Number.isSafeInteger(parsed) || parsed <= 0) {
+    throw new AppError('Treasury polling configuration must contain a positive safe integer', 500);
+  }
+  return parsed;
+}
+
+function nonNegativeInteger(value: string | undefined, fallback: number): number {
+  if (value === undefined) return fallback;
+  const parsed = Number(value);
+  if (!Number.isSafeInteger(parsed) || parsed < 0) {
+    throw new AppError('TREASURY_EVENT_CONFIRMATIONS must be a non-negative safe integer', 500);
+  }
+  return parsed;
+}
+
 /**
- * TreasuryEventListenerWorker
- * BullMQ-based worker that:
- * 1. Listens for ChamaTreasury contract events (ProposalCreated, ProposalExecuted, ProposalRejected)
- * 2. Polls for events at regular intervals
- * 3. Updates database state when events are detected
- * 4. Emits Socket.IO notifications for real-time UI updates
- * 5. Triggers additional processing like audit logging
- * 
- * Works with Redis for job queuing and persistence
+ * Consumes multisig contract events and keeps treasury state synchronized.
+ * Polling is at-least-once; status guards and stable BullMQ job IDs make
+ * replaying chain logs safe.
  */
 export class TreasuryEventListenerWorker {
-  private worker: Worker;
-  private queue: Queue;
+  private worker: Worker<TreasuryEventJobData>;
+  private queue: Queue<TreasuryEventJobData>;
   private logger = new Logger('TreasuryEventListenerWorker');
-  private pollIntervalMs = 5000; // Poll every 5 seconds
-  private lastBlockChecked: Map<string, number> = new Map();
+  private pollIntervalMs = positiveInteger(process.env.TREASURY_EVENT_POLL_INTERVAL_MS, 5000);
+  private pollRange = positiveInteger(process.env.TREASURY_EVENT_POLL_RANGE, 1000);
+  private maxRangesPerPoll = positiveInteger(process.env.TREASURY_EVENT_MAX_RANGES_PER_POLL, 10);
+  private confirmations = nonNegativeInteger(process.env.TREASURY_EVENT_CONFIRMATIONS, 2);
+  private pollTimer: ReturnType<typeof setInterval> | undefined;
+  private polling = false;
 
   constructor(
     queueName: string = 'treasury-event-listener',
-    redisConnection: any = { host: 'localhost', port: 6379 }
+    redisConnection: RedisOptions = {
+      host: process.env.REDIS_HOST || 'localhost',
+      port: positiveInteger(process.env.REDIS_PORT, 6379),
+      password: process.env.REDIS_PASSWORD || undefined,
+      maxRetriesPerRequest: null
+    }
   ) {
-    // Initialize queue
-    this.queue = new Queue(queueName, { connection: redisConnection });
-
-    // Initialize worker to process events
-    this.worker = new Worker(queueName, this.processEvent.bind(this), {
-      connection: redisConnection,
-      concurrency: 1, // Process one event at a time to maintain order
-      settings: {
-        lockDuration: 30000, // 30 second lock
-        lockRenewTime: 15000, // Renew lock every 15 seconds
-        retryProcessDelay: 5000 // Wait 5 seconds before retry
+    this.queue = new Queue<TreasuryEventJobData>(queueName, { connection: redisConnection });
+    this.worker = new Worker<TreasuryEventJobData>(
+      queueName,
+      this.processEvent.bind(this),
+      {
+        connection: redisConnection,
+        concurrency: 1,
+        lockDuration: 30000,
+        lockRenewTime: 15000
       }
-    });
-
-    // Setup event listeners
+    );
     this.setupWorkerListeners();
   }
 
-  /**
-   * Setup worker event handlers
-   */
-  private setupWorkerListeners() {
-    this.worker.on('completed', (job: Job) => {
+  private setupWorkerListeners(): void {
+    this.worker.on('completed', (job: Job<TreasuryEventJobData>) => {
       this.logger.info(`Event job ${job.id} completed successfully`);
     });
 
-    this.worker.on('failed', (job: Job, error: Error) => {
+    this.worker.on('failed', (job: Job<TreasuryEventJobData> | undefined, error: Error) => {
       this.logger.error(`Event job ${job?.id} failed: ${error.message}`);
     });
 
@@ -67,361 +103,427 @@ export class TreasuryEventListenerWorker {
     });
   }
 
-  /**
-   * Main job processor for contract events
-   * Called by BullMQ for each queued event job
-   */
-  private async processEvent(job: Job<any>): Promise<void> {
-    try {
-      const { eventType, contractAddress, eventData } = job.data;
+  private async processEvent(job: Job<TreasuryEventJobData>): Promise<void> {
+    const { eventType, contractAddress, eventData } = job.data;
+    this.logger.info(`Processing ${eventType} event from contract ${contractAddress}`);
 
-      this.logger.info(
-        `Processing ${eventType} event from contract ${contractAddress}`
-      );
-
-      switch (eventType) {
-        case 'ProposalCreated':
-          await this.handleProposalCreated(contractAddress, eventData);
-          break;
-
-        case 'ProposalExecuted':
-          await this.handleProposalExecuted(contractAddress, eventData);
-          break;
-
-        case 'ProposalRejected':
-          await this.handleProposalRejected(contractAddress, eventData);
-          break;
-
-        default:
-          this.logger.warn(`Unknown event type: ${eventType}`);
-      }
-    } catch (error) {
-      this.logger.error(`Error processing event: ${error}`);
-      throw error; // Re-throw to trigger BullMQ retry
+    switch (eventType) {
+      case 'ProposalCreated':
+        await this.handleProposalCreated(contractAddress, eventData);
+        break;
+      case 'ProposalExecuted':
+        await this.handleProposalExecuted(contractAddress, eventData);
+        break;
+      case 'ProposalCancelled':
+        await this.handleProposalCancelled(contractAddress, eventData);
+        break;
     }
   }
 
-  /**
-   * Handle ProposalCreated event
-   * Updates transaction status to 'submitted'
-   */
+  private async findMultisig(contractAddress: string) {
+    const [wallet] = await db
+      .select()
+      .from(multisigWallets)
+      .where(sql`lower(${multisigWallets.contractAddress}) = lower(${contractAddress})`)
+      .limit(1);
+    return wallet;
+  }
+
   private async handleProposalCreated(
     contractAddress: string,
-    eventData: any
+    eventData: TreasuryContractEvent
   ): Promise<void> {
-    try {
-      const { proposalId, to, value, data } = eventData;
+    if (eventData.eventType !== 'ProposalCreated') {
+      throw new AppError('ProposalCreated job has an invalid event payload', 400);
+    }
+    const wallet = await this.findMultisig(contractAddress);
+    if (!wallet) {
+      this.logger.warn(`No multisig wallet found for ${contractAddress}`);
+      return;
+    }
 
-      this.logger.info(
-        `ProposalCreated: ID=${proposalId}, To=${to}, Value=${value}`
-      );
-
-      // Find corresponding transaction in DB by contract address
-      const multisig = await db
-        .select()
-        .from(multisigWallets)
-        .where(eq(multisigWallets.contractAddress, contractAddress))
-        .limit(1);
-
-      if (!multisig.length) {
-        this.logger.warn(`No multisig wallet found for ${contractAddress}`);
-        return;
-      }
-
-      const multisigId = multisig[0].id;
-
-      // Find transaction by recipient and amount
-      const transactions = await db
-        .select()
-        .from(treasuryMultisigTransactions)
-        .where(
-          and(
-            eq(treasuryMultisigTransactions.multisigWalletId, multisigId),
-            eq(treasuryMultisigTransactions.recipient, to),
-            eq(treasuryMultisigTransactions.status, 'pending')
-          )
+    const candidates = await db
+      .select()
+      .from(treasuryMultisigTransactions)
+      .where(and(
+        eq(treasuryMultisigTransactions.multisigWalletId, wallet.id),
+        inArray(treasuryMultisigTransactions.status, ['pending', 'approved']),
+        sql`lower(${treasuryMultisigTransactions.recipient}) = lower(${eventData.recipient})`,
+        eq(
+          treasuryMultisigTransactions.amount,
+          TreasuryOnchainService.formatAmount(eventData.amount, 18)
         )
-        .limit(1);
+      ))
+      .limit(2);
 
-      if (transactions.length === 0) {
-        this.logger.warn(
-          `No pending transaction found for recipient ${to}`
-        );
-        return;
-      }
+    if (candidates.length === 0) {
+      this.logger.warn(
+        `No pending treasury transaction found for recipient ${eventData.recipient} and amount ${eventData.amount}`
+      );
+      return;
+    }
+    if (candidates.length > 1) {
+      throw new AppError(
+        `Cannot safely match ProposalCreated ${eventData.proposalId}: multiple pending transactions match recipient and amount`,
+        409
+      );
+    }
 
-      const transaction = transactions[0];
-
-      // Update transaction with proposal ID
-      await db
+    const transaction = candidates[0];
+    const updated = await db.transaction(async (tx) => {
+      const [result] = await tx
         .update(treasuryMultisigTransactions)
         .set({
           status: 'submitted',
           submittedAt: new Date(),
+          submittedTxHash: eventData.transactionHash,
           metadata: {
-            ...transaction.metadata,
-            proposalId: proposalId,
-            contractData: data
+            ...asMetadataRecord(transaction.metadata),
+            proposalId: eventData.proposalId,
+            proposalType: eventData.proposalType,
+            proposedByAddress: eventData.proposedBy,
+            onChainAmount: eventData.amount,
+            executableAfter: eventData.executableAfter,
+            eventBlockNumber: eventData.blockNumber,
+            eventBlockHash: eventData.blockHash,
+            eventLogIndex: eventData.logIndex
           },
           updatedAt: new Date()
         })
-        .where(eq(treasuryMultisigTransactions.id, transaction.id));
+        .where(and(
+          eq(treasuryMultisigTransactions.id, transaction.id),
+          inArray(treasuryMultisigTransactions.status, ['pending', 'approved'])
+        ))
+        .returning({ id: treasuryMultisigTransactions.id });
 
-      // Log audit event
-      await this.logAuditEvent({
+      if (!result) return false;
+      await this.logAuditEvent(tx, {
         daoId: transaction.daoId,
         actorId: transaction.proposedBy,
         action: 'proposal_created_onchain',
-        reason: `Proposal ${proposalId} created on-chain`,
+        reason: `Proposal ${eventData.proposalId} created on-chain`,
         multisigTxId: transaction.id,
         severity: 'high',
-        metadata: { proposalId, contractAddress }
+        metadata: {
+          proposalId: eventData.proposalId,
+          contractAddress,
+          transactionHash: eventData.transactionHash,
+          blockNumber: eventData.blockNumber
+        }
       });
+      return true;
+    });
 
-      this.logger.info(
-        `Updated transaction ${transaction.id} with proposal ID ${proposalId}`
-      );
-    } catch (error) {
-      this.logger.error(`Error handling ProposalCreated: ${error}`);
-      throw error;
+    if (updated) {
+      this.emitTransactionUpdate(transaction.proposedBy, transaction.id, 'submitted', eventData);
+      this.logger.info(`Updated transaction ${transaction.id} with proposal ID ${eventData.proposalId}`);
     }
   }
 
-  /**
-   * Handle ProposalExecuted event
-   * Updates transaction status to 'executed' with on-chain confirmation
-   */
+  private async findSubmittedTransaction(
+    contractAddress: string,
+    proposalId: string
+  ) {
+    const wallet = await this.findMultisig(contractAddress);
+    if (!wallet) {
+      this.logger.warn(`No multisig wallet found for ${contractAddress}`);
+      return undefined;
+    }
+
+    const transactions = await db
+      .select()
+      .from(treasuryMultisigTransactions)
+      .where(and(
+        eq(treasuryMultisigTransactions.multisigWalletId, wallet.id),
+        eq(treasuryMultisigTransactions.status, 'submitted'),
+        sql`${treasuryMultisigTransactions.metadata}->>'proposalId' = ${proposalId}`
+      ))
+      .limit(2);
+
+    if (transactions.length > 1) {
+      throw new AppError(`Multiple submitted transactions match on-chain proposal ${proposalId}`, 409);
+    }
+    const transaction = transactions[0];
+    if (!transaction) {
+      this.logger.warn(`No submitted transaction found for proposal ${proposalId}`);
+    }
+    return transaction;
+  }
+
   private async handleProposalExecuted(
     contractAddress: string,
-    eventData: any
+    eventData: TreasuryContractEvent
   ): Promise<void> {
-    try {
-      const { proposalId, success } = eventData;
+    if (eventData.eventType !== 'ProposalExecuted') {
+      throw new AppError('ProposalExecuted job has an invalid event payload', 400);
+    }
+    const transaction = await this.findSubmittedTransaction(contractAddress, eventData.proposalId);
+    if (!transaction) return;
 
-      this.logger.info(
-        `ProposalExecuted: ID=${proposalId}, Success=${success}`
-      );
-
-      // Find multisig wallet
-      const multisig = await db
-        .select()
-        .from(multisigWallets)
-        .where(eq(multisigWallets.contractAddress, contractAddress))
-        .limit(1);
-
-      if (!multisig.length) {
-        this.logger.warn(`No multisig wallet found for ${contractAddress}`);
-        return;
-      }
-
-      // Find transaction by proposal ID in metadata
-      const transactions = await db
-        .select()
-        .from(treasuryMultisigTransactions)
-        .where(
-          and(
-            eq(treasuryMultisigTransactions.multisigWalletId, multisig[0].id),
-            eq(treasuryMultisigTransactions.status, 'submitted')
-          )
-        );
-
-      // Filter by proposal ID in metadata
-      const transaction = transactions.find(
-        (tx) => (tx.metadata as any)?.proposalId === proposalId
-      );
-
-      if (!transaction) {
-        this.logger.warn(
-          `No submitted transaction found for proposal ${proposalId}`
-        );
-        return;
-      }
-
-      // Update transaction status
-      const newStatus = success ? 'executed' : 'rejected';
-
-      await db
+    const status = 'executed';
+    const updated = await db.transaction(async (tx) => {
+      const [result] = await tx
         .update(treasuryMultisigTransactions)
         .set({
-          status: newStatus,
+          status,
           executedAt: new Date(),
           metadata: {
-            ...transaction.metadata,
+            ...asMetadataRecord(transaction.metadata),
             executedOnChain: true,
-            success
+            executedByAddress: eventData.executedBy,
+            onChainAmount: eventData.amount,
+            executionTxHash: eventData.transactionHash,
+            eventBlockNumber: eventData.blockNumber,
+            eventBlockHash: eventData.blockHash,
+            eventLogIndex: eventData.logIndex
           },
           updatedAt: new Date()
         })
-        .where(eq(treasuryMultisigTransactions.id, transaction.id));
+        .where(and(
+          eq(treasuryMultisigTransactions.id, transaction.id),
+          eq(treasuryMultisigTransactions.status, 'submitted')
+        ))
+        .returning({ id: treasuryMultisigTransactions.id });
 
-      // Log audit event
-      await this.logAuditEvent({
+      if (!result) return false;
+      await this.logAuditEvent(tx, {
         daoId: transaction.daoId,
         actorId: transaction.proposedBy,
         action: 'proposal_executed_onchain',
-        reason: `Proposal ${proposalId} executed on-chain (success: ${success})`,
+        reason: `Proposal ${eventData.proposalId} executed on-chain`,
         multisigTxId: transaction.id,
-        severity: success ? 'critical' : 'high',
-        metadata: { proposalId, contractAddress, success }
+        severity: 'critical',
+        metadata: {
+          proposalId: eventData.proposalId,
+          contractAddress,
+          executedBy: eventData.executedBy,
+          recipient: eventData.recipient,
+          amount: eventData.amount,
+          transactionHash: eventData.transactionHash,
+          blockNumber: eventData.blockNumber
+        }
       });
+      return true;
+    });
 
-      this.logger.info(
-        `Marked transaction ${transaction.id} as ${newStatus}`
-      );
-    } catch (error) {
-      this.logger.error(`Error handling ProposalExecuted: ${error}`);
-      throw error;
+    if (updated) {
+      this.emitTransactionUpdate(transaction.proposedBy, transaction.id, status, eventData);
+      this.logger.info(`Marked transaction ${transaction.id} as ${status}`);
     }
   }
 
-  /**
-   * Handle ProposalRejected event
-   * Updates transaction status to 'rejected'
-   */
-  private async handleProposalRejected(
+  private async handleProposalCancelled(
     contractAddress: string,
-    eventData: any
+    eventData: TreasuryContractEvent
   ): Promise<void> {
-    try {
-      const { proposalId, reason } = eventData;
+    if (eventData.eventType !== 'ProposalCancelled') {
+      throw new AppError('ProposalCancelled job has an invalid event payload', 400);
+    }
+    const transaction = await this.findSubmittedTransaction(contractAddress, eventData.proposalId);
+    if (!transaction) return;
 
-      this.logger.info(`ProposalRejected: ID=${proposalId}, Reason=${reason}`);
-
-      // Find multisig wallet
-      const multisig = await db
-        .select()
-        .from(multisigWallets)
-        .where(eq(multisigWallets.contractAddress, contractAddress))
-        .limit(1);
-
-      if (!multisig.length) {
-        this.logger.warn(`No multisig wallet found for ${contractAddress}`);
-        return;
-      }
-
-      // Find transaction
-      const transactions = await db
-        .select()
-        .from(treasuryMultisigTransactions)
-        .where(
-          and(
-            eq(treasuryMultisigTransactions.multisigWalletId, multisig[0].id),
-            eq(treasuryMultisigTransactions.status, 'submitted')
-          )
-        );
-
-      const transaction = transactions.find(
-        (tx) => (tx.metadata as any)?.proposalId === proposalId
-      );
-
-      if (!transaction) {
-        this.logger.warn(
-          `No submitted transaction found for proposal ${proposalId}`
-        );
-        return;
-      }
-
-      // Update transaction status
-      await db
+    const updated = await db.transaction(async (tx) => {
+      const [result] = await tx
         .update(treasuryMultisigTransactions)
         .set({
           status: 'rejected',
           metadata: {
-            ...transaction.metadata,
-            rejectionReason: reason
+            ...asMetadataRecord(transaction.metadata),
+            cancellationOnChain: true,
+            cancelledByAddress: eventData.cancelledBy,
+            cancellationTxHash: eventData.transactionHash,
+            eventBlockNumber: eventData.blockNumber,
+            eventBlockHash: eventData.blockHash,
+            eventLogIndex: eventData.logIndex
           },
           updatedAt: new Date()
         })
-        .where(eq(treasuryMultisigTransactions.id, transaction.id));
+        .where(and(
+          eq(treasuryMultisigTransactions.id, transaction.id),
+          eq(treasuryMultisigTransactions.status, 'submitted')
+        ))
+        .returning({ id: treasuryMultisigTransactions.id });
 
-      // Log audit event
-      await this.logAuditEvent({
+      if (!result) return false;
+      await this.logAuditEvent(tx, {
         daoId: transaction.daoId,
         actorId: transaction.proposedBy,
-        action: 'proposal_rejected_onchain',
-        reason: `Proposal ${proposalId} rejected on-chain: ${reason}`,
+        action: 'proposal_cancelled_onchain',
+        reason: `Proposal ${eventData.proposalId} cancelled on-chain`,
         multisigTxId: transaction.id,
         severity: 'high',
-        metadata: { proposalId, contractAddress, rejectionReason: reason }
+        metadata: {
+          proposalId: eventData.proposalId,
+          contractAddress,
+          cancelledBy: eventData.cancelledBy,
+          transactionHash: eventData.transactionHash,
+          blockNumber: eventData.blockNumber
+        }
       });
+      return true;
+    });
 
-      this.logger.info(`Marked transaction ${transaction.id} as rejected`);
-    } catch (error) {
-      this.logger.error(`Error handling ProposalRejected: ${error}`);
-      throw error;
+    if (updated) {
+      this.emitTransactionUpdate(transaction.proposedBy, transaction.id, 'rejected', eventData);
+      this.logger.info(`Marked transaction ${transaction.id} as rejected after on-chain cancellation`);
     }
   }
 
-  /**
-   * Log audit event to treasury_audit_log table
-   */
-  private async logAuditEvent(auditData: {
-    daoId: string;
-    actorId: string;
-    action: string;
-    reason: string;
-    multisigTxId: string;
-    severity: 'low' | 'medium' | 'high' | 'critical';
-    metadata?: any;
-  }): Promise<void> {
-    try {
-      await db.insert(treasuryAuditLog).values({
-        daoId: auditData.daoId,
-        actorId: auditData.actorId,
-        action: auditData.action,
-        reason: auditData.reason,
-        multisigTxId: auditData.multisigTxId,
-        severity: auditData.severity,
-        metadata: auditData.metadata || {},
-        timestamp: new Date()
-      });
-    } catch (error) {
-      this.logger.error(`Error logging audit event: ${error}`);
-      // Don't throw - audit failures shouldn't block event processing
+  private async logAuditEvent(
+    tx: Parameters<Parameters<typeof db.transaction>[0]>[0],
+    auditData: {
+      daoId: string;
+      actorId: string;
+      action: string;
+      reason: string;
+      multisigTxId: string;
+      severity: 'low' | 'medium' | 'high' | 'critical';
+      metadata: Record<string, unknown>;
     }
+  ): Promise<void> {
+    await tx.insert(treasuryAuditLog).values({
+      daoId: auditData.daoId,
+      actorId: auditData.actorId,
+      action: auditData.action,
+      reason: auditData.reason,
+      multisigTxId: auditData.multisigTxId,
+      severity: auditData.severity,
+      metadata: auditData.metadata,
+      timestamp: new Date()
+    });
   }
 
-  /**
-   * Poll for contract events on a multisig wallet
-   * Called periodically by an external scheduler (e.g., cron job)
-   * 
-   * @param multisigAddress Contract address to poll
-   */
-  async pollContractEvents(multisigAddress: string): Promise<void> {
+  private emitTransactionUpdate(
+    userId: string,
+    transactionId: string,
+    status: string,
+    eventData: TreasuryContractEvent
+  ): void {
     try {
-      const lastBlock = this.lastBlockChecked.get(multisigAddress) || 0;
-      const currentBlock = await treasuryOnchainService.getNetworkInfo();
-
-      this.logger.debug(
-        `Polling contract ${multisigAddress} from block ${lastBlock} to ${currentBlock.blockNumber}`
+      getEventEmitter().emitToUser(userId, 'treasury:transaction-updated', {
+        transactionId,
+        status,
+        eventType: eventData.eventType,
+        transactionHash: eventData.transactionHash,
+        blockNumber: eventData.blockNumber
+      });
+    } catch (error) {
+      this.logger.error(
+        `Failed to emit treasury update for transaction ${transactionId}: ${
+          error instanceof Error ? error.message : String(error)
+        }`
       );
-
-      // This is a placeholder - actual event polling would use ethers.js event filters
-      // In production, you would:
-      // 1. Get event logs for the contract
-      // 2. Parse each log into event data
-      // 3. Queue events into BullMQ for processing
-
-      this.lastBlockChecked.set(multisigAddress, currentBlock.blockNumber);
-    } catch (error) {
-      this.logger.error(`Error polling contract events: ${error}`);
     }
   }
 
-  /**
-   * Queue an event for processing
-   * Called when an event is detected from polling or event listeners
-   * 
-   * @param eventType Type of event (ProposalCreated, ProposalExecuted, etc.)
-   * @param contractAddress Contract address that emitted the event
-   * @param eventData Event data from contract
-   */
-  async queueEvent(
-    eventType: string,
-    contractAddress: string,
-    eventData: any
-  ): Promise<Job> {
+  async pollContractEvents(multisigAddress: string): Promise<void> {
+    const currentBlock = await treasuryOnchainService.getNetworkInfo();
+    const finalizedBlock = currentBlock.blockNumber - this.confirmations;
+    if (finalizedBlock < 0) return;
+
+    const normalizedAddress = multisigAddress.toLowerCase();
+    const wallet = await this.findMultisig(normalizedAddress);
+    if (!wallet) {
+      this.logger.warn(`No multisig wallet found for ${normalizedAddress}`);
+      return;
+    }
+    const [cursor] = await db
+      .select()
+      .from(treasuryEventCursors)
+      .where(eq(treasuryEventCursors.contractAddress, normalizedAddress))
+      .limit(1);
+
+    const configuredStart = process.env.TREASURY_EVENT_START_BLOCK;
+    let startBlock: number;
+    if (configuredStart !== undefined) {
+      startBlock = Number(configuredStart);
+    } else if (wallet.deploymentTxHash) {
+      const deploymentBlock = await treasuryOnchainService.getTransactionReceiptBlock(wallet.deploymentTxHash);
+      if (deploymentBlock === null) {
+        throw new AppError(`Could not locate deployment transaction for ${normalizedAddress}`, 503);
+      }
+      startBlock = deploymentBlock;
+    } else {
+      startBlock = finalizedBlock;
+      this.logger.warn(
+        `No deployment transaction is recorded for ${normalizedAddress}; tracking starts at finalized block ${startBlock}. Set TREASURY_EVENT_START_BLOCK to backfill earlier events.`
+      );
+    }
+    if (!Number.isSafeInteger(startBlock) || startBlock < 0) {
+      throw new AppError('TREASURY_EVENT_START_BLOCK must be a non-negative safe integer', 500);
+    }
+    let fromBlock = cursor ? cursor.lastProcessedBlock + 1 : startBlock;
+    if (fromBlock > finalizedBlock) return;
+
+    let rangesProcessed = 0;
+    while (fromBlock <= finalizedBlock && rangesProcessed < this.maxRangesPerPoll) {
+      const toBlock = Math.min(fromBlock + this.pollRange - 1, finalizedBlock);
+      const events = await treasuryOnchainService.getContractEvents(
+        normalizedAddress,
+        fromBlock,
+        toBlock
+      );
+      events.sort((left, right) => left.blockNumber - right.blockNumber || left.logIndex - right.logIndex);
+
+      for (const eventData of events) {
+        await this.queueEvent(eventData.eventType, normalizedAddress, eventData);
+      }
+
+      await db
+        .insert(treasuryEventCursors)
+        .values({
+          contractAddress: normalizedAddress,
+          lastProcessedBlock: toBlock,
+          updatedAt: new Date()
+        })
+        .onConflictDoUpdate({
+          target: treasuryEventCursors.contractAddress,
+          set: {
+            lastProcessedBlock: sql`GREATEST(${treasuryEventCursors.lastProcessedBlock}, excluded.last_processed_block)`,
+            updatedAt: new Date()
+          }
+        });
+      fromBlock = toBlock + 1;
+      rangesProcessed += 1;
+    }
+  }
+
+  private async pollActiveContracts(): Promise<void> {
+    if (this.polling) return;
+    this.polling = true;
     try {
+      const { chainId } = await treasuryOnchainService.getNetworkInfo();
+      const wallets = await db
+        .select({ contractAddress: multisigWallets.contractAddress })
+        .from(multisigWallets)
+        .where(and(
+          eq(multisigWallets.isActive, true),
+          eq(multisigWallets.chainId, chainId)
+        ));
+
+      for (const wallet of wallets) {
+        try {
+          await this.pollContractEvents(wallet.contractAddress);
+        } catch (error) {
+          this.logger.error(
+            `Failed polling treasury contract ${wallet.contractAddress}: ${
+              error instanceof Error ? error.message : String(error)
+            }`
+          );
+        }
+      }
+    } finally {
+      this.polling = false;
+    }
+  }
+
+  async queueEvent(
+    eventType: TreasuryEventType,
+    contractAddress: string,
+    eventData: TreasuryContractEvent
+  ): Promise<Job<TreasuryEventJobData>> {
+    try {
+      const eventJobId = `${contractAddress.toLowerCase()}-${eventData.transactionHash.toLowerCase().replace(/^0x/, '')}-${eventData.logIndex}`;
       const job = await this.queue.add(
         'process-event',
         {
@@ -431,20 +533,16 @@ export class TreasuryEventListenerWorker {
           timestamp: new Date().toISOString()
         },
         {
-          attempts: 3, // Retry up to 3 times on failure
-          backoff: {
-            type: 'exponential',
-            delay: 2000
-          },
-          removeOnComplete: true, // Remove job after successful completion
-          removeOnFail: false // Keep failed jobs for debugging
+          jobId: eventJobId,
+          attempts: 3,
+          backoff: { type: 'exponential', delay: 2000 },
+          removeOnComplete: { age: 86400, count: 10000 },
+          removeOnFail: false
         }
       );
-
       this.logger.info(
         `Queued ${eventType} event for contract ${contractAddress} (Job ID: ${job.id})`
       );
-
       return job;
     } catch (error) {
       this.logger.error(`Error queueing event: ${error}`);
@@ -452,36 +550,35 @@ export class TreasuryEventListenerWorker {
     }
   }
 
-  /**
-   * Start the worker
-   * Begins processing queued events
-   */
   async start(): Promise<void> {
+    if (this.pollTimer) return;
     try {
       await this.worker.waitUntilReady();
+      void this.pollActiveContracts().catch((error) => {
+        this.logger.error(`Initial treasury event poll failed: ${error instanceof Error ? error.message : String(error)}`);
+      });
+      this.pollTimer = setInterval(() => {
+        void this.pollActiveContracts().catch((error) => {
+          this.logger.error(`Treasury event poll failed: ${error instanceof Error ? error.message : String(error)}`);
+        });
+      }, this.pollIntervalMs);
       this.logger.info('Treasury event listener worker started successfully');
     } catch (error) {
       this.logger.error(`Failed to start worker: ${error}`);
+      await Promise.allSettled([this.worker.close(), this.queue.close()]);
       throw new AppError(`Failed to start event listener worker: ${error}`, 500);
     }
   }
 
-  /**
-   * Stop the worker gracefully
-   */
   async stop(): Promise<void> {
-    try {
-      await this.worker.close();
-      await this.queue.close();
-      this.logger.info('Treasury event listener worker stopped');
-    } catch (error) {
-      this.logger.error(`Error stopping worker: ${error}`);
+    if (this.pollTimer) {
+      clearInterval(this.pollTimer);
+      this.pollTimer = undefined;
     }
+    await Promise.all([this.worker.close(), this.queue.close()]);
+    this.logger.info('Treasury event listener worker stopped');
   }
 
-  /**
-   * Get worker status
-   */
   async getStatus(): Promise<{
     isRunning: boolean;
     isPaused: boolean;
@@ -489,44 +586,29 @@ export class TreasuryEventListenerWorker {
     failedJobs: number;
     completedJobs: number;
   }> {
-    try {
-      const counts = await this.queue.getJobCounts();
-
-      return {
-        isRunning: !this.worker.isStopped,
-        isPaused: this.worker.isPaused,
-        activeJobs: counts.active || 0,
-        failedJobs: counts.failed || 0,
-        completedJobs: counts.completed || 0
-      };
-    } catch (error) {
-      this.logger.error(`Error getting worker status: ${error}`);
-      return {
-        isRunning: false,
-        isPaused: false,
-        activeJobs: 0,
-        failedJobs: 0,
-        completedJobs: 0
-      };
-    }
+    const counts = await this.queue.getJobCounts();
+    return {
+      isRunning: this.worker.isRunning(),
+      isPaused: this.worker.isPaused(),
+      activeJobs: counts.active || 0,
+      failedJobs: counts.failed || 0,
+      completedJobs: counts.completed || 0
+    };
   }
 }
 
-/**
- * Create and export worker instance
- * This should be initialized in the server startup
- */
 let treasuryEventListenerWorker: TreasuryEventListenerWorker | null = null;
 
 export async function initializeTreasuryEventListener(
-  redisConnection?: any
+  redisConnection?: RedisOptions
 ): Promise<TreasuryEventListenerWorker> {
   if (!treasuryEventListenerWorker) {
-    treasuryEventListenerWorker = new TreasuryEventListenerWorker(
+    const worker = new TreasuryEventListenerWorker(
       'treasury-event-listener',
-      redisConnection || { host: 'localhost', port: 6379 }
+      redisConnection
     );
-    await treasuryEventListenerWorker.start();
+    await worker.start();
+    treasuryEventListenerWorker = worker;
   }
   return treasuryEventListenerWorker;
 }
@@ -539,4 +621,10 @@ export function getTreasuryEventListener(): TreasuryEventListenerWorker {
     );
   }
   return treasuryEventListenerWorker;
+}
+
+export async function shutdownTreasuryEventListener(): Promise<void> {
+  if (!treasuryEventListenerWorker) return;
+  await treasuryEventListenerWorker.stop();
+  treasuryEventListenerWorker = null;
 }

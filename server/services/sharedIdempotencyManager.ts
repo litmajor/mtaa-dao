@@ -90,6 +90,10 @@ export class SharedIdempotencyManager {
   async clearKey(key: string): Promise<void> {
     await pool.query(`DELETE FROM idempotency_keys WHERE key = $1`, [key]);
   }
+
+  async clear(key: string): Promise<void> {
+    await this.clearKey(key);
+  }
 }
 
 export const sharedIdempotencyManager = new SharedIdempotencyManager();

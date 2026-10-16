@@ -110,7 +110,7 @@ export class PromotionService {
       `);
 
       const currentRole = (userResult.rows?.[0]?.role as UserRole) || UserRole.MEMBER;
-      const config = PROMOTION_CONFIG[currentRole];
+      const config = (PROMOTION_CONFIG as Partial<Record<UserRole, (typeof PROMOTION_CONFIG)[UserRole.MEMBER]>>)[currentRole];
 
       if (!config) {
         return {
@@ -276,7 +276,7 @@ export class PromotionService {
       `);
 
       const currentRole = (userResult.rows?.[0]?.role as UserRole) || UserRole.MEMBER;
-      const config = PROMOTION_CONFIG[currentRole];
+      const config = PROMOTION_CONFIG[currentRole as keyof typeof PROMOTION_CONFIG];
 
       if (!config) {
         throw new Error('User is at maximum role level');

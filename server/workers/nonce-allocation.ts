@@ -11,6 +11,7 @@ import { db } from '../db';
 import { sql, eq } from 'drizzle-orm';
 import { logger } from '../utils/logger';
 import { randomBytes } from 'crypto';
+import { ethers } from 'ethers';
 
 /**
  * Atomic batch nonce allocation
@@ -32,6 +33,7 @@ export const allocateNonceBatch = async (
   if (dryRun) {
     // Dry-run: just preview without modifying state
     try {
+      const provider = new ethers.JsonRpcProvider(process.env.RPC_URL);
       const nextNonce = await provider.getTransactionCount(senderAddress, 'pending');
       logger.debug('Dry-run nonce allocation', {
         senderAddress,

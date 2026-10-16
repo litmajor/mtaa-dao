@@ -100,6 +100,11 @@ export class UserGenerator {
    * Generate a random user profile
    */
   generateUser(daoId?: string): GeneratedUser {
+    const resolvedDaoId = daoId?.trim() || this.config.defaultDaoId?.trim();
+    if (!resolvedDaoId) {
+      throw new Error('A valid DAO ID is required to generate a test user');
+    }
+
     const firstName = this.randomFrom(this.nameGeneratorWords.first);
     const lastName = this.randomFrom(this.nameGeneratorWords.last);
     const name = `${firstName} ${lastName}`;
@@ -114,7 +119,7 @@ export class UserGenerator {
       email: `${name.toLowerCase().replace(' ', '.')}@example.com`,
       name,
       role,
-      daoId: daoId || this.config.defaultDaoId || uuidv4(),
+      daoId: resolvedDaoId,
       joinedAt,
       profile: {
         bio: `Passionate about ${this.randomFrom(this.nameGeneratorWords.interests)} and community impact`,

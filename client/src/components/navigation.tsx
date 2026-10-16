@@ -14,7 +14,8 @@ import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip
 import DaoSwitcher from './DaoSwitcher';
 
 export default function Navigation() {
-  const { user } = useAuth() as { user?: User };
+  const { user: authUser } = useAuth() as any;
+  const user = authUser as User | null;
   const navigate = useNavigate();
   const location = useLocation();
   const { theme, toggleTheme } = useTheme();

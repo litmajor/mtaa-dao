@@ -2,14 +2,14 @@ import React, { useEffect, useState } from 'react';
 import ChartJS from '@/components/charts/ChartJSSetup';
 import { Chart } from 'react-chartjs-2';
 
-interface RiskFactorData {
+export interface RiskFactorData {
   name: string;
   current: number;
   baseline: number;
   trend: 'up' | 'down' | 'stable';
 }
 
-interface RiskFactorChartProps {
+export interface RiskFactorChartProps {
   daoId?: string;
   factors?: RiskFactorData[];
 }
@@ -61,7 +61,7 @@ export default function RiskFactorChart({ daoId, factors = DEFAULT_FACTORS }: Ri
                 ]
               };
 
-              const chartOptions = {
+              const chartOptions: any = {
                 responsive: true,
                 maintainAspectRatio: false,
                 plugins: {

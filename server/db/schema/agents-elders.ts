@@ -15,9 +15,8 @@ import {
   index,
   foreignKey,
   unique,
-  sql,
 } from 'drizzle-orm/pg-core';
-import { relations } from 'drizzle-orm';
+import { relations, sql } from 'drizzle-orm';
 
 /**
  * Elders Table

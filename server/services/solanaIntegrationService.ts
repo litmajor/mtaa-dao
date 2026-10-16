@@ -4,10 +4,8 @@ import {
   PublicKey,
   Transaction,
   SystemProgram,
-  sendAndConfirmTransaction,
 } from '@solana/web3.js';
-import type { ParsedTransactionWithMeta } from '@solana/web3.js';
-import { TOKEN_PROGRAM_ID, getAssociatedTokenAddress } from '@solana/spl-token';
+import { getAssociatedTokenAddress } from '@solana/spl-token';
 import { Logger } from '../utils/logger';
 import { AppError } from '../middleware/errorHandler';
 
@@ -21,15 +19,13 @@ export interface SolanaTransferRequest {
 
 export interface SolanaTransactionStatus {
   signature: string;
-  status: 'confirmed' | 'finalized' | 'failed';
-  timestamp: number;
+  status: 'processed' | 'confirmed' | 'finalized' | 'failed';
+  timestamp?: number;
   fee: number; // in lamports
 }
 
 export interface SolanaTokenInfo {
   mint: string;
-  symbol: string;
-  name: string;
   decimals: number;
   totalSupply: string;
 }
@@ -38,7 +34,7 @@ export class SolanaIntegrationService {
   private logger = Logger.getLogger();
   private connection: Connection;
 
-  constructor(rpcUrl: string = 'https://api.mainnet-beta.solana.com') {
+  constructor(rpcUrl: string = process.env.SOLANA_RPC_URL || 'https://api.mainnet-beta.solana.com') {
     this.connection = new Connection(rpcUrl, 'confirmed');
   }
 
@@ -54,17 +50,20 @@ export class SolanaIntegrationService {
         throw new AppError('Invalid token mint', 400);
       }
 
+      if (mintInfo.value.data.parsed.type !== 'mint') {
+        throw new AppError('Address is not an SPL token mint', 400);
+      }
       const data = mintInfo.value.data.parsed.info;
+      const supply = await this.connection.getTokenSupply(mintPublicKey, 'confirmed');
 
       return {
         mint: tokenMint,
-        symbol: '', // Solana doesn't store symbol on-chain, requires external data
-        name: '',
         decimals: data.decimals,
-        totalSupply: data.supply
+        totalSupply: supply.value.amount,
       };
     } catch (error) {
       this.logger.error('Failed to get Solana token info:', error);
+      if (error instanceof AppError) throw error;
       throw new AppError('Failed to fetch token information', 500);
     }
   }
@@ -76,7 +75,7 @@ export class SolanaIntegrationService {
     try {
       const publicKey = new PublicKey(address);
       const balance = await this.connection.getBalance(publicKey);
-      return (balance / 1e9).toString(); // Convert lamports to SOL
+      return formatBaseUnits(BigInt(balance), 9);
     } catch (error) {
       this.logger.error('Failed to get Solana balance:', error);
       throw new AppError('Failed to fetch balance', 500);
@@ -100,11 +99,18 @@ export class SolanaIntegrationService {
       const tokenAccount = await this.connection.getParsedAccountInfo(associatedTokenAddress);
 
       if (!tokenAccount.value || !('parsed' in tokenAccount.value.data)) {
-        return '0'; // Account doesn't exist
+        return '0';
       }
 
-      const tokenBalance = tokenAccount.value.data.parsed.info.tokenAmount.uiAmount;
-      return tokenBalance.toString();
+      const tokenAccountInfo = tokenAccount.value.data.parsed.info;
+      if (tokenAccount.value.data.parsed.type !== 'account' || tokenAccountInfo.mint !== tokenMint || tokenAccountInfo.owner !== address) {
+        throw new AppError('RPC returned a token account that does not match the requested owner and mint', 503);
+      }
+      const tokenAmount = tokenAccountInfo.tokenAmount;
+      if (!Number.isInteger(tokenAmount.decimals) || tokenAmount.amount === undefined) {
+        throw new AppError('RPC returned incomplete SPL token balance data', 503);
+      }
+      return formatBaseUnits(BigInt(tokenAmount.amount), tokenAmount.decimals);
     } catch (error) {
       this.logger.error('Failed to get SPL token balance:', error);
       throw new AppError('Failed to fetch token balance', 500);
@@ -114,28 +120,23 @@ export class SolanaIntegrationService {
   /**
    * Estimate transaction fees
    */
-  async estimateFees(): Promise<{ networkFee: string; priorityFee: string }> {
+  async estimateFees(address: string): Promise<{ networkFee: string }> {
     try {
-      const recentBlockhash = await this.connection.getLatestBlockhash('confirmed');
-      const feeCalculator = await this.connection.getFeeForMessage(
-        Transaction.from(Buffer.from([]))
-      );
-
-      // Solana base fee is usually 5000 lamports
-      const baseNetworkFee = recentBlockhash.feeCalculator?.lamportsPerSignature || 5000;
-      const priorityFee = 1000; // Optional additional fee
+      const feePayer = new PublicKey(address);
+      const { blockhash } = await this.connection.getLatestBlockhash('confirmed');
+      const message = new Transaction({ feePayer, recentBlockhash: blockhash })
+        .add(SystemProgram.transfer({ fromPubkey: feePayer, toPubkey: feePayer, lamports: 1 }))
+        .compileMessage();
+      const fee = await this.connection.getFeeForMessage(message, 'confirmed');
+      if (fee.value === null) throw new AppError('Solana RPC could not estimate the transfer fee', 503);
 
       return {
-        networkFee: (baseNetworkFee / 1e9).toFixed(9), // Convert to SOL
-        priorityFee: (priorityFee / 1e9).toFixed(9)
+        networkFee: (fee.value / 1e9).toFixed(9),
       };
     } catch (error) {
       this.logger.error('Failed to estimate Solana fees:', error);
-      // Return default fees on error
-      return {
-        networkFee: '0.000005', // ~5000 lamports
-        priorityFee: '0.000001'
-      };
+      if (error instanceof AppError) throw error;
+      throw new AppError('Failed to estimate Solana fees from the configured RPC', 503);
     }
   }
 
@@ -155,12 +156,23 @@ export class SolanaIntegrationService {
    * Validate token mint address
    */
   async validateTokenMint(mint: string): Promise<boolean> {
+    let mintPublicKey: PublicKey;
     try {
-      const mintPublicKey = new PublicKey(mint);
-      const mintInfo = await this.connection.getParsedAccountInfo(mintPublicKey);
-      return !!(mintInfo.value && 'parsed' in mintInfo.value.data);
+      mintPublicKey = new PublicKey(mint);
     } catch {
       return false;
+    }
+
+    try {
+      const mintInfo = await this.connection.getParsedAccountInfo(mintPublicKey, 'confirmed');
+      return !!(
+        mintInfo.value &&
+        'parsed' in mintInfo.value.data &&
+        mintInfo.value.data.parsed.type === 'mint'
+      );
+    } catch (error) {
+      this.logger.error('Failed to validate SPL mint against Solana RPC:', error);
+      throw new AppError('Solana RPC unavailable while validating token mint', 503);
     }
   }
 
@@ -171,7 +183,7 @@ export class SolanaIntegrationService {
     try {
       const tokenMintPublicKey = new PublicKey(tokenMint);
       const supplyInfo = await this.connection.getTokenSupply(tokenMintPublicKey);
-      return supplyInfo.value.uiAmount?.toString() || '0';
+      return supplyInfo.value.amount;
     } catch (error) {
       this.logger.error('Failed to get token supply:', error);
       throw new AppError('Failed to fetch token supply', 500);
@@ -190,16 +202,17 @@ export class SolanaIntegrationService {
       }
 
       const fee = tx.meta?.fee || 0;
-      const status = tx.meta?.err ? 'failed' : (tx.blockTime ? 'finalized' : 'confirmed');
+      const status = tx.meta?.err ? 'failed' : 'finalized';
 
       return {
         signature,
-        status: status as 'confirmed' | 'finalized' | 'failed',
-        timestamp: tx.blockTime || Date.now() / 1000,
-        fee
+        status,
+        timestamp: tx.blockTime ?? undefined,
+        fee,
       };
     } catch (error) {
       this.logger.error('Failed to get transaction status:', error);
+      if (error instanceof AppError) throw error;
       throw new AppError('Failed to fetch transaction status', 500);
     }
   }
@@ -259,3 +272,13 @@ export class SolanaIntegrationService {
 
 // Export singleton instance
 export const solanaIntegrationService = new SolanaIntegrationService();
+export const solanaDevnetIntegrationService = new SolanaIntegrationService(
+  process.env.SOLANA_DEVNET_RPC_URL || 'https://api.devnet.solana.com'
+);
+
+function formatBaseUnits(amount: bigint, decimals: number): string {
+  const divisor = 10n ** BigInt(decimals);
+  const whole = amount / divisor;
+  const fraction = (amount % divisor).toString().padStart(decimals, '0').replace(/0+$/, '');
+  return fraction ? `${whole}.${fraction}` : whole.toString();
+}

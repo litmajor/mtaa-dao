@@ -127,26 +127,30 @@ services:
     container_name: mtaadao-db
     restart: always
     expose:
-      # Port 5432 kept internal. DB cannot be reached from the public internet.
+      # Container traffic stays on the private compose network.
       - "5432"
     environment:
       POSTGRES_DB: ${DB_NAME}
       POSTGRES_USER: ${DB_USER}
       POSTGRES_PASSWORD: ${DB_PASSWORD}
+      POSTGRES_HOST_AUTH_METHOD: scram-sha-256
     command: >
       postgres
-      -c max_connections=300              # Allows high-concurrency API connection pooling
-      -c shared_buffers=256MB             # RAM allocated for cached DB blocks
-      -c effective_cache_size=768MB       # Planner estimate of total memory available for caching
-      -c maintenance_work_mem=64MB        # Memory for VACUUM, CREATE INDEX operations
-      -c checkpoint_completion_target=0.9 # Spreads out checkpoint I/O write spikes
-      -c wal_buffers=16MB                 # Memory allocated for unwritten write-ahead logs
-      -c default_statistics_target=100    # Improves query planner accuracy
-      -c random_page_cost=1.1             # Optimized for SSD storage access speeds
-      -c work_mem=8MB                     # Memory limit per query sort/hash operation
+      -c max_connections=300
+      -c shared_buffers=256MB
+      -c effective_cache_size=768MB
+      -c maintenance_work_mem=64MB
+      -c checkpoint_completion_target=0.9
+      -c wal_buffers=16MB
+      -c default_statistics_target=100
+      -c random_page_cost=1.1
+      -c work_mem=8MB
     volumes:
       # Persists PostgreSQL data outside the container lifecycle
       - pgdata:/var/lib/postgresql/data
+    ports:
+      # Host tooling is allowed only via loopback, never a public interface.
+      - "127.0.0.1:5433:5432"
     healthcheck:
       # Tests actual database socket readiness using 'pg_isready'
       test: ["CMD-SHELL", "pg_isready -U ${DB_USER} -d ${DB_NAME}"]

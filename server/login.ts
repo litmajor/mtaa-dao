@@ -1,11 +1,11 @@
 import { getUserByEmail } from './storage';
-import type { NextApiRequest, NextApiResponse } from 'next';
+import type { Request, Response } from 'express';
 import bcrypt from 'bcryptjs';
 import { v4 as uuidv4 } from 'uuid';
 import { generateTokens } from './auth';
 import { createSession } from './sessionService';
 
-export default async function handler(req: NextApiRequest, res: NextApiResponse) {
+export default async function handler(req: Request, res: Response) {
   if (req.method !== 'POST') return res.status(405).end();
   
   const { emailOrPhone, password, rememberMe = false } = req.body;
@@ -22,11 +22,13 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       return res.status(401).json({ error: 'Invalid credentials' });
     }
 
+    const userRole = typeof user.roles === 'string' ? user.roles : 'user';
+
     // Generate JWT tokens
     const tokens = generateTokens({
       sub: user.id,
       email: user.email || undefined,
-      role: user.role || 'user'
+      role: userRole
     });
 
     // Create session
@@ -36,7 +38,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       user.id,
       {
         email: user.email || undefined,
-        role: user.role || 'user'
+        role: userRole
       },
       {
         ip: (req.headers['x-forwarded-for'] as string) || req.socket?.remoteAddress || '',
@@ -62,7 +64,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       user: {
         id: user.id,
         email: user.email,
-        role: user.role || 'user'
+        role: userRole
       }
     });
   } catch (e: any) {

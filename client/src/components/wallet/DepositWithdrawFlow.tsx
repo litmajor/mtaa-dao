@@ -169,9 +169,13 @@ export function DepositWithdrawFlow() {
     fetchVaults();
   }, []);
 
-  const methods = flowType === 'deposit' ? DEPOSIT_METHODS : WITHDRAW_METHODS;
-  const methodInfo = methods[selectedMethod];
-  const steps = FLOW_STEPS[flowType][selectedMethod as any] || [];
+  const methods: Record<string, { name: string; icon: string; fee: string; time: string; desc: string }> = flowType === 'deposit' ? DEPOSIT_METHODS : WITHDRAW_METHODS;
+  const methodInfo = flowType === 'deposit'
+    ? DEPOSIT_METHODS[selectedMethod as DepositMethod]
+    : WITHDRAW_METHODS[selectedMethod as WithdrawMethod];
+  const steps = flowType === 'deposit'
+    ? FLOW_STEPS.deposit[selectedMethod as DepositMethod] || []
+    : FLOW_STEPS.withdraw[selectedMethod as WithdrawMethod] || [];
 
   const handleStart = () => {
     if (!amount) {

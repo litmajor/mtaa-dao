@@ -110,7 +110,7 @@ router.post('/analyze-user/:targetUserId', authenticate, requireElder, async (re
 
     // Get proposal activity
     const proposalsCreated = await db.query.proposals.findMany({
-      where: eq(proposals.creatorId, targetUserId),
+      where: eq(proposals.proposerId, targetUserId),
       orderBy: [desc(proposals.createdAt)],
       limit: 5,
     });
@@ -118,7 +118,7 @@ router.post('/analyze-user/:targetUserId', authenticate, requireElder, async (re
     const votesParticipated = await db
       .select({ count: sql<number>`COUNT(*)` })
       .from(votes)
-      .where(eq(votes.voterId, targetUserId));
+      .where(eq(votes.userId, targetUserId));
 
     // Get vaults info
     const userVaults = await db.query.vaults.findMany({
@@ -186,7 +186,7 @@ router.post('/analyze-user/:targetUserId', authenticate, requireElder, async (re
         engagementScore,
         riskProfile,
         recentActivity: recentActivities.slice(0, 10).map(a => ({
-          action: a.action,
+          action: a.activityType ?? a.type,
           timestamp: a.createdAt,
           metadata: a.metadata,
         })),
@@ -204,7 +204,7 @@ router.post('/analyze-user/:targetUserId', authenticate, requireElder, async (re
     try {
       await db.insert(userActivities).values({
         userId: elderId,
-        action: 'elder_user_analysis',
+         type: 'elder_user_analysis',
         metadata: JSON.stringify({
           targetUserId,
           engagementScore: engagementScore.score,
@@ -260,7 +260,7 @@ router.get('/user-insights/:targetUserId', authenticate, requireElder, async (re
     const proposalCount = await db
       .select({ count: sql<number>`COUNT(*)` })
       .from(proposals)
-      .where(eq(proposals.creatorId, targetUserId));
+      .where(eq(proposals.proposerId, targetUserId));
 
     const vaultCount = await db
       .select({ count: sql<number>`COUNT(*)` })

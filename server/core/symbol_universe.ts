@@ -51,6 +51,7 @@ export type SupportedChain =
   | 'avalanche'
   | 'fantom'
   | 'celo'
+  | 'bsc'
   | 'solana'
   | 'binance'
   | 'cosmos'
@@ -447,14 +448,14 @@ export class SymbolUniverseService {
     let updateCount = 0;
 
     try {
-      const searchResult = await dexscreenerClient.searchPairs('*', ['ethereum']);
+      const searchResult = await dexscreenerClient.searchPairs('*');
 
-      if (searchResult.status !== 'success' || !searchResult.pairs) {
+      if (!searchResult.length) {
         logger.warn('[SymbolUniverse] DexScreener Uniswap search unavailable');
         return { new: 0, updated: 0 };
       }
 
-      const topTokens = searchResult.pairs.slice(0, 50);
+      const topTokens = searchResult.slice(0, 50);
 
       for (const pair of topTokens) {
         const symbol = pair.baseToken.symbol.toUpperCase();
@@ -508,14 +509,14 @@ export class SymbolUniverseService {
     let updateCount = 0;
 
     try {
-      const searchResult = await dexscreenerClient.searchPairs('stablecoin', ['ethereum']);
+      const searchResult = await dexscreenerClient.searchPairs('stablecoin');
 
-      if (searchResult.status !== 'success' || !searchResult.pairs) {
+      if (!searchResult.length) {
         logger.warn('[SymbolUniverse] DexScreener Curve search unavailable');
         return { new: 0, updated: 0 };
       }
 
-      for (const pair of searchResult.pairs.slice(0, 30)) {
+      for (const pair of searchResult.slice(0, 30)) {
         const symbol = pair.baseToken.symbol.toUpperCase();
         const name   = pair.baseToken.name;
 

@@ -308,6 +308,14 @@ export class EconomyService {
       };
     }
 
+    if ('error' in paymentResult) {
+      Logger.getLogger().error('[EconomyService] Merchant redemption provider call failed', {
+        error: paymentResult.error.message,
+        code: paymentResult.error.code,
+      });
+      throw new Error(paymentResult.error.message);
+    }
+
     // Record redemption transaction via CommandBus
     const createResult = await commandBus.dispatch({
       id: crypto.randomUUID(),
@@ -332,7 +340,7 @@ export class EconomyService {
     });
 
     if (!createResult.success) {
-      Logger.error(`[EconomyService] Failed to record redemption payment: ${createResult.error}`);
+      Logger.getLogger().error(`[EconomyService] Failed to record redemption payment: ${createResult.error ?? 'unknown command error'}`);
     } else {
       // If payment was completed synchronously, update it
       if (paymentResult.status === 'completed') {
@@ -340,7 +348,7 @@ export class EconomyService {
           id: crypto.randomUUID(),
           type: PaymentCommandTypes.CompletePayment,
           actor: merchantId,
-          correlationId: createResult.correlationId,
+          correlationId: createResult.commandId,
           timestamp: new Date(),
           payload: {
             reference: paymentResult.reference,

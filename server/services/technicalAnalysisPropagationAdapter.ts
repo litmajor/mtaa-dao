@@ -109,10 +109,12 @@ export async function processTAUpdate(update: TAUpdate): Promise<{
     );
     
     // Emit event on bus; fallback to direct propagation
+    let modifiedNodes = 0;
     if (graphPropagationBus.listenerCount('signal_change') > 0) {
       graphPropagationBus.emit('signal_change', update.symbol, update.previousSignalBias, update.currentSignalBias, update.signalConfidence);
     } else {
       const modified = graphPropagationEngine.propagate(delta);
+      modifiedNodes = modified.size;
       // Update node with new signal state
       const node = graphPropagationEngine.getNode(update.symbol);
       if (node) {
@@ -130,7 +132,7 @@ export async function processTAUpdate(update: TAUpdate): Promise<{
     return {
       propagated: true,
       delta,
-      modifiedNodes: modified.size,
+      modifiedNodes,
       signalFlipped,
     };
   } catch (error) {

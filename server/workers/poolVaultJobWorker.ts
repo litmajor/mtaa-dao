@@ -20,12 +20,20 @@ export class PoolVaultJobWorker {
     );
 
     jobQueueService.registerProcessor(
+      'pool-valuation',
+      async (job: Job<JobPayload>) => await this.processPoolValuation(job),
+      2
+    );
+
+    jobQueueService.registerProcessor(
       'vault-rebalance',
       async (job: Job<JobPayload>) => await this.processVaultRebalance(job),
       2 // 2 concurrent vault rebalances
     );
 
-    logger.info('[PoolVaultJobWorker] Initialized with 2 pool + 2 vault slots');
+    logger.info(
+      '[PoolVaultJobWorker] Initialized with pool rebalance, valuation, and vault processors'
+    );
   }
 
   /**
@@ -71,6 +79,17 @@ export class PoolVaultJobWorker {
       logger.error(`[PoolRebalance] Failed for pool ${poolId}:`, error);
       throw error;
     }
+  }
+
+  static async processPoolValuation(job: Job<JobPayload>): Promise<any> {
+    const { poolId } = job.data;
+    if (typeof poolId !== 'string' || !poolId) {
+      throw new Error('Pool valuation requires poolId');
+    }
+    const { poolShareValuationService } = await import(
+      '../services/poolShareValuationService'
+    );
+    return poolShareValuationService.revaluePool(poolId);
   }
 
   /**
@@ -238,4 +257,3 @@ export class PoolVaultJobWorker {
     }
   }
 }
-

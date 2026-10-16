@@ -39,6 +39,9 @@ import {
 import { authenticateToken } from "../middleware/auth";
 import { validateRequest } from "../middleware/validation";
 import { z } from "zod";
+import { db } from "../db";
+import { walletTransactions } from "../../shared/schema";
+import { eq } from "drizzle-orm";
 
 const router = Router();
 
@@ -730,14 +733,10 @@ router.delete(
       const { transactionId } = req.params;
       const { reason } = req.body;
 
-      // Soft delete transaction
+      // Remove the transaction from the canonical wallet transaction table.
       const result = await db
-        .update(transactions)
-        .set({
-          deletedAt: new Date(),
-          updatedAt: new Date(),
-        })
-        .where(eq(transactions.id, transactionId))
+        .delete(walletTransactions)
+        .where(eq(walletTransactions.id, transactionId))
         .returning();
 
       if (!result.length) {
@@ -780,14 +779,10 @@ router.post(
     try {
       const { transactionId, reason } = req.body;
 
-      // Soft delete transaction
+      // Remove the transaction from the canonical wallet transaction table.
       const result = await db
-        .update(transactions)
-        .set({
-          deletedAt: new Date(),
-          updatedAt: new Date(),
-        })
-        .where(eq(transactions.id, transactionId))
+        .delete(walletTransactions)
+        .where(eq(walletTransactions.id, transactionId))
         .returning();
 
       if (!result.length) {

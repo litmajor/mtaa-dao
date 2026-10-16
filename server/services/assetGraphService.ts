@@ -9,14 +9,13 @@
  * • Calculate composite exposures (net BTC, net ETH)
  * • Monitor liquidation risks
  * • Track yield across protocols
- * • Real-time price updates via OHLCV
+ * • Real-time valuation updates via the price oracle
  *
  * ========== FIXES APPLIED ==========
  *
- * FIX #1: getTokenPrice() now calls ohlcvService first and falls back to
- *         hardcoded estimates only for symbols the service doesn't return.
- *         Previously the ohlcvService import was unused for individual prices
- *         and every position was valued with stale hardcoded constants.
+ * FIX #1: USD values use the price oracle's allowlisted valuation path.
+ *         Missing valuations fail closed rather than using market candles or
+ *         hardcoded estimates.
  *
  * FIX #2: Prices are fetched once as a symbol→price map before discovery
  *         loops begin. Was calling await getTokenPrice() per position inside
@@ -52,7 +51,7 @@
  */
 
 import { Logger } from '../utils/logger';
-import { ohlcvService } from './ohlcvService';
+import { priceOracle } from './priceOracle';
 import { aaveAdapter } from './defiProtocols/aaveAdapter';
 import { moolaAdapter } from './defiProtocols/moolaAdapter';
 import { lidoAdapter, curveAdapter } from './defiProtocols/lidoCurveAdapter';
@@ -73,20 +72,12 @@ import type {
 
 const logger = Logger.getLogger();
 
-// FIX #1: Hardcoded fallbacks are last-resort only, used when ohlcvService
-// doesn't have a price for a given symbol.
-const PRICE_FALLBACKS: Record<string, number> = {
-  ETH:  1900,
-  WETH: 1900,
-  BTC:  45000,
-  WBTC: 45000,
-  USDC: 1.0,
-  USDT: 1.0,
-  DAI:  1.0,
-  CELO: 0.67,
-  cUSD: 1.0,
-  cEUR: 1.08,
-};
+class ValuationUnavailableError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'ValuationUnavailableError';
+  }
+}
 
 /** Per-protocol discovery result — distinguishes "no positions" from "call failed" */
 interface DiscoveryResult {
@@ -135,18 +126,16 @@ class AssetGraphService {
   private loadingPromises: Map<string, Promise<UserAssetGraph>> = new Map();
 
   /**
-   * CONCURRENCY: Semaphore to limit parallel OHLCV calls
-   * Prevents overwhelming exchange rate limits with too many concurrent requests
-   * Max 4 concurrent calls keeps latency ~200ms while avoiding 429 (too many requests)
+   * CONCURRENCY: Semaphore to limit parallel wallet and protocol requests.
    */
   private ohlcvConcurrencyTokens = 4;
   private ohlcvConcurrencyQueue: Array<() => Promise<void>> = [];
   private ohlcvConcurrencyActive = 0;
 
   /**
-   * CACHING #1: Global price cache shared across all users
-   * TTL: 45 seconds for tight freshness (reduced from 90s after parallelization)
-   * Parallelized fetch takes ~200ms, so 45s TTL ensures prices never stale >45s
+   * CACHING #1: Global valuation cache shared across all users.
+   * The oracle also caches results; this avoids duplicate map construction
+   * while ensuring graph marks are refreshed at least once per minute.
    */
   private globalPriceCache: CachedPrices | null = null;
   private readonly PRICE_CACHE_TTL_MS = 45 * 1000; // 45 seconds (was 90s)
@@ -271,6 +260,9 @@ class AssetGraphService {
       );
     } catch (error) {
       logger.error(`[AssetGraph] Failed to load graph for ${userId}:`, error);
+      if (error instanceof ValuationUnavailableError) {
+        throw error;
+      }
       this.graphs.set(userId, graph);
     }
 
@@ -296,8 +288,15 @@ class AssetGraphService {
     // Previously getTokenPrice() was awaited inside nested per-position loops.
     const priceMap = await this.buildPriceMap();
 
-    const getPrice = (symbol: string): number =>
-      priceMap[symbol] ?? PRICE_FALLBACKS[symbol] ?? 1.0;
+    const getPrice = (symbol: string): number => {
+      const price = priceMap[symbol.toUpperCase()];
+      if (price === undefined) {
+        throw new ValuationUnavailableError(
+          `No reliable valuation price for ${symbol}`
+        );
+      }
+      return price;
+    };
 
     // Run all per-address discovery in parallel, per-protocol
     const results = await Promise.all([
@@ -312,6 +311,9 @@ class AssetGraphService {
 
     for (const result of results) {
       if (!result.success && result.error) {
+        if (result.error.startsWith('No reliable valuation price for')) {
+          throw new ValuationUnavailableError(result.error);
+        }
         // FIX #8: Track per-source errors instead of silently continuing
         discoveryErrors[result.source] = result.error;
         logger.warn(`[AssetGraph] Discovery failed for ${result.source}: ${result.error}`);
@@ -335,7 +337,7 @@ class AssetGraphService {
 
   /**
    * CACHING #1: Price caching with TTL
-   * Check global cache first before calling ohlcvService
+   * Check global cache first before requesting allowlisted valuations.
    */
   private async buildPriceMap(): Promise<Record<string, number>> {
     const now = Date.now();
@@ -348,29 +350,11 @@ class AssetGraphService {
 
     try {
       const symbols = ['ETH', 'WETH', 'BTC', 'WBTC', 'USDC', 'USDT', 'DAI', 'CELO', 'cUSD', 'cEUR', 'LINK', 'UNI', 'AAVE', 'CRV'];
-      
-      // 🚀 PARALLEL FETCH with concurrency limiting: Get prices with max 4 concurrent calls
-      // Prevents overwhelming exchange rate limits while keeping latency ~200ms
-      const responses = await Promise.all(
-        symbols.map(symbol =>
-          this.withConcurrencyLimit(async () => {
-            try {
-              return await ohlcvService.getCandles(symbol, '1h', 1);
-            } catch (e) {
-              logger.debug(`[AssetGraph] Failed to fetch price for ${symbol}: ${(e as any).message}`);
-              return { data: [] }; // Return empty response for graceful fallback
-            }
-          })
-        )
-      );
-
+      const valuations = await priceOracle.getValuationPrices(symbols);
       const map: Record<string, number> = {};
-      symbols.forEach((symbol, index) => {
-        const response = responses[index];
-        if (response.data && response.data.length > 0) {
-          const latestCandle = response.data[response.data.length - 1];
-          map[symbol] = latestCandle.close;
-        }
+      valuations.forEach((valuation, symbol) => {
+        map[symbol.toUpperCase()] =
+          valuation.haircutPriceUsd ?? valuation.priceUsd;
       });
 
       // Cache the result with TTL
@@ -382,9 +366,11 @@ class AssetGraphService {
 
       logger.debug(`[AssetGraph] Cached prices for ${Object.keys(map).length} symbols (TTL: ${this.PRICE_CACHE_TTL_MS / 1000}s)`);
       return map;
-    } catch (error: any) {
-      logger.warn(`[AssetGraph] Price map fetch failed, using fallbacks: ${error.message}`);
-      return {};
+    } catch (error) {
+      logger.error('[AssetGraph] Valuation price map fetch failed', error);
+      throw new ValuationUnavailableError(
+        'Unable to retrieve reliable valuation prices'
+      );
     }
   }
 
@@ -1094,8 +1080,25 @@ class AssetGraphService {
     const graph = this.graphs.get(userId);
     if (!graph) return;
 
-    const getPrice = (symbol: string): number =>
-      priceMap[symbol] ?? PRICE_FALLBACKS[symbol] ?? 1.0;
+    const getPrice = (symbol: string): number => {
+      const price = priceMap[symbol.toUpperCase()];
+      if (price === undefined) {
+        throw new ValuationUnavailableError(
+          `No reliable valuation price for ${symbol}`
+        );
+      }
+      return price;
+    };
+
+    const unpricedSymbols = Array.from(graph.nodes.values())
+      .map((node) => node.symbol.toUpperCase())
+      .filter((symbol) => priceMap[symbol] === undefined);
+    if (unpricedSymbols.length > 0) {
+      this.graphs.delete(userId);
+      throw new ValuationUnavailableError(
+        `No reliable valuation price for ${Array.from(new Set(unpricedSymbols)).join(', ')}`
+      );
+    }
 
     let priceUpdated = false;
 

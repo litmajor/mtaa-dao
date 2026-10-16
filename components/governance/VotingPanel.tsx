@@ -260,7 +260,6 @@ export const VotingPanel: React.FC<VotingPanelProps> = ({
                 <div className="vote-bar-item">
                   <span className="bar-label">For</span>
                   <div className="bar-container">
-                    {/* eslint-disable-next-line react/style-prop-object */}
                     <div
                       className="bar-fill for"
                       style={{ width: `${currentPercs.for}%` }}
@@ -274,7 +273,6 @@ export const VotingPanel: React.FC<VotingPanelProps> = ({
                 <div className="vote-bar-item">
                   <span className="bar-label">Against</span>
                   <div className="bar-container">
-                    {/* eslint-disable-next-line react/style-prop-object */}
                     <div
                       className="bar-fill against"
                       style={{ width: `${currentPercs.against}%` }}
@@ -288,7 +286,6 @@ export const VotingPanel: React.FC<VotingPanelProps> = ({
                 <div className="vote-bar-item">
                   <span className="bar-label">Abstain</span>
                   <div className="bar-container">
-                    {/* eslint-disable-next-line react/style-prop-object */}
                     <div
                       className="bar-fill abstain"
                       style={{ width: `${currentPercs.abstain}%` }}

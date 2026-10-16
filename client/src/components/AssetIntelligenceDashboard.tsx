@@ -6,9 +6,59 @@
  */
 
 import React, { useEffect, useState } from 'react';
-import { type AssetState } from '../../types/assetTypes';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Alert, AlertDescription } from '@/components/ui/alert';
+
+interface AssetState {
+  marketState: {
+    price: {
+      current: number;
+      changePercent24h: number;
+      low24h: number;
+      high24h: number;
+      volatility: { current: number };
+    };
+    cex: {
+      sources?: Array<{ exchange: string; bid: number; ask: number; spread: number }>;
+      best?: { buy?: { exchange: string; price: number } };
+    };
+    dex: {
+      sources?: Array<{ protocol: string; liquidity: number; slippage?: number }>;
+    };
+    crossExchange: {
+      arbitrage: { opportunities: Array<{ route: string; profitUsd: number; profitPercent: number }> };
+    };
+    technicals?: {
+      rsi?: { value: number; signal: string };
+      macd?: { line: number; signal: number; histogram: number };
+      movingAverages?: { ma20?: number; ma50?: number; ma200?: number };
+      trend?: { direction: 'up' | 'down' | 'neutral'; strength: number };
+    };
+  };
+  userContext?: {
+    holding?: { amount: number; value: number; allocation: number };
+    performance?: { unrealizedPnL: number; unrealizedPnLPercent: number };
+  };
+  intelligence?: {
+    aiInsights?: {
+      primarySignal?: { action: string; confidence: number; reasoning?: string };
+      warnings?: Array<{ severity: 'critical' | 'warning' | 'info'; message: string }>;
+      isHeuristicComposite?: boolean;
+    };
+    confidence?: { overall: number };
+  };
+  aiInsights?: {
+    primarySignal?: { action: string; confidence: number; reasoning?: string };
+    warnings?: Array<{ severity: 'critical' | 'warning' | 'info'; message: string }>;
+    isHeuristicComposite?: boolean;
+  };
+  identification: { symbol: string; name?: string; pair: string };
+  status: {
+    dataFreshness: number;
+    isLiquid?: boolean;
+    lastUpdated: number;
+  };
+}
 
 interface AssetIntelligenceDashboardProps {
   symbol: string;
@@ -27,6 +77,7 @@ export const AssetIntelligenceDashboard: React.FC<AssetIntelligenceDashboardProp
   const [assetState, setAssetState] = useState<AssetState | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const market = assetState?.marketState;
 
   // Fetch AssetState on mount or when symbol changes
   useEffect(() => {
@@ -94,7 +145,7 @@ export const AssetIntelligenceDashboard: React.FC<AssetIntelligenceDashboardProp
       {assetState.userContext && <PortfolioSection assetState={assetState} />}
 
       {/* AI Guidance */}
-      {assetState.aiInsights && <AIGuidanceSection assetState={assetState} />}
+      {assetState.intelligence?.aiInsights && <AIGuidanceSection assetState={assetState} />}
 
       {/* Action Buttons */}
       <ActionButtonsSection assetState={assetState} onTrade={onTrade} />
@@ -112,6 +163,8 @@ const HeaderSection: React.FC<{ assetState: AssetState; symbol: string }> = ({
   assetState,
   symbol,
 }) => {
+  const price = assetState.marketState.price;
+
   return (
     <div className="flex items-center justify-between">
       <div>
@@ -120,15 +173,15 @@ const HeaderSection: React.FC<{ assetState: AssetState; symbol: string }> = ({
       </div>
       <div className="text-right">
         <div className="text-2xl font-bold">
-          ${assetState.price.current.toLocaleString('en-US', { maximumFractionDigits: 2 })}
+          ${price.current.toLocaleString('en-US', { maximumFractionDigits: 2 })}
         </div>
         <div
           className={`text-sm ${
-            assetState.price.changePercent24h >= 0 ? 'text-green-600' : 'text-red-600'
+            price.changePercent24h >= 0 ? 'text-green-600' : 'text-red-600'
           }`}
         >
-          {assetState.price.changePercent24h >= 0 ? '+' : ''}
-          {assetState.price.changePercent24h.toFixed(2)}% (24h)
+          {price.changePercent24h >= 0 ? '+' : ''}
+          {price.changePercent24h.toFixed(2)}% (24h)
         </div>
       </div>
     </div>
@@ -139,7 +192,8 @@ const HeaderSection: React.FC<{ assetState: AssetState; symbol: string }> = ({
  * Price & Risk Section
  */
 const PriceSection: React.FC<{ assetState: AssetState }> = ({ assetState }) => {
-  const riskLevel = assetState.price.volatility.current > 3 ? 'HIGH' : 'MODERATE';
+  const price = assetState.marketState.price;
+  const riskLevel = price.volatility.current > 3 ? 'HIGH' : 'MODERATE';
   const riskColor = riskLevel === 'HIGH' ? 'text-red-600' : 'text-yellow-600';
 
   return (
@@ -152,13 +206,13 @@ const PriceSection: React.FC<{ assetState: AssetState }> = ({ assetState }) => {
           <div>
             <p className="text-sm text-gray-600">24h Range</p>
             <p className="font-semibold">
-              ${assetState.price.low24h.toLocaleString()} - $
-              {assetState.price.high24h.toLocaleString()}
+              ${price.low24h.toLocaleString()} - $
+              {price.high24h.toLocaleString()}
             </p>
           </div>
           <div>
             <p className="text-sm text-gray-600">Volatility</p>
-            <p className="font-semibold">{assetState.price.volatility.current.toFixed(2)}%</p>
+            <p className="font-semibold">{price.volatility.current.toFixed(2)}%</p>
           </div>
           <div className="col-span-2">
             <p className="text-sm text-gray-600">Risk Level</p>
@@ -174,9 +228,10 @@ const PriceSection: React.FC<{ assetState: AssetState }> = ({ assetState }) => {
  * Technical Indicators Section
  */
 const TechnicalSection: React.FC<{ assetState: AssetState }> = ({ assetState }) => {
-  if (!assetState.technicals) return null;
+  const technicals = assetState.marketState.technicals;
+  if (!technicals) return null;
 
-  const { rsi, macd, movingAverages, trend } = assetState.technicals;
+  const { rsi, macd, movingAverages, trend } = technicals;
 
   return (
     <Card>
@@ -230,6 +285,7 @@ const TechnicalSection: React.FC<{ assetState: AssetState }> = ({ assetState }) 
  * CEX vs DEX Liquidity Section
  */
 const LiquiditySection: React.FC<{ assetState: AssetState }> = ({ assetState }) => {
+  const market = assetState.marketState;
   return (
     <Card>
       <CardHeader>
@@ -240,7 +296,7 @@ const LiquiditySection: React.FC<{ assetState: AssetState }> = ({ assetState }) 
         <div className="mb-4">
           <h3 className="font-semibold mb-2">Centralized Exchanges</h3>
           <div className="space-y-2">
-            {assetState.cex.sources?.slice(0, 3).map((source, idx) => (
+            {market.cex.sources?.slice(0, 3).map((source: { exchange: string; bid: number; ask: number; spread: number }, idx: number) => (
               <div key={idx} className="flex justify-between items-center text-sm border-b pb-2">
                 <span className="font-medium">{source.exchange.toUpperCase()}</span>
                 <div className="text-right">
@@ -258,7 +314,7 @@ const LiquiditySection: React.FC<{ assetState: AssetState }> = ({ assetState }) 
         <div>
           <h3 className="font-semibold mb-2">Decentralized Pools</h3>
           <div className="space-y-2">
-            {assetState.dex.sources?.slice(0, 3).map((source, idx) => (
+            {market.dex.sources?.slice(0, 3).map((source: { protocol: string; slippage?: number; liquidity: number }, idx: number) => (
               <div key={idx} className="flex justify-between items-center text-sm border-b pb-2">
                 <span className="font-medium">{source.protocol.toUpperCase()}</span>
                 <div className="text-right">
@@ -275,11 +331,11 @@ const LiquiditySection: React.FC<{ assetState: AssetState }> = ({ assetState }) 
         </div>
 
         {/* Best Recommendation */}
-        {assetState.cex.best?.buy && (
+        {market.cex.best?.buy && (
           <div className="mt-4 p-3 bg-blue-50 rounded">
             <p className="text-sm font-semibold text-blue-900">
-              Best Buy: {assetState.cex.best.buy.exchange.toUpperCase()} @ $
-              {assetState.cex.best.buy.price}
+              Best Buy: {market.cex.best.buy.exchange.toUpperCase()} @ $
+              {market.cex.best.buy.price}
             </p>
           </div>
         )}
@@ -292,7 +348,7 @@ const LiquiditySection: React.FC<{ assetState: AssetState }> = ({ assetState }) 
  * Cross-Exchange Arbitrage Section
  */
 const CrossExchangeSection: React.FC<{ assetState: AssetState }> = ({ assetState }) => {
-  const { crossExchange } = assetState;
+  const crossExchange = assetState.marketState.crossExchange;
 
   if (!crossExchange.arbitrage.opportunities || crossExchange.arbitrage.opportunities.length === 0) {
     return null;
@@ -302,7 +358,7 @@ const CrossExchangeSection: React.FC<{ assetState: AssetState }> = ({ assetState
     <Alert className="border-orange-200 bg-orange-50">
       <AlertDescription>
         <h3 className="font-bold text-orange-900 mb-2">🎯 Arbitrage Opportunity Detected</h3>
-        {crossExchange.arbitrage.opportunities.slice(0, 2).map((opp, idx) => (
+        {crossExchange.arbitrage.opportunities.slice(0, 2).map((opp: { route: string; profitUsd: number; profitPercent: number }, idx: number) => (
           <div key={idx} className="text-sm text-orange-800 mb-1">
             <p>
               <strong>{opp.route}</strong> → ${opp.profitUsd.toFixed(0)} profit ({opp.profitPercent.toFixed(2)}%)
@@ -342,15 +398,15 @@ const PortfolioSection: React.FC<{ assetState: AssetState }> = ({ assetState }) 
             <>
               <div>
                 <p className="text-sm text-gray-600">Unrealized P&L</p>
-                <p className={`font-semibold ${performance.unrealizedPnl >= 0 ? 'text-green-600' : 'text-red-600'}`}>
-                  ${performance.unrealizedPnl.toLocaleString()}
+                <p className={`font-semibold ${performance.unrealizedPnL >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                  ${performance.unrealizedPnL.toLocaleString()}
                 </p>
               </div>
               <div>
                 <p className="text-sm text-gray-600">Return %</p>
-                <p className={`font-semibold ${performance.unrealizedPnlPercent >= 0 ? 'text-green-600' : 'text-red-600'}`}>
-                  {performance.unrealizedPnlPercent >= 0 ? '+' : ''}
-                  {performance.unrealizedPnlPercent.toFixed(2)}%
+                <p className={`font-semibold ${performance.unrealizedPnLPercent >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                  {performance.unrealizedPnLPercent >= 0 ? '+' : ''}
+                  {performance.unrealizedPnLPercent.toFixed(2)}%
                 </p>
               </div>
             </>
@@ -365,9 +421,11 @@ const PortfolioSection: React.FC<{ assetState: AssetState }> = ({ assetState }) 
  * AI Guidance Section (Morio)
  */
 const AIGuidanceSection: React.FC<{ assetState: AssetState }> = ({ assetState }) => {
-  if (!assetState.aiInsights?.primarySignal) return null;
+  const aiInsights = assetState.intelligence?.aiInsights ?? assetState.aiInsights;
+  if (!aiInsights?.primarySignal) return null;
 
-  const { primarySignal, warnings, recommendations } = assetState.aiInsights;
+  const { primarySignal, warnings, isHeuristicComposite } = aiInsights;
+  const recommendations = primarySignal.reasoning ? [{ action: primarySignal.action, venue: undefined }] : [];
 
   return (
     <Card className="border-purple-200 bg-purple-50">
@@ -382,12 +440,15 @@ const AIGuidanceSection: React.FC<{ assetState: AssetState }> = ({ assetState })
           </p>
           <p className="text-sm text-purple-800 mt-1">{primarySignal.reasoning}</p>
           <p className="text-xs text-gray-500 mt-1">Confidence: {primarySignal.confidence}%</p>
+          <p className="text-[10px] uppercase tracking-wide text-purple-600 mt-1">
+            {isHeuristicComposite ? 'Heuristic composite' : 'Signal'}
+          </p>
         </div>
 
         {/* Warnings */}
         {warnings && warnings.length > 0 && (
           <div className="space-y-1">
-            {warnings.map((warning, idx) => (
+            {warnings.map((warning: { severity: 'critical' | 'warning' | 'info'; message: string }, idx: number) => (
               <Alert key={idx} className={`border-red-200 ${warning.severity === 'critical' ? 'bg-red-50' : 'bg-yellow-50'}`}>
                 <AlertDescription className={warning.severity === 'critical' ? 'text-red-800' : 'text-yellow-800'}>
                   ⚠️ {warning.message}
@@ -402,7 +463,7 @@ const AIGuidanceSection: React.FC<{ assetState: AssetState }> = ({ assetState })
           <div className="p-3 bg-white rounded border border-green-200">
             <p className="text-sm font-bold text-green-900">Recommendations:</p>
             <ul className="text-sm text-green-800 mt-2 space-y-1">
-              {recommendations.slice(0, 2).map((rec, idx) => (
+              {recommendations.slice(0, 2).map((rec: { action: string; venue?: string }, idx: number) => (
                 <li key={idx}>• {rec.action} {rec.venue && `(via ${rec.venue})`}</li>
               ))}
             </ul>
@@ -450,10 +511,13 @@ const ActionButtonsSection: React.FC<{ assetState: AssetState; onTrade?: (action
 const DataFreshnessFooter: React.FC<{ assetState: AssetState }> = ({ assetState }) => {
   const freshness = assetState.status.dataFreshness;
   const freshLabel = freshness < 1000 ? 'Just now' : `${Math.floor(freshness / 1000)}s ago`;
+  const confidence = assetState.intelligence && assetState.intelligence.confidence
+    ? assetState.intelligence.confidence.overall
+    : 0;
 
   return (
     <div className="text-center text-xs text-gray-500 pt-4">
-      Data: {freshLabel} | Confidence: {assetState.status.confidence}% | Updated:{' '}
+      Data: {freshLabel} | Confidence: {confidence}% | Updated:{' '}
       {new Date(assetState.status.lastUpdated).toLocaleTimeString()}
     </div>
   );

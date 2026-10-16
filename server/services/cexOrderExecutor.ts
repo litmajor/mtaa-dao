@@ -51,10 +51,10 @@ export interface OrderStatus {
   filled: number;
   remaining: number;
   fillPercentage: number;
-  averageFillPrice: number;
-  totalCost: number;
+  averageFillPrice: number | null;
+  totalCost: number | null;
   status: 'open' | 'closed' | 'canceled' | 'expired';
-  timestamp: number;
+  timestamp?: number;
   updatedAt: number;
 }
 
@@ -71,6 +71,21 @@ export interface ExecutionResult {
   totalCost: number;
   fees: number;
   timestamp: number;
+}
+
+interface ExchangeOrderSnapshot {
+  id: string;
+  symbol: string;
+  side: 'buy' | 'sell';
+  type: string;
+  amount: number;
+  filled: number;
+  average?: number;
+  price?: number;
+  timestamp?: number;
+  status?: string;
+  fee?: { cost?: number; currency?: string };
+  info?: Record<string, unknown> & { executedPrice?: number; price?: number };
 }
 
 /**
@@ -99,10 +114,7 @@ export class CEXOrderExecutor {
       this.validateOrderRequest(request);
 
       // Get user credentials
-      const credentials = await CEXCredentialRepository.getCredentialsByUserId(
-        request.userId,
-        request.exchange
-      );
+      const credentials = await this.getCredentialsForExchange(request.userId, request.exchange);
 
       if (!credentials || !credentials.isActive) {
         throw new Error('Invalid or inactive credentials for this exchange');
@@ -134,16 +146,16 @@ export class CEXOrderExecutor {
       }
 
       // Store order in database
-      await CEXOrderRepository.createOrder(
+      const storedOrder = await CEXOrderRepository.createOrder(
         request.userId,
         request.exchange,
-        request.tradingPair,
+        request.orderType,
         request.type,
-        request.amount,
-        price,
-        order.id,
-        'open'
+        request.tradingPair,
+        String(request.amount),
+        String(price),
       );
+      await CEXOrderRepository.updateOrderExchangeStatus(storedOrder.id, order.id, order.status ?? 'open');
 
       // Store in active orders map
       this.activeOrders.set(order.id, {
@@ -190,10 +202,7 @@ export class CEXOrderExecutor {
   ): Promise<OrderStatus | null> {
     try {
       // Get credentials
-      const credentials = await CEXCredentialRepository.getCredentialsByUserId(
-        userId,
-        exchange
-      );
+      const credentials = await this.getCredentialsForExchange(userId, exchange);
 
       if (!credentials) {
         throw new Error('No credentials for this exchange');
@@ -202,35 +211,32 @@ export class CEXOrderExecutor {
       // Initialize exchange
       const exchangeClient = this.initializeExchange(exchange, credentials);
 
-      // Fetch order from exchange
-      const order = await this.executeWithRetry(() =>
-        exchangeClient.fetchOrder(orderId)
-      );
+      const storedOrder = await CEXOrderRepository.getOrderByExchangeOrderId(userId, exchange, orderId);
+      if (!storedOrder) throw new Error('Order not found for this user and exchange');
 
-      if (!order) {
-        throw new Error('Order not found on exchange');
-      }
+      // Fetch order from exchange
+      const rawOrder = await this.executeWithRetry<unknown>(() =>
+        exchangeClient.fetchOrder(orderId, storedOrder.tradingPair)
+      );
+      const order = this.parseExchangeOrder(rawOrder);
 
       // Calculate metrics
       const filled = order.filled || 0;
       const amount = order.amount || 0;
       const remaining = amount - filled;
       const fillPercentage = amount > 0 ? (filled / amount) * 100 : 0;
-      const averageFillPrice = order.average || order.info?.executedPrice || 0;
-      const totalCost = filled * (averageFillPrice || order.info?.price || 0);
+      const averageFillPrice = order.average ?? order.info?.executedPrice ?? (filled > 0 ? order.price ?? null : null);
+      const totalCost = averageFillPrice === null ? null : filled * averageFillPrice;
 
       // Determine status
       let status: 'open' | 'closed' | 'canceled' | 'expired' = 'open';
-      if (order.status === 'closed' || remaining === 0) status = 'closed';
+      if (order.status === 'closed' || (amount > 0 && remaining <= 0)) status = 'closed';
       else if (order.status === 'canceled') status = 'canceled';
       else if (order.status === 'expired') status = 'expired';
 
       // Update database
-      await CEXOrderRepository.updateOrderFill(
-        orderId,
-        filled,
-        status === 'closed' ? status : 'open'
-      );
+      await CEXOrderRepository.updateOrderFill(storedOrder.id, String(filled), String(order.fee?.cost ?? 0), order.fee?.currency);
+      await CEXOrderRepository.updateOrderExchangeStatus(storedOrder.id, orderId, status);
 
       return {
         orderId,
@@ -245,7 +251,7 @@ export class CEXOrderExecutor {
         averageFillPrice,
         totalCost,
         status,
-        timestamp: order.timestamp || Date.now(),
+        timestamp: order.timestamp,
         updatedAt: Date.now(),
       };
     } catch (error) {
@@ -264,10 +270,7 @@ export class CEXOrderExecutor {
   ): Promise<{ success: boolean; message: string }> {
     try {
       // Get credentials
-      const credentials = await CEXCredentialRepository.getCredentialsByUserId(
-        userId,
-        exchange
-      );
+      const credentials = await this.getCredentialsForExchange(userId, exchange);
 
       if (!credentials) {
         throw new Error('No credentials for this exchange');
@@ -276,11 +279,14 @@ export class CEXOrderExecutor {
       // Initialize exchange
       const exchangeClient = this.initializeExchange(exchange, credentials);
 
+      const storedOrder = await CEXOrderRepository.getOrderByExchangeOrderId(userId, exchange, orderId);
+      if (!storedOrder) throw new Error('Order not found for this user and exchange');
+
       // Cancel order with retry
-      await this.executeWithRetry(() => exchangeClient.cancelOrder(orderId));
+      await this.executeWithRetry(() => exchangeClient.cancelOrder(orderId, storedOrder.tradingPair));
 
       // Update database
-      await CEXOrderRepository.cancelOrder(orderId);
+      await CEXOrderRepository.cancelOrder(storedOrder.id);
 
       // Remove from active orders
       this.activeOrders.delete(orderId);
@@ -312,10 +318,7 @@ export class CEXOrderExecutor {
 
       for (const exch of exchangesToCheck) {
         try {
-          const credentials = await CEXCredentialRepository.getCredentialsByUserId(
-            userId,
-            exch
-          );
+          const credentials = await this.getCredentialsForExchange(userId, exch);
 
           if (!credentials) continue;
 
@@ -326,11 +329,12 @@ export class CEXOrderExecutor {
           }
 
           const exchangeClient = this.initializeExchange(exch, credentials);
-          const orders = await this.executeWithRetry(() =>
+          const rawOrders = await this.executeWithRetry<unknown>(() =>
             exchangeClient.fetchOpenOrders()
           );
+          const orders = this.parseExchangeOrders(rawOrders);
 
-          for (const order of orders || []) {
+          for (const order of orders) {
             const filled = order.filled || 0;
             const amount = order.amount || 0;
             const remaining = amount - filled;
@@ -346,10 +350,12 @@ export class CEXOrderExecutor {
               filled,
               remaining,
               fillPercentage,
-              averageFillPrice: order.average || 0,
-              totalCost: filled * (order.average || order.info?.price || 0),
+              averageFillPrice: order.average ?? (filled > 0 ? order.price ?? null : null),
+              totalCost: order.average !== undefined
+                ? filled * order.average
+                : order.price !== undefined ? filled * order.price : null,
               status: 'open',
-              timestamp: order.timestamp || Date.now(),
+              timestamp: order.timestamp,
               updatedAt: Date.now(),
             });
           }
@@ -391,7 +397,7 @@ export class CEXOrderExecutor {
         }
 
         // Check stop-loss
-        if (orderData.stopLoss && status.averageFillPrice <= orderData.stopLoss) {
+        if (orderData.stopLoss && status.averageFillPrice !== null && status.averageFillPrice <= orderData.stopLoss) {
           console.log(
             `[CEXOrderExecutor] Stop-loss triggered for order ${orderId}: ${status.averageFillPrice} <= ${orderData.stopLoss}`
           );
@@ -408,7 +414,7 @@ export class CEXOrderExecutor {
         }
 
         // Check take-profit
-        if (orderData.takeProfit && status.averageFillPrice >= orderData.takeProfit) {
+        if (orderData.takeProfit && status.averageFillPrice !== null && status.averageFillPrice >= orderData.takeProfit) {
           console.log(
             `[CEXOrderExecutor] Take-profit triggered for order ${orderId}: ${status.averageFillPrice} >= ${orderData.takeProfit}`
           );
@@ -470,6 +476,76 @@ export class CEXOrderExecutor {
       enableRateLimit: true,
       timeout: 10000,
     });
+  }
+
+  private async getCredentialsForExchange(userId: string, exchange: string) {
+    const credentials = await CEXCredentialRepository.getCredentialsByUserId(userId);
+    if (!credentials || !credentials.isActive || credentials.exchange.toLowerCase() !== exchange.toLowerCase()) {
+      return null;
+    }
+    return credentials;
+  }
+
+  private parseExchangeOrders(value: unknown): ExchangeOrderSnapshot[] {
+    if (!Array.isArray(value)) throw new Error('Exchange returned an invalid open-order response');
+    return value.map((order) => this.parseExchangeOrder(order));
+  }
+
+  private parseExchangeOrder(value: unknown): ExchangeOrderSnapshot {
+    if (!value || typeof value !== 'object') throw new Error('Exchange returned an invalid order response');
+    const order = value as Record<string, unknown>;
+    const readNumber = (field: string): number | undefined => {
+      const value = order[field];
+      if (value === null || value === undefined) return undefined;
+      const parsed = typeof value === 'number' ? value : Number(value);
+      if (!Number.isFinite(parsed)) throw new Error(`Exchange returned an invalid order ${field}`);
+      return parsed;
+    };
+
+    if (typeof order.id !== 'string' || typeof order.symbol !== 'string' ||
+        (order.side !== 'buy' && order.side !== 'sell') || typeof order.type !== 'string') {
+      throw new Error('Exchange returned an order without a valid ID, symbol, side, or type');
+    }
+    const amount = readNumber('amount');
+    if (amount === undefined) throw new Error('Exchange returned an order without an amount');
+
+    const fee = order.fee && typeof order.fee === 'object'
+      ? order.fee as Record<string, unknown>
+      : undefined;
+    const feeCost = fee?.cost === null || fee?.cost === undefined ? undefined : Number(fee.cost);
+    if (feeCost !== undefined && !Number.isFinite(feeCost)) throw new Error('Exchange returned an invalid order fee');
+    const rawInfo = order.info && typeof order.info === 'object'
+      ? order.info as Record<string, unknown>
+      : undefined;
+    const infoNumber = (field: string): number | undefined => {
+      const value = rawInfo?.[field];
+      if (value === null || value === undefined) return undefined;
+      const parsed = typeof value === 'number' ? value : Number(value);
+      if (!Number.isFinite(parsed)) throw new Error(`Exchange returned an invalid order info ${field}`);
+      return parsed;
+    };
+
+    return {
+      id: order.id,
+      symbol: order.symbol,
+      side: order.side,
+      type: order.type,
+      amount,
+      filled: readNumber('filled') ?? 0,
+      average: readNumber('average'),
+      price: readNumber('price'),
+      timestamp: readNumber('timestamp'),
+      status: typeof order.status === 'string' ? order.status : undefined,
+      fee: fee ? {
+        cost: feeCost,
+        currency: typeof fee.currency === 'string' ? fee.currency : undefined,
+      } : undefined,
+      info: rawInfo ? {
+        ...rawInfo,
+        executedPrice: infoNumber('executedPrice'),
+        price: infoNumber('price'),
+      } : undefined,
+    };
   }
 
   /**

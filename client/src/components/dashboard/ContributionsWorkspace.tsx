@@ -76,7 +76,7 @@ export default function ContributionsWorkspace({ daoId }: { daoId: string }) {
             💰 Contributions
           </h3>
           <p className="text-slate-400 mt-1">
-            {summary.cycleName || 'Current Cycle'} • {summary.membersPaid || 0}/{summary.totalMembers || 0} members paid • KES {(summary.totalCollected || 0).toLocaleString()} collected
+            KES {(summary.totalCollected || 0).toLocaleString()} approved • KES {(summary.totalOutstanding || 0).toLocaleString()} awaiting approval
           </p>
         </div>
         
@@ -121,8 +121,8 @@ export default function ContributionsWorkspace({ daoId }: { daoId: string }) {
               </tr>
             ) : (
               ledger.map((entry) => {
-                const statusColor = 
-                  entry.status === 'confirmed' || entry.status === 'paid' ? 'text-green-400 bg-green-400/10' :
+                const statusColor =
+                ['approved', 'completed', 'rotation_pending', 'confirmed', 'paid'].includes(entry.status) ? 'text-green-400 bg-green-400/10' :
                   entry.status === 'pending' || entry.status === 'recorded' ? 'text-amber-400 bg-amber-400/10' :
                   'text-red-400 bg-red-400/10';
 
@@ -148,16 +148,16 @@ export default function ContributionsWorkspace({ daoId }: { daoId: string }) {
                     </td>
                     <td className="px-4 py-3">
                       <span className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-medium capitalize ${statusColor}`}>
-                        {entry.status === 'confirmed' || entry.status === 'paid' ? <CheckCircle className="w-3 h-3 mr-1" /> :
+                        {['approved', 'completed', 'rotation_pending', 'confirmed', 'paid'].includes(entry.status) ? <CheckCircle className="w-3 h-3 mr-1" /> :
                          entry.status === 'pending' || entry.status === 'recorded' ? <Clock className="w-3 h-3 mr-1" /> :
                          <AlertTriangle className="w-3 h-3 mr-1" />}
                         {entry.status}
                       </span>
                     </td>
                     <td className="px-4 py-3 text-right">
-                      {(entry.status === 'pending' || entry.status === 'recorded') && (
+                      {entry.status === 'pending' && (
                         <Button onClick={() => handleConfirm(entry.id)} variant="outline" size="sm" className="h-7 text-xs px-2 py-0 border-slate-600">
-                          Confirm
+                          Approve
                         </Button>
                       )}
                     </td>

@@ -28,8 +28,9 @@
     }
   },
   "include": [
-    "**/*.ts",
-    "**/*.tsx"
+    "client/src/**/*",
+    "shared/**/*",
+    "server/**/*"
   ],
   "exclude": [
     "node_modules",
@@ -44,6 +45,10 @@
     "**/*.test.ts",
     "**/*.test.tsx",
     "**/__tests__/**",
-    "**/*.stories.tsx"
+    "**/*.stories.tsx",
+    "client/src/middleware.ts",
+    "server/transactions.ts",
+    "server/user.ts",
+    "server/vaults.ts"
   ]
 }

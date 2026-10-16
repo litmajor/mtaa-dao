@@ -2,10 +2,11 @@ import express from 'express';
 import { db } from '../storage';
 import { escrowAccounts, escrowMilestones, escrowDisputes } from '../../shared/escrowSchema';
 import { users } from '../../shared/schema';
-import { and, eq, or, sql } from 'drizzle-orm';
+import { and, asc, desc, eq, or, sql } from 'drizzle-orm';
 import type { SQL } from 'drizzle-orm';
 import { escrowService } from '../services/escrowService';
 import { authenticate } from '../auth';
+import { notificationService } from '../notificationService';
 import { nanoid } from 'nanoid';
 import {
   notifyEscrowCreated,
@@ -699,11 +700,14 @@ router.get('/list/all', authenticate, async (req, res) => {
 
     // Filter by user's involvement (as payer, payee, or mediator)
     if (role === 'all') {
-      filters.push(or(
+      const involvementFilter = or(
         eq(escrowAccounts.payerId, userId),
         eq(escrowAccounts.payeeId, userId),
         eq(escrowAccounts.mediatorId, userId)
-      ));
+      );
+      if (involvementFilter) {
+        filters.push(involvementFilter);
+      }
     } else if (role === 'payer') {
       filters.push(eq(escrowAccounts.payerId, userId));
     } else if (role === 'payee') {
@@ -729,11 +733,25 @@ router.get('/list/all', authenticate, async (req, res) => {
     const totalCount = allResults.length;
 
     // Apply sorting and pagination
+    const sortKey = typeof sortBy === 'string' ? sortBy : 'createdAt';
+    const orderExpression = sortOrder === 'asc'
+      ? sortKey === 'updatedAt'
+        ? asc(escrowAccounts.updatedAt)
+        : sortKey === 'status'
+          ? asc(escrowAccounts.status)
+          : sortKey === 'amount'
+            ? asc(escrowAccounts.amount)
+            : asc(escrowAccounts.createdAt)
+      : sortKey === 'updatedAt'
+        ? sql`${escrowAccounts.updatedAt} DESC`
+        : sortKey === 'status'
+          ? sql`${escrowAccounts.status} DESC`
+          : sortKey === 'amount'
+            ? sql`${escrowAccounts.amount} DESC`
+            : sql`${escrowAccounts.createdAt} DESC`;
+
     const results = await query
-      .orderBy(
-        escrowAccounts[sortBy as keyof typeof escrowAccounts] || escrowAccounts.createdAt,
-        sortOrder === 'asc' ? 'asc' : 'desc'
-      )
+      .orderBy(orderExpression)
       .limit(Number(limit))
       .offset(Number(offset));
 

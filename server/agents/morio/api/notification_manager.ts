@@ -65,12 +65,9 @@ export class NotificationManager {
       this.deliveryMap.set(deliveryKey, delivered);
 
       // Broadcast to agent network
-      await this.communicator.broadcast({
-        type: MessageType.NOTIFICATION,
-        payload: {
-          ...payload,
-          source: 'MORIO_NOTIFICATIONS'
-        }
+      await this.communicator.broadcast(MessageType.NOTIFICATION, {
+        ...payload,
+        source: 'MORIO_NOTIFICATIONS'
       });
 
       logger.info(`Notification sent: ${payload.type} to ${payload.userId}`);

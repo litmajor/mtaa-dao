@@ -1,77 +1,114 @@
-import { Router } from 'express';
-import { createBillSplit, getUserBillSplits, getBillSplitDetails, recordBillSplitPayment, settleBillSplit, cancelBillSplit } from '../services/billSplitService';
+import { Router, type Request } from 'express';
+import { z } from 'zod';
+import { isAuthenticated } from '../auth';
+import { rateLimiter } from '../middleware/rateLimiter';
+import { createBillSplit, getUserBillSplits, getBillSplitDetails, getBillSplitSettlement, recordBillSplitPayment, settleBillSplit, cancelBillSplit } from '../services/billSplitService';
 import { notificationService } from '../notificationService';
 
 const router = Router();
+router.use(isAuthenticated);
+
+const userKey = (req: Request) => req.user?.id ?? req.user?.claims?.sub ?? req.ip ?? 'unknown-user';
+const readLimiter = rateLimiter({
+  windowMs: 60_000,
+  max: 60,
+  keyGenerator: (req) => `bill-split:read:${userKey(req)}`,
+});
+const writeLimiter = rateLimiter({
+  windowMs: 60_000,
+  max: 10,
+  keyGenerator: (req) => `bill-split:write:${userKey(req)}`,
+});
+
+const participantSchema = z.object({
+  userId: z.string().min(1).optional(),
+  daoId: z.string().uuid().optional(),
+  walletAddress: z.string().min(1).optional(),
+  sharePercentage: z.number().min(0).max(100).refine(
+    (percentage) => Math.abs(percentage * 100 - Math.round(percentage * 100)) < 1e-8,
+    'Percentage supports at most two decimal places'
+  ).optional(),
+  customAmount: z.string().regex(/^\d+(?:\.\d{1,8})?$/).optional(),
+}).refine((participant) => [participant.userId, participant.daoId, participant.walletAddress].filter(Boolean).length === 1, {
+  message: 'Specify exactly one participant userId, daoId, or walletAddress',
+});
+
+const createBillSchema = z.object({
+  title: z.string().trim().min(1).max(255),
+  description: z.string().max(5000).optional(),
+  totalAmount: z.string().regex(/^\d+(?:\.\d{1,8})?$/).refine((amount) => amountToAtomicUnits(amount) > 0n),
+  currency: z.string().trim().min(1).max(10).default('cUSD'),
+  splitMethod: z.enum(['equal', 'custom', 'percentage']).optional(),
+  splitType: z.enum(['equal', 'custom', 'percentage']).optional(),
+  participants: z.array(participantSchema).min(1).max(100),
+}).transform(({ splitType, splitMethod, ...input }) => ({
+  ...input,
+  splitMethod: splitMethod ?? splitType ?? 'equal',
+})).superRefine((input, context) => {
+  if (input.splitMethod === 'custom') {
+    if (input.participants.some((participant) => participant.customAmount === undefined)) {
+      context.addIssue({ code: z.ZodIssueCode.custom, path: ['participants'], message: 'Every participant needs a custom amount' });
+      return;
+    }
+    const assigned = input.participants.reduce((sum, participant) => sum + amountToAtomicUnits(participant.customAmount!), 0n);
+    if (assigned !== amountToAtomicUnits(input.totalAmount)) {
+      context.addIssue({ code: z.ZodIssueCode.custom, path: ['participants'], message: 'Custom participant amounts must equal the total amount' });
+    }
+  }
+  if (input.splitMethod === 'percentage') {
+    if (input.participants.some((participant) => participant.sharePercentage === undefined)) {
+      context.addIssue({ code: z.ZodIssueCode.custom, path: ['participants'], message: 'Every participant needs a share percentage' });
+      return;
+    }
+    const assigned = input.participants.reduce((sum, participant) => sum + BigInt(Math.round((participant.sharePercentage ?? 0) * 100)), 0n);
+    if (assigned !== 10_000n) {
+      context.addIssue({ code: z.ZodIssueCode.custom, path: ['participants'], message: 'Participant percentages must total 100' });
+    }
+  }
+});
+
+function authenticatedUserId(req: Request): string | undefined {
+  return req.user?.id ?? req.user?.claims?.sub;
+}
+
+async function getAuthorizedBillSplit(id: string, userId: string) {
+  let details;
+  try {
+    details = await getBillSplitDetails(id);
+  } catch (error) {
+    if (error instanceof Error && error.message === 'Bill split not found') return null;
+    throw error;
+  }
+  if (details.creatorId !== userId && !details.participants.some((participant) => participant.userId === userId)) {
+    return null;
+  }
+  return details;
+}
 
 /**
  * Create a new bill split
  * POST /api/wallet/bill-split
  */
-router.post('/', async (req, res) => {
+router.post('/', writeLimiter, async (req, res) => {
   try {
-    const userId = (req.user as any)?.claims?.sub;
-    if (!userId) {
-      return res.status(401).json({ error: 'Authentication required' });
-    }
-
-    const {
-      title,
-      description,
-      totalAmount,
-      currency = 'cUSD',
-      splitType,
-      participants,
-    } = req.body;
-
-    // Validate input
-    if (!title || !totalAmount || !participants || participants.length === 0) {
-      return res.status(400).json({ error: 'Missing required fields' });
-    }
-
-    if (parseFloat(totalAmount) <= 0) {
-      return res.status(400).json({ error: 'Amount must be greater than 0' });
-    }
+    const userId = authenticatedUserId(req);
+    if (!userId) return res.status(401).json({ error: 'Authentication required' });
+    const input = createBillSchema.parse(req.body);
 
     const billData = {
       creatorId: userId,
-      title,
-      description: description || undefined,
-      totalAmount: totalAmount.toString(),
-      currency,
-      splitMethod: splitType || 'equal',
-      participants: participants.map((p: any) => ({
-        sharePercentage: splitType === 'custom' ? undefined : 100 / participants.length,
-        customAmount: splitType === 'custom' ? p.amount?.toString() : undefined,
-        walletAddress: p.email, // Use email as identifier
-      })),
+      ...input,
     };
 
     const billSplit = await createBillSplit(billData);
 
-    // Send notifications to participants
-    for (const participant of participants) {
-      if (participant.email) {
-        await notificationService.createNotification({
-          userId: participant.email, // In a real app, map email to userId
-          type: 'bill_split_created',
-          title: `You've been added to "${title}"`,
-          message: `You owe ${currency} ${participant.amount || (parseFloat(totalAmount) / participants.length).toFixed(2)}`,
-          metadata: {
-            billSplitId: billSplit.id,
-            amount: participant.amount || parseFloat(totalAmount) / participants.length,
-            actionUrl: `/bill-splits/${billSplit.id}`,
-          },
-        });
-      }
-    }
-
-    res.json({
+    res.status(201).json({
       success: true,
       billSplit,
-      message: `Bill split created with ${participants.length} participants`,
+      message: `Bill split created with ${input.participants.length} participants`,
     });
   } catch (error) {
+    if (error instanceof z.ZodError) return res.status(400).json({ error: 'Invalid bill split', details: error.errors });
     console.error('Create bill split error:', error);
     res.status(500).json({ error: 'Failed to create bill split' });
   }
@@ -81,9 +118,9 @@ router.post('/', async (req, res) => {
  * Get user's bill splits
  * GET /api/wallet/bill-splits?status=active|settled|cancelled
  */
-router.get('/', async (req, res) => {
+router.get('/', readLimiter, async (req, res) => {
   try {
-    const userId = (req.user as any)?.claims?.sub;
+    const userId = authenticatedUserId(req);
     if (!userId) {
       return res.status(401).json({ error: 'Authentication required' });
     }
@@ -107,13 +144,15 @@ router.get('/', async (req, res) => {
  * Get single bill split with details
  * GET /api/wallet/bill-split/:id
  */
-router.get('/:id', async (req, res) => {
+router.get('/:id', readLimiter, async (req, res) => {
   try {
+    const userId = authenticatedUserId(req);
+    if (!userId) return res.status(401).json({ error: 'Authentication required' });
     const { id } = req.params;
 
-    const details = await getBillSplitDetails(id);
+    const details = await getAuthorizedBillSplit(id, userId);
 
-    if (!details || !details.id) {
+    if (!details) {
       return res.status(404).json({ error: 'Bill split not found' });
     }
 
@@ -131,27 +170,37 @@ router.get('/:id', async (req, res) => {
  * Record a payment for bill split
  * POST /api/wallet/bill-split/:id/payment
  */
-router.post('/:id/payment', async (req, res) => {
+router.post('/:id/payment', writeLimiter, async (req, res) => {
   try {
-    const userId = (req.user as any)?.claims?.sub;
+    const userId = authenticatedUserId(req);
     if (!userId) {
       return res.status(401).json({ error: 'Authentication required' });
     }
 
+    const paymentInput = z.object({
+      amount: z.string().regex(/^\d+(?:\.\d{1,8})?$/).refine((value) => amountToAtomicUnits(value) > 0n),
+      transactionHash: z.string().trim().min(1).max(255),
+    }).parse(req.body);
     const { id } = req.params;
-    const { participantName, amount, transactionHash } = req.body;
-
-    if (!participantName || !amount) {
-      return res.status(400).json({ error: 'Missing required fields' });
+    let details;
+    try {
+      details = await getBillSplitDetails(id);
+    } catch (error) {
+      if (error instanceof Error && error.message === 'Bill split not found') return res.status(404).json({ error: 'Bill split not found' });
+      throw error;
     }
+    const participant = details.participants.find((item) => item.userId === userId);
+    if (!participant) return res.status(403).json({ error: 'Only a bill split participant can record their payment' });
 
-    const result = await recordBillSplitPayment(id, participantName, parseFloat(amount), transactionHash);
+    await recordBillSplitPayment(id, userId, paymentInput.amount, paymentInput.transactionHash);
 
     res.json({
       success: true,
-      message: 'Payment recorded',
+      message: 'Payment submission recorded and awaiting on-chain verification',
+      status: 'pending',
     });
   } catch (error) {
+    if (error instanceof z.ZodError) return res.status(400).json({ error: 'Invalid payment', details: error.errors });
     console.error('Record payment error:', error);
     res.status(500).json({ error: 'Failed to record payment' });
   }
@@ -161,16 +210,17 @@ router.post('/:id/payment', async (req, res) => {
  * Settle bill split
  * POST /api/wallet/bill-split/:id/settle
  */
-router.post('/:id/settle', async (req, res) => {
+router.post('/:id/settle', writeLimiter, async (req, res) => {
   try {
-    const userId = (req.user as any)?.claims?.sub;
+    const userId = authenticatedUserId(req);
     if (!userId) {
       return res.status(401).json({ error: 'Authentication required' });
     }
 
     const { id } = req.params;
-
-    const result = await settleBillSplit(id);
+    const details = await getBillSplitDetails(id);
+    if (details.creatorId !== userId) return res.status(403).json({ error: 'Only the bill split creator can settle it' });
+    await settleBillSplit(id);
 
     res.json({
       success: true,
@@ -186,16 +236,17 @@ router.post('/:id/settle', async (req, res) => {
  * Cancel bill split
  * POST /api/wallet/bill-split/:id/cancel
  */
-router.post('/:id/cancel', async (req, res) => {
+router.post('/:id/cancel', writeLimiter, async (req, res) => {
   try {
-    const userId = (req.user as any)?.claims?.sub;
+    const userId = authenticatedUserId(req);
     if (!userId) {
       return res.status(401).json({ error: 'Authentication required' });
     }
 
     const { id } = req.params;
-
-    const result = await cancelBillSplit(id);
+    const details = await getBillSplitDetails(id);
+    if (details.creatorId !== userId) return res.status(403).json({ error: 'Only the bill split creator can cancel it' });
+    await cancelBillSplit(id);
 
     res.json({
       success: true,
@@ -211,20 +262,35 @@ router.post('/:id/cancel', async (req, res) => {
  * Send payment reminders
  * POST /api/wallet/bill-split/:id/remind
  */
-router.post('/:id/remind', async (req, res) => {
+router.post('/:id/remind', writeLimiter, async (req, res) => {
   try {
-    const userId = (req.user as any)?.claims?.sub;
+    const userId = authenticatedUserId(req);
     if (!userId) {
       return res.status(401).json({ error: 'Authentication required' });
     }
 
     const { id } = req.params;
-
-    // Send payment reminders to participants
-    // This would need to be implemented in billSplitService
+    const details = await getBillSplitDetails(id);
+    if (details.creatorId !== userId) return res.status(403).json({ error: 'Only the bill split creator can send reminders' });
+    const outstanding = details.participants.filter((participant) =>
+      participant.userId && amountToAtomicUnits(participant.amountPaid ?? '0') < amountToAtomicUnits(participant.amountOwed)
+    );
+    for (const participant of outstanding) {
+      const remaining = atomicUnitsToAmount(
+        amountToAtomicUnits(participant.amountOwed) - amountToAtomicUnits(participant.amountPaid ?? '0')
+      );
+      await notificationService.createNotification({
+        userId: participant.userId!,
+        type: 'bill_split_reminder',
+        title: `Payment reminder: ${details.title}`,
+        message: `You have an outstanding balance of ${remaining} ${details.currency}`,
+        metadata: { billSplitId: id, participantId: participant.id, outstandingAmount: remaining },
+      });
+    }
     res.json({
       success: true,
-      message: 'Reminders sent',
+      message: 'Reminders sent to registered participants with outstanding balances',
+      remindersSent: outstanding.length,
     });
   } catch (error) {
     console.error('Send reminders error:', error);
@@ -236,31 +302,14 @@ router.post('/:id/remind', async (req, res) => {
  * Get bill settlement info
  * GET /api/wallet/bill-split/:id/settlement
  */
-router.get('/:id/settlement', async (req, res) => {
+router.get('/:id/settlement', readLimiter, async (req, res) => {
   try {
+    const userId = authenticatedUserId(req);
+    if (!userId) return res.status(401).json({ error: 'Authentication required' });
     const { id } = req.params;
-
-    const settlement = await (async () => {
-      const details = await getBillSplitDetails(id);
-      const { participants } = details;
-      
-      const totalAmount = details.totalAmount;
-      const paidAmount = participants.reduce((sum: number, p: any) => sum + (p.paidAmount || 0), 0);
-      const owedAmount = totalAmount - paidAmount;
-
-      return {
-        billId: bill.id,
-        totalAmount,
-        paidAmount,
-        owedAmount,
-        settledPercentage: Math.round((paidAmount / totalAmount) * 100),
-        participants: participants.map((p: any) => ({
-          name: p.name,
-          owes: p.amount - (p.paidAmount || 0),
-          paid: p.paid,
-        })),
-      };
-    })();
+    const details = await getAuthorizedBillSplit(id, userId);
+    if (!details) return res.status(404).json({ error: 'Bill split not found' });
+    const settlement = await getBillSplitSettlement(id);
 
     res.json({
       success: true,
@@ -273,3 +322,14 @@ router.get('/:id/settlement', async (req, res) => {
 });
 
 export default router;
+
+function amountToAtomicUnits(amount: string): bigint {
+  const [whole, fraction = ''] = amount.split('.');
+  return BigInt(whole) * 100_000_000n + BigInt(fraction.padEnd(8, '0'));
+}
+
+function atomicUnitsToAmount(units: bigint): string {
+  const whole = units / 100_000_000n;
+  const fraction = (units % 100_000_000n).toString().padStart(8, '0').replace(/0+$/, '');
+  return fraction ? `${whole}.${fraction}` : whole.toString();
+}

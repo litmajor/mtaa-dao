@@ -46,10 +46,10 @@ export class BinanceConnector implements ExchangeConnector {
     params: Record<string, any> = {}
   ): Promise<T> {
     const timestamp = Date.now();
-    const query = new URLSearchParams({
-      ...params,
-      timestamp,
-    }).toString();
+    const normalizedParams: Record<string, string> = Object.fromEntries(
+      Object.entries({ ...params, timestamp }).map(([key, value]) => [key, String(value)])
+    );
+    const query = new URLSearchParams(normalizedParams).toString();
 
     const signature = this.generateSignature(query);
 

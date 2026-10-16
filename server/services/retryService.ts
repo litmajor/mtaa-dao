@@ -161,7 +161,12 @@ export class RetryService {
     throw PaymentErrorHandler.createError(
       PaymentErrorCode.UNKNOWN_ERROR,
       `Failed after ${policy.maxRetries + 1} attempts: ${lastError?.message}`,
-      { retryHistory: attempts, context }
+      {
+        operation: 'retry_exhausted',
+        service: 'execution',
+        retryHistory: attempts,
+        context,
+      }
     );
   }
 
@@ -180,7 +185,8 @@ export class RetryService {
           reject(
             PaymentErrorHandler.createError(
               PaymentErrorCode.PROVIDER_TIMEOUT,
-              timeoutMessage
+              timeoutMessage,
+              { operation: 'execute_with_timeout', service: 'execution' }
             )
           );
         }, timeoutMs)
@@ -248,18 +254,21 @@ export class RetryService {
     const failureThreshold = options.failureThreshold || 5;
     const recoveryTimeMs = options.recoveryTimeMs || 60000;
     const domain = options.domain || 'payment'; // Default domain
-    const breaker = circuitBreakerRegistry.getOrCreate(domain, {
-      failureThreshold,
-      resetTimeout: recoveryTimeMs,
-    });
+    const breaker = circuitBreakerRegistry.getOrCreate(
+      `payment:${domain}`,
+      'payment',
+      { failureThreshold, resetTimeout: recoveryTimeMs }
+    );
 
     try {
-      return await breaker.execute(fn());
+      return await breaker.execute(fn);
     } catch (error) {
       throw PaymentErrorHandler.createError(
         PaymentErrorCode.PROVIDER_SERVICE_UNAVAILABLE,
         'Service temporarily unavailable due to repeated failures',
         {
+          operation: 'circuit_breaker',
+          service: 'execution',
           circuitBreakerOpen: breaker.getState() === 'OPEN',
           recoveryTimeMs,
           context: options.context

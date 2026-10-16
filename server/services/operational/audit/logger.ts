@@ -131,7 +131,7 @@ export class OperationalAuditLogger extends EventEmitter {
       event.targetResource,
       event.previousState,
       event.newState,
-      event.previousEventHash,
+      event.previousEventHash ?? this.computeInitialHash(),
       approver
     );
 

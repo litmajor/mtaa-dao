@@ -141,7 +141,6 @@ export const HeaderNav = React.forwardRef<HTMLDivElement, HeaderNavProps>(
                       setSearchQuery(e.target.value);
                       onSearch?.(e.target.value);
                     }}
-                    icon="search"
                     className="w-48"
                   />
                 </div>

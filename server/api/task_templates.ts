@@ -2,8 +2,7 @@ import { Router } from 'express';
 import { z } from 'zod';
 import { db } from '../db';
 import { taskTemplates } from '../../shared/schema';
-import { taskTemplatesCreatedBy } from '../../shared/schema';
-import { eq, like, desc } from 'drizzle-orm';
+import { eq, like, desc, and } from 'drizzle-orm';
 import { isAuthenticated } from '../auth';
 const router = Router();
 
@@ -83,7 +82,7 @@ router.get('/:templateId', async (req, res) => {
 router.post('/', isAuthenticated, async (req, res) => {
   try {
     const validatedData = createTaskTemplateSchema.parse(req.body);
-  const userId = req.user?.claims?.sub;
+    const userId = (req.user as any)?.claims?.sub ?? (req.user as any)?.id ?? (req.user as any)?.userId;
     const insertData: any = {
       title: validatedData.title,
       description: validatedData.description,
@@ -118,7 +117,7 @@ router.post('/', isAuthenticated, async (req, res) => {
 router.put('/:templateId', isAuthenticated, async (req, res) => {
   try {
     const { templateId } = req.params;
-  const userId = req.user?.claims?.sub;
+    const userId = (req.user as any)?.claims?.sub ?? (req.user as any)?.id ?? (req.user as any)?.userId;
     const validatedData = createTaskTemplateSchema.partial().parse(req.body);
 
     // Check if user is the creator
@@ -169,7 +168,7 @@ router.put('/:templateId', isAuthenticated, async (req, res) => {
 router.delete('/:templateId', isAuthenticated, async (req, res) => {
   try {
     const { templateId } = req.params;
-  const userId = req.user?.claims?.sub;
+    const userId = (req.user as any)?.claims?.sub ?? (req.user as any)?.id ?? (req.user as any)?.userId;
 
     // Check if user is the creator
     const template = await db

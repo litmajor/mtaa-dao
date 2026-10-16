@@ -13,6 +13,7 @@ export interface UserContext {
     language: string;
     notifications: boolean;
     theme: 'light' | 'dark';
+    riskProfile?: 'moderate' | 'conservative' | 'aggressive';
   };
   sessionData: {
     activeTask?: Task;
@@ -63,6 +64,8 @@ export type IntentType =
   | 'community_stats'
   | 'treasury_report'
   | 'governance_info'
+  | 'onboarding_voting'
+  | 'onboarding_treasury'
   | 'unknown';
 
 export interface ReasoningResponse {
@@ -85,13 +88,18 @@ export interface AnalysisResponse {
   insights: string[];
   risks: Risk[];
   recommendations: string[];
+  threatLevel?: 'low' | 'medium' | 'high' | 'critical';
+  details?: Record<string, any>;
 }
 
 export interface Risk {
-  level: 'low' | 'medium' | 'high' | 'critical';
-  category: string;
+  level?: 'low' | 'medium' | 'high' | 'critical';
+  category?: string;
   description: string;
   mitigation?: string;
+  recommendation?: string;
+  type?: string;
+  severity?: 'low' | 'medium' | 'high' | 'critical';
 }
 
 export interface EthicsCheck {

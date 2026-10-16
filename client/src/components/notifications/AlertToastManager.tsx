@@ -1,7 +1,7 @@
 import type React from 'react';
 import { useEffect } from 'react';
 import { useSharedSocket } from '@/hooks/useSharedSocket';
-import useToast from '@/components/ui/use-toast';
+import { useToast } from '@/components/ui/use-toast';
 import { AlertCircle, CheckCircle, AlertTriangle, Info } from 'lucide-react';
 
 /**
@@ -20,7 +20,7 @@ export const AlertToastManager: React.FC = () => {
   const { toast } = useToast();
 
   useEffect(() => {
-    if (!isConnected) return;
+    if (!isConnected || !socket) return;
 
     const handleNewAlert = (data: {
       alertType: string;
@@ -79,7 +79,9 @@ export const AlertToastManager: React.FC = () => {
     socket.on('alert:new', handleNewAlert);
 
     // Cleanup
-    return () => socket.off('alert:new', handleNewAlert);
+    return () => {
+      socket.off('alert:new', handleNewAlert);
+    };
   }, [socket, isConnected, toast]);
 
   // This component has no visual output (just manages alerts)

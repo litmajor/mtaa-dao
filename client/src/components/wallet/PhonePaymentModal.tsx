@@ -33,7 +33,10 @@ export default function PhonePaymentModal({ isOpen, onClose, userAddress }: Phon
     setIsLoading(true);
     try {
       const fullPhone = `${countryCode}${phoneNumber}`;
-      const res = await actions.social.payByPhone({ phone: fullPhone, amount, currency });
+      const res = await actions.social.payByPhone({ phone: fullPhone, amount, currency }) as {
+        success?: boolean;
+        error?: string;
+      } | null;
       if (!res || (res.success === false)) throw new Error(res?.error || 'Payment failed');
 
       toast({ title: 'Payment Sent', description: `Successfully sent ${amount} ${currency} to ${fullPhone}` });

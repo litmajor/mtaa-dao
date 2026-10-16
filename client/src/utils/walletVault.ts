@@ -80,18 +80,37 @@ export async function createAndBackupWallet(
 
   // Register the address first — if this fails, nothing sensitive has left
   // the browser yet.
-  const registerResp = await fetch('/api/v1/wallets/setup/register', {
+  const challengeResp = await fetch('/api/v1/wallets/register/challenge', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     credentials: 'include',
-    body: JSON.stringify({ address, currency: opts.currency, walletType: opts.walletType }),
+    body: JSON.stringify({ address }),
   });
 
+  if (!challengeResp.ok) {
+    const err = await challengeResp.json().catch(() => ({}));
+    throw new Error(err.error || `Wallet ownership challenge failed (${challengeResp.status})`);
+  }
+
+  const { data: challenge } = await challengeResp.json();
+  const signature = await wallet.signMessage(challenge.message);
+  const registerResp = await fetch('/api/v1/wallets/register', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    credentials: 'include',
+    body: JSON.stringify({
+      address,
+      currency: opts.currency,
+      walletType: opts.walletType,
+      challengeId: challenge.challengeId,
+      signature,
+      publicKey: wallet.publicKey,
+    }),
+  });
   if (!registerResp.ok) {
     const err = await registerResp.json().catch(() => ({}));
     throw new Error(err.error || `Wallet registration failed (${registerResp.status})`);
   }
-
   const { data: registration } = await registerResp.json();
   const walletId = registration.walletId;
 

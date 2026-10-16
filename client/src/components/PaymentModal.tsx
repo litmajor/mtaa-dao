@@ -42,7 +42,7 @@ interface PaymentModalProps {
   onClose: () => void;
 }
 
-function PaymentModal({ open, onClose }: PaymentModalProps) {
+export default function PaymentModal({ open, onClose }: PaymentModalProps) {
   const [provider, setProvider] = useState('mpesa');
   const [amount, setAmount] = useState('');
   const [phone, setPhone] = useState('');
@@ -381,7 +381,7 @@ function PaymentModal({ open, onClose }: PaymentModalProps) {
 }
 
 // Demo App Component
-export default function App() {
+function App() {
   const [modalOpen, setModalOpen] = useState(true);
 
   return (

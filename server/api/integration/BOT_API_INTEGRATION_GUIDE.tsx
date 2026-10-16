@@ -10,6 +10,7 @@
 /**
  * Example: Deploy a new bot from the Strategy Wizard
  */
+import React from 'react';
 import { useAuth } from '@/pages/hooks/useAuth';
 
 export function DeployBotExample() {

@@ -95,27 +95,11 @@ interface RealPriceProviderResult {
   confidence: number;
 }
 
-const STABLE_USD_TOKENS = new Set(['CUSD', 'USDC', 'USDT', 'DAI', 'BUSD', 'TUSD', 'USDP', 'GUSD']);
-
 class RealPriceProvider {
   async getPrice(token: string, chainId: number): Promise<RealPriceProviderResult | null> {
-    const normalizedToken = String(token ?? '').trim().toUpperCase();
-
-    if (STABLE_USD_TOKENS.has(normalizedToken)) {
-      return {
-        token: normalizedToken,
-        symbol: normalizedToken,
-        chainId,
-        price: 1,
-        currency: 'USD',
-        timestamp: Date.now(),
-        source: 'price-oracle',
-        confidence: 0.99,
-      };
-    }
-
-    const priceData = await priceOracle.getPrice(token) as { priceUsd: number; confidence?: number } | null;
-    if (!priceData || typeof priceData.priceUsd !== 'number') {
+    const priceData = await priceOracle.getValuationPrice(token);
+    const markUsd = priceData?.haircutPriceUsd ?? priceData?.priceUsd;
+    if (!priceData || markUsd === undefined || !Number.isFinite(markUsd) || markUsd <= 0) {
       return null;
     }
 
@@ -123,11 +107,11 @@ class RealPriceProvider {
       token,
       symbol: token,
       chainId,
-      price: priceData.priceUsd,
+      price: markUsd,
       currency: 'USD',
-      timestamp: Date.now(),
+      timestamp: priceData.asOf.getTime(),
       source: 'price-oracle',
-      confidence: typeof priceData.confidence === 'number' ? priceData.confidence : 1,
+      confidence: priceData.confidence === 'high' ? 1 : priceData.confidence === 'medium' ? 0.75 : 0.5,
     };
   }
 
@@ -143,25 +127,11 @@ class RealPriceProvider {
   }
 
   async getHistoricalPrice(
-    token: string,
-    chainId: number,
-    timestamp: number
+    _token: string,
+    _chainId: number,
+    _timestamp: number
   ): Promise<RealPriceProviderResult | null> {
-    const priceData = await priceOracle.getPrice(token) as { priceUsd: number; confidence?: number } | null;
-    if (!priceData || typeof priceData.priceUsd !== 'number') {
-      return null;
-    }
-
-    return {
-      token,
-      symbol: token,
-      chainId,
-      price: priceData.priceUsd,
-      currency: 'USD',
-      timestamp,
-      source: 'price-oracle',
-      confidence: typeof priceData.confidence === 'number' ? priceData.confidence : 1,
-    };
+    return null;
   }
 }
 
@@ -437,13 +407,11 @@ class RealVolumeProvider {
     }[chainId] ?? ['USDC/USD', 'ETH/USD'];
   }
 
-  private async resolveUsdPrice(token: string, chainId: number): Promise<number> {
+  private async resolveUsdPrice(token: string): Promise<number | null> {
     const symbol = token.trim().toUpperCase();
-    const priceData = await priceOracle.getPrice(symbol);
-    if (!priceData || typeof priceData.priceUsd !== 'number') {
-      return 1;
-    }
-    return priceData.priceUsd;
+    const priceData = await priceOracle.getValuationPrice(symbol);
+    const markUsd = priceData?.haircutPriceUsd ?? priceData?.priceUsd;
+    return priceData && markUsd !== undefined && Number.isFinite(markUsd) && markUsd > 0 ? markUsd : null;
   }
 
   async getVolume(pair: string, chainId: number, timeframe: '24h' | '7d' | 'monthly' = '24h'): Promise<VolumeData | null> {
@@ -465,8 +433,9 @@ class RealVolumeProvider {
     }
 
     const totalVolume = volumes.reduce((sum: number, value: number) => sum + value, 0);
-    const [baseToken, quoteToken] = pair.split('/').map(part => part.trim().toUpperCase());
-    const priceUsd = quoteToken === 'USD' ? await this.resolveUsdPrice(baseToken, chainId) : 1;
+    const [baseToken] = pair.split('/').map(part => part.trim().toUpperCase());
+    const priceUsd = await this.resolveUsdPrice(baseToken);
+    if (priceUsd === null) return null;
     const volumeUSD24h = totalVolume * priceUsd;
 
     const base24h = timeframe === '24h' ? totalVolume : totalVolume / (timeframe === '7d' ? 7 : 30);

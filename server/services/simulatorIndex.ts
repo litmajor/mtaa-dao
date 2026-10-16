@@ -30,12 +30,11 @@
 
 // Base Framework
 export { 
-  SimulationService, 
-  SimulationResult, 
-  SimulationParams, 
-  SimulationStatus, 
-  SimulationDepth 
+  SimulationService,
+  SimulationStatus,
+  SimulationDepth,
 } from './simulationFramework';
+export type { SimulationResult, SimulationParams } from './simulationFramework';
 
 // Category 1: Payment Flow Simulators (BASIC)
 export {

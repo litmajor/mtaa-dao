@@ -5,7 +5,10 @@
  */
 
 import { Logger } from '../utils/logger';
-import { getPendingMultiRecipientExecutions } from '../services/recurringPaymentService';
+import {
+  executeMultiRecipientPayment,
+  getPendingMultiRecipientExecutions,
+} from '../services/recurringPaymentService';
 
 const logger = Logger.getLogger();
 
@@ -52,10 +55,16 @@ async function executeRecurringPaymentCheck() {
 
       for (const execution of executions) {
         try {
-          logger.info(`✅ Payment executed: ${execution.paymentId} - Execution: ${execution.executionId}`);
-          stats.successful++;
+          const result = await executeMultiRecipientPayment(execution.id);
+          if (result.status === 'succeeded') {
+            logger.info(`✅ Recurring payment ${execution.id} completed by SAGA ${result.executionId}`);
+            stats.successful++;
+          } else {
+            logger.error(`❌ Recurring payment ${execution.id} failed: ${result.error ?? 'execution failed'}`);
+            stats.failed++;
+          }
         } catch (error) {
-          logger.error(`❌ Failed to execute payment:`, error);
+          logger.error(`❌ Failed to execute recurring payment ${execution.id}:`, error);
           stats.failed++;
         }
       }

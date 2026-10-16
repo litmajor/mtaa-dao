@@ -17,6 +17,7 @@ export default function WalletDashboard() {
   const [showPaymentRequest, setShowPaymentRequest] = useState(false);
   const [twoFAEnabled, setTwoFAEnabled] = useState(false);
   const [pinConfigured, setPinConfigured] = useState(false);
+  const { address } = useWallet();
 
   // Check 2FA and PIN status on component mount
   useEffect(() => {
@@ -136,8 +137,8 @@ export default function WalletDashboard() {
         {/* Advanced Features Tab */}
         <TabsContent value="advanced" className="space-y-6">
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-            {showSplitBill && <SplitBillModal onClose={() => setShowSplitBill(false)} />}
-            {showPaymentRequest && <PaymentRequestModal onClose={() => setShowPaymentRequest(false)} />}
+            {showSplitBill && <SplitBillModal isOpen={showSplitBill} onClose={() => setShowSplitBill(false)} userAddress={address} />}
+            {showPaymentRequest && <PaymentRequestModal isOpen={showPaymentRequest} onClose={() => setShowPaymentRequest(false)} userAddress={address} />}
           </div>
         </TabsContent>
       </Tabs>

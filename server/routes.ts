@@ -15,6 +15,7 @@ import tasksRoutes from './routes/tasks';
 import reputationRoutes from './routes/reputation';
 import analyticsRoutes from './routes/analytics';
 import notificationsRoutes from './routes/notifications';
+import poolShareMarketplaceRoutes from './routes/pool-share-marketplace';
 import userRecoveryRoutes from './routes/user/recovery';
 import daosRoutes from './routes/daos';
 import proposalExecutionRoutes from './routes/proposal-execution';
@@ -61,6 +62,7 @@ import successStoriesRoutes from './routes/success-stories';
 // Import Yuki trading platform routes (V1 - versioned)
 import yukiRoutesV1 from './routes/v1/yuki';
 import marketDataRoutes from './routes/marketData';
+import smartRouterRoutes from './routes/smartRouter';
 import executionQualityRoutes from './routes/executionQuality';
 import marketInsightsRoutes from './routes/marketInsights';
 import intelligenceRoutes from './routes/v1/yuki/intelligence';
@@ -87,6 +89,7 @@ import symbolUniverseRoutes from './routes/symbolUniverse';
 import p2pTransfersRoutes from './routes/p2p-transfers';
 import paymentExecutionRoutes from './routes/paymentExecutionRoutes';
 import simulationPaymentRoutes from './routes/simulationPaymentRoutes';
+import { reconcileMpesaCallback } from './payments';
 
 // Import Exchange and Order Router routes
 import exchangeRoutes from './routes/exchanges';
@@ -124,7 +127,13 @@ import { getWalletTransactions, createWalletTransaction } from './api/wallet_tra
 import {
   getRotationStatusHandler,
   processRotationHandler,
-  getNextRecipientHandler
+  completeManualRotationHandler,
+  getNextRecipientHandler,
+  initializeRotationHandler,
+  recordRotationContributionHandler,
+  rotationB2cCallbackHandler,
+  rotationB2cTimeoutHandler,
+  markCyclePaidHandler,
 } from './api/rotation_service';
 import {
   createInvitationHandler,
@@ -383,6 +392,27 @@ export async function registerRoutes(app: express.Application, server: HTTPServe
   // Reconciliation endpoint has been moved into the admin namespace for
   // additional assurance.  Provider-specific status routes remain here.
   // (Old `/api/payment-reconciliation` redirect removed.)
+  app.post('/api/webhooks/mpesa', async (req, res) => {
+    try {
+      const callbackData = req.body?.Body?.stkCallback;
+      if (!callbackData) {
+        return res.status(400).json({ ResultCode: '1', ResultDesc: 'Invalid callback structure' });
+      }
+      const result = await reconcileMpesaCallback(callbackData, req.query.token as string | undefined);
+      return res.status(200).json({
+        ResultCode: '0',
+        ResultDesc: 'Accepted',
+        paymentStatus: result.status,
+      });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      logger.error('M-Pesa webhook reconciliation failed', { message });
+      return res.status(500).json({ ResultCode: '1', ResultDesc: message });
+    }
+  });
+  app.post('/api/webhooks/mpesa/b2c/result', rotationB2cCallbackHandler);
+  app.post('/api/webhooks/mpesa/b2c/timeout', rotationB2cTimeoutHandler);
+
   app.use('/api/payments/stripe', stripeStatusRoutes);
   app.use('/api/payments/kotanipay', kotanipayStatusRoutes);
   app.use('/api/payments/mpesa', mpesaStatusRoutes);
@@ -444,6 +474,7 @@ export async function registerRoutes(app: express.Application, server: HTTPServe
   
   // Core feature routes
   app.use('/api/challenges', isAuthenticated, challengesRoutes);
+  app.use('/api/pool-marketplace', poolShareMarketplaceRoutes);
   app.use('/api/morio', authenticateToken, morioRoutes);
   app.use('/api/reputation', reputationRoutes);
   app.use('/api/analytics', isAuthenticated, analyticsRoutes);
@@ -669,6 +700,10 @@ export async function registerRoutes(app: express.Application, server: HTTPServe
   // Symbol Universe & CEX Price Integration
   console.log('[ROUTES] Mounting symbol universe routes...');
   app.use('/api/symbol-universe', symbolUniverseRoutes);
+
+  // Smart CEX routing, fee comparisons, and arbitrage endpoints
+  console.log('[ROUTES] Mounting smart router routes...');
+  app.use('/api', smartRouterRoutes);
 
   // Enhanced Market Data API
   console.log('[ROUTES] Mounting enhanced market data routes...');
@@ -931,7 +966,12 @@ export async function registerRoutes(app: express.Application, server: HTTPServe
   });
 
 
-  app.post('/api/dao/:daoId/rotation/process', isAuthenticated, validateDaoIdMiddleware, requireDAORole('owner', 'admin'), processRotationHandler);
+  app.post('/api/dao/:daoId/rotation/process', isAuthenticated, validateDaoIdMiddleware, requireDAORole('owner', 'admin', 'elder'), processRotationHandler);
+  // Ledger mode: treasurer confirms they've sent the money for a pending ledger-mode cycle
+  app.post('/api/dao/:daoId/rotation/cycles/:cycleId/mark-paid', isAuthenticated, validateDaoIdMiddleware, requireDAORole('owner', 'admin', 'elder', 'treasurer'), markCyclePaidHandler);
+  app.post('/api/dao/:daoId/rotation/initialize', isAuthenticated, validateDaoIdMiddleware, requireDAORole('owner', 'admin', 'elder'), initializeRotationHandler);
+  app.post('/api/dao/:daoId/rotation/contributions', isAuthenticated, validateDaoIdMiddleware, recordRotationContributionHandler);
+  app.post('/api/dao/:daoId/rotation/cycles/:cycleId/complete', isAuthenticated, validateDaoIdMiddleware, requireDAORole('owner', 'admin', 'elder', 'treasurer'), completeManualRotationHandler);
   app.get('/api/dao/:daoId/rotation/next-recipient', isAuthenticated, validateDaoIdMiddleware, getNextRecipientHandler);
 
   // DAO Invitation Management (DAO admin/owner for managing, members for accepting)

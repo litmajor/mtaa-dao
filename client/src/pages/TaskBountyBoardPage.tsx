@@ -24,7 +24,7 @@ const TaskBountyBoardPage: React.FC = () => {
   const handleConfirmClaim = async () => {
     if (!selectedTask) return;
     setClaiming(true);
-    await claimTask(selectedTask.id, mockUserAddress);
+    await claimTask(selectedTask.id);
     setClaiming(false);
     setModalOpen(false);
     setSelectedTask(null);

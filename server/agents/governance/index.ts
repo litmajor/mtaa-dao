@@ -140,7 +140,7 @@ export class GovernanceAnalyticsAgent extends BaseAgent {
   private healthSnapshots: DAOHealthMetrics[] = [];
   private engagementHistory: MemberEngagement[] = [];
   private isInitialized: boolean = false;
-  private refreshInterval: NodeJS.Timer | null = null;
+  private refreshInterval: NodeJS.Timeout | null = null;
   private circuitBreaker = circuitBreakerRegistry.getOrCreate('governance-analytics', 'governance', {
     failureThreshold: 15,
     resetTimeout: 120000

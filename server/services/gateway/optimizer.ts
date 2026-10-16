@@ -151,6 +151,7 @@ export class MultiChainRouteOptimizer implements IRouteOptimizer {
       },
       destination: {
         token: tokenOut,
+        amount: expectedOutput,
         chainId,
         address: '', // Will be filled by user
       },
@@ -236,6 +237,7 @@ export class MultiChainRouteOptimizer implements IRouteOptimizer {
     steps.push(bridgeStep);
 
     // Step 3: Swap on destination chain if needed
+    let expectedOutput = amountIn;
     if (tokenOut !== 'USDC') {
       const destSwap = await this.buildSwapStep(
         'USDC',
@@ -245,6 +247,7 @@ export class MultiChainRouteOptimizer implements IRouteOptimizer {
         slippage
       );
       steps.push(destSwap);
+      expectedOutput = destSwap.to.amount;
     }
 
     // Calculate totals
@@ -252,7 +255,6 @@ export class MultiChainRouteOptimizer implements IRouteOptimizer {
     const gasPrice = await this.priceProvider.getPrice('ETH', chainInId);
     const gasCostUSD = gasPrice ? totalGas / 1e18 * gasPrice.price : 0;
 
-    const expectedOutput = amountIn; // Simplified for now
     const minOutput = (parseFloat(expectedOutput) * (1 - slippage / 100)).toString();
 
     return {
@@ -265,6 +267,7 @@ export class MultiChainRouteOptimizer implements IRouteOptimizer {
       },
       destination: {
         token: tokenOut,
+        amount: expectedOutput,
         chainId: chainOutId,
         address: '',
       },

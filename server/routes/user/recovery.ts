@@ -20,10 +20,13 @@ const router = Router();
 router.get('/workflows', authenticateToken as any, async (req: any, res) => {
   try {
     const userId = req.user?.id;
-    const limit = req.query.limit ? Math.min(parseInt(req.query.limit as string), 100) : 20;
-    const offset = req.query.offset ? parseInt(req.query.offset as string) : 0;
+    if (!userId) return res.status(401).json({ error: 'Unauthorized' });
+    const requestedLimit = Number.parseInt(String(req.query.limit ?? '20'), 10);
+    const requestedOffset = Number.parseInt(String(req.query.offset ?? '0'), 10);
+    const limit = Number.isFinite(requestedLimit) ? Math.min(Math.max(requestedLimit, 1), 100) : 20;
+    const offset = Number.isFinite(requestedOffset) ? Math.max(requestedOffset, 0) : 0;
 
-    const userSAGAs = paymentRecoverySAGA.getSAGAsByUser(userId);
+    const userSAGAs = await paymentRecoverySAGA.getSAGAsByUser(userId);
     const paginated = userSAGAs.slice(offset, offset + limit);
 
     res.json({
@@ -56,12 +59,14 @@ router.get('/workflows', authenticateToken as any, async (req: any, res) => {
 /**
  * POST /workflows
  * Create new SAGA recovery workflow
- * Body: { userId, amount, currency, walletFrom, walletTo, vaultId?, metadata? }
- * Returns immediately with SAGA reference (non-blocking)
+ * Body: { amount, currency, walletFrom, walletTo, vaultId?, metadata? }
+ * User ID is taken from the authenticated session.
+ * Executes through the SAGA orchestrator and returns its persisted result
  */
 router.post('/workflows', authenticateToken as any, async (req: any, res) => {
   try {
     const userId = req.user?.id;
+    if (!userId) return res.status(401).json({ error: 'Unauthorized' });
     const { amount, currency, walletFrom, walletTo, vaultId, metadata } = req.body;
 
     if (!amount || !currency || !walletFrom || !walletTo) {
@@ -70,7 +75,7 @@ router.post('/workflows', authenticateToken as any, async (req: any, res) => {
       });
     }
 
-    // Execute SAGA (non-blocking, returns immediately)
+    // This orchestrator runs the SAGA through completion before resolving.
     const saga = await paymentRecoverySAGA.executePaymentSAGA({
       userId,
       amount,
@@ -85,7 +90,7 @@ router.post('/workflows', authenticateToken as any, async (req: any, res) => {
       timestamp: new Date(),
       workflowId: saga.id,
       status: saga.status,
-      message: 'Recovery workflow created and execution started (non-blocking)',
+      message: 'Recovery workflow executed',
       saga
     });
   } catch (error) {
@@ -110,15 +115,14 @@ router.get('/stats', authenticateToken as any, async (req: any, res) => {
     }
 
     // Get all SAGAs for user
-    const userSAGAs = paymentRecoverySAGA.getSAGAsByUser(userId);
-    const sagas = Array.isArray(userSAGAs) ? userSAGAs : (userSAGAs as any).sagas || [];
-    const totalCount = Array.isArray(userSAGAs) ? userSAGAs.length : (userSAGAs as any).totalCount || 0;
+    const sagas = await paymentRecoverySAGA.getSAGAsByUser(userId);
+    const totalCount = sagas.length;
 
     // Calculate statistics
     const succeeded = sagas.filter((s: any) => s.status === 'succeeded').length;
     const failed = sagas.filter((s: any) => s.status === 'failed').length;
     const processing = sagas.filter((s: any) => s.status === 'processing').length;
-    const cancelled = sagas.filter((s: any) => s.status === 'compensated').length;
+    const abandoned = sagas.filter((s) => s.status === 'abandoned').length;
 
     const successRate = sagas.length > 0 ? (succeeded / sagas.length) * 100 : 0;
     const avgSteps =
@@ -126,15 +130,10 @@ router.get('/stats', authenticateToken as any, async (req: any, res) => {
         ? Math.round((sagas.reduce((sum: number, s: any) => sum + (s.stepsCompleted?.length || 0), 0) / sagas.length) * 10) / 10
         : 0;
 
-    const avgDuration =
-      sagas.length > 0
-        ? Math.round(
-            sagas
-              .filter((s: any) => s.completedAt)
-              .reduce((sum: number, s: any) => sum + (new Date(s.completedAt!).getTime() - new Date(s.createdAt).getTime()), 0) /
-              sagas.filter((s: any) => s.completedAt).length
-          )
-        : 0;
+    const terminalSagas = sagas.filter((s) => ['succeeded', 'failed', 'abandoned'].includes(s.status));
+    const avgDuration = terminalSagas.length > 0
+      ? Math.round(terminalSagas.reduce((sum, saga) => sum + saga.updatedAt.getTime() - saga.createdAt.getTime(), 0) / terminalSagas.length)
+      : 0;
 
     res.json({
       timestamp: new Date(),
@@ -143,7 +142,7 @@ router.get('/stats', authenticateToken as any, async (req: any, res) => {
         succeeded,
         failed,
         processing,
-        cancelled,
+        abandoned,
         successRate: Math.round(successRate * 100) / 100,
         averageStepsPerRecovery: avgSteps,
         averageDurationMs: avgDuration
@@ -153,7 +152,7 @@ router.get('/stats', authenticateToken as any, async (req: any, res) => {
         processing: sagas.filter((s: any) => s.status === 'processing').length,
         succeeded: succeeded,
         failed: failed,
-        compensated: cancelled
+        abandoned,
       },
       recentSAGAs: sagas.slice(0, 5)
     });
@@ -179,35 +178,22 @@ router.get('/active', authenticateToken as any, async (req: any, res) => {
     }
 
     // Get all active SAGAs for user
-    const userSAGAs = paymentRecoverySAGA.getSAGAsByUser(userId);
-    const sagas = Array.isArray(userSAGAs) ? userSAGAs : (userSAGAs as any).sagas || [];
+    const sagas = await paymentRecoverySAGA.getSAGAsByUser(userId);
 
     // Filter to active statuses
     const activeSagas = sagas.filter(
       (s: any) => s.status === 'pending' || s.status === 'processing'
     );
 
-    // Find ones awaiting user action (have pending manual steps)
-    const awaitingUser = activeSagas.filter((s: any) => 
-      s.currentStep && (s.currentStep as any).requiresUserApproval
-    );
-
     res.json({
       timestamp: new Date(),
       activeCount: activeSagas.length,
-      awaitingActionCount: awaitingUser.length,
       workflows: activeSagas.map((s: any) => ({
         id: s.id,
         status: s.status,
         currentStep: s.currentStep,
-        progress: `${(s.stepsCompleted?.length || 0)}/${(s.stepsCompleted?.length || 0)}`,
+        progress: `${s.stepsCompleted.length}/${paymentRecoverySAGA.getTotalExecutionSteps(s)}`,
         createdAt: s.createdAt,
-        requiresUserAction: awaitingUser.some((a: any) => a.id === s.id)
-      })),
-      requiresAction: awaitingUser.map((s: any) => ({
-        id: s.id,
-        currentStep: s.currentStep,
-        message: (s.currentStep as any)?.message || 'User approval required'
       }))
     });
   } catch (error) {
@@ -228,7 +214,7 @@ router.get('/workflows/:workflowId', authenticateToken as any, async (req: any, 
     const { workflowId } = req.params;
     const userId = req.user?.id;
 
-    const saga = paymentRecoverySAGA.getSAGAState(workflowId);
+    const saga = await paymentRecoverySAGA.getSAGAState(workflowId);
 
     if (!saga || saga.userId !== userId) {
       return res.status(404).json({
@@ -250,7 +236,7 @@ router.get('/workflows/:workflowId', authenticateToken as any, async (req: any, 
         lastError: saga.lastError,
         createdAt: saga.createdAt,
         updatedAt: saga.updatedAt,
-        events: paymentRecoverySAGA.getSAGAEvents(workflowId)
+        events: await paymentRecoverySAGA.getSAGAEvents(workflowId)
       }
     });
   } catch (error) {
@@ -277,27 +263,32 @@ router.post('/workflows/:workflowId/cancel', authenticateToken as any, async (re
       return res.status(401).json({ error: 'Unauthorized' });
     }
 
-    if (!reason) {
+    if (typeof reason !== 'string' || !reason.trim()) {
       return res.status(400).json({
         error: 'Cancellation reason required'
       });
     }
 
     // Verify ownership and cancel SAGA
-    const sagaState = paymentRecoverySAGA.getSAGAState(workflowId);
+    const sagaState = await paymentRecoverySAGA.getSAGAState(workflowId);
     if (!sagaState || sagaState.userId !== userId) {
       return res.status(404).json({ error: 'Workflow not found' });
     }
 
-    // Update SAGA status to cancelled/compensated
-    const cancelledSaga = { ...sagaState, status: 'compensated', lastError: reason } as any;
+    if (!['pending', 'processing', 'compensating'].includes(sagaState.status)) {
+      return res.status(409).json({ error: `Cannot abandon a workflow in ${sagaState.status} status` });
+    }
+
+    await paymentRecoverySAGA.abandonSAGA(workflowId, reason.trim());
+    const abandonedSaga = await paymentRecoverySAGA.getSAGAState(workflowId);
+    if (!abandonedSaga) return res.status(404).json({ error: 'Workflow not found' });
 
     res.json({
       timestamp: new Date(),
       workflowId,
-      status: cancelledSaga.status,
-      message: 'Recovery workflow cancelled',
-      saga: cancelledSaga
+      status: abandonedSaga.status,
+      message: 'Recovery workflow abandoned',
+      saga: abandonedSaga,
     });
   } catch (error) {
     if (error instanceof AppError && error.statusCode === 404) {
@@ -321,7 +312,7 @@ router.get('/workflows/:workflowId/history', authenticateToken as any, async (re
     const { workflowId } = req.params;
     const userId = req.user?.id;
 
-    const saga = paymentRecoverySAGA.getSAGAState(workflowId);
+    const saga = await paymentRecoverySAGA.getSAGAState(workflowId);
 
     if (!saga || saga.userId !== userId) {
       return res.status(404).json({
@@ -329,29 +320,37 @@ router.get('/workflows/:workflowId/history', authenticateToken as any, async (re
       });
     }
 
+    const events = await paymentRecoverySAGA.getSAGAEvents(workflowId);
+
     res.json({
       timestamp: new Date(),
       workflowId,
       summary: {
         status: saga.status,
         stepsCompleted: saga.stepsCompleted?.length || 0,
-        totalSteps: saga.stepsCompleted?.length || 0,
-        failureCount: (saga.events || []).filter((e: any) => e.type === 'step_failed').length,
+        totalSteps: paymentRecoverySAGA.getTotalExecutionSteps(saga),
+        failureCount: events.filter((event) => !event.success).length,
       },
       execution: {
         stepsCompleted: saga.stepsCompleted || [],
         currentStep: saga.currentStep,
-        errors: [],
+        errors: events
+          .filter((event) => !event.success)
+          .map((event) => ({ step: event.step, error: event.error, timestamp: event.timestamp })),
       },
       events: {
-        all: saga.events,
-        failures: (saga.events || []).filter((e: any) => e.type.includes('failed')),
-        compensations: (saga.events || []).filter((e: any) => e.type.includes('compensation')),
+        all: events,
+        failures: events.filter((event) => !event.success),
+        compensations: events.filter((event) =>
+          event.step.startsWith('COMPENSATE_') || event.step.startsWith('REVERT_')
+        ),
       },
       timeline: {
         created: saga.createdAt,
         updated: saga.updatedAt,
-        completed: (saga.events || []).reverse()[0]?.timestamp
+        completed: [...events].reverse().find((event) =>
+          event.step === 'SAGA_SUCCEEDED' || event.step === 'SAGA_FAILED' || event.step === 'SAGA_ABANDONED'
+        )?.timestamp,
       }
     });
   } catch (error) {

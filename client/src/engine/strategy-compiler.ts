@@ -77,7 +77,7 @@ function buildExecutionTree(entryNode: StrategyNode, graph: StrategyGraph): Comp
       .map((e) => e.targetNodeId);
     const next = outs.length > 0 ? build(outs[0]) : null;
     // Use node-level compiler if available in the registry
-    const entry = NodeRegistry[node.type];
+    const entry = (NodeRegistry as Record<string, any>)[node.type];
     if (entry && entry.compiler) {
       const compiledFragment = entry.compiler(node);
       compiledFragment.next = next;
@@ -96,7 +96,7 @@ export function compileGraph(graph: StrategyGraph): CompiledStrategy {
   // Build compiled fragments per node using registry compilers (normalized IR fragments)
   const compiledFragments: Record<string, CompiledNode> = {};
   for (const node of graph.nodes) {
-    const entry = NodeRegistry[node.type];
+    const entry = (NodeRegistry as Record<string, any>)[node.type];
     if (entry && entry.compiler) {
       compiledFragments[node.id] = entry.compiler(node);
     } else {

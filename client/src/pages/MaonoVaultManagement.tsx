@@ -316,24 +316,21 @@ export default function MaonoVaultManagement() {
         {/* Modals */}
         {showDeposit && selectedVault && (
           <DepositModal
-            vaultId={selectedVault.id}
-            vaultName={selectedVault.name}
-            onClose={() => {
-              setShowDeposit(false);
-              setSelectedVault(null);
+            open={showDeposit}
+            onOpenChange={(open) => {
+              if (!open) setShowDeposit(false);
             }}
+            
           />
         )}
 
         {showWithdraw && selectedVault && (
           <WithdrawalModal
-            vaultId={selectedVault.id}
-            vaultName={selectedVault.name}
-            availableBalance={selectedVault.balance}
-            onClose={() => {
-              setShowWithdraw(false);
-              setSelectedVault(null);
+            open={showWithdraw}
+            onOpenChange={(open) => {
+              if (!open) setShowWithdraw(false);
             }}
+            vaultAddress={selectedVault.id}
           />
         )}
       </div>

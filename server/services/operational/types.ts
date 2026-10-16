@@ -1,7 +1,6 @@
 /**
  * Operational Framework Types
  * Strict TypeScript interfaces for system mapping, auditing, and secure configuration
- * No narrative placeholders or speculative logic - all types are functional and auditable
  */
 
 // ============================================================================
@@ -103,6 +102,15 @@ export enum AuditActionType {
   ARCHITECTURE_VALIDATED = 'architecture_validated',
   SECRET_ACCESSED = 'secret_accessed',
   DEPLOYMENT_INITIATED = 'deployment_initiated',
+  REMEDIATION_RESTART = 'remediation_restart',
+  REMEDIATION_CONNECTION_REPROVISION = 'remediation_connection_reprovision',
+  REMEDIATION_CREDENTIAL_ROTATION = 'remediation_credential_rotation',
+  REMEDIATION_SCALE_INSTANCE = 'remediation_scale_instance',
+  REMEDIATION_CACHE_CLEAR = 'remediation_cache_clear',
+  REMEDIATION_POOL_REBUILD = 'remediation_pool_rebuild',
+  REMEDIATION_CONFIG_UPDATE = 'remediation_config_update',
+  REMEDIATION_EMERGENCY_STOP = 'remediation_emergency_stop',
+  REMEDIATION_FAILOVER = 'remediation_failover',
 }
 
 export interface AuditEvent {

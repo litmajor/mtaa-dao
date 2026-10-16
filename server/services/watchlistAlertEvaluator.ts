@@ -224,7 +224,7 @@ class WatchlistAlertEvaluator {
         if (priceData && typeof (priceData as any).price === 'number') {
           logger.debug('[WatchlistEvaluator] marketDataClient price hit for USD-quoted CEX pair', {
             pair: normalized,
-            source: priceData.source ?? sourceLabel,
+            source: sourceLabel,
             provider: 'marketDataClient',
           });
           return (priceData as any).price;
@@ -273,7 +273,7 @@ class WatchlistAlertEvaluator {
         if (priceData && typeof (priceData as any).price === 'number') {
           logger.debug('[WatchlistEvaluator] marketDataClient DEX USD-fallback price hit', {
             pair: normalized,
-            provider: priceData.source ?? DEFAULT_PRICE_SOURCE,
+            provider: DEFAULT_PRICE_SOURCE,
           });
           return (priceData as any).price;
         }

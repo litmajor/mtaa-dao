@@ -6,11 +6,25 @@
  */
 
 import { EventEmitter } from 'events';
-import { type SmartRouter } from './smart-router';
-import { type DexIntegrationService } from './dex-integration-service';
-import { type CCXTService } from './ccxt-service';
-import { type CrossChainService } from './cross-chain-service';
 import { publishExecutionEvent } from './executionEvents';
+
+interface SmartRouter {
+  calculateRoute(fromToken: string, toToken: string, amount: number, slippage: number): Promise<{ outputAmount: number; priceImpact: number } | null>;
+}
+
+interface DexIntegrationService {
+  executeSwap(params: { fromToken: string; toToken: string; amount: number; slippage: number; userAddress: string }): Promise<{ txHash: string }>;
+}
+
+interface CCXTService {
+  createOrder(exchange: string, symbol: string, type: string, quantity: number): Promise<{ id: string; status: string }>;
+  fetchTicker(symbol: string, exchange: string): Promise<{ last: number }>;
+  getOHLCV(symbol: string, timeframe?: string, limit?: number): Promise<{ data: number[][] | null; source: string }>;
+}
+
+interface CrossChainService {
+  executeBridge(params: { asset: string; fromChain: string; toChain: string; amount: number; recipient: string }): Promise<{ txHash: string; status: string }>;
+}
 
 interface VaultState {
   vaultId: string;
@@ -70,12 +84,11 @@ interface StrategyExecution {
     operator: string;
     value: number;
   };
-  action?: {
-    type: string;
-    token?: string;
-    amount?: number;
-    target?: string;
-  };
+  action?:
+    | { type: 'swap'; fromToken: string; toToken: string; amount: number }
+    | { type: 'buy' | 'sell'; symbol: string; quantity: number }
+    | { type: 'bridge'; asset: string; fromChain: string; toChain: string; amount: number }
+    | { type: 'move'; fromAccount: string; toAccount: string; amount: number };
   executedAt?: Date;
   result?: any;
   error?: string;
@@ -340,21 +353,21 @@ export class VaultExecutionService extends EventEmitter {
     try {
       switch (metric) {
         case 'price':
-          const priceData = await this.ccxtService.getPrices([`${token}/USDT`]);
-          currentValue = priceData?.[`${token}/USDT`]?.price || 0;
+          const ticker = await this.ccxtService.fetchTicker(`${token}/USDT`, 'binance');
+          currentValue = ticker.last || 0;
           conditionMet = this.compareValues(currentValue, operator, value);
           break;
 
         case 'rsi':
           // Fetch OHLCV and calculate RSI
-          const ohlcv = await this.ccxtService.getOHLCV(`${token}/USDT`, '1h', 50);
-          currentValue = this.calculateRSI(ohlcv, period || 14);
+          const rsiCandles = await this.ccxtService.getOHLCV(`${token}/USDT`, '1h', 50);
+          currentValue = this.calculateRSI(rsiCandles.data ?? [], period || 14);
           conditionMet = this.compareValues(currentValue, operator, value);
           break;
 
         case 'volume':
           const volumeData = await this.ccxtService.getOHLCV(`${token}/USDT`, '1h', 1);
-          currentValue = volumeData?.[volumeData.length - 1]?.[7] || 0; // Volume
+          currentValue = volumeData.data?.[volumeData.data.length - 1]?.[5] ?? 0; // CCXT OHLCV volume column
           conditionMet = this.compareValues(currentValue, operator, value);
           break;
 

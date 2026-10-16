@@ -254,7 +254,7 @@ export function calculateTransactionFee(
     transfer: 'transfers',
     ramp: 'ramps',
   };
-  const feeValue = provider.fees[feeKeyMap[type]];
+  const feeValue = (provider.fees as Record<string, number | { min: number; max: number; fee: number }[] | string | undefined>)[feeKeyMap[type]];
 
   if (typeof feeValue === 'number') {
     return Math.round(amount * feeValue * 100) / 100;

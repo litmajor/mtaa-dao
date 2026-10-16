@@ -39,10 +39,14 @@ interface UseWebSocketReturn {
  * Hook to manage WebSocket connection for real-time dashboard updates
  * Falls back to HTTP polling if WebSocket is unavailable
  */
+export function useWebSocket(options?: UseWebSocketOptions): UseWebSocketReturn;
+export function useWebSocket(url: string, options?: UseWebSocketOptions): UseWebSocketReturn;
 export function useWebSocket(
-  url: string = 'wss://api.mtaadao.io/ws',
+  urlOrOptions?: string | UseWebSocketOptions,
   options: UseWebSocketOptions = {}
 ): UseWebSocketReturn {
+  const url = typeof urlOrOptions === 'string' ? urlOrOptions : 'wss://api.mtaadao.io/ws';
+  const effectiveOptions = typeof urlOrOptions === 'object' && urlOrOptions !== null ? urlOrOptions : options;
   const {
     enabled = true,
     reconnectInterval = 3000,
@@ -51,7 +55,7 @@ export function useWebSocket(
     onConnect,
     onDisconnect,
     onError,
-  } = options;
+  } = effectiveOptions;
 
   const [connected, setConnected] = useState(false);
   const [reconnecting, setReconnecting] = useState(false);
@@ -193,7 +197,7 @@ export function usePolling(
   const [error, setError] = useState<Error | null>(null);
   const pollingIntervalRef = useRef<NodeJS.Timeout>();
 
-  const fetch = useCallback(async () => {
+  const fetchData = useCallback(async () => {
     try {
       setLoading(true);
       const response = await fetch(url);
@@ -214,17 +218,17 @@ export function usePolling(
     if (!enabled) return;
 
     // Initial fetch
-    fetch();
+    fetchData();
 
     // Set up polling
-    pollingIntervalRef.current = setInterval(fetch, interval);
+    pollingIntervalRef.current = setInterval(fetchData, interval);
 
     return () => {
       if (pollingIntervalRef.current) {
         clearInterval(pollingIntervalRef.current);
       }
     };
-  }, [enabled, interval, fetch]);
+  }, [enabled, interval, fetchData]);
 
   return { data, loading, error };
 }

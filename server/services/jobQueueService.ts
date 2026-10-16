@@ -37,6 +37,7 @@ export type JobType =
   | 'morio-analyze'
   | 'morio-chat'
   | 'pool-rebalance'
+  | 'pool-valuation'
   | 'price-oracle-update'
   | 'vault-rebalance'
   | 'asset-graph-build'
@@ -77,6 +78,7 @@ class JobQueueService {
       'morio-analyze',
       'morio-chat',
       'pool-rebalance',
+      'pool-valuation',
       'price-oracle-update',
       'vault-rebalance',
       'asset-graph-build',
@@ -137,6 +139,9 @@ class JobQueueService {
         attempts: options?.attempts || 3,
         timeout: options?.timeout || 300000
       };
+      if (options?.jobId) {
+        jobOptions.jobId = options.jobId;
+      }
 
       const job = await queue.add(payload, jobOptions);
       const jobIdStr = String(job.id);
@@ -301,6 +306,7 @@ export interface QueueOptions {
   delay?: number;
   attempts?: number;
   timeout?: number;
+  jobId?: string;
 }
 
 export const jobQueueService = new JobQueueService();

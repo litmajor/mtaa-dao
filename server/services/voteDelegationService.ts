@@ -5,7 +5,16 @@
  */
 
 import { db } from '../db';
-import { daos, proposals, delegations, memberReputation } from '../../shared/schema';
+import {
+  daoMemberships,
+  daos,
+  proposals,
+  userReputation,
+  users,
+  voteDelegations,
+  proposalDisputes,
+  delegations,
+} from '../../shared/schema';
 import { eq, and, sql } from 'drizzle-orm';
 
 // ==================== TYPES ====================
@@ -57,7 +66,7 @@ export class VoteDelegationService {
       // Verify delegator is member of DAO
       const membership = await db.query.daoMemberships.findFirst({
         where: and(
-          eq(daoMemberships.memberId, params.delegatorId as any),
+          eq(daoMemberships.userId, params.delegatorId as any),
           eq(daoMemberships.daoId, params.daoId as any)
         ),
       });
@@ -66,12 +75,12 @@ export class VoteDelegationService {
         throw new Error(`Delegator not member of DAO: ${params.daoId}`);
       }
 
-      // Create or update delegation
+      // Create or update delegation using the current schema columns.
       await db.execute(sql`
-        INSERT INTO delegations (delegator_id, delegatee_id, dao_id, delegated_at, expiry_time)
-        VALUES (${params.delegatorId}, ${params.delegateeId}, ${params.daoId}, NOW(), ${params.expiryTime || null})
-        ON CONFLICT (delegator_id, dao_id) 
-        DO UPDATE SET delegatee_id = ${params.delegateeId}, updated_at = NOW()
+        INSERT INTO vote_delegations (delegator_id, delegate_id, dao_id, scope, category, proposal_id, is_active, created_at, updated_at)
+        VALUES (${params.delegatorId}, ${params.delegateeId}, ${params.daoId}, 'all', NULL, NULL, TRUE, NOW(), NOW())
+        ON CONFLICT (delegator_id, dao_id)
+        DO UPDATE SET delegate_id = ${params.delegateeId}, updated_at = NOW()
       `);
 
       console.log(`✅ Vote delegated: ${params.delegatorId} → ${params.delegateeId} (DAO: ${params.daoId})`);
@@ -112,13 +121,8 @@ export class VoteDelegationService {
 
       if (!delegation) return null;
 
-      // Check if delegation expired
-      if (delegation.expiryTime && delegation.expiryTime < Date.now()) {
-        await this.revokeVoteDelegation(delegatorId, daoId);
-        return null;
-      }
-
-      return delegation.delegateeId;
+      // The live schema does not carry an expiry_timed field; treat any stale delegation as inactive if needed.
+      return delegation.delegateId;
     } catch (error) {
       console.error('❌ Error getting active delegatee:', error);
       throw error;
@@ -130,15 +134,16 @@ export class VoteDelegationService {
    */
   async getDelegators(delegateeId: string, daoId: string): Promise<string[]> {
     try {
-      const delegations = await db.query.delegations.findMany({
+      const delegationRecords = await db.query.voteDelegations.findMany({
         where: and(
-          eq(delegations.delegateeId, delegateeId as any),
-          eq(delegations.daoId, daoId as any)
+          eq(voteDelegations.delegateId, delegateeId as any),
+          eq(voteDelegations.daoId, daoId as any),
+          eq(voteDelegations.isActive, true)
         ),
       });
 
-      return delegations
-        .filter(d => !d.expiryTime || d.expiryTime >= Date.now())
+      return delegationRecords
+        .filter(d => !d.createdAt || d.createdAt >= new Date(Date.now() - 24 * 60 * 60 * 1000))
         .map(d => d.delegatorId);
     } catch (error) {
       console.error('❌ Error getting delegators:', error);
@@ -155,11 +160,8 @@ export class VoteDelegationService {
   async calculateVotingWeight(memberId: string, daoId: string): Promise<number> {
     try {
       // Get member reputation in this DAO
-      const reputation = await db.query.memberReputation.findFirst({
-        where: and(
-          eq(memberReputation.memberId, memberId as any),
-          eq(memberReputation.daoId, daoId as any)
-        ),
+      const reputation = await db.query.userReputation.findFirst({
+        where: eq(userReputation.userId, memberId as any),
       });
 
       if (!reputation) {
@@ -167,9 +169,7 @@ export class VoteDelegationService {
         return 1.0;
       }
 
-      // Scale reputation to voting weight (reputation / 100)
-      // E.g., 500 reputation score = 5.0 voting weight
-      const weight = (reputation.reputationScore || 0) / 100;
+      const weight = ((reputation.totalPoints as number | null) || 0) / 100;
       return Math.max(1, weight);  // Minimum 1.0 weight
     } catch (error) {
       console.error('❌ Error calculating voting weight:', error);
@@ -241,9 +241,10 @@ export class VoteDelegationService {
         SELECT COALESCE(SUM(voting_weight), 0) as total_weight
         FROM proposal_votes
         WHERE proposal_id = ${proposalId} AND vote_choice = ${voteChoice}
-      `);
+      `) as any;
+      const rows = result?.rows ?? [];
 
-      return result[0]?.total_weight || 0;
+      return Number(rows[0]?.total_weight ?? 0);
     } catch (error) {
       console.error('❌ Error getting voting weight:', error);
       throw error;
@@ -357,15 +358,15 @@ export class VoteDelegationService {
    */
   async getDAODisputes(daoId: string): Promise<any[]> {
     try {
-      const disputes = await db.execute(sql`
+      const result = await db.execute(sql`
         SELECT pd.*, p.title as proposal_title
         FROM proposal_disputes pd
         JOIN proposals p ON pd.proposal_id = p.id
         WHERE p.dao_id = ${daoId}
         ORDER BY pd.filed_at DESC
-      `);
+      `) as any;
 
-      return disputes;
+      return result?.rows ?? [];
     } catch (error) {
       console.error('❌ Error getting DAO disputes:', error);
       throw error;
@@ -387,22 +388,23 @@ export class VoteDelegationService {
         SELECT 
           COUNT(DISTINCT p.id) as total_proposals,
           COALESCE(AVG(vote_participation), 0) as avg_participation,
-          COALESCE(AVG(mr.reputation_score), 0) as avg_reputation
+          COALESCE(AVG(ug.total_points), 0) as avg_reputation
         FROM proposals p
         LEFT JOIN (
           SELECT proposal_id, COUNT(DISTINCT voter_id) as vote_participation
           FROM proposal_votes
           GROUP BY proposal_id
         ) votes ON p.id = votes.proposal_id
-        LEFT JOIN member_reputation mr ON p.dao_id = mr.dao_id
+        LEFT JOIN user_gamification ug ON ug.user_id = p.proposer_id
         WHERE p.dao_id = ${daoId}
         AND p.created_at >= NOW() - INTERVAL '${periodDays} days'
-      `);
+      `) as any;
+      const rows = result?.rows ?? [];
 
       return {
-        totalProposals: result[0]?.total_proposals || 0,
-        averageParticipation: result[0]?.avg_participation || 0,
-        averageReputation: result[0]?.avg_reputation || 0,
+        totalProposals: Number(rows[0]?.total_proposals ?? 0),
+        averageParticipation: Number(rows[0]?.avg_participation ?? 0),
+        averageReputation: Number(rows[0]?.avg_reputation ?? 0),
       };
     } catch (error) {
       console.error('❌ Error getting voting participation:', error);
@@ -418,24 +420,25 @@ export class VoteDelegationService {
     topDelegatees: Array<{delegateeId: string; delegatorCount: number}>;
   }> {
     try {
-      const stats = await db.execute(sql`
+      const result = await db.execute(sql`
         SELECT 
           COUNT(*) as total_delegations,
-          delegatee_id,
+          delegate_id,
           COUNT(*) as delegator_count
-        FROM delegations
+        FROM vote_delegations
         WHERE dao_id = ${daoId}
-        AND (expiry_time IS NULL OR expiry_time >= NOW())
-        GROUP BY delegatee_id
+        AND (is_active = TRUE)
+        GROUP BY delegate_id
         ORDER BY delegator_count DESC
         LIMIT 10
-      `);
+      `) as any;
+      const stats = result?.rows ?? [];
 
       return {
-        totalDelegations: stats.reduce((sum: number, s: any) => sum + s.total_delegations, 0),
+        totalDelegations: stats.reduce((sum: number, s: any) => sum + Number(s.total_delegations || 0), 0),
         topDelegatees: stats.map((s: any) => ({
-          delegateeId: s.delegatee_id,
-          delegatorCount: s.delegator_count,
+          delegateeId: s.delegate_id,
+          delegatorCount: Number(s.delegator_count || 0),
         })),
       };
     } catch (error) {

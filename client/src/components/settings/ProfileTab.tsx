@@ -16,7 +16,7 @@ export function ProfileTab() {
   const { address, isConnected } = useAccount();
   const { disconnect } = useDisconnect();
   const { connect, connectors } = useConnect();
-  const injectedConnector = connectors.find((c) => c.name.toLowerCase().includes('injected') || c.id === 'injected');
+  const injectedConnector = connectors.find((connector: any) => connector.name.toLowerCase().includes('injected') || connector.id === 'injected');
 
   const [formData, setFormData] = useState({
     firstName: '',

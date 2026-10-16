@@ -3,9 +3,10 @@ import path from 'path';
 import { ethers } from 'ethers';
 import { db } from '../db';
 import { daos, daoRotationCycles } from '../../shared/schema';
-import { eq, desc } from 'drizzle-orm';
+import { and, eq, inArray, or } from 'drizzle-orm';
 import { resolveProviderUrls } from './providerBootstrap';
 import { ResilientRpcProvider } from './resilientRpcProvider';
+import { getRotationConfigOnChain, getStablecoinDecimals, getStablecoinSymbol } from './rotation_contract';
 
 const providerUrls = resolveProviderUrls();
 const RPC_URL = providerUrls.rpcUrl;
@@ -32,23 +33,69 @@ export function startRotationEventListener() {
   const abi = loadAbi();
   const contract = new ethers.Contract(ROTATION_MODULE_ADDRESS, abi, provider);
 
-  contract.on('CycleDistributed', async (daoId: string, recipient: string, amount: any, event: any) => {
+  contract.on(
+    'CycleDistributionConfirmed',
+    async (vaultAddress: string, cycleNumber: bigint, recipient: string, amount: bigint, proposalId: bigint, event: any) => {
     try {
-      // Mark the most recent pending cycle for daoId as completed
-      const dao = await db.select().from(daos).where(eq(daos.id, daoId)).limit(1).then(r => r[0]);
+      const [dao] = await db.select().from(daos).where(or(
+        eq(daos.vaultAddress, vaultAddress),
+        eq(daos.chamaTreasuryAddress, vaultAddress),
+        eq(daos.maonoVaultAddress, vaultAddress),
+      )).limit(1);
       if (!dao) return;
-      // Find pending cycle
-      const pending = await db.select().from(daoRotationCycles).where(eq(daoRotationCycles.daoId, daoId)).orderBy(desc(daoRotationCycles.createdAt)).limit(1).then(r => r[0]);
-      if (!pending) return;
+      const rotationConfig = await getRotationConfigOnChain(vaultAddress);
+      const [stablecoinDecimals, stablecoinSymbol] = await Promise.all([
+        getStablecoinDecimals(String(rotationConfig.stablecoin)),
+        getStablecoinSymbol(String(rotationConfig.stablecoin)),
+      ]);
+      const [cycle] = await db.select().from(daoRotationCycles).where(and(
+        eq(daoRotationCycles.daoId, dao.id),
+        eq(daoRotationCycles.cycleNumber, Number(cycleNumber)),
+        inArray(daoRotationCycles.status, ['pending', 'pending_on_chain_confirmation'])
+      )).limit(1);
+      if (!cycle) return;
 
-      await db.update(daoRotationCycles).set({ status: 'completed', transactionHash: event.transactionHash, distributedAt: new Date(), updatedAt: new Date() }).where(eq(daoRotationCycles.id, pending.id));
-      console.info(`Reconciled on-chain CycleDistributed for DAO ${daoId}, cycle ${pending.cycleNumber}`);
+      const distributedAt = new Date();
+      const transactionHash = event?.log?.transactionHash || event?.transactionHash;
+      await db.transaction(async (tx) => {
+        await tx.update(daoRotationCycles).set({
+          status: 'completed',
+          amountDistributed: ethers.formatUnits(amount, stablecoinDecimals),
+          transactionHash,
+          distributedAt,
+          notes: `${cycle.notes || ''}\nTreasury proposal ${proposalId} executed to ${recipient} in ${stablecoinSymbol}.`.trim(),
+          updatedAt: distributedAt,
+        }).where(eq(daoRotationCycles.id, cycle.id));
+
+        await tx.update(daos).set({
+          currentRotationCycle: Number(cycleNumber),
+          nextRotationDate: getNextRotationDate(distributedAt, dao.rotationFrequency || 'monthly'),
+          updatedAt: distributedAt,
+        }).where(eq(daos.id, dao.id));
+      });
+      console.info(`Reconciled on-chain rotation confirmation for DAO ${dao.id}, cycle ${cycleNumber}`);
     } catch (err) {
-      console.error('Error handling CycleDistributed event', err);
+      console.error('Error handling CycleDistributionConfirmed event', err);
     }
   });
 
-  contract.on('CycleDistributionConfirmed', (daoId: string, cycleNumber: number, event: any) => {
-    console.info('CycleDistributionConfirmed', daoId, cycleNumber);
-  });
+}
+
+function getNextRotationDate(from: Date, frequency: string): Date {
+  const next = new Date(from);
+  switch (frequency.toLowerCase()) {
+    case 'weekly':
+      next.setDate(next.getDate() + 7);
+      break;
+    case 'bi-weekly':
+      next.setDate(next.getDate() + 14);
+      break;
+    case 'quarterly':
+      next.setMonth(next.getMonth() + 3);
+      break;
+    case 'monthly':
+    default:
+      next.setMonth(next.getMonth() + 1);
+  }
+  return next;
 }

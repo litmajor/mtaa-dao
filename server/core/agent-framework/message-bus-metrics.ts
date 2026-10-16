@@ -268,7 +268,7 @@ export class MessageBusMetricsExporter {
   /**
    * Get all metrics as Prometheus format
    */
-  getMetricsText(): string {
+  async getMetricsText(): Promise<string> {
     return prometheus.register.metrics();
   }
 

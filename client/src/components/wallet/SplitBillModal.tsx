@@ -66,7 +66,7 @@ export default function SplitBillModal({ isOpen, onClose, userAddress }: SplitBi
 
     setIsLoading(true);
     try {
-      const payloadParticipants = validParticipants.map(p => ({ username: p.username, amount: p.share }));
+      const payloadParticipants = validParticipants.map(p => ({ id: p.username, amount: p.share }));
       const res = await actions.splitBill({ title: description || 'Split Bill', participants: payloadParticipants, currency: 'cUSD', totalAmount, metadata: { creatorAddress: userAddress } });
       if (!res.success) throw new Error(res.error || 'Failed to create split bill');
 

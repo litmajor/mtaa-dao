@@ -1,8 +1,10 @@
 
 import { Logger } from '../utils/logger';
 import { db } from '../db';
-import { bridgeTransfers } from '../../shared/schema';
-import { eq, and, gte, sql } from 'drizzle-orm';
+import { bridgeTransfers, users, type BridgeTransfer } from '../../shared/schema';
+import { crossChainTransfers } from '../../shared/accountSchema';
+import { notificationService } from '../notificationService';
+import { eq, and, lte, gte, sql } from 'drizzle-orm';
 
 export class BridgeMonitoringService {
   private logger = Logger.getLogger();
@@ -16,7 +18,7 @@ export class BridgeMonitoringService {
     const delayedTransfers = await db.query.bridgeTransfers.findMany({
       where: and(
         eq(bridgeTransfers.status, 'pending'),
-        gte(bridgeTransfers.createdAt, thirtyMinutesAgo)
+        lte(bridgeTransfers.createdAt, thirtyMinutesAgo)
       )
     });
 
@@ -47,8 +49,8 @@ export class BridgeMonitoringService {
         successRate: sql<number>`
           (count(case when ${bridgeTransfers.status} = 'completed' then 1 end)::float / count(*)::float) * 100
         `,
-        avgTime: sql<number>`
-          avg(extract(epoch from (${bridgeTransfers.completedAt} - ${bridgeTransfers.createdAt})))
+        avgTimeToLastUpdateSeconds: sql<number>`
+          avg(extract(epoch from (${bridgeTransfers.updatedAt} - ${bridgeTransfers.createdAt})))
         `
       })
       .from(bridgeTransfers)
@@ -63,29 +65,63 @@ export class BridgeMonitoringService {
    */
   async calculateFeesCollected(timeframe: 'day' | 'week' | 'month' = 'day') {
     const startDate = this.getStartDate(timeframe);
+    const [totals] = await db.select({
+      completedTransfers: sql<number>`count(*)::int`,
+      bridgeFeesRecordedUSD: sql<string>`coalesce(sum(${crossChainTransfers.bridgeFee}), 0)::text`,
+      sourceGasRecordedUSD: sql<string>`coalesce(sum(${crossChainTransfers.gasFeeSource}), 0)::text`,
+      destinationGasRecordedUSD: sql<string>`coalesce(sum(${crossChainTransfers.gasFeeTarget}), 0)::text`,
+      totalCostsRecordedUSD: sql<string>`coalesce(sum(${crossChainTransfers.totalCostUSD}), 0)::text`,
+      transfersWithNonzeroBridgeFee: sql<number>`count(*) filter (where ${crossChainTransfers.bridgeFee} > 0)::int`,
+    }).from(crossChainTransfers).where(and(
+      gte(crossChainTransfers.createdAt, startDate),
+      eq(crossChainTransfers.status, 'completed')
+    ));
 
-    const fees = await db
-      .select({
-        totalFees: sql<number>`sum(${bridgeTransfers.bridgeFee})`
-      })
-      .from(bridgeTransfers)
-      .where(
-        and(
-          gte(bridgeTransfers.createdAt, startDate),
-          eq(bridgeTransfers.status, 'completed')
-        )
-      );
-
-    return fees[0]?.totalFees || 0;
+    return {
+      available: true as const,
+      timeframe,
+      startDate: startDate.toISOString(),
+      currency: 'USD',
+      ...totals,
+      collectionStatus: 'partial' as const,
+      bridgeFeeAmountsPersisted: true,
+      actualFeeCaptureWiredToBridgeExecution: false,
+      note: 'Totals report fee amounts recorded on completed cross-chain transfer rows. The live bridge execution path does not yet populate actual protocol settlement fees, so zero totals are not proof that no fee was paid.',
+    };
   }
 
-  private async alertDelayedTransfer(transfer: any) {
-    // Implement notification logic
+  private async alertDelayedTransfer(transfer: BridgeTransfer) {
     this.logger.error(`Bridge transfer delayed: ${transfer.id}`, {
       sourceChain: transfer.sourceChain,
       destinationChain: transfer.destinationChain,
       amount: transfer.amount,
-      age: Date.now() - transfer.createdAt.getTime()
+      ageMs: transfer.createdAt ? Date.now() - transfer.createdAt.getTime() : undefined,
+    });
+
+    if (!transfer.fromAddress) return;
+    const owner = await db.query.users.findFirst({
+      where: eq(users.walletAddress, transfer.fromAddress),
+      columns: { id: true },
+    });
+    if (!owner) {
+      this.logger.warn(`No user is associated with delayed bridge transfer ${transfer.id}; notification was not delivered`);
+      return;
+    }
+
+    await notificationService.sendNotification(owner.id, {
+      type: 'bridge_transfer_delayed',
+      title: 'Bridge transfer delayed',
+      message: `Your transfer ${transfer.id} from ${transfer.sourceChain} to ${transfer.destinationChain} has remained pending for over 30 minutes.`,
+      priority: 'high',
+      metadata: {
+        transferId: transfer.id,
+        sourceChain: transfer.sourceChain,
+        destinationChain: transfer.destinationChain,
+        amount: transfer.amount,
+        transactionHash: transfer.transactionHash,
+      },
+      coalesceKey: `bridge-delay:${transfer.id}`,
+      coalesceWindowMs: 24 * 60 * 60 * 1000,
     });
   }
 

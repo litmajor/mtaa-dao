@@ -117,13 +117,13 @@ export class CEXCredentialRepository {
   /**
    * Get credentials by ID and decrypt
    */
-  static async getCredentialsById(id: string): Promise<
+  static async getCredentialsById(id: string, activeOnly = false): Promise<
     (CEXCredential & { apiKey: string; apiSecret: string; passphrase?: string }) | null
   > {
     try {
       const result = await pool.query(
-        `SELECT * FROM cex_credentials WHERE id = $1`,
-        [id]
+        `SELECT * FROM cex_credentials WHERE id = $1 AND ($2::boolean = false OR is_active = true)`,
+        [id, activeOnly]
       );
 
       if (result.rows.length === 0) {

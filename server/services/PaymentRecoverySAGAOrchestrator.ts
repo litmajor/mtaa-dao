@@ -585,36 +585,53 @@ export class PaymentRecoverySAGAOrchestrator extends EventEmitter {
       throw new Error('BLOCKCHAIN_RPC_URL not configured');
     }
 
-    // If the transaction includes a pre-signed raw tx in metadata, submit it.
-    // Otherwise, this is an integration boundary: your signing service must provide signedTx.
-    let txHash: string;
-    if (tx.metadata?.signedTx && tx.metadata.signedTx !== '0x') {
-      const response = await fetch(rpcUrl, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          jsonrpc: '2.0',
-          method: 'eth_sendRawTransaction',
-          params: [tx.metadata.signedTx],
-          id: 1
-        })
-      });
-
-      if (!response.ok) throw new Error(`Blockchain RPC HTTP error: ${response.status}`);
-      const data = await response.json();
-      if (data.error) throw new Error(`Blockchain RPC error: ${data.error.message}`);
-      txHash = data.result;
-    } else {
-      // Development fallback: deterministic hash so the saga can still be tested end-to-end
-      txHash = '0x' + sagaId.replace(/-/g, '').substring(0, 40);
-      this.logger.warn(`[PaymentSAGA] No signedTx for saga ${sagaId}, using deterministic hash.`);
+    const signedTx = tx.metadata?.signedTx;
+    if (typeof signedTx !== 'string' || !/^0x(?:[0-9a-fA-F]{2})+$/.test(signedTx)) {
+      throw new Error('A valid signed raw transaction is required before blockchain submission');
     }
+
+    const chainResponse = await fetch(rpcUrl, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ jsonrpc: '2.0', method: 'eth_chainId', params: [], id: 2 }),
+    });
+    if (!chainResponse.ok) throw new Error(`Blockchain RPC HTTP error while resolving chain ID: ${chainResponse.status}`);
+    const chainData = await chainResponse.json() as { error?: { message?: string }; result?: unknown };
+    if (chainData.error) throw new Error(`Blockchain RPC error while resolving chain ID: ${chainData.error.message ?? 'unknown RPC error'}`);
+    if (typeof chainData.result !== 'string' || !/^0x[0-9a-fA-F]+$/.test(chainData.result)) {
+      throw new Error('Blockchain RPC returned an invalid chain ID');
+    }
+    const chainId = Number(BigInt(chainData.result));
+    if (!Number.isSafeInteger(chainId) || chainId <= 0) throw new Error('Blockchain RPC chain ID is out of range');
+    const configuredChainId = process.env.BLOCKCHAIN_CHAIN_ID;
+    if (configuredChainId && Number(configuredChainId) !== chainId) {
+      throw new Error(`Configured blockchain chain ID ${configuredChainId} does not match RPC chain ID ${chainId}`);
+    }
+
+    const response = await fetch(rpcUrl, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        jsonrpc: '2.0',
+        method: 'eth_sendRawTransaction',
+        params: [signedTx],
+        id: 1
+      })
+    });
+
+    if (!response.ok) throw new Error(`Blockchain RPC HTTP error: ${response.status}`);
+    const data = await response.json() as { error?: { message?: string }; result?: unknown };
+    if (data.error) throw new Error(`Blockchain RPC error: ${data.error.message ?? 'unknown RPC error'}`);
+    if (typeof data.result !== 'string' || !/^0x[0-9a-fA-F]{64}$/.test(data.result)) {
+      throw new Error('Blockchain RPC returned an invalid transaction hash');
+    }
+    const txHash = data.result;
 
     await pool.query(
       `INSERT INTO blockchain_transactions 
        (saga_id, tx_hash, status, chain_id, amount, currency, created_at, updated_at)
        VALUES ($1, $2, 'pending', $3, $4, $5, NOW(), NOW())`,
-      [sagaId, txHash, process.env.BLOCKCHAIN_CHAIN_ID || '44787', tx.amount, tx.currency]
+      [sagaId, txHash, chainId, tx.amount, tx.currency]
     );
 
     return { txHash, sagaId, confirmations: 0 };
@@ -645,13 +662,29 @@ export class PaymentRecoverySAGAOrchestrator extends EventEmitter {
         })
       });
 
-      const data = await response.json();
-      if (data.result && data.result.blockNumber) {
+      if (!response.ok) throw new Error(`Blockchain RPC HTTP error: ${response.status}`);
+      const data = await response.json() as {
+        error?: { message?: string };
+        result?: { blockNumber?: unknown; status?: unknown } | null;
+      };
+      if (data.error) throw new Error(`Blockchain RPC error: ${data.error.message ?? 'unknown RPC error'}`);
+      if (data.result && typeof data.result.blockNumber === 'string') {
+        if (data.result.status !== '0x1') {
+          await pool.query(
+            `UPDATE blockchain_transactions SET status = 'failed', updated_at = NOW() WHERE saga_id = $1`,
+            [sagaId]
+          );
+          return false;
+        }
+        const blockNumber = Number.parseInt(data.result.blockNumber, 16);
+        if (!Number.isSafeInteger(blockNumber) || blockNumber < 0) {
+          throw new Error('Blockchain RPC returned an invalid receipt block number');
+        }
         await pool.query(
           `UPDATE blockchain_transactions 
            SET status = 'confirmed', block_number = $1, updated_at = NOW() 
            WHERE saga_id = $2`,
-          [parseInt(data.result.blockNumber, 16), sagaId]
+          [blockNumber, sagaId]
         );
         return true;
       }
@@ -871,6 +904,14 @@ export class PaymentRecoverySAGAOrchestrator extends EventEmitter {
     const res = await pool.query(`SELECT * FROM payment_sagas WHERE id = $1`, [sagaId]);
     if (!res.rows || res.rows.length === 0) return undefined;
     return this.mapRowToState(res.rows[0]);
+  }
+
+  async getSAGAsByUser(userId: string): Promise<PaymentSAGAState[]> {
+    const res = await pool.query(
+      `SELECT * FROM payment_sagas WHERE user_id = $1 ORDER BY created_at DESC`,
+      [userId]
+    );
+    return res.rows.map((row) => this.mapRowToState(row));
   }
 
   async getAllSAGAs(options: { fromDate?: Date } = {}): Promise<PaymentSAGAState[]> {

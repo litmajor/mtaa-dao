@@ -4,6 +4,7 @@ import { authenticate } from '../auth';
 import { userSubscriptionService, USER_PLANS } from '../services/userSubscriptionService';
 import { asyncHandler } from '../middleware/errorHandler';
 import { z } from 'zod';
+import { sql, eq } from 'drizzle-orm';
 
 const router = Router();
 
@@ -62,8 +63,8 @@ router.post('/upgrade', authenticate, asyncHandler(async (req, res) => {
   );
 
   res.json({
-    success: true,
-    ...result
+    ...result,
+    success: true
   });
 }));
 
@@ -71,7 +72,6 @@ router.post('/upgrade', authenticate, asyncHandler(async (req, res) => {
 router.post('/cancel', authenticate, asyncHandler(async (req, res) => {
   const userId = req.user!.id;
   const { db } = await import('../db');
-  const { sql } = await import('drizzle-orm');
 
   await db.execute(sql`
     UPDATE user_subscriptions 
@@ -100,8 +100,7 @@ router.get('/payment-history', authenticate, asyncHandler(async (req, res) => {
 router.post('/purchase-vault-slot', authenticate, asyncHandler(async (req, res) => {
   const userId = req.user!.id;
   const { db } = await import('../db');
-  const { users, sql } = await import('../../shared/schema');
-  const { eq } = await import('drizzle-orm');
+  const { users } = await import('../../shared/schema');
 
   const VAULT_SLOT_COST = 1000; // MTAA tokens
 

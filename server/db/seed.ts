@@ -3,13 +3,12 @@
  * Phase 5.1 - Seeds Elders and Agents data
  */
 
-import { db } from '../client';
+import { db } from '../db';
 import {
   elders,
   agents,
   systemConfiguration,
-} from '../schema/agents-elders';
-import { generateId } from '../../utils/id-generator';
+} from './schema/agents-elders';
 
 /**
  * Seed Elders
@@ -17,7 +16,7 @@ import { generateId } from '../../utils/id-generator';
 export async function seedElders() {
   console.log('🌱 Seeding Elders...');
 
-  const eldersData = [
+  const eldersData: (typeof elders.$inferInsert)[] = [
     {
       id: 'eld-kaizen',
       name: 'KAIZEN',
@@ -31,10 +30,10 @@ export async function seedElders() {
         'Performance benchmarking',
       ],
       status: 'active',
-      uptime: 0.99,
+      uptime: '0.99',
       proposalsAnalyzed: 245,
       optimizationsSuggested: 87,
-      implementationRate: 0.72,
+      implementationRate: '0.72',
       color: '#667eea',
       configuration: {
         threshold: 0.8,
@@ -60,7 +59,7 @@ export async function seedElders() {
         'Compliance monitoring',
       ],
       status: 'active',
-      uptime: 0.995,
+      uptime: '0.995',
       threatsDetected: 156,
       risksIdentified: 342,
       complianceIssues: 12,
@@ -89,10 +88,10 @@ export async function seedElders() {
         'Values alignment checking',
       ],
       status: 'active',
-      uptime: 0.998,
+      uptime: '0.998',
       proposalsReviewed: 198,
       ethicalConcerns: 34,
-      approvalRate: 0.91,
+      approvalRate: '0.91',
       color: '#10b981',
       configuration: {
         ethicsScore: 0.85,
@@ -135,7 +134,7 @@ export async function seedElders() {
 export async function seedAgents() {
   console.log('🌱 Seeding Agents...');
 
-  const agentsData = [
+  const agentsData: (typeof agents.$inferInsert)[] = [
     {
       id: 'agent-analyzer',
       name: 'Analyzer Agent',
@@ -143,10 +142,10 @@ export async function seedAgents() {
       emoji: '📊',
       description: 'Analyzes proposals and evaluates their impact on the DAO',
       status: 'online',
-      uptime: 0.995,
+      uptime: '0.995',
       messagesProcessed: 1243,
       averageResponseTime: 245,
-      errorRate: 0.01,
+      errorRate: '0.01',
       capabilities: [
         'Proposal analysis',
         'Impact evaluation',
@@ -172,10 +171,10 @@ export async function seedAgents() {
       emoji: '🛡️',
       description: 'Monitors security, detects threats, and prevents attacks',
       status: 'online',
-      uptime: 0.997,
+      uptime: '0.997',
       messagesProcessed: 892,
       averageResponseTime: 187,
-      errorRate: 0.008,
+      errorRate: '0.008',
       capabilities: [
         'Security monitoring',
         'Threat detection',
@@ -201,10 +200,10 @@ export async function seedAgents() {
       emoji: '👀',
       description: 'Monitors system health and collects performance metrics',
       status: 'online',
-      uptime: 0.992,
+      uptime: '0.992',
       messagesProcessed: 2156,
       averageResponseTime: 156,
-      errorRate: 0.005,
+      errorRate: '0.005',
       capabilities: [
         'System monitoring',
         'Metrics collection',
@@ -230,10 +229,10 @@ export async function seedAgents() {
       emoji: '🔄',
       description: 'Coordinates interactions between multiple agents and services',
       status: 'online',
-      uptime: 0.999,
+      uptime: '0.999',
       messagesProcessed: 543,
       averageResponseTime: 158,
-      errorRate: 0.002,
+      errorRate: '0.002',
       capabilities: [
         'Task orchestration',
         'Agent coordination',
@@ -259,10 +258,10 @@ export async function seedAgents() {
       emoji: '💬',
       description: 'Engages with the community and handles communications',
       status: 'online',
-      uptime: 0.985,
+      uptime: '0.985',
       messagesProcessed: 456,
       averageResponseTime: 234,
-      errorRate: 0.012,
+      errorRate: '0.012',
       capabilities: [
         'Community engagement',
         'Communication handling',

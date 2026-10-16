@@ -7,11 +7,11 @@
  * Runs every 6 hours by default (configurable)
  */
 
-import cron from 'node-cron';
+import * as cron from 'node-cron';
 import { db } from '../db';
 import { daos, vaultTokenHoldings, treasuryHealthHistory } from '../../shared/schema';
 import { generateTreasuryIntelligence } from './treasury-intelligence.service';
-import { desc } from 'drizzle-orm';
+import { desc, eq, and, gte } from 'drizzle-orm';
 import { logger } from '../utils/logger';
 
 interface TreasuryMonitoringConfig {
@@ -138,19 +138,19 @@ async function analyzeSingleTreasuryHealth(
     const holdings = await db
       .select()
       .from(vaultTokenHoldings)
-      .where(vaultTokenHoldings.vaultId === daoId);
+      .where(eq(vaultTokenHoldings.vaultId, daoId));
 
     // Build treasury object
     const treasury = {
       daoId,
       daoType: (dao.daoType || 'free') as any,
-      assets: holdings.map(h => ({
+      assets: holdings.map((h: any) => ({
         symbol: h.tokenSymbol,
         chain: 'CELO' as any,
-        amount: h.tokenAmount,
+        amount: h.tokenAmount ?? h.balance ?? '0',
         decimals: h.tokenDecimals || 18,
       })),
-    };
+    } as any;
 
     // Generate intelligence
     const intelligence = await generateTreasuryIntelligence(treasury);
@@ -225,7 +225,7 @@ function calculateHealthScore(intelligence: any): number {
  */
 export async function monitorDaoTreasuryNow(daoId: string) {
   try {
-    const daoResult = await db.select().from(daos).where(daos.id === daoId);
+    const daoResult = await db.select().from(daos).where(eq(daos.id, daoId));
 
     if (daoResult.length === 0) {
       throw new Error(`DAO not found: ${daoId}`);
@@ -255,8 +255,10 @@ export async function getTreasuryHealthHistory(
       .select()
       .from(treasuryHealthHistory)
       .where(
-        treasuryHealthHistory.daoId === daoId &&
-        treasuryHealthHistory.recordedAt >= cutoffDate
+        and(
+          eq(treasuryHealthHistory.daoId, daoId),
+          gte(treasuryHealthHistory.recordedAt, cutoffDate)
+        )
       )
       .orderBy(desc(treasuryHealthHistory.recordedAt));
 
@@ -284,7 +286,7 @@ export async function getLatestTreasuryHealth(daoId: string) {
     const latest = await db
       .select()
       .from(treasuryHealthHistory)
-      .where(treasuryHealthHistory.daoId === daoId)
+      .where(eq(treasuryHealthHistory.daoId, daoId))
       .orderBy(desc(treasuryHealthHistory.recordedAt))
       .limit(1);
 

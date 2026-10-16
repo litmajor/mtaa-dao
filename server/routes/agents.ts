@@ -26,7 +26,7 @@ const requireAdmin = requireRole('admin');
 
 // Express request extension for authenticated requests
 interface AuthenticatedRequest extends Request {
-  user?: { id?: string };
+  user?: { id: string };
 }
 
 // Minimal typed interface for the on-chain AgentRegistry contract

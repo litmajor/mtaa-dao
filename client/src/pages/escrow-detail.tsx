@@ -92,8 +92,9 @@ export default function EscrowDetailPage() {
   // Analytics event for viewing escrow detail
   useEffect(() => {
     if (escrow && !analyticsSent) {
-      if (window?.analytics) {
-        window.analytics.track('Escrow Detail Viewed', { escrowId });
+      const analytics = (window as any)?.analytics;
+      if (analytics) {
+        analytics.track('Escrow Detail Viewed', { escrowId });
       }
       setAnalyticsSent(true);
     }
@@ -353,7 +354,7 @@ export default function EscrowDetailPage() {
                       {(g.name || g.email || g)?.length > 22 ? (g.name || g.email || g).slice(0, 20) + '…' : (g.name || g.email || g)}
                     </span>
                     {canManageGuardians && (
-                      <Button size="xs" variant="outline" onClick={() => handleRemoveGuardian(g)} disabled={removingGuardian === g}>
+                      <Button size="sm" variant="outline" onClick={() => handleRemoveGuardian(g)} disabled={removingGuardian === g}>
                         {removingGuardian === g ? 'Removing...' : 'Remove'}
                       </Button>
                     )}

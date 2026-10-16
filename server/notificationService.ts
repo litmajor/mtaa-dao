@@ -45,7 +45,10 @@ type NotificationRecord = InferSelectModel<typeof notifications>;
 class NotificationService extends EventEmitter {
 
   // Compatibility method for recurringPaymentService
-  async sendNotification(userId: string, notification: SystemNotification) {
+  async sendNotification(
+    userId: string,
+    notification: Omit<SystemNotification, 'userId'> | SystemNotification
+  ) {
     return this.createNotification({ ...notification, userId });
   }
 

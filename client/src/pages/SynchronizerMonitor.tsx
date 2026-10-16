@@ -12,17 +12,17 @@ import { Activity, Database, GitBranch, RefreshCw } from 'lucide-react';
 import { authClient } from '@/utils/authClient';
 
 export default function SynchronizerMonitor() {
-  const { data: status, refetch } = useQuery({
+  const { data: status, refetch } = useQuery<{ data?: { metrics?: Record<string, any> } }>({
     queryKey: ['/api/synchronizer/status'],
     refetchInterval: 5000
   });
 
-  const { data: snapshots } = useQuery({
+  const { data: snapshots } = useQuery<{ data?: Array<Record<string, any>> }>({
     queryKey: ['/api/synchronizer/snapshots'],
     refetchInterval: 10000
   });
 
-  const { data: commits } = useQuery({
+  const { data: commits } = useQuery<{ data?: Array<Record<string, any>> }>({
     queryKey: ['/api/synchronizer/commits?limit=20']
   });
 

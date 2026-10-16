@@ -440,9 +440,10 @@ export class TaskStorage {
     if (!userId) throw new Error('User ID required');
     const { limit = 50, offset = 0, notificationType } = options;
     
-    let whereClause = eq(notificationMetadata.userId, userId);
+    const userFilter = eq(notificationMetadata.userId, userId);
+    let whereClause = userFilter;
     if (notificationType) {
-      whereClause = and(whereClause, eq(notificationMetadata.notificationType, notificationType));
+      whereClause = and(userFilter, eq(notificationMetadata.notificationType, notificationType)) ?? userFilter;
     }
 
     return await this.db.select().from(notificationMetadata)

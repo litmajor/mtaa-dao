@@ -1,13 +1,13 @@
 import React, { useState } from 'react';
 import { AlertTriangle, AlertCircle, ChevronDown, ChevronUp, Clock, Activity } from 'lucide-react';
 
-interface ThreatEvidence {
+export interface ThreatEvidence {
   type: string;
   value: string | number;
   timestamp: string;
 }
 
-interface ThreatCardProps {
+export interface ThreatCardProps {
   id: string;
   type: string;
   severity: 'critical' | 'high' | 'medium' | 'low';

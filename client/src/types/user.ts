@@ -1,9 +1,10 @@
 export interface User {
   id: string;
-  firstName: string;
-  username: string;
-  lastName: string;
-  email: string;
+  name?: string | null;
+  firstName?: string | null;
+  username?: string | null;
+  lastName?: string | null;
+  email?: string | null;
   profileImageUrl?: string;
   role?: string;
   joinedAt?: string | number | Date;

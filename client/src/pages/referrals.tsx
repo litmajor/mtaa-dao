@@ -1,6 +1,7 @@
 import { useQuery } from "@tanstack/react-query";
+import { useEffect, useState } from "react";
 // Referral page - with real blockchain data integration
-import { useNavigate, useEffect } from "react-router-dom";
+import { useNavigate } from "react-router-dom";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -8,7 +9,6 @@ import { Avatar, AvatarImage, AvatarFallback } from "@/components/ui/avatar";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Users, DollarSign, Gift, Link, CheckCircle, TrendingUp, AlertCircle } from "lucide-react";
-import { useState } from "react";
 import { useAuth } from "./hooks/useAuth";
 import { useToast } from "@/hooks/use-toast";
 import { authClient } from "@/utils/authClient";

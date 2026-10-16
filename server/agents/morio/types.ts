@@ -52,4 +52,20 @@ export interface MorioConfig {
   language: string;
   maxHistoryLength: number;
   responseTimeout: number;
+  /** Idle period before a session is omitted from active-session metrics. */
+  activeSessionTimeoutMs?: number;
+  /** Frequency of metrics refresh and idle-session eviction. */
+  metricsUpdateIntervalMs?: number;
+}
+
+export interface MorioNotification {
+  id?: string;
+  type: string;
+  userId: string;
+  daoId?: string;
+  title: string;
+  message: string;
+  priority: 'low' | 'medium' | 'high';
+  timestamp: Date;
+  data?: Record<string, any>;
 }

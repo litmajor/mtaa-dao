@@ -143,12 +143,12 @@ export class ContributionIndexerService {
     // Query blocks for native transfers
     for (let i = fromBlock; i <= toBlock; i++) {
       try {
-        const block = await provider.getBlock(i, true);
+        const block = await provider.getBlock(i);
         if (!block || !block.transactions) continue;
 
-        for (const tx of block.transactions) {
-          if (typeof tx === 'string') continue;
-          
+        for (const txHash of block.transactions) {
+          const tx = await provider.getTransaction(txHash);
+          if (!tx) continue;
           if (tx.to?.toLowerCase() === toAddress.toLowerCase() && tx.value > 0n) {
             transfers.push({
               from: tx.from,

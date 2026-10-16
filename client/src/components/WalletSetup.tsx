@@ -135,9 +135,10 @@ export default function WalletSetup({ userId, onWalletCreated }: WalletSetupProp
       const address = await wallet.getAddress();
 
       // Request server challenge (nonce + message)
-      const chalResp = await fetch('/api/v1/wallets/setup/challenge/request', {
+      const chalResp = await fetch('/api/v1/wallets/register/challenge', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
         body: JSON.stringify({ address })
       });
       const chalData = await chalResp.json();
@@ -147,11 +148,19 @@ export default function WalletSetup({ userId, onWalletCreated }: WalletSetupProp
       // Sign server challenge locally
       const signature = await wallet.signMessage(message);
 
-      // Submit signed challenge to import endpoint (server will validate and consume nonce)
-      const response = await fetch('/api/v1/wallets/setup/import', {
+      // Register only the public address and signed challenge; private key stays in this browser.
+      const response = await fetch('/api/v1/wallets/register', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ userId, address, message, signature })
+        credentials: 'include',
+        body: JSON.stringify({
+          address,
+          currency: assets[0]?.currency || 'USDC',
+          walletType: 'personal',
+          challengeId: chalData.data.challengeId,
+          signature,
+          publicKey: wallet.publicKey,
+        })
       });
 
       const data = await response.json();

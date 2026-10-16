@@ -1,6 +1,5 @@
 import { cacheService } from './cacheService';
 import { ccxtService } from './ccxtService';
-import { executionTrackingService } from './executionTrackingService';
 import { logger } from '../utils/logger';
 
 /**
@@ -216,17 +215,9 @@ class SmartRetryLogicService {
       const executionTime = Date.now() - startTime;
       const finalSlippage = this.calculateSlippage(expectedPrice, finalPrice);
 
-      // Track execution for quality metrics
-      await executionTrackingService.trackExecution({
-        symbol,
-        exchange,
-        side,
-        amount: totalFilled,
-        expectedPrice,
-        actualPrice: finalPrice,
-        timestamp: Date.now(),
-        status: totalFilled >= amount ? 'success' : totalFilled > 0 ? 'partial' : 'failed'
-      });
+      // ExecutionTrackingService requires a quote ID, actual output/fee and a
+      // transaction hash. This retry path doesn't currently receive those
+      // values, so don't persist a misleading partial execution record.
 
       // Generate recommendations
       const recommendations = this.generateRetryRecommendations(
@@ -319,7 +310,8 @@ class SmartRetryLogicService {
   ): Promise<number> {
     try {
       // Get recent slippage history
-      const deviationHistory = (await cacheService.get(`slippage-deviations:${symbol}`)) || [];
+      const cachedHistory = await cacheService.get<SlippageDeviation[]>(`slippage-deviations:${symbol}`);
+      const deviationHistory = Array.isArray(cachedHistory) ? cachedHistory : [];
 
       if (deviationHistory.length < 5) {
         return baselineSlippage;

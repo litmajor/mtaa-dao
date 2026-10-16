@@ -105,8 +105,9 @@ class APIEfficiencyLayer extends EventEmitter {
     exchange: string,
     requestFn: () => Promise<T>
   ): Promise<T> {
-    // Apply rate limit
-    if (this.config.rateLimiting.useBottleneck) {
+    // Apply rate limit when a configured bucket exists. The config now models
+    // this as a maxConcurrentRequests gate rather than a legacy useBottleneck flag.
+    if (this.config.rateLimiting.maxConcurrentRequests > 0) {
       const bucket = this.rateLimitBuckets.get(exchange);
 
       if (!bucket) {

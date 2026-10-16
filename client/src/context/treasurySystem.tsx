@@ -104,7 +104,7 @@ export interface TreasurySystemContextValue {
 
 const TreasurySystemContext = createContext<TreasurySystemContextValue | undefined>(undefined);
 
-export const TreasurySystemProvider: React.FC<{ initialState?: Partial<TreasuryState> }> = ({ children, initialState }) => {
+export const TreasurySystemProvider: React.FC<React.PropsWithChildren<{ initialState?: Partial<TreasuryState> }>> = ({ children, initialState }) => {
   const [state, dispatch] = useReducer(reducer, { ...initialState as any, ...initialState ? initialState as TreasuryState : {}, ...initialState ? {} : {}, ...initialState ? {} : {}, ...initialState ? {} : {}, ...initialState ? {} : {}, ...initialState ? {} : {}, ...initialState ? {} : {}, initialState: undefined } as unknown as TreasuryState);
 
   // The above line tries to merge partials; keep simple override if provided

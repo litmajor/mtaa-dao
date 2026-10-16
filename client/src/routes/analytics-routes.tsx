@@ -5,7 +5,7 @@
  */
 
 import { lazy, Suspense } from 'react';
-import { Spinner } from '@/components/ui/spinner';
+import { LoadingSpinner as Spinner } from '@/components/ui/loading-spinner';
 
 // Lazy load the analytics dashboard
 const AnalyticsDashboard = lazy(() => import('@/pages/analytics-dashboard'));

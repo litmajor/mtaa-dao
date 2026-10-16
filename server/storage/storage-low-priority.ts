@@ -12,6 +12,14 @@ import {
   notificationHistory,
   auditLogs,
   systemLogs,
+  snapshotHistory,
+  messageLogs,
+  typeDefinitions,
+  featureFlags,
+  analyticsEvents,
+  userPreferences,
+  cachingMetadata,
+  auditEvents,
   // API Keys for Developer Integration
   apiKeys,
 } from '../../shared/schema';
@@ -47,10 +55,11 @@ export class LowPriorityStorage {
 
   async getSnapshotHistory(daoId: string, snapshotType?: string, limit: number = 50, offset: number = 0): Promise<any[]> {
     if (!daoId) throw new Error('DAO ID required');
-    let whereClause = eq(snapshotHistory.daoId, daoId);
+    const clauses = [eq(snapshotHistory.daoId, daoId)];
     if (snapshotType) {
-      whereClause = and(whereClause, eq(snapshotHistory.snapshotType, snapshotType));
+      clauses.push(eq(snapshotHistory.snapshotType, snapshotType));
     }
+    const whereClause = clauses.length > 1 ? and(...clauses) : clauses[0];
     return await this.db.select().from(snapshotHistory)
       .where(whereClause)
       .orderBy(desc(snapshotHistory.createdAt))
@@ -223,24 +232,17 @@ export class LowPriorityStorage {
   // ===== GAP #5: FEATURE FLAGS =====
 
   async createFeatureFlag(flagData: any): Promise<any> {
-    if (!flagData.flagName || !flagData.scope) {
-      throw new Error('Flag name and scope required');
+    if (!flagData.flagName) {
+      throw new Error('Flag name required');
     }
+    const contextValue = flagData.context ?? (flagData.scope ? { scope: flagData.scope } : {});
     const result = await this.db.insert(featureFlags).values({
       flagName: flagData.flagName,
-      displayName: flagData.displayName,
-      description: flagData.description,
-      scope: flagData.scope,
       daoId: flagData.daoId,
       userId: flagData.userId,
-      isEnabled: flagData.isEnabled || false,
-      rolloutPercentage: flagData.rolloutPercentage || 0,
-      flagType: flagData.flagType || 'boolean',
-      flagValue: flagData.flagValue,
-      category: flagData.category,
-      expiresAt: flagData.expiresAt,
-      metadata: flagData.metadata,
-      createdBy: flagData.createdBy,
+      isEnabled: Boolean(flagData.isEnabled ?? false),
+      context: contextValue,
+      metadata: flagData.metadata ?? {},
       createdAt: new Date(),
       updatedAt: new Date(),
     }).returning();
@@ -249,16 +251,17 @@ export class LowPriorityStorage {
 
   async getFeatureFlag(flagName: string, context?: { daoId?: string; userId?: string }): Promise<any> {
     if (!flagName) throw new Error('Flag name required');
-    let whereClause = eq(featureFlags.flagName, flagName);
-    
+    const clauses = [eq(featureFlags.flagName, flagName)];
+
     // If context provided, filter by scope
     if (context?.daoId) {
-      whereClause = and(whereClause, eq(featureFlags.daoId, context.daoId));
+      clauses.push(eq(featureFlags.daoId, context.daoId));
     }
     if (context?.userId) {
-      whereClause = and(whereClause, eq(featureFlags.userId, context.userId));
+      clauses.push(eq(featureFlags.userId, context.userId));
     }
 
+    const whereClause = clauses.length > 1 ? and(...clauses) : clauses[0];
     const result = await this.db.select().from(featureFlags)
       .where(whereClause);
     return result[0];
@@ -279,47 +282,51 @@ export class LowPriorityStorage {
   // ===== GAP #6: ANALYTICS EVENTS =====
 
   async logAnalyticsEvent(eventData: any): Promise<any> {
-    if (!eventData.eventName || !eventData.eventCategory) {
-      throw new Error('Event name and category required');
+    if (!eventData.eventName) {
+      throw new Error('Event name required');
     }
+    const metadata = {
+      ...(eventData.properties ?? {}),
+      ...(eventData.metadata ?? {}),
+      ...(eventData.eventCategory ? { eventCategory: eventData.eventCategory } : {}),
+      ...(eventData.eventValue !== undefined ? { eventValue: eventData.eventValue } : {}),
+      ...(eventData.eventLabel ? { eventLabel: eventData.eventLabel } : {}),
+      ...(eventData.pageUrl ? { pageUrl: eventData.pageUrl } : {}),
+      ...(eventData.referrer ? { referrer: eventData.referrer } : {}),
+      ...(eventData.userAgent ? { userAgent: eventData.userAgent } : {}),
+      ...(eventData.ipAddress ? { ipAddress: eventData.ipAddress } : {}),
+    };
+
     const result = await this.db.insert(analyticsEvents).values({
       eventName: eventData.eventName,
-      eventCategory: eventData.eventCategory,
       userId: eventData.userId,
       daoId: eventData.daoId,
       sessionId: eventData.sessionId,
-      eventValue: eventData.eventValue,
-      eventLabel: eventData.eventLabel,
-      pageUrl: eventData.pageUrl,
-      referrer: eventData.referrer,
-      userAgent: eventData.userAgent,
-      ipAddress: eventData.ipAddress,
-      properties: eventData.properties,
-      metadata: eventData.metadata,
+      metadata,
       createdAt: new Date(),
     }).returning();
     return result[0];
   }
 
   async getAnalyticsEvents(filters: any, limit: number = 1000): Promise<any[]> {
-    let whereClause = null;
-    
+    let whereClause: any = undefined;
+
     if (filters.eventName) {
       whereClause = eq(analyticsEvents.eventName, filters.eventName);
     }
     if (filters.userId) {
-      whereClause = whereClause 
+      whereClause = whereClause
         ? and(whereClause, eq(analyticsEvents.userId, filters.userId))
         : eq(analyticsEvents.userId, filters.userId);
     }
     if (filters.daoId) {
-      whereClause = whereClause 
+      whereClause = whereClause
         ? and(whereClause, eq(analyticsEvents.daoId, filters.daoId))
         : eq(analyticsEvents.daoId, filters.daoId);
     }
 
     return await this.db.select().from(analyticsEvents)
-      .where(whereClause)
+      .where(whereClause ?? undefined)
       .orderBy(desc(analyticsEvents.createdAt))
       .limit(limit);
   }
@@ -490,29 +497,29 @@ export class LowPriorityStorage {
   }
 
   async getAuditEvents(daoId?: string, filters?: any, limit: number = 100): Promise<any[]> {
-    let whereClause = null;
-    
+    let whereClause: any = undefined;
+
     if (daoId) {
       whereClause = eq(auditEvents.daoId, daoId);
     }
     if (filters?.actorId) {
-      whereClause = whereClause 
+      whereClause = whereClause
         ? and(whereClause, eq(auditEvents.actorId, filters.actorId))
         : eq(auditEvents.actorId, filters.actorId);
     }
     if (filters?.resourceType) {
-      whereClause = whereClause 
+      whereClause = whereClause
         ? and(whereClause, eq(auditEvents.resourceType, filters.resourceType))
         : eq(auditEvents.resourceType, filters.resourceType);
     }
     if (filters?.severity) {
-      whereClause = whereClause 
+      whereClause = whereClause
         ? and(whereClause, eq(auditEvents.severity, filters.severity))
         : eq(auditEvents.severity, filters.severity);
     }
 
     return await this.db.select().from(auditEvents)
-      .where(whereClause)
+      .where(whereClause ?? undefined)
       .orderBy(desc(auditEvents.createdAt))
       .limit(limit);
   }

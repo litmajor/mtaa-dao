@@ -1,7 +1,5 @@
 import { Router } from "express";
-import fs from 'fs';
 import path from 'path';
-import multer from 'multer';
 import { db } from "../db";
 import { daos, daoMemberships, users, proposals } from "../../shared/schema";
 import { eq, and, sql, desc } from "drizzle-orm";
@@ -11,32 +9,11 @@ import { daoContributions, daoContributionTypes, walletTransactions, paymentRece
 import { inArray } from 'drizzle-orm';
 import { z } from 'zod';
 import { analyticsService } from '../analyticsService';
+import { paymentReceiptUpload } from '../middleware/paymentReceiptUpload';
 
 const onboardingService = new OnboardingService();
 
 const router = Router();
-
-// File upload config for payment receipts
-const receiptsStorage = multer.diskStorage({
-  destination: (req, file, cb) => {
-    const uploadDir = path.join(process.cwd(), 'attached_assets', 'payment-receipts');
-    if (!fs.existsSync(uploadDir)) fs.mkdirSync(uploadDir, { recursive: true });
-    cb(null, uploadDir);
-  },
-  filename: (req, file, cb) => {
-    const unique = Date.now() + '-' + Math.round(Math.random() * 1e9);
-    const safe = file.originalname.replace(/[^a-zA-Z0-9.\-_]/g, '_');
-    cb(null, `${unique}-${safe}`);
-  }
-});
-
-const receiptsFileFilter = (req: any, file: Express.Multer.File, cb: any) => {
-  const allowed = ['image/jpeg', 'image/png', 'image/webp', 'application/pdf'];
-  if (!allowed.includes(file.mimetype)) return cb(new Error('Invalid file type'), false);
-  cb(null, true);
-};
-
-const receiptsUpload = multer({ storage: receiptsStorage, fileFilter: receiptsFileFilter, limits: { fileSize: 10 * 1024 * 1024, files: 1 } });
 
 // GET /api/daos - List all DAOs with user membership status
 router.get("/", authenticate, async (req, res) => {
@@ -555,7 +532,7 @@ router.get('/:id/payments', authenticate, async (req, res) => {
 });
 
 // POST /api/daos/:id/payments/:paymentId/receipt - upload a receipt file for a recorded payment
-router.post('/:id/payments/:paymentId/receipt', authenticate, receiptsUpload.single('receipt'), async (req, res) => {
+router.post('/:id/payments/:paymentId/receipt', authenticate, paymentReceiptUpload.single('receipt'), async (req, res) => {
   try {
     const userId = (req.user as any).id;
     const daoId = req.params.id as string;
@@ -594,4 +571,3 @@ router.post('/:id/payments/:paymentId/receipt', authenticate, receiptsUpload.sin
 });
 
 export default router;
-

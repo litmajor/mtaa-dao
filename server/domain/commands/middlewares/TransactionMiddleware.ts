@@ -1,5 +1,5 @@
 import { type Command } from '../Command';
-import { type CommandResult } from '../CommandBus';
+import { type CommandResult, type CommandContext } from '../CommandBus';
 import { type CommandMiddleware, type NextFn } from './AuthorizationMiddleware';
 import { db } from '../../../db';
 
@@ -9,20 +9,25 @@ import { db } from '../../../db';
  */
 export class TransactionMiddleware implements CommandMiddleware {
   async handle(command: Command, context: CommandContext, next: NextFn): Promise<CommandResult> {
-    let handlerResult: CommandResult | null = null;
+    let handlerResult: CommandResult | undefined;
     try {
       // Drizzle's db.transaction throws if rolled back. We must catch it.
       await db.transaction(async (tx) => {
         // Pass the transaction to the next pipeline steps
         handlerResult = await next({ tx });
-        
-        // If the business logic failed, we rollback the transaction 
+
+        // If the business logic failed, we rollback the transaction
         // to ensure no partial state or outbox events are persisted.
         if (!handlerResult.success) {
-          tx.rollback(); 
+          tx.rollback();
         }
       });
-      return handlerResult!;
+      return handlerResult ?? {
+        success: false,
+        commandId: command.id,
+        events: [],
+        error: 'TRANSACTION_ERROR',
+      };
     } catch (error: any) {
       if (handlerResult && !handlerResult.success) {
         // This was an intentional rollback due to a business logic failure.

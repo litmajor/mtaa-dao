@@ -158,13 +158,13 @@ export class IntentClassifier {
         ],
         priority: 3
       }],
-      ['onboarding_tour', {
+      ['onboarding', {
         patterns: [
           /show me around|tour|guide|walk through|help me start|getting started/i,
         ],
         priority: 2
       }],
-      ['onboarding_proposals', {
+      ['submit_proposal', {
         patterns: [
           /how.*proposal|create proposal|make proposal/i,
         ],

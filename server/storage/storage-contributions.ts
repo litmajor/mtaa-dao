@@ -52,8 +52,8 @@ export class ContributionStorage {
    * Get contributions with optional filtering by user and/or DAO
    */
   async getContributions(userId?: string, daoId?: string): Promise<any> {
-    let query = this.db.select().from(contributions);
-    
+    let query: any;
+
     if (userId && daoId) {
       query = this.db.select().from(contributions)
         .where(and(eq(contributions.userId, userId), eq(contributions.daoId, daoId)));
@@ -63,8 +63,10 @@ export class ContributionStorage {
     } else if (daoId) {
       query = this.db.select().from(contributions)
         .where(eq(contributions.daoId, daoId));
+    } else {
+      query = this.db.select().from(contributions);
     }
-    
+
     return await query.orderBy(desc(contributions.createdAt));
   }
 
@@ -210,23 +212,23 @@ export class ContributionStorage {
     const vault = await this.db.select().from(vaults).where(eq(vaults.id, vaultId)).limit(1);
     if (!vault[0]) throw new Error('Vault not found');
 
-    const previousBalance = typeof vault[0].balance === 'string' 
-      ? parseFloat(vault[0].balance) 
-      : vault[0].balance;
-    
+    const previousBalanceValue = typeof vault[0].balance === 'string'
+      ? parseFloat(vault[0].balance)
+      : Number(vault[0].balance ?? 0);
+
     const newBalance = typeof changeData.balance === 'string'
       ? parseFloat(changeData.balance)
-      : changeData.balance;
+      : Number(changeData.balance ?? 0);
 
-    const changeAmount = newBalance - previousBalance;
-    const changePercentage = previousBalance !== 0 
-      ? ((changeAmount / previousBalance) * 100) 
+    const changeAmount = newBalance - previousBalanceValue;
+    const changePercentage = previousBalanceValue !== 0
+      ? ((changeAmount / previousBalanceValue) * 100)
       : 0;
 
     const result = await this.db.insert(vaultBalanceHistory).values({
       vaultId,
       balance: newBalance.toString(),
-      previousBalance: previousBalance.toString(),
+      previousBalance: previousBalanceValue.toString(),
       changeAmount: changeAmount.toString(),
       changePercentage: changePercentage.toString(),
       changeReason: changeData.changeReason,
@@ -316,24 +318,22 @@ export class ContributionStorage {
    * Create budget detail (Medium Gap #3: Budget detail tracking)
    */
   async createBudgetDetail(detailData: any): Promise<any> {
-    if (!detailData.budgetPlanId || !detailData.userId || !detailData.category || !detailData.amount) {
+    if (!detailData.budgetPlanId || !detailData.userId || !detailData.category || (detailData.amount == null && detailData.allocatedAmount == null)) {
       throw new Error('Budget plan ID, user ID, category, and amount required');
     }
+
+    const allocatedAmount = Number(detailData.allocatedAmount ?? detailData.amount ?? 0);
+    const spentAmount = Number(detailData.spentAmount ?? detailData.spent ?? 0);
+
     const result = await this.db.insert(budgetDetails).values({
       budgetPlanId: detailData.budgetPlanId,
-      daoId: detailData.daoId,
-      userId: detailData.userId,
       category: detailData.category,
-      amount: detailData.amount.toString(),
-      spent: detailData.spent ? detailData.spent.toString() : '0',
-      remaining: (detailData.amount - (detailData.spent || 0)).toString(),
       description: detailData.description,
-      source: detailData.source || 'manual_entry',
-      tags: detailData.tags || [],
-      priority: detailData.priority || 0,
-      isRecurring: detailData.isRecurring || false,
-      recurrencePattern: detailData.recurrencePattern,
-      metadata: detailData.metadata,
+      allocatedAmount: allocatedAmount.toString(),
+      spentAmount: spentAmount.toString(),
+      userId: detailData.userId,
+      priority: detailData.priority ?? 0,
+      metadata: detailData.metadata ?? {},
       createdAt: new Date(),
       updatedAt: new Date(),
     }).returning();
@@ -355,20 +355,23 @@ export class ContributionStorage {
    */
   async updateBudgetDetailSpending(detailId: string, spentAmount: number): Promise<any> {
     if (!detailId || spentAmount == null) throw new Error('Detail ID and spent amount required');
-    
+
     const detail = await this.db.select().from(budgetDetails)
       .where(eq(budgetDetails.id, detailId))
       .limit(1);
-    
+
     if (!detail[0]) throw new Error('Budget detail not found');
 
-    const budgetAmount = parseFloat(detail[0].amount?.toString() || '0');
+    const budgetAmount = Number(detail[0].allocatedAmount ?? 0);
     const remaining = budgetAmount - spentAmount;
 
     const result = await this.db.update(budgetDetails)
       .set({
-        spent: spentAmount.toString(),
-        remaining: remaining.toString(),
+        spentAmount: spentAmount.toString(),
+        metadata: {
+          ...(detail[0].metadata ?? {}),
+          remaining,
+        },
         updatedAt: new Date(),
       })
       .where(eq(budgetDetails.id, detailId))
@@ -385,20 +388,20 @@ export class ContributionStorage {
     const details = await this.getBudgetDetails(budgetPlanId);
     if (details.length === 0) return null;
 
-    const totalAllocated = details.reduce((sum, d) => sum + parseFloat(d.amount || '0'), 0);
-    const totalSpent = details.reduce((sum, d) => sum + parseFloat(d.spent || '0'), 0);
-    const totalRemaining = details.reduce((sum, d) => sum + parseFloat(d.remaining || '0'), 0);
+    const totalAllocated = details.reduce((sum, d) => sum + Number(d.allocatedAmount ?? 0), 0);
+    const totalSpent = details.reduce((sum, d) => sum + Number(d.spentAmount ?? 0), 0);
+    const totalRemaining = Math.max(totalAllocated - totalSpent, 0);
 
     return {
       totalAllocated,
       totalSpent,
       totalRemaining,
-      utilizationPercentage: (totalSpent / totalAllocated) * 100,
+      utilizationPercentage: totalAllocated > 0 ? (totalSpent / totalAllocated) * 100 : 0,
       categoryBreakdown: details.map(d => ({
         category: d.category,
-        allocated: parseFloat(d.amount || '0'),
-        spent: parseFloat(d.spent || '0'),
-        remaining: parseFloat(d.remaining || '0'),
+        allocated: Number(d.allocatedAmount ?? 0),
+        spent: Number(d.spentAmount ?? 0),
+        remaining: Math.max(Number(d.allocatedAmount ?? 0) - Number(d.spentAmount ?? 0), 0),
       })),
       itemCount: details.length,
     };

@@ -1,7 +1,7 @@
 import React from 'react';
 import clsx from 'clsx';
 
-export type ButtonVariant = 'primary' | 'secondary' | 'ghost' | 'outline' | 'danger' | 'destructive' | 'default';
+export type ButtonVariant = 'primary' | 'secondary' | 'ghost' | 'outline' | 'danger' | 'destructive' | 'default' | 'link';
 export type ButtonSize = 'sm' | 'md' | 'lg' | 'icon' | 'default';
 
 export interface ButtonProps extends React.ButtonHTMLAttributes<HTMLButtonElement> {
@@ -24,6 +24,7 @@ const variantMap: Record<ButtonVariant, string> = {
   danger: 'bg-[var(--semantic-destructive)] text-[var(--semantic-destructive-foreground)] hover:brightness-95',
   destructive: 'bg-[var(--semantic-destructive)] text-[var(--semantic-destructive-foreground)] hover:brightness-95',
   default: 'bg-[var(--semantic-card)] text-[var(--semantic-card-foreground)] hover:brightness-98',
+  link: 'text-[var(--semantic-primary)] underline-offset-4 hover:underline',
 };
 
 const sizeMap: Record<ButtonSize, string> = {

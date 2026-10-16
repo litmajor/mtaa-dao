@@ -1,5 +1,6 @@
 
-import { pgTable, uuid, varchar, decimal, timestamp } from 'drizzle-orm/pg-core';
+import { pgTable, uuid, varchar, decimal, timestamp, index, uniqueIndex } from 'drizzle-orm/pg-core';
+import { sql } from 'drizzle-orm';
 import { investmentPools } from './schema';
 import { users } from './schema';
 
@@ -8,11 +9,14 @@ export const poolShareListings = pgTable('pool_share_listings', {
   poolId: uuid('pool_id').references(() => investmentPools.id, { onDelete: 'cascade' }),
   sellerId: varchar('seller_id').references(() => users.id),
   shares: decimal('shares', { precision: 18, scale: 8 }).notNull(),
+  sharesRemaining: decimal('shares_remaining', { precision: 18, scale: 8 }).notNull().default('0'),
   pricePerShare: decimal('price_per_share', { precision: 18, scale: 8 }).notNull(),
-  status: varchar('status', { length: 20 }).default('active'), // active, sold, cancelled
+  status: varchar('status', { length: 20 }).notNull().default('active'), // active, sold, cancelled
   createdAt: timestamp('created_at').defaultNow(),
   expiresAt: timestamp('expires_at'),
-});
+}, (table) => ({
+  poolStatusIdx: index('pool_share_listings_pool_active_idx').on(table.poolId, table.status),
+}));
 
 export const poolShareTrades = pgTable('pool_share_trades', {
   id: uuid('id').primaryKey().defaultRandom(),
@@ -23,6 +27,11 @@ export const poolShareTrades = pgTable('pool_share_trades', {
   shares: decimal('shares', { precision: 18, scale: 8 }).notNull(),
   pricePerShare: decimal('price_per_share', { precision: 18, scale: 8 }).notNull(),
   totalAmount: decimal('total_amount', { precision: 18, scale: 2 }).notNull(),
-  status: varchar('status', { length: 20 }).default('completed'),
+  idempotencyKey: varchar('idempotency_key', { length: 200 }),
+  status: varchar('status', { length: 20 }).notNull().default('completed'),
   tradedAt: timestamp('traded_at').defaultNow(),
-});
+}, (table) => ({
+  idempotencyUq: uniqueIndex('pool_share_trades_idempotency_uq')
+    .on(table.idempotencyKey)
+    .where(sql`${table.idempotencyKey} IS NOT NULL`),
+}));

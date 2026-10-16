@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
-import { useNavigation, type NavigationItem, useIsAdmin } from '../contexts/navigation-context';
-import { useUserRole } from '../contexts/auth-context';
+import { useNavigation, type NavigationItem, useIsAdmin } from '../../contexts/navigation-context';
+import { useUserRole } from '../../contexts/auth-context';
 
 /**
  * RBAC-Enhanced Sidebar Navigation Component

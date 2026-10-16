@@ -17,16 +17,18 @@ router.get('/elder-insights', authenticateToken, async (req, res) => {
       const kaizenMetrics = eldKaizen.getDAOMetrics(daoId as string);
       if (kaizenMetrics) {
         const opportunities = eldKaizen.getDAORecommendations(daoId as string);
-        opportunities.opportunities.slice(0, 2).forEach(opp => {
-          insights.push({
-            elder: 'KAIZEN',
-            type: 'optimization',
-            severity: opp.impact === 'high' ? 'warning' : 'info',
-            message: opp.description,
-            actionable: true,
-            timestamp: new Date().toISOString()
+        if (opportunities) {
+          opportunities.opportunities.slice(0, 2).forEach(opp => {
+            insights.push({
+              elder: 'KAIZEN',
+              type: 'optimization',
+              severity: opp.severity === 'high' || opp.severity === 'critical' ? 'warning' : 'info',
+              message: opp.description,
+              actionable: true,
+              timestamp: opportunities.timestamp.toISOString()
+            });
           });
-        });
+        }
       }
     }
 
@@ -38,9 +40,9 @@ router.get('/elder-insights', authenticateToken, async (req, res) => {
           elder: 'SCRY',
           type: 'threat',
           severity: threat.severity === 'critical' ? 'critical' : 'warning',
-          message: threat.type,
+          message: threat.pattern,
           actionable: true,
-          timestamp: threat.timestamp.toISOString()
+          timestamp: threat.lastDetected.toISOString()
         });
       });
     }
@@ -61,7 +63,7 @@ router.get('/elder-insights', authenticateToken, async (req, res) => {
     res.json({
       success: true,
       insights: insights.sort((a, b) => {
-        const severityOrder = { critical: 3, warning: 2, info: 1 };
+        const severityOrder: Record<string, number> = { critical: 3, warning: 2, info: 1 };
         return (severityOrder[b.severity] || 0) - (severityOrder[a.severity] || 0);
       })
     });

@@ -115,12 +115,19 @@ class StableRiskMonitorService {
 
     const assets = await stableAssetRegistryService.listStableAssets({ isActive: true });
     for (const asset of assets) {
-      const price = await priceOracle.getPrice(asset.symbol);
-      if (!price?.priceUsd || !Number(asset.pegTargetUsd)) continue;
+      const price = await priceOracle.getValuationPrice(asset.symbol);
+      const priceUsd = price?.haircutPriceUsd ?? price?.priceUsd;
+      if (!price || priceUsd === undefined || !Number.isFinite(priceUsd) || priceUsd <= 0) {
+        logger.warn('[StableRiskMonitorService] Reliable valuation unavailable for depeg check', {
+          symbol: asset.symbol,
+        });
+        continue;
+      }
+      if (!Number(asset.pegTargetUsd)) continue;
 
       const peg = Number(asset.pegTargetUsd);
       if (!peg) continue;
-      const deviationBps = Math.round((Math.abs(price.priceUsd - peg) / peg) * 10_000);
+      const deviationBps = Math.round((Math.abs(priceUsd - peg) / peg) * 10_000);
 
       if (deviationBps < asset.depegThresholdBps) continue;
 
@@ -130,7 +137,7 @@ class StableRiskMonitorService {
         chain: asset.chain,
         chainId: asset.chainId,
         tokenAddress: asset.tokenAddress,
-        observedPriceUsd: price.priceUsd,
+        observedPriceUsd: priceUsd,
         pegTargetUsd: peg,
         depegThresholdBps: asset.depegThresholdBps,
         pegDeviationBps: deviationBps,
@@ -163,4 +170,3 @@ class StableRiskMonitorService {
 }
 
 export const stableRiskMonitorService = new StableRiskMonitorService();
-

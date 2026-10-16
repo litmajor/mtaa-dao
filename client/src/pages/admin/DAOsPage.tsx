@@ -150,7 +150,7 @@ export function DAOsPage() {
                       <div className="flex items-center gap-2">
                         <span
                           className={`px-3 py-1 rounded-full text-sm font-medium capitalize ${getStatusBadgeColor(
-                            dao.status
+                            String(dao.status ?? 'inactive')
                           )}`}
                         >
                           {dao.status}
@@ -179,12 +179,12 @@ export function DAOsPage() {
                       </div>
                       <div>
                         <p className="text-xs text-muted-foreground">Treasury</p>
-                        <p className="text-lg font-semibold">${dao.treasuryBalance.toLocaleString()}</p>
+                        <p className="text-lg font-semibold">${(dao.treasuryBalance ?? 0).toLocaleString()}</p>
                       </div>
                       <div>
                         <p className="text-xs text-muted-foreground">Created</p>
                         <p className="text-sm font-semibold">
-                          {new Date(dao.createdAt).toLocaleDateString()}
+                          {dao.createdAt ? new Date(dao.createdAt).toLocaleDateString() : 'N/A'}
                         </p>
                       </div>
                     </div>

@@ -57,6 +57,17 @@ router.get('/dashboard', async (req: Request, res: Response) => {
   try {
     const { daoId } = req.params;
     const userId = (req.user as any)?.claims?.id;
+    const currency = typeof req.query.currency === 'string' ? req.query.currency.trim() : undefined;
+    const parseDateQuery = (value: unknown): Date | undefined => {
+      if (typeof value !== 'string' || !value.trim()) return undefined;
+      const parsed = new Date(value);
+      if (!Number.isFinite(parsed.getTime())) throw new Error('Invalid analytics date query');
+      return parsed;
+    };
+    const startDate = parseDateQuery(req.query.startDate);
+    const endDate = parseDateQuery(req.query.endDate);
+    const daysQuery = typeof req.query.activityWindowDays === 'string' ? Number(req.query.activityWindowDays) : undefined;
+    const activityWindowDays = daysQuery !== undefined && Number.isFinite(daysQuery) ? daysQuery : undefined;
 
     // Verify DAO exists
     const [dao] = await db
@@ -95,8 +106,13 @@ router.get('/dashboard', async (req: Request, res: Response) => {
     const avgMonthlySpend = history.length > 0 ? totalSpent / Math.min(history.length, 12) : 0;
     
     // Get financial analytics
-    const analytics = await financialAnalyticsService.getDaoFinancialOverview(daoId);
-    const treasuryHealth = await financialAnalyticsService.getTreasuryHealthMetrics(daoId);
+    const analytics = await financialAnalyticsService.getDaoFinancialOverview(daoId, startDate, endDate);
+    const treasuryHealth = await financialAnalyticsService.getTreasuryHealthMetrics(daoId, {
+      currency,
+      startDate,
+      endDate,
+      activityWindowDays
+    });
 
     // Get actual counts for proposals and vaults
     const proposalCount = await db
@@ -157,9 +173,10 @@ router.get('/dashboard', async (req: Request, res: Response) => {
 
   } catch (error: any) {
     console.error('Billing dashboard error:', error);
-    res.status(500).json({ 
+    const isBadQuery = error instanceof Error && /Invalid analytics date query|Treasury activity dates/.test(error.message);
+    res.status(isBadQuery ? 400 : 500).json({
       success: false,
-      error: 'Failed to load billing dashboard',
+      error: isBadQuery ? 'Invalid analytics query' : 'Failed to load billing dashboard',
       message: error.message 
     });
   }

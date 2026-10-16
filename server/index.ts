@@ -9,6 +9,10 @@ import compression from 'compression';
 import { registerRoutes } from "./routes";
 import { setupWeeklyRewardsDistribution } from "./jobs/weeklyRewardsDistribution";
 import { setupInvestmentPoolsAutomation } from "./jobs/investmentPoolsAutomation";
+import {
+  startValuationCandidatePipeline,
+  stopValuationCandidatePipeline,
+} from './services/valuationCandidateService';
 import { startSupportTicketMetricsJob } from './jobs/supportTicketMetrics';
 import { mtaaTokenomicsIndexer } from './services/mtaaTokenomicsIndexer';
 // Dev-only Vite helpers are dynamically imported later to avoid bundling Vite into the production server build
@@ -62,6 +66,7 @@ import { authenticate, isAuthenticated, refreshTokenHandler, logoutHandler, auth
 import reputationRoutes from './routes/reputation'; 
 import operationalFrameworkRoutes from './routes/admin/operational-framework';
 import healthAdminRoutes from './routes/admin/health';
+import valuationAssetsRoutes from './routes/admin/valuation-assets';
 import kotaniPayStatusRoutes from './routes/kotanipay-status';
 import mpesaStatusRoutes from './routes/mpesa-status';
 import stripeStatusRoutes from './routes/stripe-status';
@@ -114,6 +119,12 @@ import { JobMonitoringService } from './services/jobMonitoringService';
 import { pool, waitForDatabase } from './db';
 import { withClient } from './utils/dbClient';
 import { startPriceCollectionJob } from './services/cexPriceBackgroundJob';
+import { exchangeFeeService, parseTradingPair } from './services/exchangeFeeService';
+import {
+  ensureBootstrapFeeSchedules,
+  listFeeScheduleVersions,
+} from './services/exchangeFeeScheduleRepository';
+import { exchangeFeeApiSyncService } from './services/exchangeFeeApiSyncService';
 import { marketUniverseBuilder } from './services/marketUniverseBuilder';
 import { tokenDiscoveryService } from './services/tokenDiscoveryService';
 import { initTreasuryMonitoring, stopTreasuryMonitoring } from './services/treasury-monitoring.service';
@@ -220,6 +231,67 @@ async function withStartupStageTimeout<T>(
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const app = express();
+
+const USD_FEE_VOLUME_QUOTES = new Set([
+  'USD', 'USDT', 'USDC', 'FDUSD', 'BUSD', 'TUSD', 'USDP',
+]);
+
+async function refreshExchangeFeeVolumes(): Promise<void> {
+  const { rows } = await pool.query<{
+    user_id: string;
+    trading_pair: string;
+    volume: string | number;
+  }>(`
+    SELECT user_id, trading_pair, SUM(filled_amount * price)::numeric AS volume
+    FROM cex_orders
+    WHERE filled_amount > 0
+      AND price > 0
+      AND COALESCE(completed_at, updated_at, created_at) >= NOW() - INTERVAL '30 days'
+    GROUP BY user_id, trading_pair
+  `);
+
+  const volumes = new Map<string, number>();
+  for (const row of rows) {
+    const pair = parseTradingPair(row.trading_pair);
+    if (!pair || !USD_FEE_VOLUME_QUOTES.has(pair.quote)) continue;
+    const volume = Number(row.volume);
+    if (!Number.isFinite(volume) || volume < 0) continue;
+    volumes.set(row.user_id, (volumes.get(row.user_id) ?? 0) + volume);
+  }
+  exchangeFeeService.hydrateUserVolumes(volumes);
+  logger.info('[STARTUP] Refreshed exchange fee volume tiers', { users: volumes.size });
+}
+
+function scheduleExchangeFeeVolumeRefresh(): void {
+  const refresh = async () => {
+    try {
+      await refreshExchangeFeeVolumes();
+    } catch (error) {
+      logger.warn('[STARTUP] Unable to refresh exchange fee volume tiers', metaFromUnknown(error));
+    }
+  };
+
+  void refresh();
+  const timer = setInterval(() => void refresh(), 30 * 60 * 1000);
+  timer.unref();
+}
+
+async function initializeExchangeFeeSchedules(): Promise<void> {
+  await ensureBootstrapFeeSchedules(exchangeFeeService.getSchedules());
+  const versions = await listFeeScheduleVersions();
+  exchangeFeeService.loadScheduleVersions(versions);
+  logger.info('[STARTUP] Loaded effective-dated exchange fee schedules', {
+    exchanges: exchangeFeeService.getSchedules().length,
+  });
+  const timer = setInterval(() => {
+    void listFeeScheduleVersions()
+      .then((updatedVersions) => exchangeFeeService.loadScheduleVersions(updatedVersions))
+      .catch((error) => {
+        logger.error('[STARTUP] Unable to refresh persisted exchange fee schedules', metaFromUnknown(error));
+      });
+  }, 60 * 1000);
+  timer.unref();
+}
 
 // Setup early process global diagnostics error catchers
 setupProcessErrorHandlers();
@@ -681,6 +753,10 @@ process.on('uncaughtException', (error) => {
       logger.info('[STARTUP] Database migrations are disabled for the main process. Ensure migrations are applied separately before starting.');
     }
 
+    await initializeExchangeFeeSchedules();
+    exchangeFeeApiSyncService.start();
+    scheduleExchangeFeeVolumeRefresh();
+
     try {
       await withStartupStageTimeout(
         'paymentRecoveryWorkflowService.initialize',
@@ -779,6 +855,7 @@ process.on('uncaughtException', (error) => {
 
     setupWeeklyRewardsDistribution();
     setupInvestmentPoolsAutomation();
+    startValuationCandidatePipeline();
     startSupportTicketMetricsJob();
     mtaaTokenomicsIndexer.start().catch(error => logger.warn('[STARTUP] MTAA tokenomics indexer disabled or failed', metaFromUnknown(error)));
     initializeAutoPromotionJob();
@@ -1279,6 +1356,20 @@ process.on('uncaughtException', (error) => {
       });
     }));
 
+    app.get('/health/fees', (_req: Request, res: Response) => {
+      res.json({
+        stale: exchangeFeeService.getStaleSchedules(),
+        credentialSync: exchangeFeeApiSyncService.getStatus(),
+        recentChanges: exchangeFeeService.getRecentScheduleChanges().map((change) => ({
+          exchange: change.exchange,
+          effectiveFrom: change.effectiveFrom,
+          source: change.source,
+          changes: change.changes,
+        })),
+        timestamp: new Date().toISOString(),
+      });
+    });
+
     // System Visibility Report endpoint (admin only)
     if (!(app as any).locals?.routesRegistered) {
       app.get('/api/visibility/report', isAuthenticated, requireRole('super_admin'), asyncHandler(async (req: Request, res: Response) => {
@@ -1495,6 +1586,7 @@ process.on('uncaughtException', (error) => {
     // Admin-only routes with authentication and superuser role check
     app.use('/api/admin/operational', isAuthenticated, requireRole('super_admin'), operationalFrameworkRoutes); // Operational Framework routes
     app.use('/api/admin/health', isAuthenticated, requireRole('super_admin'), healthAdminRoutes); // Health & System State routes
+    app.use('/api/admin/valuation-assets', isAuthenticated, valuationAssetsRoutes);
 
     // Payment reconciliation is an admin-only feature and lives under the
     // superadmin namespace. Additional RBAC guard applied at mount time as
@@ -1506,7 +1598,12 @@ process.on('uncaughtException', (error) => {
     // M3 FIX: requireDAORole moved inside governance-activity sub-router — :daoId is in sub-routes
     app.use('/api/governance', isAuthenticated, governanceActivityRoutes);
     
-    // Cross-chain routes moved to v1 API
+    // Cross-chain module routes (assets, transfers, governance, swaps, Solana,
+    // TRON, and utilities) are versioned under this canonical mount. The
+    // aggregate router and transaction-sensitive subrouters enforce auth.
+    const crossChainModulesRouter = (await import('./routes/modules')).default;
+    app.use('/api/v1/cross-chain', isAuthenticated, crossChainModulesRouter);
+
     app.use('/api/user/preferences', isAuthenticated, userPreferencesRoutes);
     app.use('/api/morio', isAuthenticated, morioRoutes);
     app.use('/api/personas', isAuthenticated, personasRouter);
@@ -1591,7 +1688,7 @@ process.on('uncaughtException', (error) => {
     app.use('/api/payment-gateway', isAuthenticated, paymentGatewayRoutes);
     app.use('/api/payment-requests', isAuthenticated, paymentRequestsRoutes);
     
-    app.use('/api/dex', isAuthenticated, dexScreenerRoutes); // ✅ DexScreener API - Unified at port 5000
+    app.use('/api/dex', dexScreenerRoutes); // ✅ DexScreener router enforces authentication and admin access locally
     
     // Webhook routes for deposit transactions - handled via v1 routes
     const webhookRouter = express.Router();
@@ -2032,6 +2129,12 @@ process.on('uncaughtException', (error) => {
     // Graceful shutdown
     const gracefulShutdown = async (signal: string) => {
       logger.warn(`Received ${signal}, shutting down gracefully`);
+
+      try {
+        stopValuationCandidatePipeline();
+      } catch (err) {
+        logger.error('Error stopping valuation candidate pipeline:', err);
+      }
 
       // Stop treasury monitoring
       try {

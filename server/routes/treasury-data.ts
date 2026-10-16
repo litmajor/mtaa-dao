@@ -102,20 +102,6 @@ function getProvider(): ethers.Provider {
 }
 
 /**
- * Get token price from price oracle or mock data
- * In production: integrate with Chainlink, DexScreener, or similar
- */
-async function getTokenPrice(tokenSymbol: string): Promise<number> {
-  try {
-    const data = await priceOracle.getPrice(tokenSymbol);
-    return data?.priceUsd || 0;
-  } catch (error) {
-    logger.error('[Treasury] Error fetching token price from oracle:', error);
-    return 0;
-  }
-}
-
-/**
  * Fetch real treasury data from smart contracts
  */
 async function fetchTreasuryFromContract(daoId: string): Promise<Partial<TreasuryData>> {
@@ -220,8 +206,11 @@ async function fetchTokenHoldings(vaultContract: ethers.Contract): Promise<Token
 
       const amount = rawAmount ? Number(ethers.formatUnits(rawAmount, decimals)) : 0;
 
-      const priceData = await priceOracle.getPrice(symbol).catch(() => null);
-      const priceUsd = priceData?.priceUsd || 0;
+      const priceData = await priceOracle.getValuationPrice(symbol);
+      const priceUsd = priceData?.haircutPriceUsd ?? priceData?.priceUsd;
+      if (!priceData || priceUsd === undefined || !Number.isFinite(priceUsd) || priceUsd <= 0) {
+        throw new Error(`Reliable valuation unavailable for treasury asset ${symbol}`);
+      }
       const value = amount * priceUsd;
 
       holdings.push({
@@ -612,5 +601,3 @@ router.get('/health/:daoId', isAuthenticated, async (req: any, res: Response) =>
 });
 
 export default router;
-
-

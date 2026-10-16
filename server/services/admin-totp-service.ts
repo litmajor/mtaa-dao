@@ -135,7 +135,7 @@ export function decryptData(
     const decipher = crypto.createDecipheriv(ENCRYPTION_ALGORITHM, key, iv);
     decipher.setAuthTag(authTag);
 
-    let plaintext = decipher.update(ciphertext, 'hex', 'utf8');
+    let plaintext = decipher.update(ciphertext).toString('utf8');
     plaintext += decipher.final('utf8');
 
     return plaintext;

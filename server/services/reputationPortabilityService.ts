@@ -5,7 +5,7 @@
  */
 
 import { db } from '../db';
-import { memberReputation, memberAchievements, users, daoMemberships } from '../../shared/schema';
+import { memberReputation, memberAchievements } from '../../shared/schema';
 import { eq, and, sql } from 'drizzle-orm';
 
 // ==================== TYPES ====================
@@ -38,6 +38,22 @@ interface ReputationPortfolio {
   }[];
 }
 
+interface ReputationQueryRow extends Record<string, unknown> {
+  reputation_score?: number | string | null;
+  dao_id?: string;
+  id?: string;
+  achievement_type?: string;
+  earned_at?: Date | string | null;
+  is_ported?: boolean;
+  original_dao_id?: string | null;
+  created_at?: Date | string | null;
+  total_transfers?: number | string | null;
+  total_amount?: number | string | null;
+  avg_amount?: number | string | null;
+  to_dao_id?: string;
+  transfer_count?: number | string | null;
+}
+
 // ==================== SERVICE ====================
 
 export class ReputationPortabilityService {
@@ -58,12 +74,14 @@ export class ReputationPortabilityService {
       const transferPercentage = params.transferPercentage || 70;
 
       // Get source reputation
-      const sourceRep = await db.query.memberReputation.findFirst({
-        where: and(
-          eq(memberReputation.memberId, params.memberId as any),
-          eq(memberReputation.daoId, params.fromDAOId as any)
-        ),
-      });
+      const [sourceRep] = await db
+        .select()
+        .from(memberReputation)
+        .where(and(
+          eq(memberReputation.memberId, params.memberId),
+          eq(memberReputation.daoId, params.fromDAOId)
+        ))
+        .limit(1);
 
       if (!sourceRep) {
         throw new Error(`No reputation found for member in source DAO`);
@@ -76,12 +94,14 @@ export class ReputationPortabilityService {
       const retainedAmount = sourceRep.reputationScore - transferAmount;
 
       // Check if target DAO has existing reputation
-      const targetRep = await db.query.memberReputation.findFirst({
-        where: and(
-          eq(memberReputation.memberId, params.memberId as any),
-          eq(memberReputation.daoId, params.toDAOId as any)
-        ),
-      });
+      const [targetRep] = await db
+        .select()
+        .from(memberReputation)
+        .where(and(
+          eq(memberReputation.memberId, params.memberId),
+          eq(memberReputation.daoId, params.toDAOId)
+        ))
+        .limit(1);
 
       if (targetRep) {
         // Add to existing reputation
@@ -157,9 +177,11 @@ export class ReputationPortabilityService {
   async portAchievement(params: AchievementPortability): Promise<void> {
     try {
       // Get source achievement
-      const achievement = await db.query.memberAchievements.findFirst({
-        where: eq(memberAchievements.id, params.achievementId as any),
-      });
+      const [achievement] = await db
+        .select()
+        .from(memberAchievements)
+        .where(eq(memberAchievements.id, params.achievementId))
+        .limit(1);
 
       if (!achievement) {
         throw new Error(`Achievement not found: ${params.achievementId}`);
@@ -168,13 +190,15 @@ export class ReputationPortabilityService {
       // Port to each target DAO
       for (const targetDAOId of params.targetDAOs) {
         // Check if achievement already ported
-        const existingPort = await db.query.memberAchievements.findFirst({
-          where: and(
-            eq(memberAchievements.memberId, params.memberId as any),
-            eq(memberAchievements.daoId, targetDAOId as any),
-            sql`achievement_type = ${achievement.achievementType}`
-          ),
-        });
+        const [existingPort] = await db
+          .select()
+          .from(memberAchievements)
+          .where(and(
+            eq(memberAchievements.memberId, params.memberId),
+            eq(memberAchievements.daoId, targetDAOId),
+            eq(memberAchievements.achievementType, achievement.achievementType)
+          ))
+          .limit(1);
 
         if (existingPort) {
           continue;  // Already ported
@@ -208,14 +232,14 @@ export class ReputationPortabilityService {
    */
   async getAchievementTransferHistory(memberId: string): Promise<any[]> {
     try {
-      const history = await db.execute(sql`
+      const history = (await db.execute(sql`
         SELECT 
           id, achievement_type, original_dao_id, dao_id,
           earned_at, is_ported, created_at
         FROM member_achievements
         WHERE member_id = ${memberId}
         ORDER BY created_at DESC
-      `);
+      `)).rows as ReputationQueryRow[];
 
       return history;
     } catch (error) {
@@ -232,21 +256,21 @@ export class ReputationPortabilityService {
   async getReputationPortfolio(memberId: string): Promise<ReputationPortfolio> {
     try {
       // Get all reputation records
-      const reputations = await db.execute(sql`
+      const reputations = (await db.execute(sql`
         SELECT reputation_score, dao_id FROM member_reputation
         WHERE member_id = ${memberId}
         ORDER BY reputation_score DESC
-      `);
+      `)).rows as ReputationQueryRow[];
 
       // Get all achievements
-      const achievements = await db.execute(sql`
+      const achievements = (await db.execute(sql`
         SELECT id, achievement_type, earned_at, dao_id FROM member_achievements
         WHERE member_id = ${memberId}
         ORDER BY earned_at DESC
-      `);
+      `)).rows as ReputationQueryRow[];
 
       const totalReputation = reputations.reduce(
-        (sum: number, r: any) => sum + r.reputation_score,
+        (sum, r) => sum + Number(r.reputation_score ?? 0),
         0
       );
 
@@ -265,7 +289,7 @@ export class ReputationPortabilityService {
         achievements: achievements.map((a: any) => ({
           id: a.id,
           type: a.achievement_type,
-          earnedAt: a.earned_at,
+          earnedAt: a.earned_at instanceof Date ? a.earned_at.toISOString() : String(a.earned_at ?? ''),
           daoId: a.dao_id,
         })),
       };
@@ -280,7 +304,7 @@ export class ReputationPortabilityService {
    */
   async getFederationLeaderboard(metaDAOId: string, limit: number = 100): Promise<any[]> {
     try {
-      const leaderboard = await db.execute(sql`
+      const leaderboard = (await db.execute(sql`
         SELECT 
           u.id, u.name, u.wallet_address,
           SUM(mr.reputation_score) as total_reputation,
@@ -295,7 +319,7 @@ export class ReputationPortabilityService {
         GROUP BY u.id, u.name, u.wallet_address
         ORDER BY total_reputation DESC
         LIMIT ${limit}
-      `);
+      `)).rows as ReputationQueryRow[];
 
       return leaderboard;
     } catch (error) {
@@ -376,7 +400,7 @@ export class ReputationPortabilityService {
     topRecipientDAOs: Array<{daoId: string; transferCount: number}>;
   }> {
     try {
-      const result = await db.execute(sql`
+      const result = (await db.execute(sql`
         SELECT 
           COUNT(*) as total_transfers,
           SUM(transferred_amount) as total_amount,
@@ -389,15 +413,15 @@ export class ReputationPortabilityService {
         GROUP BY to_dao_id
         ORDER BY transfer_count DESC
         LIMIT 10
-      `);
+      `)).rows as ReputationQueryRow[];
 
       return {
-        totalTransfers: result[0]?.total_transfers || 0,
-        totalReputationTransferred: result[0]?.total_amount || 0,
-        averageTransferAmount: result[0]?.avg_amount || 0,
+        totalTransfers: Number(result[0]?.total_transfers) || 0,
+        totalReputationTransferred: Number(result[0]?.total_amount) || 0,
+        averageTransferAmount: Number(result[0]?.avg_amount) || 0,
         topRecipientDAOs: result.map((r: any) => ({
           daoId: r.to_dao_id,
-          transferCount: r.transfer_count,
+          transferCount: Number(r.transfer_count) || 0,
         })),
       };
     } catch (error) {

@@ -16,7 +16,7 @@ export default function PaymentPage() {
         Make a Payment
       </button>
   {/* If PaymentModal expects props like open and onOpenChange, ensure correct import and usage. If not, update as needed. */}
-  <PaymentModal open={modalOpen} onOpenChange={setModalOpen} />
+  <PaymentModal open={modalOpen} onClose={() => setModalOpen(false)} />
     </div>
   );
 }

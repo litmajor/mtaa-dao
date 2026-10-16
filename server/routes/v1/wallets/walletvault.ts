@@ -2,7 +2,8 @@ import express, { type Request, type Response } from 'express';
 import { isAuthenticated } from '../../../auth';
 import { walletGenerationService } from '../../../services/wallet-generation-service';
 import { saveVaultBackup, getVaultBackup } from '../../../services/walletVaultService';
-import rateLimit from 'express-rate-limit';
+import { rateLimitPerUser } from '../../../middleware/rateLimit';
+import { logger } from '../../../utils/logger';
 
 const router = express.Router();
 
@@ -15,34 +16,38 @@ const router = express.Router();
  * express-rate-limit directly if there's an existing wrapper/store (Redis)
  * you standardize on.
  */
-const vaultRetrieveLimiter = rateLimit({
-  windowMs: 60 * 60 * 1000,
-  max: 5,
-  keyGenerator: (req: any) => req.user?.id || req.ip,
-  message: { success: false, error: 'Too many vault retrieval attempts. Try again later.' },
-});
+const walletRegisterLimiter = rateLimitPerUser('wallet-register-legacy', 10, '15min');
+const vaultRetrieveLimiter = rateLimitPerUser('wallet-vault-retrieve', 5, '1h');
 
 /**
  * POST /api/v1/wallets/setup/register
  * Register a wallet whose keypair was generated client-side. Body: { address, currency?, walletType? }
  */
-router.post('/setup/register', isAuthenticated, async (req: any, res: Response) => {
+router.post('/setup/register', isAuthenticated, walletRegisterLimiter, async (req: any, res: Response) => {
   try {
-    const userId = req.user?.id;
+    const userId = req.user?.id || req.user?.claims?.sub || req.user?.claims?.id;
     if (!userId) {
       return res.status(401).json({ success: false, error: 'Unauthorized' });
     }
 
-    const { address, currency, walletType } = req.body;
-    if (!address) {
-      return res.status(400).json({ success: false, error: 'address is required' });
+    const { address, currency, walletType, challengeId, signature, publicKey, label } = req.body;
+    if (!address || !challengeId || !signature) {
+      return res.status(400).json({ success: false, error: 'address, challengeId, and signature are required' });
     }
 
-    const result = await walletGenerationService.registerClientGeneratedWallet(userId, address, currency, walletType);
+    const result = await walletGenerationService.registerClientGeneratedWallet(
+      userId,
+      address,
+      currency,
+      walletType,
+      { challengeId, signature, publicKey, label }
+    );
     return res.json({ success: true, data: result });
   } catch (error) {
-    console.error('Wallet registration error:', error);
-    return res.status(400).json({ success: false, error: (error as Error).message });
+    logger.error('Wallet registration alias failed', {
+      error: error instanceof Error ? error.message : String(error),
+    });
+    return res.status(400).json({ success: false, error: 'Wallet registration failed' });
   }
 });
 
@@ -70,7 +75,9 @@ router.post('/vault/backup', isAuthenticated, async (req: any, res: Response) =>
 
     return res.json({ success: true, data: result });
   } catch (error) {
-    console.error('Vault backup error:', error);
+    logger.error('Vault backup failed', {
+      error: error instanceof Error ? error.message : String(error),
+    });
     // Don't leak internal detail on a security-relevant endpoint's failure path
     return res.status(400).json({ success: false, error: 'Backup could not be saved' });
   }
@@ -106,7 +113,9 @@ router.get('/vault/retrieve/:walletId', isAuthenticated, vaultRetrieveLimiter, a
     if ((error as Error).message === 'Access denied') {
       return res.status(403).json({ success: false, error: 'Access denied' });
     }
-    console.error('Vault retrieval error:', error);
+    logger.error('Vault retrieval failed', {
+      error: error instanceof Error ? error.message : String(error),
+    });
     return res.status(500).json({ success: false, error: 'Could not retrieve backup' });
   }
 });

@@ -13,10 +13,12 @@ import { sql } from 'drizzle-orm';
 const logger = new Logger('persona-service');
 
 export type PersonaType = 'okedi' | 'yuki' | 'amara' | null;
+type DefinedPersonaType = Exclude<PersonaType, null>;
 
 export interface Persona {
   id: PersonaType;
   name: string;
+  displayName: string;
   role: string;
   description: string;
   icon: string;
@@ -28,7 +30,7 @@ export interface Persona {
 /**
  * Persona definitions with their characteristics
  */
-export const PERSONAS: Record<PersonaType, Persona> = {
+export const PERSONAS: Record<DefinedPersonaType, Persona> = {
   okedi: {
     id: 'okedi',
     name: 'MTAA Community',

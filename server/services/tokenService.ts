@@ -8,6 +8,7 @@ import type {TokenInfo} from '../../shared/tokenRegistry';
 import { users, proposals } from '../../shared/schema';
 import { eq } from 'drizzle-orm';
 import { resolveProviderUrls } from './providerBootstrap';
+import { priceOracle } from './priceOracle';
 
 // Enhanced ERC20 ABI with additional functions for Phase 3
 const ENHANCED_ERC20_ABI = [
@@ -267,7 +268,7 @@ export class TokenService {
     token: TokenInfo;
   }[]> {
     const activeTokens = TokenRegistry.getActiveTokens();
-    const balances = [];
+    const balances: Array<{ symbol: string; balance: string; token: TokenInfo }> = [];
 
     for (const token of activeTokens) {
       try {
@@ -275,14 +276,9 @@ export class TokenService {
         const balanceNum = parseFloat(balance);
 
         if (balanceNum > 0) {
-          // Get real price from primary sources
-          const priceUSD = await this.getTokenPriceFromOracle(token.symbol);
-          const balanceUSD = (balanceNum * priceUSD).toFixed(2);
-
           balances.push({
             symbol: token.symbol,
             balance,
-            balanceUSD,
             token
           });
         }
@@ -291,43 +287,39 @@ export class TokenService {
       }
     }
 
-    return balances;
+    const prices = await priceOracle.getValuationPrices(balances.map((balance) => balance.symbol));
+    const missingSymbols = [...new Set(
+      balances
+        .map((balance) => balance.symbol)
+        .filter((symbol) => !prices.has(symbol.toUpperCase()))
+    )];
+    if (missingSymbols.length > 0) {
+      throw new Error(`Reliable valuation unavailable for portfolio assets: ${missingSymbols.join(', ')}`);
+    }
+
+    return balances.map((balance) => {
+      const valuation = prices.get(balance.symbol.toUpperCase());
+      const priceUsd = valuation?.haircutPriceUsd ?? valuation?.priceUsd;
+      if (!valuation || priceUsd === undefined || !Number.isFinite(priceUsd) || priceUsd <= 0) {
+        throw new Error(`Reliable valuation unavailable for ${balance.symbol}`);
+      }
+      return {
+        ...balance,
+        balanceUSD: (parseFloat(balance.balance) * priceUsd).toFixed(2),
+      };
+    });
   }
 
   /**
    * Get real token price from multiple oracle sources (CoinGecko, DeFiLlama, Chainlink)
    */
   private async getTokenPriceFromOracle(symbol: string): Promise<number> {
-    try {
-      // Try CoinGecko first (free, reliable, no auth needed)
-      try {
-        const price = await this.getPriceFromCoinGecko(symbol);
-        if (price > 0) return price;
-      } catch (error) {
-        console.warn(`[CoinGecko] Failed to fetch price for ${symbol}:`, error);
-      }
-
-      // Fallback to DeFiLlama
-      try {
-        const price = await this.getPriceFromDeFiLlama(symbol);
-        if (price > 0) return price;
-      } catch (error) {
-        console.warn(`[DeFiLlama] Failed to fetch price for ${symbol}:`, error);
-      }
-
-      // Fallback to on-chain Chainlink oracle
-      try {
-        const price = await this.getPriceFromChainlink(symbol);
-        if (price > 0) return price;
-      } catch (error) {
-        console.warn(`[Chainlink] Failed to fetch price for ${symbol}:`, error);
-      }
-
-      throw new Error(`Unable to fetch price for ${symbol} from any source`);
-    } catch (error) {
-      console.error(`[Price Oracle] Failed all sources for ${symbol}:`, error);
-      throw error;
+    const valuation = await priceOracle.getValuationPrice(symbol);
+    const priceUsd = valuation?.haircutPriceUsd ?? valuation?.priceUsd;
+    if (!valuation || priceUsd === undefined || !Number.isFinite(priceUsd) || priceUsd <= 0) {
+      throw new Error(`No reliable valuation price available for ${symbol}`);
     }
+    return priceUsd;
   }
 
   /**

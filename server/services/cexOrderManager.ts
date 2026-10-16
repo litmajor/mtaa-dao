@@ -202,7 +202,12 @@ export class CEXOrderManager {
       const fill = fillResult.rows[0];
 
       // Update order with new fill information
-      await CEXOrderRepository.updateOrderFill(orderId, amount);
+      await CEXOrderRepository.addOrderFill(
+        orderId,
+        String(amount),
+        String(fee),
+        undefined
+      );
 
       return {
         fillId: fill.id,

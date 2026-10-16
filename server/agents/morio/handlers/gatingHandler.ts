@@ -15,7 +15,7 @@ import {
   isFeaturePrioritized 
 } from '../../../services/personaService';
 import { db } from '../../../db';
-import type { User } from '../../../shared/schema';
+import type { User } from '../../../../shared/schema';
 
 const logger = new Logger('morio-gating-handler');
 
@@ -73,7 +73,7 @@ export async function getGatingContext(
   try {
     const user = await db.query.users.findFirst({
       where: (u, { eq }) => eq(u.id, userId)
-    }) as User;
+    });
 
     if (!user) {
       return null;
@@ -136,7 +136,7 @@ export async function generateGatingExplanation(
     const displayAmount = `${amountNeeded.toLocaleString()} ${currency || 'KES'}`;
     explanation += `\n💰 **What you need:** ${displayAmount} more\n`;
     explanation += `\n**Ways to get ${displayAmount}:**\n`;
-    explanation += generateUnlockPaths(feature, currency || 'KES');
+    explanation += generateUnlockPaths(feature, currency || 'KES', daysUntilAvailable);
   }
 
   if (feature.includes('advanced')) {
@@ -166,7 +166,7 @@ function getSubprofileName(subprofile?: string): string {
 /**
  * Generate possible unlock paths for a feature
  */
-function generateUnlockPaths(feature: string, currency: string): string {
+function generateUnlockPaths(feature: string, currency: string, daysUntilAvailable?: number): string {
   const paths: Record<string, string> = {
     'vault.yield': `
 1. **Deposit KES** - Add funds from your wallet directly

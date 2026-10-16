@@ -18,34 +18,56 @@ type AuthenticatedUser = {
 
 const roleHierarchy = ['member', 'contributor', 'elder', 'admin'];
 
-function getActorId(req: Request): string | null {
+function resolveAuthenticatedActor(req: Request): { actorId: string | null; actorRole: string } {
   const user = req.user as AuthenticatedUser | undefined;
-  return user?.userId || user?.claims?.sub || user?.id || null;
+  const actorId = user?.userId || user?.claims?.sub || user?.id || null;
+  const rawRoles = user?.roles;
+  const actorRole = req.userRole || (Array.isArray(rawRoles) ? rawRoles[0] || 'user' : rawRoles || 'user');
+
+  return { actorId, actorRole };
+}
+
+function getActorId(req: Request): string | null {
+  return resolveAuthenticatedActor(req).actorId;
 }
 
 function getActorRole(req: Request): string {
-  if (req.userRole) return req.userRole;
-  const roles = (req.user as AuthenticatedUser | undefined)?.roles;
-  return Array.isArray(roles) ? roles[0] || 'user' : roles || 'user';
+  return resolveAuthenticatedActor(req).actorRole;
+}
+
+async function getDaoMemberManagerAuth(req: Request): Promise<{ actorRole: string; canManage: boolean; daoRole?: string } | null> {
+  const actorId = getActorId(req);
+  const { daoId } = req.params;
+
+  if (!actorId || !daoId) return null;
+
+  const [user] = await db.select({ role: users.roles }).from(users).where(eq(users.id, actorId)).limit(1);
+  const actorRole = user?.role || getActorRole(req);
+
+  if (actorRole === 'super_admin') {
+    return { actorRole, canManage: true, daoRole: 'admin' };
+  }
+
+  const manager = await db.select({ role: daoMemberships.role }).from(daoMemberships).where(and(
+    eq(daoMemberships.daoId, daoId),
+    eq(daoMemberships.userId, actorId),
+    eq(daoMemberships.role, 'admin'),
+    eq(daoMemberships.status, 'approved'),
+    eq(daoMemberships.isBanned, false),
+  )).limit(1);
+
+  if (!manager.length) return null;
+
+  return { actorRole, canManage: true, daoRole: manager[0].role || 'admin' };
 }
 
 async function requireMemberManager(req: Request, res: Response, next: NextFunction) {
   try {
-    const actorId = getActorId(req);
-    const { daoId } = req.params;
+    const auth = await getDaoMemberManagerAuth(req);
+    if (!auth) return res.status(403).json({ error: 'Access denied to this DAO' });
 
-    if (!actorId) return res.status(401).json({ error: 'Authentication required' });
-    const [user] = await db.select({ role: users.roles }).from(users).where(eq(users.id, actorId)).limit(1);
-    const actorRole = user?.role || getActorRole(req);
-    req.userRole = actorRole;
-    if (actorRole !== 'super_admin' && actorRole !== 'admin') {
-      const manager = await db.select({ id: daoMemberships.id }).from(daoMemberships).where(and(
-        eq(daoMemberships.daoId, daoId), eq(daoMemberships.userId, actorId),
-        eq(daoMemberships.role, 'admin'), eq(daoMemberships.status, 'approved'),
-        eq(daoMemberships.isBanned, false),
-      )).limit(1);
-      if (!manager.length) return res.status(403).json({ error: 'Access denied to this DAO' });
-    }
+    req.userRole = auth.actorRole;
+    req.daoRole = auth.daoRole;
     next();
   } catch (error) {
     logger.error('Member authorization check failed:', error);
@@ -93,6 +115,34 @@ async function auditMemberAccess(req: Request, actionType: string, daoId: string
   }
 }
 
+async function auditMutationWithPolicy(req: Request, daoId: string, memberId: string, actionType: string, metadata: Record<string, unknown>) {
+  const actorId = getActorId(req);
+  if (!actorId) return { ok: false, status: 401, error: 'Authentication required' };
+
+  try {
+    await logConsolidatedAuditEvent({
+      actorId,
+      daoId,
+      actionType,
+      targetType: 'dao_member',
+      targetId: memberId,
+      result: 'success',
+      ipAddress: req.ip,
+      endpoint: req.originalUrl,
+      metadata,
+      severity: 'high',
+    });
+    return { ok: true };
+  } catch (error) {
+    logger.error('Member mutation audit failed', { error, actorId, daoId, memberId, actionType, metadata });
+    return {
+      ok: false,
+      status: 500,
+      error: 'Operation completed but audit log failed. This requires admin escalation.',
+    };
+  }
+}
+
 router.get('/daos/:daoId/members', requireMemberAccess, async (req: Request, res: Response) => {
   try {
     const { daoId } = req.params;
@@ -125,11 +175,18 @@ router.get('/daos/:daoId/members', requireMemberAccess, async (req: Request, res
     const totalResult = await db.select({ count: sql<number>`count(*)` }).from(daoMemberships)
       .innerJoin(users, eq(daoMemberships.userId, users.id)).where(and(...conditions));
     const total = Number(totalResult[0]?.count || 0);
+    const actorRole = getActorRole(req);
+    const canManage = actorRole === 'super_admin' || req.daoRole === 'admin';
 
     await auditMemberAccess(req, 'ADMIN_MEMBER_LIST_ACCESSED', daoId, daoId);
-    res.json({ members, dao: { id: dao.id, name: dao.name },
+    res.json({
+      members,
+      dao: { id: dao.id, name: dao.name },
+      membershipScope: 'active_approved_non_banned',
       pagination: { page, limit, total, pages: Math.ceil(total / limit) },
-      userRole: getActorRole(req), canManage: true });
+      userRole: actorRole,
+      canManage,
+    });
   } catch (error) {
     logger.error('Error fetching members:', error);
     res.status(500).json({ error: 'Failed to fetch members' });
@@ -209,7 +266,8 @@ async function changeMemberRole(req: Request, res: Response, direction: 1 | -1) 
         eq(daoMemberships.daoId, daoId), eq(daoMemberships.role, 'admin'),
         eq(daoMemberships.status, 'approved'), eq(daoMemberships.isBanned, false),
       ));
-      if (Number(admins[0]?.count || 0) <= 1) return { status: 400, body: { error: 'Cannot demote last admin' } };
+      const activeAdminCount = Number(admins[0]?.count || 0);
+      if (activeAdminCount <= 1) return { status: 400, body: { error: 'Cannot demote last admin' } };
     }
     await tx.update(daoMemberships).set({ role: newRole, isAdmin: newRole === 'admin',
       isElder: newRole === 'elder', updatedAt: new Date() }).where(and(
@@ -218,12 +276,17 @@ async function changeMemberRole(req: Request, res: Response, direction: 1 | -1) 
     return { status: 200, body: { role: newRole, oldRole: membership.role } };
   });
   if (result.status !== 200) return res.status(result.status).json(result.body);
-  try {
-    await logConsolidatedAuditEvent({ actorId, daoId, actionType: direction > 0 ? 'MEMBER_PROMOTED' : 'MEMBER_DEMOTED',
-      targetType: 'dao_member', targetId: memberId, result: 'success', ipAddress: req.ip,
-      endpoint: req.originalUrl, metadata: { oldRole: result.body.oldRole, newRole: result.body.role }, severity: 'medium' });
-  } catch (error) {
-    logger.error('Member role change audit failed', { error, actorId, daoId, memberId, direction });
+  const auditResult = await auditMutationWithPolicy(req, daoId, memberId, direction > 0 ? 'MEMBER_PROMOTED' : 'MEMBER_DEMOTED', {
+    oldRole: result.body.oldRole,
+    newRole: result.body.role,
+  });
+  if (!auditResult.ok) {
+    logger.warn('Member role change completed without audit capture', { daoId, memberId, actorId, actionType: direction > 0 ? 'MEMBER_PROMOTED' : 'MEMBER_DEMOTED' });
+    return res.status(auditResult.status || 500).json({
+      success: false,
+      error: auditResult.error,
+      member: { id: memberId, role: result.body.role },
+    });
   }
   res.json({ success: true, message: direction > 0 ? 'Member promoted successfully' : 'Member demoted successfully',
     member: { id: memberId, role: result.body.role } });
@@ -266,12 +329,17 @@ router.post('/daos/:daoId/members/:memberId/remove', requireMemberAccess, async 
       return { status: 200, body: { email: member[0].email } };
     });
     if (result.status !== 200) return res.status(result.status).json(result.body);
-    try {
-      await logConsolidatedAuditEvent({ actorId, daoId, actionType: 'MEMBER_REMOVED', targetType: 'dao_member',
-        targetId: memberId, result: 'success', ipAddress: req.ip, endpoint: req.originalUrl,
-        metadata: { email: result.body.email, reason: req.body?.reason }, severity: 'high' });
-    } catch (error) {
-      logger.error('Member removal audit failed', { error, actorId, daoId, memberId });
+    const auditResult = await auditMutationWithPolicy(req, daoId, memberId, 'MEMBER_REMOVED', {
+      email: result.body.email,
+      reason: req.body?.reason,
+    });
+    if (!auditResult.ok) {
+      logger.warn('Member removal completed without audit capture', { memberId, daoId, actorId, reason: req.body?.reason });
+      return res.status(auditResult.status || 500).json({
+        success: false,
+        error: auditResult.error,
+        member: { id: memberId },
+      });
     }
     logger.warn('Member removed from DAO', { memberId, daoId, actorId, reason: req.body?.reason });
     res.json({ success: true, message: 'Member removed successfully' });

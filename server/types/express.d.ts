@@ -22,7 +22,7 @@ type DaoMembershipInfo = {
 };
 
 type AuthenticatedUser = {
-  id?: string;
+  id: string;
   userId?: string;
   email?: string;
   role?: string;
@@ -32,10 +32,12 @@ type AuthenticatedUser = {
   isSuperuser?: boolean;
   isAdmin?: boolean;
   claims?: TokenPayload & {
-    sub?: string;
     isSuperUser?: boolean;
     isSuperuser?: boolean;
     isAdmin?: boolean;
+    role?: string;
+    roles?: string | string[];
+    daos?: string[];
   };
 };
 

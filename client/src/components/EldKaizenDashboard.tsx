@@ -128,10 +128,10 @@ export default function EldKaizenDashboard() {
     system: d.metrics.scores.system
   }));
 
-  const criticalOpportunities = daoMetrics.flatMap(d =>
+  const criticalOpportunities = daoMetrics.flatMap((d: any) =>
     (d.recommendations?.opportunities || [])
       .filter((opp: Opportunity) => opp.severity === 'critical')
-      .map(opp => ({ ...opp, daoId: d.daoId }))
+      .map((opp: Opportunity) => ({ ...opp, daoId: d.daoId }))
   );
 
   const getSeverityColor = (severity: string) => {

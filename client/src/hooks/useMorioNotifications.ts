@@ -30,15 +30,14 @@ export function useMorioNotifications(userId: string) {
 
     try {
       setIsLoading(true);
-      const response = await apiRequest<{
-        notifications: MorioNotification[];
-        count: number;
-      }>(`/api/morio/notifications/${userId}`, {
-        method: 'GET'
-      });
+      const response = await apiRequest('GET', `/api/morio/notifications/${userId}`);
+      const payload = await response.json() as {
+        notifications?: MorioNotification[];
+        count?: number;
+      };
 
-      setNotifications(response.notifications || []);
-      setUnreadCount(response.count || 0);
+      setNotifications(payload.notifications || []);
+      setUnreadCount(payload.count || 0);
       setLastFetch(new Date());
     } catch (error) {
       console.error('[Morio] Failed to fetch notifications:', error);
@@ -53,9 +52,7 @@ export function useMorioNotifications(userId: string) {
   const markAsRead = useCallback(
     async (notificationId: string) => {
       try {
-        await apiRequest(`/api/morio/notifications/${userId}/read/${notificationId}`, {
-          method: 'POST'
-        });
+        await apiRequest('POST', `/api/morio/notifications/${userId}/read/${notificationId}`);
 
         // Remove from local state
         setNotifications(prev =>

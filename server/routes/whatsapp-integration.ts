@@ -170,7 +170,7 @@ router.post('/webhook', rawBodyParser, async (req, res) => {
 
 async function handleBalanceRequest(phoneNumber: string) {
   const user = await db.query.users.findFirst({
-    where: eq(users.phoneNumber, phoneNumber)
+    where: eq(users.phone, phoneNumber)
   });
 
   if (!user) {

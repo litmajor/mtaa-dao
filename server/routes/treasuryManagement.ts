@@ -42,6 +42,7 @@ router.post('/:daoId/whitelist/request', isAuthenticated, async (req: Request, r
     const { daoId } = req.params;
     const { walletAddress, recipientName, category } = req.body;
     const userId = req.user?.id;
+    if (!userId) return res.status(401).json({ success: false, message: 'Authentication required' });
 
     // Validate inputs
     if (!walletAddress || !category) {
@@ -132,6 +133,7 @@ router.post('/:daoId/whitelist/:entryId/approve', isAuthenticated, async (req: R
   try {
     const { daoId, entryId } = req.params;
     const userId = req.user?.id;
+    if (!userId) return res.status(401).json({ success: false, message: 'Authentication required' });
 
     // Check if user is DAO admin/creator
     const membership = await db.select()
@@ -186,6 +188,7 @@ router.get('/:daoId/whitelist', isAuthenticated, async (req: Request, res: Respo
   try {
     const { daoId } = req.params;
     const userId = req.user?.id;
+    if (!userId) return res.status(401).json({ success: false, message: 'Authentication required' });
 
     // Verify user is DAO member
     const membership = await db.select()
@@ -253,12 +256,14 @@ router.get('/:daoId/whitelist', isAuthenticated, async (req: Request, res: Respo
 router.get('/:daoId/limits', isAuthenticated, async (req: Request, res: Response) => {
   try {
     const { daoId } = req.params;
+    const userId = req.user?.id;
+    if (!userId) return res.status(401).json({ success: false, message: 'Authentication required' });
 
     // Verify user is DAO member
     const membership = await db.select()
       .from(daoMemberships)
       .where(and(
-        eq(daoMemberships.userId, req.user?.id),
+        eq(daoMemberships.userId, userId),
         eq(daoMemberships.daoId, daoId as any)
       ))
       .limit(1);
@@ -318,6 +323,7 @@ router.put('/:daoId/limits', isAuthenticated, async (req: Request, res: Response
   try {
     const { daoId } = req.params;
     const userId = req.user?.id;
+    if (!userId) return res.status(401).json({ success: false, message: 'Authentication required' });
     const { dailyCapPercentage, singleTransferMaxPercentage, multisigThresholdUSD, multisigRequiredSignatures } = req.body;
 
     // Check if user is DAO admin/creator

@@ -33,6 +33,7 @@ import { RoleProgressModal, type ActivityRecord } from '../governance/RoleProgre
 import { VoteProposalModal, type ProposalDetails } from '../governance/VoteProposalModal';
 import { ProposalResultsCard } from '../governance/ProposalResultsCard';
 import { useDaoContext } from '@/contexts/dao-context';
+import { authClient } from '../../utils/authClient';
 
 /* ============================================================================
  * FIXED: Added proper TypeScript interfaces to replace 'any' types
@@ -749,7 +750,7 @@ const ProposalCard = React.memo(({ proposal }: ProposalCardProps) => {
             {proposal?.currentVotes}/{proposal?.votesRequired} votes needed
           </p>
           <Button 
-            size="xs" 
+            size="sm" 
             variant="outline"
             aria-label={`Vote on ${proposal?.title}`}
             disabled={false}
@@ -963,14 +964,19 @@ export default function OkediDashboard() {
     let mounted = true;
     (async () => {
       try {
-        const res = await fetch(`/api/v1/daos/${activeDaoId}/payments`, { credentials: 'include' });
+        const res = await authClient.fetch(`/api/v1/daos/${activeDaoId}/treasury/contributions?limit=10`);
         if (res.ok) {
           const j = await res.json();
-          if (mounted) setRecentPayments(j.data || j.payments || []);
+          if (mounted) {
+            setRecentPayments((j.contributions || []).map((contribution: any) => ({
+              ...contribution,
+              amount: Number(contribution.amount || 0),
+            })));
+          }
           return;
         }
 
-        const ledgerRes = await fetch(`/api/v1/daos/${activeDaoId}/contributions/ledger?limit=10`, { credentials: 'include' });
+        const ledgerRes = await authClient.fetch(`/api/v1/daos/${activeDaoId}/contributions/ledger?limit=10`);
         if (!ledgerRes.ok) return;
         const ledgerJson = await ledgerRes.json();
         const ledgerPayments = (ledgerJson.ledger || []).map((entry: any) => ({
@@ -1760,14 +1766,20 @@ const IntelligenceRail = React.memo(({ data }: IntelligenceRailProps) => {
                               {p.status === 'pending' && (
                                 <button onClick={async () => {
                                   try {
-                                    const res = await fetch(`/api/v1/daos/${p.daoId}/payments/${p.id}/confirm`, { method: 'POST' });
+                                    const res = await authClient.fetch(
+                                      `/api/v1/daos/${p.daoId}/treasury/contributions/${p.id}/approve`,
+                                      { method: 'POST', body: JSON.stringify({ approved: true }) }
+                                    );
                                     if (res.ok) {
                                       // refresh the payments list for the selected DAO
                                       if (activeDaoId) {
-                                        const rr = await fetch(`/api/v1/daos/${activeDaoId}/payments`, { credentials: 'include' });
+                                        const rr = await authClient.fetch(`/api/v1/daos/${activeDaoId}/treasury/contributions?limit=10`);
                                         if (rr.ok) {
                                           const jj = await rr.json();
-                                          setRecentPayments(jj.data || []);
+                                          setRecentPayments((jj.contributions || []).map((contribution: any) => ({
+                                            ...contribution,
+                                            amount: Number(contribution.amount || 0),
+                                          })));
                                         }
                                       }
                                       setToast({ message: 'Payment confirmed', type: 'success' });
@@ -1881,13 +1893,13 @@ const IntelligenceRail = React.memo(({ data }: IntelligenceRailProps) => {
                           {(escrow as any).daysLeft ?? '—'} days left
                         </p>
                         <div className="flex gap-2 flex-wrap">
-                          <Button size="xs" variant="outline" className="flex-1">
+                          <Button size="sm" variant="outline" className="flex-1">
                             Details
                           </Button>
-                          <Button size="xs" variant="outline" className="flex-1">
+                          <Button size="sm" variant="outline" className="flex-1">
                             Complete
                           </Button>
-                          <Button size="xs" variant="outline" className="flex-1">
+                          <Button size="sm" variant="outline" className="flex-1">
                             Dispute
                           </Button>
                         </div>
@@ -1956,7 +1968,7 @@ const IntelligenceRail = React.memo(({ data }: IntelligenceRailProps) => {
                 <div className="flex items-center gap-2 bg-slate-600 rounded p-3">
                   <code className="text-xs text-white flex-1 break-all">{data.referralStats.referralLink}</code>
                   <Button
-                    size="xs"
+                    size="sm"
                     variant="outline"
                     onClick={copyReferralLink}
                     aria-label="Copy referral link"

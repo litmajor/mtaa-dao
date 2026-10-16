@@ -123,7 +123,7 @@ export default function RecurringPaymentsPage() {
   // Calculate stats
   const totalMonthly = activePayments
     .filter(p => p.frequency === 'monthly')
-    .reduce((sum, p) => sum + parseFloat(p.amount || 0), 0);
+    .reduce((sum, p) => sum + parseFloat(String(p.amount || 0)), 0);
 
   const stats = [
     {

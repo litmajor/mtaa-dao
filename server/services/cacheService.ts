@@ -136,6 +136,27 @@ export class RedisCacheService {
   }
 
   /**
+   * Legacy alias used by earlier cache callers.
+   */
+  async del(keyOrKeys: string | string[]): Promise<void> {
+    if (Array.isArray(keyOrKeys)) {
+      await this.delMany(keyOrKeys);
+      return;
+    }
+    await this.delete(keyOrKeys);
+  }
+
+  async mget<T = any>(keys: string[]): Promise<Array<T | null>> {
+    return Promise.all(keys.map((key) => this.get<T>(key)));
+  }
+
+  async mset(entries: Array<[string, any, number?]>): Promise<void> {
+    await Promise.all(
+      entries.map(([key, value, ttl]) => this.set(key, value, ttl ?? 300))
+    );
+  }
+
+  /**
    * Delete multiple keys at once (variadic DEL).
    * Used by OHLCVService.clearCache() for bulk invalidation.
    */

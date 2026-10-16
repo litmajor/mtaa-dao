@@ -398,14 +398,15 @@ class AlertManager {
   ): Promise<void> {
     // Determine recipients based on escalation level
     let recipients: AlertRecipient[] = [];
+    const escalationLevel = action.escalationLevel ?? 0;
 
-    if (action.escalationLevel === 0) {
+    if (escalationLevel === 0) {
       // Initial notification - alert ops team
       recipients = this.getRecipientsByRole('error_ops');
-    } else if (action.escalationLevel === 1) {
+    } else if (escalationLevel === 1) {
       // Escalate to payment ops manager
       recipients = this.getRecipientsByRole('payment_ops');
-    } else if (action.escalationLevel >= 2) {
+    } else if (escalationLevel >= 2) {
       // Escalate to director
       recipients = this.getRecipientsByRole('director');
     }

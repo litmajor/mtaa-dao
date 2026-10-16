@@ -300,19 +300,19 @@ export const analyzeTreasuryBehavior = (
  */
 export interface CrossChainTreasuryState {
   // Exposure aggregation
-  exposureByChain: Record<ChainType, {
+  exposureByChain: Partial<Record<ChainType, {
     usdValue: number;
     assetCount: number;
     dominantAssetClass: AssetClass;
     governanceWeightContribution: number;
-  }>;
+  }>>;
 
-  exposureByAssetClass: Record<AssetClass, {
+  exposureByAssetClass: Partial<Record<AssetClass, {
     usdValue: number;
     assetCount: number;
     chains: ChainType[];
     governanceWeightContribution: number;
-  }>;
+  }>>;
 
   // Treasury health metrics
   totalValueUSD: number;
@@ -421,7 +421,7 @@ export const normalizeCrossChainState = (
   const isCriticallyFragmented = chainCount > 5 || maxChainShare < 0.4 || assetClassCount > 10;
 
   // Convert Sets to arrays for output
-  const normalizedByChain: Record<ChainType, any> = {};
+  const normalizedByChain: Partial<Record<ChainType, any>> = {};
   for (const [chain, data] of Object.entries(exposureByChain)) {
     normalizedByChain[chain as ChainType] = {
       usdValue: data.usdValue,
@@ -431,7 +431,7 @@ export const normalizeCrossChainState = (
     };
   }
 
-  const normalizedByClass: Record<AssetClass, any> = {};
+  const normalizedByClass: Partial<Record<AssetClass, any>> = {};
   for (const [assetClass, data] of Object.entries(exposureByAssetClass)) {
     normalizedByClass[assetClass as AssetClass] = {
       usdValue: data.usdValue,

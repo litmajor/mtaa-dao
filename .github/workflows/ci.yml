@@ -41,6 +41,6 @@ jobs:
         uses: docker/build-push-action@v5
         with:
           context: .
-          file: ./DockerFile
+          file: ./DockerFile.backend
           push: true
           tags: ${{ secrets.DOCKERHUB_USERNAME }}/mtaadao-api:latest

@@ -13,4 +13,4 @@ export interface StrategyEdge {
   label?: string;
 }
 
-export default StrategyEdge;
+export type { StrategyEdge as default };

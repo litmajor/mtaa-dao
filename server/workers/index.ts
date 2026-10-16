@@ -7,6 +7,10 @@ import { StrategyJobWorker } from './strategyJobWorker';
 import { MorioJobWorker } from './morioJobWorker';
 import { PoolVaultJobWorker } from './poolVaultJobWorker';
 import { PaymentCompletedConsumerWorker } from './paymentCompletedConsumerWorker';
+import {
+  initializeTreasuryEventListener,
+  shutdownTreasuryEventListener
+} from './treasuryEventListenerWorker';
 import { logger } from '../utils/logger';
 
 /**
@@ -33,6 +37,16 @@ export async function initializeWorkers(): Promise<void> {
     await PaymentCompletedConsumerWorker.initialize();
     logger.info('[Workers] PaymentCompleted consumer initialized');
 
+    const treasuryListenerEnabled = process.env.TREASURY_EVENT_LISTENER_ENABLED === 'true'
+      || (
+        process.env.TREASURY_EVENT_LISTENER_ENABLED !== 'false'
+        && Boolean(process.env.CELO_RPC_URL || process.env.CELO_ALFAJORES_RPC_URL)
+      );
+    if (treasuryListenerEnabled) {
+      await initializeTreasuryEventListener();
+      logger.info('[Workers] Treasury event listener initialized');
+    }
+
     logger.info('[Workers] All job workers initialized successfully');
   } catch (error) {
     logger.error('[Workers] Failed to initialize workers:', error);
@@ -49,6 +63,7 @@ export async function shutdownWorkers(): Promise<void> {
     logger.info('[Workers] Shutting down job workers...');
     
     // Close consumer worker first
+    await shutdownTreasuryEventListener();
     await PaymentCompletedConsumerWorker.shutdown();
 
     // Close all queues
@@ -68,4 +83,3 @@ export async function shutdownWorkers(): Promise<void> {
     logger.error('[Workers] Error shutting down workers:', error);
   }
 }
-

@@ -351,23 +351,35 @@ export class InvestmentPoolService {
         return [];
       }
 
-      // Get current prices for all assets
+      // Valuation prices determine portfolio value; market prices are only used for 24h display change.
       const assetSymbols = assets.map(a => a.assetSymbol);
-      const prices = await priceOracle.getPrices(assetSymbols);
+      const [valuations, prices] = await Promise.all([
+        priceOracle.getValuationPrices(assetSymbols),
+        priceOracle.getPrices(assetSymbols),
+      ]);
 
-      // Enrich assets with current prices
+      const missingSymbols = assetSymbols.filter((symbol) => !valuations.has(symbol.toUpperCase()));
+      if (missingSymbols.length > 0) {
+        throw new Error(`Reliable valuation unavailable for pool assets: ${missingSymbols.join(', ')}`);
+      }
+
       return assets.map(asset => {
-        const priceData = prices.get(asset.assetSymbol);
+        const valuation = valuations.get(asset.assetSymbol.toUpperCase());
+        const priceUsd = valuation?.haircutPriceUsd ?? valuation?.priceUsd;
+        if (!valuation || priceUsd === undefined || !Number.isFinite(priceUsd) || priceUsd <= 0) {
+          throw new Error(`Reliable valuation unavailable for ${asset.assetSymbol}`);
+        }
+        const marketPrice = prices.get(asset.assetSymbol.toUpperCase());
         return {
           ...asset,
-          currentPriceUsd: priceData?.priceUsd || parseFloat(asset.lastPriceUsd || '0'),
-          priceChange24h: priceData?.priceChange24h || 0,
+          currentPriceUsd: priceUsd,
+          priceChange24h: marketPrice?.priceChange24h || 0,
           targetAllocationPercent: (asset.targetAllocation / 100).toFixed(2),
         };
       });
     } catch (error) {
       logger.error('Error getting pool assets:', error);
-      return [];
+      throw error;
     }
   }
 
@@ -418,10 +430,7 @@ export class InvestmentPoolService {
       };
     } catch (error) {
       logger.error('Error calculating portfolio composition:', error);
-      return {
-        totalValueUsd: 0,
-        assets: [],
-      };
+      throw error;
     }
   }
 

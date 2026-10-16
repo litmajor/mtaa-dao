@@ -8,6 +8,7 @@
 import type { UserContext, Intent, Message } from '../types';
 import { v4 as uuidv4 } from 'uuid'; // Assume uuid package is installed for unique IDs
 import { db } from '../../../db'; // Import db for potential persistence
+import { userContexts } from '../../../../shared/schema';
 import { eq } from 'drizzle-orm';
 
 export class ContextManager {
@@ -34,8 +35,8 @@ export class ContextManager {
       {
         role: 'user',
         content: `${intent.type}: ${JSON.stringify(intent.entities)}`, // More concise
-        timestamp: new Date().toISOString() // Use ISO for consistency
-      }
+        timestamp: new Date()
+      } satisfies Message
     ].slice(-20); // Keep last 20 messages
 
     const enrichedContext: UserContext = {
@@ -43,7 +44,7 @@ export class ContextManager {
       sessionData: {
         ...existingContext.sessionData,
         conversationHistory: updatedHistory,
-        lastInteraction: new Date().toISOString(),
+        lastInteraction: new Date(),
         activeTask: this.inferActiveTask(intent, existingContext)
       }
     };
@@ -130,7 +131,7 @@ export class ContextManager {
         type: taskType,
         status: 'in_progress',
         data
-      };
+      } satisfies UserContext['sessionData']['activeTask'];
     }
 
     return existingTask;
@@ -238,16 +239,23 @@ export class ContextManager {
   clearContext(userId: string): void {
     this.contextStore.delete(userId);
     // Delete from DB
-    db.delete(userContexts).where(eq(userContexts.userId, userId));
+    void db.delete(userContexts).where(eq(userContexts.userId, userId));
   }
 
   /**
    * Persist context to DB (async)
    */
   private async persistContext(context: UserContext) {
-    await db.upsert(userContexts).set({
+    await db.insert(userContexts).values({
       userId: context.userId,
-      context: context as any // JSON
+      daoId: context.daoId,
+      role: context.role,
+      walletAddress: context.walletAddress,
+      contributionScore: String(context.contributionScore),
+      context: context as any,
+    }).onConflictDoUpdate({
+      target: [userContexts.userId, userContexts.daoId],
+      set: { context: context as any, updatedAt: new Date() },
     });
   }
 
@@ -260,8 +268,8 @@ export class ContextManager {
         {
           role: 'assistant',
           content,
-          timestamp: new Date().toISOString()
-        }
+          timestamp: new Date()
+        } satisfies Message
       ].slice(-20);
       context.sessionData.conversationHistory = updatedHistory;
       this.contextStore.set(userId, context);

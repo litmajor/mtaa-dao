@@ -58,6 +58,7 @@ interface YukiStoreState {
   removePendingCrossChainTx: (id: string) => void;
   addAlert: (alert: YukiAlert) => void;
   setPreFilledTrade: (trade: any) => void;
+  clearPreFilledTrade: () => void;
 }
 
 export const useYukiStore = create<YukiStoreState>((set, get) => ({
@@ -120,4 +121,5 @@ export const useYukiStore = create<YukiStoreState>((set, get) => ({
   })),
   addAlert: (alert) => set((state) => ({ alerts: [alert, ...state.alerts].slice(0, 50) })),
   setPreFilledTrade: (trade) => set({ preFilledTrade: trade }),
+  clearPreFilledTrade: () => set({ preFilledTrade: null }),
 }));

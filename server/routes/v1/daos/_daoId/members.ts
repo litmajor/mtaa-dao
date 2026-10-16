@@ -28,7 +28,7 @@ import type { Request, Response, Router } from 'express';
 import { db } from '../../../../storage';
 import { logger } from '../../../../utils/logger';
 import { daoMemberships, daoInvites, daos, users } from '../../../../../shared/schema';
-import { eq, and, desc } from 'drizzle-orm';
+import { eq, and, desc, sql } from 'drizzle-orm';
 import crypto from 'crypto';
 
 interface MembersParams {

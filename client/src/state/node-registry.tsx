@@ -37,15 +37,7 @@ export interface NodeRegistryEntry<T extends StrategyNode = StrategyNode> {
   compiler?: NodeCompiler<T>;
 }
 
-type NodeRegistryMap = {
-  condition: NodeRegistryEntry<ConditionNode>;
-  action: NodeRegistryEntry<ActionNode>;
-  risk: NodeRegistryEntry<RiskNode>;
-  execution: NodeRegistryEntry<ExecutionNode>;
-  ai: NodeRegistryEntry<AiNode>;
-  vault: NodeRegistryEntry<VaultNode>;
-  crosschain: NodeRegistryEntry<CrosschainNode>;
-};
+type NodeRegistryMap = Record<string, NodeRegistryEntry<any>>;
 
 const NodeRegistry: NodeRegistryMap = {
   condition: {

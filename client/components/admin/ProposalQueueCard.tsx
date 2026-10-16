@@ -139,7 +139,6 @@ const ProposalQueueCard: React.FC<ProposalQueueCardProps> = ({
                 <div className={styles.riskScore}>
                   <div className={styles.scoreBar}>
                     {/* CSS variable used for dynamic risk score width */}
-                    {/* eslint-disable-next-line react/style-prop-object */}
                     <div
                       className={`${styles.scoreProgress} risk-${proposal.risk_category}`}
                       style={{

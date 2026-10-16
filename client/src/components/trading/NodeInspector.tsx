@@ -25,7 +25,7 @@ export default function NodeInspector({ node, issues, focusField, onClearFocus }
 
   if (!node) return <div className="p-4 text-slate-400">No node selected</div>;
 
-  const entry = NodeRegistry[node.type];
+  const entry = (NodeRegistry as Record<string, any>)[node.type];
   const Inspector = entry?.inspector;
 
   const issueCount = (issues && issues.list && issues.list.length) || 0;

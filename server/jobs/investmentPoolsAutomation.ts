@@ -2,6 +2,10 @@ import cron from 'node-cron';
 import { logger } from '../utils/logger';
 import { rebalancingService } from '../services/rebalancingService';
 import { performanceTrackingService } from '../services/performanceTrackingService';
+import { db } from '../db';
+import { investmentPools } from '../../shared/schema';
+import { eq } from 'drizzle-orm';
+import { jobQueueService } from '../services/jobQueueService';
 
 /**
  * Investment Pools Automation
@@ -30,6 +34,34 @@ export function setupInvestmentPoolsAutomation() {
     }
   });
   logger.info('✅ Performance tracking job scheduled (every hour)');
+
+  // Refresh mark-to-market share prices every 15 minutes.
+  cron.schedule('*/15 * * * *', async () => {
+    try {
+      const activePools = await db
+        .select({ id: investmentPools.id })
+        .from(investmentPools)
+        .where(eq(investmentPools.isActive, true));
+      const period = Math.floor(Date.now() / (15 * 60 * 1000));
+      for (const pool of activePools) {
+        try {
+          await jobQueueService.queueJob(
+            'pool-valuation',
+            { userId: 'system', poolId: pool.id },
+            { attempts: 3, jobId: `pool-valuation-${pool.id}-${period}` }
+          );
+        } catch (error) {
+          logger.error('Failed to queue valuation for investment pool', {
+            poolId: pool.id,
+            error,
+          });
+        }
+      }
+    } catch (error) {
+      logger.error('Error queuing pool valuation jobs:', error);
+    }
+  });
+  logger.info('✅ Pool valuation job scheduled (every 15 minutes)');
 
   // Check and rebalance pools every 6 hours
   cron.schedule('0 */6 * * *', async () => {
@@ -75,4 +107,3 @@ export async function triggerManualSnapshot(poolId?: string) {
 export async function triggerPriceRecording() {
   await rebalancingService.recordAssetPrices();
 }
-

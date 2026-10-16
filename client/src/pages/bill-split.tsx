@@ -124,8 +124,9 @@ export function BillSplitPage() {
       loadBills();
 
       // Track analytics
-      if (window?.analytics) {
-        window.analytics.track('Bill Split Created', {
+      const analytics = (window as Window & { analytics?: { track: (event: string, data: Record<string, unknown>) => void } }).analytics;
+      if (analytics) {
+        analytics.track('Bill Split Created', {
           participantCount: billData.participants.length,
           totalAmount: billData.totalAmount,
         });

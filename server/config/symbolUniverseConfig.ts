@@ -440,6 +440,11 @@ export const SYMBOL_UNIVERSE_CONFIG = {
       enabled: true,
       windowMs: 5000,
     },
+    batchRequests: {
+      enabled: false,
+      batchDelayMs: 250,
+      batchSize: 20,
+    },
   },
 
   // ===========================================================================

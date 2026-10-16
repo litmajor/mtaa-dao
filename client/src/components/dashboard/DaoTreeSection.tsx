@@ -59,7 +59,7 @@ export function DaoTreeSection({ daos, userBalances, loading, searchQuery = '' }
   );
 
   // Compute priority for each DAO using system flags and DAO metrics
-  const computePriority = (dao: Dao): number => {
+  const computePriority = (dao: UnifiedDashboardDao): number => {
     const anomalies = Number(systemFlags.anomalies || 0);
     const executionPressure = Number(systemFlags.executionPressure || 0);
     const intelligence = Number(systemFlags.intelligenceSignals || 0);
@@ -84,7 +84,7 @@ export function DaoTreeSection({ daos, userBalances, loading, searchQuery = '' }
           </CardContent>
         </Card>
       ) : (
-        orderedDaos.map((dao: Dao) => {
+        orderedDaos.map((dao: UnifiedDashboardDao) => {
           const priority = computePriority(dao);
           const isFocused = systemFlags.userFocus === dao.id;
           const prominenceClass = isFocused

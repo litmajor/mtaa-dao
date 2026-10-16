@@ -15,6 +15,8 @@ import { synchronizerAgent } from '../agents/synchronizer';
 import { randomUUID } from 'crypto';
 import { resolveProviderUrls } from './providerBootstrap';
 import { ResilientRpcProvider } from './resilientRpcProvider';
+import { priceOracle } from './priceOracle';
+import { tokenRegistry } from './tokenRegistry';
 
 /**
  * Compute estimated destination token amount (atomic units) using fixed-point integer math.
@@ -437,20 +439,17 @@ export class CrossChainSwapService {
   }
 
   private async getTokenPrice(chain: SupportedChain, token: string): Promise<number> {
-    const { tokenService } = await import('./tokenService');
-    try {
-      const price = await tokenService.getTokenPrice(token);
-      return price > 0 ? price : this.getFallbackPrice(token);
-    } catch {
-      return this.getFallbackPrice(token);
+    const metadata = tokenRegistry.getToken(chain, token);
+    if (!metadata) {
+      throw new Error(`Token ${token} is not registered on ${chain}`);
     }
-  }
 
-  private getFallbackPrice(token: string): number {
-    const fallbackPrices: Record<string, number> = {
-      'ETH': 3000, 'MATIC': 0.8, 'BNB': 300, 'CELO': 0.65, 'TRX': 0.1, 'TON': 2.5, 'USDC': 1, 'USDT': 1, 'cUSD': 1
-    };
-    return fallbackPrices[token] || 1;
+    const valuation = await priceOracle.getValuationPrice(metadata.symbol);
+    const priceUsd = valuation?.haircutPriceUsd ?? valuation?.priceUsd;
+    if (!valuation || priceUsd === undefined || !Number.isFinite(priceUsd) || priceUsd <= 0) {
+      throw new Error(`No reliable valuation price available for ${metadata.symbol}`);
+    }
+    return priceUsd;
   }
 
   private calculatePriceImpact(amountFloat: number): number {

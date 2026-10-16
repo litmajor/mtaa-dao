@@ -369,6 +369,10 @@ export async function daoDeployHandler(req: Request, res: Response) {
           treasuryDailyLimit: treasuryConfig.dailyLimit,
           treasuryMonthlyBudget: treasuryConfig.monthlyBudget,
 
+          vaultAddress: typeof (daoData as any).vaultAddress === 'string' && isAddress((daoData as any).vaultAddress)
+            ? (daoData as any).vaultAddress
+            : null,
+          chamaTreasuryAddress: null,
           withdrawalMode: treasuryConfig.withdrawalMode,
           durationModel,
           rotationFrequency: daoData.rotationFrequency,
@@ -567,7 +571,7 @@ export async function daoDeployHandler(req: Request, res: Response) {
     if (treasuryAddress) {
       await db
         .update(daos)
-        .set({ treasuryAddress, updatedAt: new Date() } as any)
+        .set({ chamaTreasuryAddress: treasuryAddress, updatedAt: new Date() })
         .where(eq(daos.id, dao.id));
     }
 

@@ -18,6 +18,7 @@ import { Logger } from '../utils/logger';
 import { db } from '../db';
 import { userWalletsTable } from '../db/schema/strategies';
 import { eq, and, sql } from 'drizzle-orm';
+import { priceOracle } from './priceOracle';
 
 const logger = Logger.getLogger();
 
@@ -295,33 +296,32 @@ class ProductionWalletAggregator {
       try {
         // Fetch native token balance
         const nativeBalance = await provider.getBalance(address);
+        const nativeBalanceAmount = Number(ethers.formatUnits(nativeBalance, config.nativeToken.decimals));
+        const nativePriceUsd = nativeBalance > 0n
+          ? await this.getTokenPrice(config.nativeToken.symbol, chain)
+          : undefined;
         const nativeBalanceNormalized =
-          Number(ethers.formatUnits(nativeBalance, config.nativeToken.decimals)) *
-          (await this.getTokenPrice(config.nativeToken.symbol, chain));
+          nativeBalanceAmount * (nativePriceUsd ?? 0);
 
         // Fetch ERC20 token balances
         const tokens: TokenBalance[] = [];
         const chainTokens = TOKEN_ADDRESSES[chain] || {};
 
         for (const [symbol, tokenAddress] of Object.entries(chainTokens)) {
-          try {
-            const balance = await this.getERC20Balance(address, tokenAddress, provider);
-            tokens.push({
-              address: tokenAddress,
-              symbol,
-              decimals: 18, // Standard
-              balance: Number(ethers.formatUnits(balance, 18)),
-              balanceRaw: balance.toString(),
-              priceUsd: await this.getTokenPrice(symbol, chain),
-              balanceUsd: Number(ethers.formatUnits(balance, 18)) * (await this.getTokenPrice(symbol, chain)),
-              lastUpdated: Date.now(),
-            });
-          } catch (tokenError) {
-            logger.warn(
-              `[WalletAggregator] Failed to fetch ${symbol} on ${chain}:`,
-              { error: tokenError }
-            );
-          }
+          const balance = await this.getERC20Balance(address, tokenAddress, provider);
+          if (balance === 0n) continue;
+          const priceUsd = await this.getTokenPrice(symbol, chain);
+          const balanceNormalized = Number(ethers.formatUnits(balance, 18));
+          tokens.push({
+            address: tokenAddress,
+            symbol,
+            decimals: 18, // Standard
+            balance: balanceNormalized,
+            balanceRaw: balance.toString(),
+            priceUsd,
+            balanceUsd: balanceNormalized * priceUsd,
+            lastUpdated: Date.now(),
+          });
         }
 
         const totalValueUsd =
@@ -339,7 +339,7 @@ class ProductionWalletAggregator {
             decimals: config.nativeToken.decimals,
             balance: Number(ethers.formatUnits(nativeBalance, config.nativeToken.decimals)),
             balanceRaw: nativeBalance.toString(),
-            priceUsd: await this.getTokenPrice(config.nativeToken.symbol, chain),
+            priceUsd: nativePriceUsd,
             balanceUsd: nativeBalanceNormalized,
             lastUpdated: Date.now(),
           },
@@ -400,21 +400,13 @@ class ProductionWalletAggregator {
   /**
    * Get token price (from price oracle or fallback)
    */
-  private async getTokenPrice(symbol: string, chain: string): Promise<number> {
-    // TODO: Integrate with price oracle (Chainlink, CoinGecko, OHLCV service)
-    // For now, return fallback prices
-    const fallbackPrices: Record<string, number> = {
-      ETH: 2500,
-      MATIC: 0.5,
-      USDC: 1.0,
-      DAI: 1.0,
-      USDT: 1.0,
-      WBTC: 45000,
-      CELO: 2.5,
-      cUSD: 1.0,
-    };
-
-    return fallbackPrices[symbol] || 1.0;
+  private async getTokenPrice(symbol: string, _chain: string): Promise<number> {
+    const valuation = await priceOracle.getValuationPrice(symbol);
+    const priceUsd = valuation?.haircutPriceUsd ?? valuation?.priceUsd;
+    if (!valuation || priceUsd === undefined || !Number.isFinite(priceUsd) || priceUsd <= 0) {
+      throw new Error(`No reliable valuation price available for ${symbol}`);
+    }
+    return priceUsd;
   }
 
   /**

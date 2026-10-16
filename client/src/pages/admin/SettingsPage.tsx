@@ -41,6 +41,8 @@ export function SettingsPage() {
   };
 
   const handleSave = async () => {
+    if (!formData) return;
+
     setIsSaving(true);
     try {
       await updateSettings(formData);

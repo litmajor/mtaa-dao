@@ -1,11 +1,11 @@
 import { sql } from "drizzle-orm";
-import type { PostgresDB } from "drizzle-orm/postgres-js";
+import type { NodePgDatabase } from 'drizzle-orm/node-postgres';
 
 /**
  * Migration: Create governance activity tracking tables
  * Purpose: Support activity logging, role progression, and promotion system
  */
-export async function up(db: PostgresDB) {
+export async function up(db: NodePgDatabase<any>) {
   // Create governance_activity_log table
   await db.execute(sql`
     CREATE TABLE IF NOT EXISTS governance_activity_log (
@@ -194,7 +194,7 @@ export async function up(db: PostgresDB) {
   console.log('✅ Governance activity tracking tables created');
 }
 
-export async function down(db: PostgresDB) {
+export async function down(db: NodePgDatabase<any>) {
   // Drop in reverse order of creation
   await db.execute(sql`DROP TRIGGER IF EXISTS trg_update_activity_points ON governance_activity_log;`);
   await db.execute(sql`DROP FUNCTION IF EXISTS update_user_activity_points();`);

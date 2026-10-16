@@ -94,7 +94,13 @@ export function ProposalResultsCard({
   }, [proposal]);
 
   // Determine status colors
-  const statusConfig = {
+  const statusConfig: Record<ProposalResult['status'], {
+    icon: React.ReactNode;
+    label: string;
+    color: string;
+    bgColor: string;
+    borderColor: string;
+  }> = {
     voting: {
       icon: <Clock className="h-5 w-5" />,
       label: 'Voting',
@@ -125,7 +131,7 @@ export function ProposalResultsCard({
     },
   };
 
-  const statusConfig_ = statusConfig[proposal.status];
+  const currentStatus = statusConfig[proposal.status];
 
   // Type colors
   const typeColors: Record<string, string> = {
@@ -144,8 +150,8 @@ export function ProposalResultsCard({
             <h4 className="text-sm font-semibold text-white line-clamp-1">{proposal.title}</h4>
             <p className="text-xs text-gray-400">{proposal.daoName}</p>
           </div>
-          <span className={`inline-block px-2 py-1 rounded text-xs font-semibold flex-shrink-0 ${statusConfig_[proposal.status]?.color}`}>
-            {statusConfig_[proposal.status]?.label}
+          <span className={`inline-block px-2 py-1 rounded text-xs font-semibold flex-shrink-0 ${currentStatus.color}`}>
+            {currentStatus.label}
           </span>
         </div>
 
@@ -177,7 +183,7 @@ export function ProposalResultsCard({
 
   // Full view
   return (
-    <div className={`rounded-lg border ${statusConfig_.bgColor} ${statusConfig_.borderColor} p-6`}>
+    <div className={`rounded-lg border ${currentStatus.bgColor} ${currentStatus.borderColor} p-6`}>
       {/* Header */}
       <div className="flex items-start justify-between gap-4 mb-4">
         <div className="flex-1">
@@ -185,8 +191,8 @@ export function ProposalResultsCard({
           <p className="text-sm text-gray-400">{proposal.daoName}</p>
         </div>
         <div className="flex items-center gap-2 flex-shrink-0">
-          {statusConfig_.icon}
-          <span className="text-sm font-semibold text-white">{statusConfig_.label}</span>
+          {currentStatus.icon}
+          <span className="text-sm font-semibold text-white">{currentStatus.label}</span>
         </div>
       </div>
 

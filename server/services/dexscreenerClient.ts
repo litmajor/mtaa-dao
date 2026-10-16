@@ -21,11 +21,13 @@ export interface DexPair {
     address: string;
     name: string;
     symbol: string;
+    decimals?: number;
   };
   quoteToken: {
     address: string;
     name: string;
     symbol: string;
+    decimals?: number;
   };
   priceNative: string;
   priceUsd: string | null;

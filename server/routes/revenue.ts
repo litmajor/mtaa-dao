@@ -1,6 +1,6 @@
 
 import { Router } from 'express';
-import { authenticate } from '../auth';
+import { authenticate, requireRole } from '../auth';
 import { revenueService } from '../services/revenueService';
 import { asyncHandler } from '../middleware/errorHandler';
 import { z } from 'zod';
@@ -8,13 +8,7 @@ import { z } from 'zod';
 const router = Router();
 
 // Admin only - get comprehensive revenue report
-router.get('/report', authenticate, asyncHandler(async (req, res) => {
-  // Check if user is admin
-  const user = req.user;
-  if (!user?.isSuperUser) {
-    return res.status(403).json({ error: 'Unauthorized: Admin access required' });
-  }
-
+router.get('/report', authenticate, requireRole(['admin', 'super_admin']), asyncHandler(async (req, res) => {
   const { period = 'monthly' } = req.query;
   
   const report = await revenueService.getRevenueReport(period as any);

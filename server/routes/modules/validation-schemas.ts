@@ -36,7 +36,8 @@ export const transferSchema = z.object({
 export const feesSchema = z.object({
   sourceChain: chainNameSchema,
   destinationChain: chainNameSchema,
-  amount: amountSchema
+  amount: amountSchema,
+  tokenSymbol: z.string().trim().min(1).default('CELO')
 }).refine(
   (data) => data.sourceChain !== data.destinationChain,
   { message: 'Source and destination chains must be different' }
@@ -68,12 +69,12 @@ export const swapExecuteSchema = z.object({
 
 // Solana-specific schemas
 export const solanaAddressSchema = z.string().trim().refine(
-  (val) => /^[1-9A-HJ-NP-Z]{44}$/.test(val),
-  { message: 'Invalid Solana address format (must be 44 character base58)' }
+  (val) => /^[1-9A-HJ-NP-Za-km-z]{32,44}$/.test(val),
+  { message: 'Invalid Solana address format (expected a 32-44 character base58 public key)' }
 );
 
 export const solanaTokenMintSchema = z.string().trim().refine(
-  (val) => /^[1-9A-HJ-NP-Z]{44}$/.test(val),
+  (val) => /^[1-9A-HJ-NP-Za-km-z]{32,44}$/.test(val),
   { message: 'Invalid token mint address format' }
 );
 
@@ -85,8 +86,13 @@ export const solanaBalanceQuerySchema = z.object({
 export const solanaTransferSchema = z.object({
   fromAddress: solanaAddressSchema,
   toAddress: solanaAddressSchema,
-  mint: solanaTokenMintSchema,
-  amount: amountSchema
+  mint: solanaTokenMintSchema.optional(),
+  tokenMint: solanaTokenMintSchema.optional(),
+  amount: amountSchema,
+  decimals: z.number().int().min(0).max(18).optional(),
+  fromTokenAccount: solanaAddressSchema.optional(),
+  toTokenAccount: solanaAddressSchema.optional(),
+  memo: z.string().max(200).optional()
 });
 
 export const solanaSignTransactionSchema = z.object({

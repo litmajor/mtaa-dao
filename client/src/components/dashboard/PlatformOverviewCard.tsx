@@ -4,22 +4,8 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
 import { TrendingUp, TrendingDown } from 'lucide-react';
 
-interface PlatformMetrics {
-  tvl: number;
-  assetCount: number;
-  daoCount: number;
-  memberCount: number;
-  healthScores: {
-    overall: number;
-    treasury: number;
-    governance: number;
-    community: number;
-    system: number;
-  };
-}
-
 interface PlatformOverviewCardProps {
-  data?: PlatformMetrics;
+  data?: Record<string, any>;
   loading?: boolean;
   lastUpdated?: Date;
 }
@@ -68,6 +54,7 @@ export function PlatformOverviewCard({ data, loading, lastUpdated }: PlatformOve
 
   const emphasizeTreasury = mode === 'capital' || mode === 'execution';
   const emphasizeGovernance = mode === 'governance';
+  const healthEntries = Object.entries(data.healthScores ?? {}) as Array<[string, number]>;
 
   return (
     <Card className={`bg-gradient-to-r from-slate-800 to-slate-800/50 border-slate-700 ${emphasizeTreasury ? 'ring-2 ring-amber-600/30' : ''}`}>
@@ -106,22 +93,26 @@ export function PlatformOverviewCard({ data, loading, lastUpdated }: PlatformOve
         <div className={`bg-slate-700/50 p-4 rounded-lg space-y-3 ${emphasizeGovernance ? 'border-2 border-blue-600/30' : ''}`}>
           <p className="text-sm font-semibold text-white mb-3">Platform Health Scores</p>
           <div className="space-y-2">
-            {Object.entries(data.healthScores).map(([key, score]) => (
-              <div key={key} className="flex items-center justify-between">
-                <div className="flex-1">
-                  <div className="flex items-center justify-between mb-1">
-                    <span className="text-sm text-slate-300 capitalize">{key}</span>
-                    <span className={`font-bold ${getHealthText(score)}`}>{score}/100</span>
-                  </div>
-                  <div className="w-full bg-slate-600 rounded-full h-2">
-                    <div
-                      className={`h-2 rounded-full transition-all ${getHealthColor(score)}`}
-                      style={{ width: `${score}%` }}
-                    />
+            {healthEntries.map(([key, score]) => {
+              const numericScore = Number(score) || 0;
+
+              return (
+                <div key={key} className="flex items-center justify-between">
+                  <div className="flex-1">
+                    <div className="flex items-center justify-between mb-1">
+                      <span className="text-sm text-slate-300 capitalize">{key}</span>
+                      <span className={`font-bold ${getHealthText(numericScore)}`}>{numericScore}/100</span>
+                    </div>
+                    <div className="w-full bg-slate-600 rounded-full h-2">
+                      <div
+                        className={`h-2 rounded-full transition-all ${getHealthColor(numericScore)}`}
+                        style={{ width: `${numericScore}%` }}
+                      />
+                    </div>
                   </div>
                 </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
         </div>
 

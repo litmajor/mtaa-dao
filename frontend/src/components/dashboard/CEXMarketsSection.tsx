@@ -1,7 +1,7 @@
 // frontend/src/components/dashboard/CEXMarketsSection.tsx
 import React from 'react';
 
-interface CEXMarketsSection Props {
+interface CEXMarketsSectionProps {
   markets: any[];
   onSelectMarket: (market: any) => void;
 }

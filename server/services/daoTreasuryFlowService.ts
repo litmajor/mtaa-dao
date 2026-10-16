@@ -4,6 +4,7 @@ import {
   daoTreasuryCredits, 
   mtaaDistributionRules, 
   daoAchievementMilestones,
+  type DaoAchievementMilestone,
   daos,
   daoMemberships,
   contributions,

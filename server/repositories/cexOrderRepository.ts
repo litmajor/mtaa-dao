@@ -3,8 +3,8 @@
  * Data access layer for order-related database operations
  */
 
-import { db } from '../db';
-import { type CEXOrder } from '../../types/cex.types';
+import { pool } from '../db';
+import { type CEXOrder } from '../types/cex.types';
 
 export class CEXOrderRepository {
   /**
@@ -19,7 +19,7 @@ export class CEXOrderRepository {
     amount: string,
     price?: string
   ): Promise<CEXOrder> {
-    const result = await db.query(
+    const result = await pool.query(
       `INSERT INTO cex_orders (
         user_id, exchange, order_type, order_side, trading_pair, 
         amount, price, status
@@ -38,7 +38,7 @@ export class CEXOrderRepository {
     exchangeOrderId: string,
     status: string
   ): Promise<CEXOrder> {
-    const result = await db.query(
+    const result = await pool.query(
       `UPDATE cex_orders 
        SET exchange_order_id = $1, status = $2, updated_at = NOW()
        WHERE id = $3
@@ -52,9 +52,23 @@ export class CEXOrderRepository {
    * Get order by ID
    */
   static async getOrderById(orderId: string): Promise<CEXOrder | null> {
-    const result = await db.query(
+    const result = await pool.query(
       `SELECT * FROM cex_orders WHERE id = $1`,
       [orderId]
+    );
+    return result.rows.length > 0 ? this.mapToCamelCase(result.rows[0]) : null;
+  }
+
+  static async getOrderByExchangeOrderId(
+    userId: string,
+    exchange: string,
+    exchangeOrderId: string
+  ): Promise<CEXOrder | null> {
+    const result = await pool.query(
+      `SELECT * FROM cex_orders
+       WHERE user_id = $1 AND lower(exchange) = lower($2) AND exchange_order_id = $3
+       LIMIT 1`,
+      [userId, exchange, exchangeOrderId]
     );
     return result.rows.length > 0 ? this.mapToCamelCase(result.rows[0]) : null;
   }
@@ -67,7 +81,7 @@ export class CEXOrderRepository {
     limit: number = 50,
     offset: number = 0
   ): Promise<CEXOrder[]> {
-    const result = await db.query(
+    const result = await pool.query(
       `SELECT * FROM cex_orders
        WHERE user_id = $1
        ORDER BY created_at DESC
@@ -81,7 +95,7 @@ export class CEXOrderRepository {
    * Get open orders for a user
    */
   static async getUserOpenOrders(userId: string): Promise<CEXOrder[]> {
-    const result = await db.query(
+    const result = await pool.query(
       `SELECT * FROM cex_orders
        WHERE user_id = $1 AND status IN ('pending', 'open')
        ORDER BY created_at DESC`,
@@ -99,7 +113,7 @@ export class CEXOrderRepository {
     fee: string,
     feeCurrency?: string
   ): Promise<CEXOrder> {
-    const result = await db.query(
+    const result = await pool.query(
       `UPDATE cex_orders
        SET filled_amount = $1, fee = $2, fee_currency = $3, updated_at = NOW()
        WHERE id = $4
@@ -109,11 +123,32 @@ export class CEXOrderRepository {
     return this.mapToCamelCase(result.rows[0]);
   }
 
+  /** Add an individual fill without overwriting earlier partial fills. */
+  static async addOrderFill(
+    orderId: string,
+    filledAmount: string,
+    fee: string,
+    feeCurrency?: string
+  ): Promise<CEXOrder> {
+    const result = await pool.query(
+      `UPDATE cex_orders
+       SET filled_amount = COALESCE(filled_amount, 0) + $1::numeric,
+           fee = COALESCE(fee, 0) + $2::numeric,
+           fee_currency = COALESCE(fee_currency, $3),
+           updated_at = NOW()
+       WHERE id = $4
+       RETURNING *`,
+      [filledAmount, fee, feeCurrency ?? null, orderId]
+    );
+    if (!result.rows[0]) throw new Error(`Order not found: ${orderId}`);
+    return this.mapToCamelCase(result.rows[0]);
+  }
+
   /**
    * Mark order as completed
    */
   static async completeOrder(orderId: string): Promise<CEXOrder> {
-    const result = await db.query(
+    const result = await pool.query(
       `UPDATE cex_orders
        SET status = 'closed', completed_at = NOW(), updated_at = NOW()
        WHERE id = $1
@@ -127,7 +162,7 @@ export class CEXOrderRepository {
    * Cancel order
    */
   static async cancelOrder(orderId: string): Promise<CEXOrder> {
-    const result = await db.query(
+    const result = await pool.query(
       `UPDATE cex_orders
        SET status = 'canceled', updated_at = NOW()
        WHERE id = $1
@@ -147,7 +182,7 @@ export class CEXOrderRepository {
     totalVolume: string;
     totalFees: string;
   }> {
-    const result = await db.query(
+    const result = await pool.query(
       `SELECT 
         COUNT(*) as total_orders,
         COUNT(CASE WHEN status IN ('pending', 'open') THEN 1 END) as open_orders,
@@ -159,7 +194,7 @@ export class CEXOrderRepository {
       [userId]
     );
     
-    const row = result.rows[0];
+    const row = result.rows[0] as Record<string, any>;
     return {
       totalOrders: parseInt(row.total_orders),
       openOrders: parseInt(row.open_orders),

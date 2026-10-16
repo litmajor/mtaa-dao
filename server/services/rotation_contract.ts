@@ -78,6 +78,137 @@ export async function initializeRotationOnChain(
   });
 }
 
+export async function getRotationConfigOnChain(vaultAddress: string) {
+  if (!ROTATION_MODULE_ADDRESS) throw new Error('ROTATION_MODULE_ADDRESS not configured');
+
+  const resilientProvider = new ResilientRpcProvider({
+    primary: { name: 'primary-rpc', httpUrl: RPC_URL },
+    fallback: providerUrls.fallbackRpcUrl ? { name: 'fallback-rpc', httpUrl: providerUrls.fallbackRpcUrl } : undefined,
+    cooldownMs: 60_000,
+  });
+  return resilientProvider.call(async (provider) => {
+    const contract = new ethers.Contract(ROTATION_MODULE_ADDRESS, loadAbi(), provider);
+    return contract.getRotationConfig(vaultAddress);
+  });
+}
+
+export async function getStablecoinDecimals(stablecoinAddress: string): Promise<number> {
+  const resilientProvider = new ResilientRpcProvider({
+    primary: { name: 'primary-rpc', httpUrl: RPC_URL },
+    fallback: providerUrls.fallbackRpcUrl ? { name: 'fallback-rpc', httpUrl: providerUrls.fallbackRpcUrl } : undefined,
+    cooldownMs: 60_000,
+  });
+  return resilientProvider.call(async (provider) => {
+    const token = new ethers.Contract(
+      stablecoinAddress,
+      ['function decimals() view returns (uint8)'],
+      provider
+    );
+    return Number(await token.decimals());
+  });
+}
+
+export async function getStablecoinSymbol(stablecoinAddress: string): Promise<string> {
+  const resilientProvider = new ResilientRpcProvider({
+    primary: { name: 'primary-rpc', httpUrl: RPC_URL },
+    fallback: providerUrls.fallbackRpcUrl ? { name: 'fallback-rpc', httpUrl: providerUrls.fallbackRpcUrl } : undefined,
+    cooldownMs: 60_000,
+  });
+  return resilientProvider.call(async (provider) => {
+    const token = new ethers.Contract(
+      stablecoinAddress,
+      ['function symbol() view returns (string)'],
+      provider
+    );
+    return String(await token.symbol());
+  });
+}
+
+export async function getRotationMemberAddress(vaultAddress: string, memberId: string): Promise<string> {
+  if (!ROTATION_MODULE_ADDRESS) throw new Error('ROTATION_MODULE_ADDRESS not configured');
+  const resilientProvider = new ResilientRpcProvider({
+    primary: { name: 'primary-rpc', httpUrl: RPC_URL },
+    fallback: providerUrls.fallbackRpcUrl ? { name: 'fallback-rpc', httpUrl: providerUrls.fallbackRpcUrl } : undefined,
+    cooldownMs: 60_000,
+  });
+  return resilientProvider.call(async (provider) => {
+    const contract = new ethers.Contract(ROTATION_MODULE_ADDRESS, loadAbi(), provider);
+    return String(await contract.memberAddress(vaultAddress, memberId));
+  });
+}
+
+export async function inspectRotationContribution(vaultAddress: string, memberId: string) {
+  if (!ROTATION_MODULE_ADDRESS) throw new Error('ROTATION_MODULE_ADDRESS not configured');
+  const resilientProvider = new ResilientRpcProvider({
+    primary: { name: 'primary-rpc', httpUrl: RPC_URL },
+    fallback: providerUrls.fallbackRpcUrl ? { name: 'fallback-rpc', httpUrl: providerUrls.fallbackRpcUrl } : undefined,
+    cooldownMs: 60_000,
+  });
+  return resilientProvider.call(async (provider) => {
+    const contract = new ethers.Contract(ROTATION_MODULE_ADDRESS, loadAbi(), provider);
+    const [config, cycle, hasPaid] = await Promise.all([
+      contract.getRotationConfig(vaultAddress),
+      contract.getCurrentCycle(vaultAddress),
+      contract.hasMemberPaid(vaultAddress, memberId),
+    ]);
+    return {
+      totalMembers: Number(config.totalMembers),
+      monthlyContribution: BigInt(config.monthlyContribution),
+      stablecoin: String(config.stablecoin),
+      cycleNumber: Number(cycle.cycleNumber),
+      cycleStartTimestamp: Number(cycle.nextDistributionDate) - 30 * 24 * 60 * 60,
+      hasPaid: Boolean(hasPaid),
+    };
+  });
+}
+
+export async function verifyStablecoinTransfer(input: {
+  transactionHash: string;
+  stablecoin: string;
+  sender: string;
+  recipient: string;
+  amount: bigint;
+  notBeforeTimestamp: number;
+}) {
+  const resilientProvider = new ResilientRpcProvider({
+    primary: { name: 'primary-rpc', httpUrl: RPC_URL },
+    fallback: providerUrls.fallbackRpcUrl ? { name: 'fallback-rpc', httpUrl: providerUrls.fallbackRpcUrl } : undefined,
+    cooldownMs: 60_000,
+  });
+  return resilientProvider.call(async (provider) => {
+    const receipt = await provider.getTransactionReceipt(input.transactionHash);
+    if (!receipt || receipt.status !== 1) throw new Error('Stablecoin deposit transaction is not confirmed successfully');
+
+    const block = await provider.getBlock(receipt.blockNumber);
+    if (!block || block.timestamp < input.notBeforeTimestamp) {
+      throw new Error('Stablecoin deposit transaction predates the current rotation cycle');
+    }
+
+    const transferInterface = new ethers.Interface([
+      'event Transfer(address indexed from, address indexed to, uint256 value)',
+    ]);
+    const matches = receipt.logs.flatMap((log) => {
+      if (log.address.toLowerCase() !== input.stablecoin.toLowerCase()) return [];
+      try {
+        const parsed = transferInterface.parseLog(log);
+        if (!parsed ||
+            String(parsed.args.from).toLowerCase() !== input.sender.toLowerCase() ||
+            String(parsed.args.to).toLowerCase() !== input.recipient.toLowerCase() ||
+            BigInt(parsed.args.value) !== input.amount) {
+          return [];
+        }
+        return [parsed];
+      } catch {
+        return [];
+      }
+    });
+    if (matches.length !== 1) {
+      throw new Error('Transaction must contain exactly one matching stablecoin transfer to the ChamaTreasury');
+    }
+    return { blockNumber: receipt.blockNumber, blockTimestamp: block.timestamp };
+  });
+}
+
 export async function recordContributionOnChain(
   vaultAddress: string,
   memberId: string,

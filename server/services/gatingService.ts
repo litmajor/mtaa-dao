@@ -85,6 +85,7 @@ export function checkFeatureGating(
       return { isAvailable: true };
 
     case 'age': {
+      if (!user.createdAt) return { isAvailable: false, reason: 'Account creation date is unavailable' };
       const createdAt = new Date(user.createdAt).getTime();
       const nowMs = Date.now();
       const daysOld = Math.floor((nowMs - createdAt) / (1000 * 60 * 60 * 24));

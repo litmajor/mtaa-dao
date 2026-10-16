@@ -316,8 +316,8 @@ export function ReceiveModal({
       setRequestDescription('');
       
       // Show success message with share link
-      if (window?.analytics) {
-        window.analytics.track('Payment Request Created', {
+      if ((window as any)?.analytics?.track) {
+        (window as any).analytics.track('Payment Request Created', {
           amount: requestAmount,
           currency: 'cUSD',
           description: requestDescription,

@@ -272,7 +272,7 @@ class Phase3Tester {
     // Fire 10 concurrent requests
     for (let i = 0; i < 10; i++) {
       const promise = fetch(`${BASE_URL}/api/health`, { method: 'GET' })
-        .then(response => response.status)
+        .then((response: { status: number }) => response.status)
         .catch(() => 0);
       promises.push(promise);
     }

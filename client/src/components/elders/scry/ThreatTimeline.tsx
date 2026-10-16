@@ -1,7 +1,7 @@
 import React, { useState, useMemo } from 'react';
 import { TriangleAlert, AlertCircle, Clock, Filter, AlertTriangle } from 'lucide-react';
 
-interface TimelineEvent {
+export interface TimelineEvent {
   id: string;
   type: string;
   severity: 'critical' | 'high' | 'medium' | 'low';
@@ -10,7 +10,7 @@ interface TimelineEvent {
   description: string;
 }
 
-interface ThreatTimelineProps {
+export interface ThreatTimelineProps {
   events?: TimelineEvent[];
   daoId?: string;
 }

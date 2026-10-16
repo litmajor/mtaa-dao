@@ -6,6 +6,7 @@ import { eq, and, or, desc, sql } from 'drizzle-orm';
 import { z } from 'zod';
 import { isAuthenticated } from '../auth';
 import { ReputationService, REPUTATION_VALUES } from '../reputationService';
+import { getRequestUserId } from '../utils/requestUser';
 
 const router = express.Router();
 
@@ -32,7 +33,7 @@ const verifyTaskSchema = z.object({
 // Middleware for role checking
 function requireRole(...roles: string[]) {
   return async (req: any, res: any, next: any) => {
-  const userId = String(req.user?.claims?.sub ?? '');
+  const userId = getRequestUserId(req) ?? '';
     const daoIdRaw = req.params.daoId || req.body.daoId;
     if (!userId) {
       return res.status(401).json({ error: 'Unauthorized' });
@@ -72,7 +73,7 @@ function requireRole(...roles: string[]) {
 router.post('/', requireRole('admin', 'moderator'), async (req, res) => {
   try {
     const validatedData = createTaskSchema.parse(req.body);
-    const userId = req.user && req.user.claims ? req.user.claims.sub : undefined;
+    const userId = getRequestUserId(req);
     if (!userId) {
       return res.status(401).json({ error: 'Unauthorized' });
     }
@@ -121,7 +122,7 @@ router.post('/create', requireRole('admin', 'moderator'), async (req, res) => {
 
   try {
     const validatedData = createTaskSchema.parse(req.body);
-    const userId = req.user && req.user.claims ? req.user.claims.sub : undefined;
+    const userId = getRequestUserId(req);
     if (!userId) {
       return res.status(401).json({ error: 'Unauthorized' });
     }
@@ -201,7 +202,7 @@ router.get('/categories', async (req, res) => {
 router.post('/:taskId/claim', isAuthenticated, async (req, res) => {
   try {
     const { taskId } = req.params;
-    const userId = req.user && req.user.claims ? req.user.claims.sub : undefined;
+    const userId = getRequestUserId(req);
     if (!userId) {
       return res.status(401).json({ error: 'Unauthorized' });
     }
@@ -251,7 +252,7 @@ router.post('/:taskId/claim', isAuthenticated, async (req, res) => {
 router.post('/:taskId/submit', isAuthenticated, async (req, res) => {
   try {
     const { taskId } = req.params;
-    const userId = req.user && req.user.claims ? req.user.claims.sub : undefined;
+    const userId = getRequestUserId(req);
     if (!userId) {
       return res.status(401).json({ error: 'Unauthorized' });
     }
@@ -303,7 +304,7 @@ router.post('/:taskId/verify', requireRole('admin', 'moderator'), async (req, re
   try {
     const { taskId } = req.params;
     const { approved, feedback, autoVerify = false } = req.body;
-    const userId = req.user && req.user.claims ? req.user.claims.sub : undefined;
+    const userId = getRequestUserId(req);
     if (!userId) {
       return res.status(401).json({ error: 'Unauthorized' });
     }
@@ -463,7 +464,7 @@ router.get('/:taskId/history', async (req, res) => {
 // Get user's claimed tasks
 router.get('/user/claimed', async (req, res) => {
   try {
-    const userId = req.user && req.user.claims ? req.user.claims.sub : undefined;
+    const userId = getRequestUserId(req);
     if (!userId) {
       return res.status(401).json({ error: 'Unauthorized' });
     }
@@ -521,7 +522,7 @@ router.put('/:taskId', requireRole('admin', 'moderator'), async (req, res) => {
   try {
     const { taskId } = req.params;
     const { title, description, reward, category, difficulty, estimatedTime, deadline } = req.body;
-    const userId = req.user && req.user.claims ? req.user.claims.sub : undefined;
+    const userId = getRequestUserId(req);
 
     if (!userId) {
       return res.status(401).json({ error: 'Unauthorized' });
@@ -597,7 +598,7 @@ router.put('/:taskId', requireRole('admin', 'moderator'), async (req, res) => {
 router.delete('/:taskId', requireRole('admin', 'moderator'), async (req, res) => {
   try {
     const { taskId } = req.params;
-    const userId = req.user && req.user.claims ? req.user.claims.sub : undefined;
+    const userId = getRequestUserId(req);
 
     if (!userId) {
       return res.status(401).json({ error: 'Unauthorized' });

@@ -1,10 +1,10 @@
 import { sql } from "drizzle-orm";
-import type { PostgresDB } from "drizzle-orm/postgres-js";
+import type { NodePgDatabase } from 'drizzle-orm/node-postgres';
 
 /**
  * Migration 014: Add `loan_facilities` table to record on-chain LoanFacility contracts
  */
-export async function up(db: PostgresDB) {
+export async function up(db: NodePgDatabase<any>) {
   await db.execute(sql`
     CREATE TABLE IF NOT EXISTS loan_facilities (
       id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -23,6 +23,6 @@ export async function up(db: PostgresDB) {
   `);
 }
 
-export async function down(db: PostgresDB) {
+export async function down(db: NodePgDatabase<any>) {
   await db.execute(sql`DROP TABLE IF EXISTS loan_facilities;`);
 }

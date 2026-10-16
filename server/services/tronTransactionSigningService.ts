@@ -18,11 +18,7 @@ function createTronWebInstance(config: any) {
     if (typeof TronWeb === 'function') {
       return new TronWeb(config);
     }
-    if (typeof (TronWebModule as any)?.TronWeb === 'function') {
-      return new (TronWebModule as any).TronWeb(config);
-    }
-    // Last resort - try to call it directly
-    return TronWebModule(config);
+    throw new TypeError('TronWeb SDK did not expose a constructor');
   } catch (e) {
     throw new Error(`Failed to instantiate TronWeb: ${e instanceof Error ? e.message : String(e)}`);
   }
@@ -652,8 +648,10 @@ const tronTestnetSigningService = new TronTransactionSigningService({
 export {
   TronTransactionSigningService,
   tronSigningService,
-  tronTestnetSigningService,
-  // Types
+  tronTestnetSigningService
+};
+
+export type {
   TransactionSigningConfig,
   SigningRequest,
   SignedTransaction,

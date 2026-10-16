@@ -80,7 +80,7 @@ export default function AdminRevenueTracking() {
   const avgDaily = (totalRevenue / (revenueHistory.length || 1)).toFixed(2);
   const latestRevenue = revenueHistory[revenueHistory.length - 1]?.total || 0;
   const previousRevenue = revenueHistory[Math.max(0, revenueHistory.length - 2)]?.total || 0;
-  const revenueChange = ((latestRevenue - previousRevenue) / (previousRevenue || 1) * 100).toFixed(2);
+  const revenueChange = (Number((latestRevenue - previousRevenue) / (previousRevenue || 1) * 100)).toFixed(2);
 
   const exportData = () => {
     const csv = [
@@ -142,8 +142,8 @@ export default function AdminRevenueTracking() {
             <p className="text-slate-400 text-sm mb-2">Latest Day</p>
             <div className="flex items-baseline gap-2">
               <p className="text-3xl font-bold text-white">${latestRevenue.toFixed(0)}</p>
-              <div className={`flex items-center ${revenueChange > 0 ? 'text-green-500' : 'text-red-500'}`}>
-                {revenueChange > 0 ? <TrendingUp className="h-4 w-4 mr-1" /> : <TrendingDown className="h-4 w-4 mr-1" />}
+              <div className={`flex items-center ${Number(revenueChange) > 0 ? 'text-green-500' : 'text-red-500'}`}>
+                {Number(revenueChange) > 0 ? <TrendingUp className="h-4 w-4 mr-1" /> : <TrendingDown className="h-4 w-4 mr-1" />}
                 <span className="text-sm font-medium">{Math.abs(parseFloat(revenueChange))}%</span>
               </div>
             </div>

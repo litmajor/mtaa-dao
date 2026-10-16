@@ -1,5 +1,6 @@
 
-import { pgTable, varchar, timestamp, integer, decimal, boolean, uuid, text, jsonb } from "drizzle-orm/pg-core";
+import { pgTable, varchar, timestamp, integer, decimal, boolean, uuid, text, jsonb, uniqueIndex } from "drizzle-orm/pg-core";
+import { sql } from "drizzle-orm";
 import { users, daos, proposals, contributions } from "./schema";
 import { createInsertSchema } from "drizzle-zod";
 
@@ -43,7 +44,11 @@ export const contributionGraph = pgTable("contribution_graph", {
   
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
-});
+}, (table) => ({
+  contributionProofEntityUnique: uniqueIndex("contribution_graph_entity_uq")
+    .on(table.relatedEntityType, table.relatedEntityId)
+    .where(sql`${table.relatedEntityType} = 'contribution' AND ${table.contributionType} = 'financial_contribution'`),
+}));
 
 // Soulbound Reputation Badges (Non-transferable)
 export const reputationBadges = pgTable("reputation_badges", {

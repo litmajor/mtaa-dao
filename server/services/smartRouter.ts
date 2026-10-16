@@ -1,29 +1,31 @@
 /**
- * Smart Router Service
- * Calculates optimal trading routes across exchanges
- * 
- * Features:
- * - Multi-exchange price comparison
- * - Slippage calculation
- * - Fee factoring
- * - Route optimization
- * - Best execution guarantee
+ * Smart Router Service (Production)
+ *
+ * Multi-exchange best-execution helper.
+ * Uses CEX bid/ask (not mid), size-aware slippage, and fee tiers.
+ *
+ * Does NOT depend on priceOracle — only on CEX price job + fee service.
  */
 
 import { CEXPriceBackgroundJob } from './cexPriceBackgroundJob';
 import { ExchangeFeeService, type FeeStructure } from './exchangeFeeService';
 
+// ─────────────────────────────────────────────────────────────
+// Types
+// ─────────────────────────────────────────────────────────────
+
 export interface TradePrice {
   exchange: string;
-  price: number;
+  price: number; // last / mid
   bid: number;
   ask: number;
-  volume: number;
+  volume: number; // quote volume preferred
   timestamp: number;
 }
 
 export interface SlippageCalculation {
   basePrice: number;
+  side: 'buy' | 'sell';
   slippagePercent: number;
   slippageAmount: number;
   executionPrice: number;
@@ -31,30 +33,33 @@ export interface SlippageCalculation {
 
 export interface RouteCost {
   exchange: string;
+  side: 'buy' | 'sell';
   basePrice: number;
   slippageCalculation: SlippageCalculation;
   feeStructure: FeeStructure;
-  makerFee: number;
-  takerFee: number;
-  totalCost: number;
-  netPrice: number; // Price paid including all fees
-  profitability: number; // Positive = profitable vs best market price
+  feePaid: number;
+  scheduleStale: boolean;
+  totalCost: number; // quote currency total
+  netPrice: number; // effective price per base unit
+  dataAgeMs: number;
 }
 
 export interface OptimalRoute {
   tradingPair: string;
-  amount: number;
+  side: 'buy' | 'sell';
+  quantity: number; // base asset
+  notionalUsd: number;
   bestExchange: string;
   bestPrice: number;
   totalCost: number;
-  netPrice: number; // Final price per unit including slippage + fees
+  netPrice: number;
   costBreakdown: {
     basePrice: number;
     slippage: number;
     fees: number;
   };
   alternatives: RouteCost[];
-  savings: number; // vs worst option
+  savingsVsWorst: number;
   timestamp: number;
 }
 
@@ -77,372 +82,495 @@ export interface ArbitrageOpportunity {
   spread: number;
   spreadPercent: number;
   profitAfterFees: number;
+  profitPercent: number;
   isProfitable: boolean;
   timestamp: number;
 }
 
-/**
- * Smart routing engine for optimal trade execution
- */
+export interface ExecutionStrategy {
+  tradingPair: string;
+  quantity: number;
+  side: 'buy' | 'sell';
+  recommendedExchange: string;
+  recommendedPrice: number;
+  recommendedOrderType: 'maker' | 'taker';
+  expectedCost: number;
+  expectedNetPrice: number;
+  marketConditions: {
+    tightness: 'tight' | 'loose';
+    spreadPercent: number;
+    volatilityPercent: number;
+  };
+  riskLevel: 'low' | 'medium' | 'high';
+  dataAgeMs: number;
+  timestamp: number;
+}
+
+export interface SmartRouterOptions {
+  /** Reject quotes older than this (ms) */
+  maxQuoteAgeMs?: number;
+  /** Minimum quote volume (USD-ish) to consider a venue */
+  minVolume?: number;
+  /** Skip venues with spread wider than this (%) */
+  maxSpreadPercent?: number;
+  /** Default min arb profit after fees (%) */
+  minArbProfitPercent?: number;
+}
+
+// ─────────────────────────────────────────────────────────────
+// Config
+// ─────────────────────────────────────────────────────────────
+
+const DEFAULTS = {
+  maxQuoteAgeMs: Number(process.env.SMART_ROUTER_MAX_QUOTE_AGE_MS ?? 5_000),
+  minVolume: Number(process.env.SMART_ROUTER_MIN_VOLUME ?? 1_000),
+  maxSpreadPercent: Number(process.env.SMART_ROUTER_MAX_SPREAD_PCT ?? 2),
+  minArbProfitPercent: Number(process.env.SMART_ROUTER_MIN_ARB_PCT ?? 0.5),
+};
+
+/** Slippage as fraction of price, keyed by notional USD */
+const SLIPPAGE_TIERS: Array<{ maxNotional: number; rate: number }> = [
+  { maxNotional: 10_000, rate: 0.001 }, // 0.1%
+  { maxNotional: 100_000, rate: 0.005 }, // 0.5%
+  { maxNotional: 1_000_000, rate: 0.01 }, // 1%
+  { maxNotional: Infinity, rate: 0.02 }, // 2%
+];
+
+// ─────────────────────────────────────────────────────────────
+// Service
+// ─────────────────────────────────────────────────────────────
+
 export class SmartRouter {
+  private static instance: SmartRouter;
   private priceJob: CEXPriceBackgroundJob;
   private feeService: ExchangeFeeService;
-  private static instance: SmartRouter;
+  private opts: Required<SmartRouterOptions>;
+  private warnedFeeIssues = new Set<string>();
 
-  // Slippage configuration (as percentage)
-  private readonly SLIPPAGE_RATES = {
-    low: 0.001,      // 0.1% for < $10k
-    medium: 0.005,   // 0.5% for $10k-$100k
-    high: 0.01,      // 1% for > $100k
-    veryHigh: 0.02,  // 2% for > $1M
-  };
-
-  private constructor() {
+  private constructor(options: SmartRouterOptions = {}) {
     this.priceJob = CEXPriceBackgroundJob.getInstance();
     this.feeService = ExchangeFeeService.getInstance();
+    this.opts = {
+      maxQuoteAgeMs: options.maxQuoteAgeMs ?? DEFAULTS.maxQuoteAgeMs,
+      minVolume: options.minVolume ?? DEFAULTS.minVolume,
+      maxSpreadPercent: options.maxSpreadPercent ?? DEFAULTS.maxSpreadPercent,
+      minArbProfitPercent:
+        options.minArbProfitPercent ?? DEFAULTS.minArbProfitPercent,
+    };
   }
 
-  /**
-   * Get singleton instance
-   */
-  static getInstance(): SmartRouter {
+  static getInstance(options?: SmartRouterOptions): SmartRouter {
     if (!SmartRouter.instance) {
-      SmartRouter.instance = new SmartRouter();
+      SmartRouter.instance = new SmartRouter(options);
     }
     return SmartRouter.instance;
   }
 
+  // ── Public API ─────────────────────────────────────────────
+
   /**
-   * Calculate optimal route for a trade
+   * Best venue for a trade after slippage + fees.
+   * @param quantity Base-asset size (e.g. 0.5 BTC)
+   * @param side buy → uses ask; sell → uses bid
    */
   async calculateOptimalRoute(
     tradingPair: string,
-    amount: number,
-    isMaker: boolean = false,
-    userVolume30Day: number = 0
+    quantity: number,
+    side: 'buy' | 'sell',
+    isMaker = false,
+    userId?: string
   ): Promise<OptimalRoute> {
-    const collector = this.priceJob.getCollector();
-    const prices = await collector.getPairPrices(tradingPair);
-
-    if (prices.size === 0) {
-      throw new Error(`No prices available for ${tradingPair}`);
+    if (!Number.isFinite(quantity) || quantity <= 0) {
+      throw new Error('quantity must be a positive number (base asset)');
     }
 
-    // Convert map to array and calculate costs
+    const prices = await this.getUsablePrices(tradingPair);
+    if (prices.length === 0) {
+      throw new Error(`No usable prices for ${tradingPair}`);
+    }
+
     const routeCosts: RouteCost[] = [];
+    const effectiveUserVolume = userId ? this.feeService.getUserVolume(userId) : 0;
+    for (const p of prices) {
+      const basePrice = side === 'buy' ? p.ask : p.bid;
+      if (!Number.isFinite(basePrice) || basePrice <= 0) continue;
 
-    for (const [exchange, priceData] of prices) {
-      const cost = this.calculateRouteCost(
-        exchange,
+      const routeCost = this.calculateRouteCost({
+        exchange: p.exchange,
         tradingPair,
-        amount,
-        priceData.price,
+        quantity,
+        basePrice,
+        side,
         isMaker,
-        userVolume30Day
-      );
-      routeCosts.push(cost);
+        userVolume30Day: effectiveUserVolume,
+        userId,
+        dataAgeMs: Date.now() - p.timestamp,
+      });
+      if (routeCost) routeCosts.push(routeCost);
     }
 
-    // Sort by net price (ascending = best deal)
-    routeCosts.sort((a, b) => a.netPrice - b.netPrice);
+    if (routeCosts.length === 0) {
+      throw new Error(`No valid routes for ${tradingPair}`);
+    }
 
-    const bestRoute = routeCosts[0];
-    const worstRoute = routeCosts[routeCosts.length - 1];
+    // Buy: lowest net price wins. Sell: highest net price wins.
+    routeCosts.sort((a, b) =>
+      side === 'buy' ? a.netPrice - b.netPrice : b.netPrice - a.netPrice
+    );
+
+    const best = routeCosts[0];
+    const worst = routeCosts[routeCosts.length - 1];
+    const mid = prices[0]?.price || best.basePrice;
+    const notionalUsd = quantity * mid;
 
     return {
       tradingPair,
-      amount,
-      bestExchange: bestRoute.exchange,
-      bestPrice: bestRoute.basePrice,
-      totalCost: bestRoute.totalCost,
-      netPrice: bestRoute.netPrice,
+      side,
+      quantity,
+      notionalUsd,
+      bestExchange: best.exchange,
+      bestPrice: best.basePrice,
+      totalCost: best.totalCost,
+      netPrice: best.netPrice,
       costBreakdown: {
-        basePrice: bestRoute.basePrice,
-        slippage: bestRoute.slippageCalculation.slippageAmount,
-        fees: bestRoute.makerFee + bestRoute.takerFee,
+        basePrice: best.basePrice,
+        slippage: best.slippageCalculation.slippageAmount,
+        fees: best.feePaid,
       },
       alternatives: routeCosts,
-      savings: worstRoute.totalCost - bestRoute.totalCost,
+      savingsVsWorst: Math.abs(worst.totalCost - best.totalCost),
       timestamp: Date.now(),
     };
   }
 
-  /**
-   * Find arbitrage opportunities
-   */
   async findArbitrageOpportunities(
     tradingPair: string,
-    minProfitPercent: number = 0.5
+    minProfitPercent = this.opts.minArbProfitPercent
   ): Promise<ArbitrageOpportunity[]> {
-    const collector = this.priceJob.getCollector();
-    const prices = await collector.getPairPrices(tradingPair);
-
-    if (prices.size < 2) {
-      return [];
-    }
+    const prices = await this.getUsablePrices(tradingPair);
+    if (prices.length < 2) return [];
 
     const opportunities: ArbitrageOpportunity[] = [];
-    const priceArray = Array.from(prices.entries());
 
-    // Compare all exchange pairs
-    for (let i = 0; i < priceArray.length; i++) {
-      for (let j = i + 1; j < priceArray.length; j++) {
-        const [buyExchange, buyPrice] = priceArray[i];
-        const [sellExchange, sellPrice] = priceArray[j];
-
-        // Try both directions
-        const opp1 = this.calculateArbitrage(
+    for (let i = 0; i < prices.length; i++) {
+      for (let j = 0; j < prices.length; j++) {
+        if (i === j) continue;
+        const buy = prices[i];
+        const sell = prices[j];
+        // Buy on i at ask, sell on j at bid
+        const opp = this.calculateArbitrage(
           tradingPair,
-          buyExchange,
-          buyPrice.price,
-          sellExchange,
-          sellPrice.price,
+          buy.exchange,
+          buy.ask,
+          sell.exchange,
+          sell.bid,
           minProfitPercent
         );
-
-        if (opp1) opportunities.push(opp1);
-
-        const opp2 = this.calculateArbitrage(
-          tradingPair,
-          sellExchange,
-          sellPrice.price,
-          buyExchange,
-          buyPrice.price,
-          minProfitPercent
-        );
-
-        if (opp2) opportunities.push(opp2);
+        if (opp) opportunities.push(opp);
       }
     }
 
-    // Sort by profit (descending)
     return opportunities.sort((a, b) => b.profitAfterFees - a.profitAfterFees);
   }
 
-  /**
-   * Compare prices across all exchanges
-   */
   async comparePrices(tradingPair: string): Promise<PriceComparison> {
-    const collector = this.priceJob.getCollector();
-    const prices = await collector.getPairPrices(tradingPair);
-
-    if (prices.size === 0) {
-      throw new Error(`No prices available for ${tradingPair}`);
+    const prices = await this.getUsablePrices(tradingPair);
+    if (prices.length === 0) {
+      throw new Error(`No usable prices for ${tradingPair}`);
     }
 
-    const allPrices: TradePrice[] = [];
-    let bestBidPrice = 0;
-    let bestBidExchange = '';
-    let bestAskPrice = Infinity;
-    let bestAskExchange = '';
+    let bestBid = { exchange: '', price: 0 };
+    let bestAsk = { exchange: '', price: Infinity };
 
-    for (const [exchange, priceData] of prices) {
-      allPrices.push({
-        exchange,
-        price: parseFloat(priceData.price),
-        bid: parseFloat(priceData.bid),
-        ask: parseFloat(priceData.ask),
-        volume: parseFloat(priceData.volume),
-        timestamp: priceData.timestamp,
-      });
-
-      // Track best bid (highest price to sell at)
-      const bid = parseFloat(priceData.bid);
-      if (bid > bestBidPrice) {
-        bestBidPrice = bid;
-        bestBidExchange = exchange;
-      }
-
-      // Track best ask (lowest price to buy at)
-      const ask = parseFloat(priceData.ask);
-      if (ask < bestAskPrice) {
-        bestAskPrice = ask;
-        bestAskExchange = exchange;
+    for (const p of prices) {
+      if (p.bid > bestBid.price) bestBid = { exchange: p.exchange, price: p.bid };
+      if (p.ask < bestAsk.price && p.ask > 0) {
+        bestAsk = { exchange: p.exchange, price: p.ask };
       }
     }
 
-    const spread = bestBidPrice - bestAskPrice;
-    const spreadPercent = (spread / bestAskPrice) * 100;
+    const spread = bestBid.price - bestAsk.price;
+    const spreadPercent =
+      bestAsk.price > 0 ? (spread / bestAsk.price) * 100 : 0;
 
     return {
       tradingPair,
-      allPrices: allPrices.sort((a, b) => a.price - b.price),
-      bestBid: { exchange: bestBidExchange, price: bestBidPrice },
-      bestAsk: { exchange: bestAskExchange, price: bestAskPrice },
+      allPrices: [...prices].sort((a, b) => a.price - b.price),
+      bestBid,
+      bestAsk,
       priceSpread: spread,
       spreadPercent,
       timestamp: Date.now(),
     };
   }
 
-  /**
-   * Get recommended execution strategy
-   */
   async getExecutionStrategy(
     tradingPair: string,
-    amount: number,
-    side: 'buy' | 'sell'
-  ): Promise<any> {
-    const route = await this.calculateOptimalRoute(tradingPair, amount);
+    quantity: number,
+    side: 'buy' | 'sell',
+    userId?: string
+  ): Promise<ExecutionStrategy> {
+    const route = await this.calculateOptimalRoute(tradingPair, quantity, side, false, userId);
     const comparison = await this.comparePrices(tradingPair);
 
-    // Analyze market conditions
-    const marketTightness = comparison.spreadPercent < 0.1 ? 'tight' : 'loose';
-    const recommendedType = marketTightness === 'tight' ? 'maker' : 'taker';
+    const tightness =
+      comparison.spreadPercent < 0.1 ? 'tight' : 'loose';
+    const recommendedOrderType: 'maker' | 'taker' =
+      tightness === 'tight' ? 'maker' : 'taker';
+
+    const ages = route.alternatives.map((r) => r.dataAgeMs);
+    const dataAgeMs = ages.length ? Math.max(...ages) : 0;
 
     return {
       tradingPair,
-      amount,
+      quantity,
       side,
       recommendedExchange: route.bestExchange,
       recommendedPrice: route.bestPrice,
-      recommendedOrderType: recommendedType,
+      recommendedOrderType,
       expectedCost: route.totalCost,
       expectedNetPrice: route.netPrice,
       marketConditions: {
-        tightness: marketTightness,
+        tightness,
         spreadPercent: comparison.spreadPercent,
-        volatility: this.calculateVolatility(comparison.allPrices),
+        volatilityPercent: this.calculateVolatility(comparison.allPrices),
       },
       riskLevel: this.assessRisk(route, comparison),
+      dataAgeMs,
       timestamp: Date.now(),
     };
   }
 
-  /**
-   * Calculate cost for a specific route
-   */
-  private calculateRouteCost(
-    exchange: string,
-    tradingPair: string,
-    amount: number,
-    basePrice: number,
-    isMaker: boolean,
-    userVolume30Day: number
-  ): RouteCost {
-    // Calculate slippage
-    const slippage = this.calculateSlippage(amount);
-    const slippageAmount = basePrice * slippage;
-    const executionPrice = basePrice + slippageAmount;
+  // ── Internals ──────────────────────────────────────────────
 
-    // Get fee structure
-    const feeStructure = this.feeService.getFeeStructureWithVolume(
+  private async getUsablePrices(tradingPair: string): Promise<TradePrice[]> {
+    const collector = this.priceJob.getCollector();
+    const raw = await collector.getPairPrices(tradingPair);
+    const now = Date.now();
+    const out: TradePrice[] = [];
+
+    for (const [exchange, priceData] of raw) {
+      const bid = Number(priceData.bid);
+      const ask = Number(priceData.ask);
+      const last = Number(priceData.price);
+      const volume = Number(priceData.volume ?? 0);
+      const timestamp = Number(priceData.timestamp ?? 0);
+
+      if (!Number.isFinite(bid) || bid <= 0) continue;
+      if (!Number.isFinite(ask) || ask <= 0) continue;
+      if (ask < bid) continue; // crossed book — skip
+      if (now - timestamp > this.opts.maxQuoteAgeMs) continue;
+      if (volume < this.opts.minVolume) continue;
+
+      const mid = last > 0 ? last : (bid + ask) / 2;
+      const spreadPct = ((ask - bid) / bid) * 100;
+      if (spreadPct > this.opts.maxSpreadPercent) continue;
+
+      out.push({
+        exchange,
+        price: mid,
+        bid,
+        ask,
+        volume,
+        timestamp,
+      });
+    }
+
+    return out;
+  }
+
+  private calculateRouteCost(args: {
+    exchange: string;
+    tradingPair: string;
+    quantity: number;
+    basePrice: number;
+    side: 'buy' | 'sell';
+    isMaker: boolean;
+    userVolume30Day: number;
+    userId?: string;
+    dataAgeMs: number;
+  }): RouteCost | null {
+    const {
       exchange,
       tradingPair,
-      userVolume30Day
+      quantity,
+      basePrice,
+      side,
+      isMaker,
+      userVolume30Day,
+      userId,
+      dataAgeMs,
+    } = args;
+
+    const notional = quantity * basePrice;
+    const slipRate = this.slippageRate(notional);
+    // Buy: pay more; Sell: receive less
+    const executionPrice =
+      side === 'buy' ? basePrice * (1 + slipRate) : basePrice * (1 - slipRate);
+    const slippageAmount = Math.abs(executionPrice - basePrice);
+
+    const resolvedFees = this.feeService.resolveFees(
+      exchange,
+      tradingPair,
+      side,
+      { isMaker, userVolume30Day, userId }
     );
+    if (!resolvedFees) {
+      this.warnFeeIssue(
+        `unknown:${exchange.toLowerCase()}`,
+        `Excluding ${exchange} for ${tradingPair}: exchange fee schedule is unknown`
+      );
+      return null;
+    }
+    if (resolvedFees.scheduleStale) {
+      this.warnFeeIssue(
+        `stale:${exchange.toLowerCase()}`,
+        `Using stale ${exchange} fee schedule (${resolvedFees.scheduleAsOf})`
+      );
+    }
 
-    const makerFee = amount * feeStructure.maker;
-    const takerFee = amount * feeStructure.taker;
-    const totalFees = isMaker ? makerFee : takerFee;
-
-    const totalCost = amount * executionPrice + totalFees;
-    const netPrice = totalCost / amount; // Price per unit including everything
+    const gross = quantity * executionPrice;
+    const tradeCost = this.feeService.calculateTotalCost(
+      gross,
+      exchange,
+      tradingPair,
+      side,
+      { isMaker, userVolume30Day, userId }
+    );
+    if (!tradeCost) {
+      this.warnFeeIssue(
+        `unresolved:${exchange.toLowerCase()}`,
+        `Excluding ${exchange} for ${tradingPair}: unable to resolve trade fees`
+      );
+      return null;
+    }
+    const feeStructure = { maker: resolvedFees.maker, taker: resolvedFees.taker };
+    const feePaid = tradeCost.fee;
+    const totalCost = tradeCost.total;
+    const netPrice = totalCost / quantity;
 
     return {
       exchange,
+      side,
       basePrice,
       slippageCalculation: {
         basePrice,
-        slippagePercent: slippage * 100,
+        side,
+        slippagePercent: slipRate * 100,
         slippageAmount,
         executionPrice,
       },
       feeStructure,
-      makerFee,
-      takerFee,
+      feePaid,
+      scheduleStale: tradeCost.scheduleStale,
       totalCost,
       netPrice,
-      profitability: basePrice - netPrice, // Negative = cost
+      dataAgeMs,
     };
   }
 
-  /**
-   * Calculate slippage based on order size
-   */
-  private calculateSlippage(amount: number): number {
-    // $1 = 1 unit for simplicity
-    if (amount < 10000) return this.SLIPPAGE_RATES.low;
-    if (amount < 100000) return this.SLIPPAGE_RATES.medium;
-    if (amount < 1000000) return this.SLIPPAGE_RATES.high;
-    return this.SLIPPAGE_RATES.veryHigh;
+  private slippageRate(notionalUsd: number): number {
+    for (const tier of SLIPPAGE_TIERS) {
+      if (notionalUsd < tier.maxNotional) return tier.rate;
+    }
+    return SLIPPAGE_TIERS[SLIPPAGE_TIERS.length - 1].rate;
   }
 
-  /**
-   * Calculate arbitrage opportunity
-   */
   private calculateArbitrage(
     tradingPair: string,
     buyExchange: string,
-    buyPrice: number,
+    buyAsk: number,
     sellExchange: string,
-    sellPrice: number,
+    sellBid: number,
     minProfitPercent: number
   ): ArbitrageOpportunity | null {
-    const spread = sellPrice - buyPrice;
-    const spreadPercent = (spread / buyPrice) * 100;
+    if (sellBid <= buyAsk) return null;
 
-    // Get fees for both exchanges
-    const buyFeeStructure = this.feeService.getFeeStructure(buyExchange, tradingPair);
-    const sellFeeStructure = this.feeService.getFeeStructure(sellExchange, tradingPair);
+    const spread = sellBid - buyAsk;
+    const spreadPercent = (spread / buyAsk) * 100;
 
-    // Calculate fees on $1 trade
-    const buyFee = buyPrice * buyFeeStructure.taker;
-    const sellFee = sellPrice * sellFeeStructure.taker;
-    const totalFees = buyFee + sellFee;
+    const buyFees = this.feeService.resolveFees(buyExchange, tradingPair, 'buy');
+    const sellFees = this.feeService.resolveFees(sellExchange, tradingPair, 'sell');
+    if (!buyFees || !sellFees) {
+      const unknownExchange = !buyFees ? buyExchange : sellExchange;
+      this.warnFeeIssue(
+        `unknown:${unknownExchange.toLowerCase()}`,
+        `Excluding arbitrage ${tradingPair}: fee schedule unknown for ${unknownExchange}`
+      );
+      return null;
+    }
+    if (buyFees.scheduleStale || sellFees.scheduleStale) {
+      for (const [exchange, stale] of [
+        [buyExchange, buyFees.scheduleStale],
+        [sellExchange, sellFees.scheduleStale],
+      ] as const) {
+        if (stale) {
+          this.warnFeeIssue(
+            `stale:${exchange.toLowerCase()}`,
+            `Using stale ${exchange} fee schedule for arbitrage`
+          );
+        }
+      }
+    }
 
-    const profitAfterFees = spread - totalFees;
-    const profitPercent = (profitAfterFees / buyPrice) * 100;
+    // Per 1 unit of base
+    const buyCost = this.feeService.calculateTotalCost(buyAsk, buyExchange, tradingPair, 'buy');
+    const sellProceeds = this.feeService.calculateTotalCost(sellBid, sellExchange, tradingPair, 'sell');
+    if (!buyCost || !sellProceeds) {
+      this.warnFeeIssue(
+        'unresolved-arbitrage-fees',
+        `Excluding arbitrage ${tradingPair}: fee calculation unavailable`
+      );
+      return null;
+    }
+    const profitAfterFees = sellProceeds.total - buyCost.total;
+    const profitPercent = (profitAfterFees / buyAsk) * 100;
 
-    const isProfitable = profitPercent > minProfitPercent;
-
-    if (!isProfitable) return null;
+    if (profitPercent < minProfitPercent) return null;
 
     return {
       tradingPair,
       buyExchange,
-      buyPrice,
+      buyPrice: buyAsk,
       sellExchange,
-      sellPrice,
+      sellPrice: sellBid,
       spread,
       spreadPercent,
       profitAfterFees,
-      isProfitable,
+      profitPercent,
+      isProfitable: true,
       timestamp: Date.now(),
     };
   }
 
-  /**
-   * Calculate volatility from price data
-   */
-  private calculateVolatility(prices: TradePrice[]): number {
-    if (prices.length < 2) return 0;
-
-    const values = prices.map(p => p.price);
-    const mean = values.reduce((a, b) => a + b) / values.length;
-    const squaredDiffs = values.map(v => Math.pow(v - mean, 2));
-    const variance = squaredDiffs.reduce((a, b) => a + b) / values.length;
-    const stdDev = Math.sqrt(variance);
-
-    return (stdDev / mean) * 100; // As percentage
+  private warnFeeIssue(key: string, message: string): void {
+    if (this.warnedFeeIssues.has(key)) return;
+    this.warnedFeeIssues.add(key);
+    console.warn(`[SmartRouter] ${message}`);
   }
 
-  /**
-   * Assess risk level of a route
-   */
-  private assessRisk(route: OptimalRoute, comparison: PriceComparison): string {
-    // Risk factors:
-    // 1. High slippage > 1%
-    // 2. Volatile market (price spread > 1%)
-    // 3. Low volume
+  private calculateVolatility(prices: TradePrice[]): number {
+    if (prices.length < 2) return 0;
+    const values = prices.map((p) => p.price);
+    const mean = values.reduce((a, b) => a + b, 0) / values.length;
+    if (mean === 0) return 0;
+    const variance =
+      values.reduce((sum, v) => sum + (v - mean) ** 2, 0) / values.length;
+    return (Math.sqrt(variance) / mean) * 100;
+  }
 
-    let riskScore = 0;
-
-    if (route.costBreakdown.slippage / route.bestPrice > 0.01) riskScore += 2;
-    if (comparison.spreadPercent > 1) riskScore += 2;
-
-    if (riskScore >= 4) return 'high';
-    if (riskScore >= 2) return 'medium';
+  private assessRisk(
+    route: OptimalRoute,
+    comparison: PriceComparison
+  ): 'low' | 'medium' | 'high' {
+    let score = 0;
+    if (route.costBreakdown.slippage / route.bestPrice > 0.01) score += 2;
+    if (comparison.spreadPercent > 1) score += 2;
+    if (route.alternatives[0]?.dataAgeMs > this.opts.maxQuoteAgeMs) score += 1;
+    if (score >= 4) return 'high';
+    if (score >= 2) return 'medium';
     return 'low';
   }
 }
+
+export const smartRouter = SmartRouter.getInstance();

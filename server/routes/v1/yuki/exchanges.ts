@@ -283,36 +283,37 @@ router.get('/:id/balances', isAuthenticated, async (req: Request, res: Response)
       }))
       .sort((a, b) => b.total - a.total);
 
-    // Resolve real USD prices for each symbol using the central price oracle.
+    // Resolve reliable USD valuations for each symbol using the central oracle.
     // NOTE: CEX trades do NOT pay Ethereum gas. Do not subtract ETH gas from portfolio value.
     // Exchange fees come from CCXT market data (fetchTradingFee), not Ethereum mainnet.
-    let totalValue = 0;
-    try {
-      const symbols = formattedBalances.map((b) => b.symbol.toUpperCase());
-      const pricesMap = await priceOracle.getPrices(symbols);
-
-      // Attach per-entry USD value and reliability flag
-      for (const b of formattedBalances) {
-        const sym = b.symbol.toUpperCase();
-        const pd = pricesMap.get(sym);
-        const price = pd?.priceUsd ?? null;
-        const valueReliable = typeof price === 'number' && price > 0;
-        const value = valueReliable ? b.total * price : 0;
-        // mutate the object to include USD fields for callers
-        (b as any).value = Number(value.toFixed(2));
-        (b as any).valueReliable = valueReliable;
-        if (valueReliable) totalValue += value;
-      }
-    } catch (e) {
-      logger.warn('[YUKI] Price lookup failed for balances, falling back to zero values', { error: e });
-      // Ensure fields exist even on failure
-      for (const b of formattedBalances) {
-        (b as any).value = 0;
-        (b as any).valueReliable = false;
-      }
-      totalValue = 0;
+    const symbols = formattedBalances.map((b) => b.symbol.toUpperCase());
+    const pricesMap = await priceOracle.getValuationPrices(symbols);
+    const missingSymbols = symbols.filter((symbol) => !pricesMap.has(symbol));
+    if (missingSymbols.length > 0) {
+      return res.status(503).json({
+        success: false,
+        error: `Reliable valuation unavailable for exchange assets: ${missingSymbols.join(', ')}`,
+        code: 'VALUATION_UNAVAILABLE',
+        balances: formattedBalances.map((balance) => ({
+          ...balance,
+          value: null,
+          valueReliable: false,
+        })),
+      });
     }
 
+    let totalValue = 0;
+    for (const b of formattedBalances) {
+      const valuation = pricesMap.get(b.symbol.toUpperCase());
+      const price = valuation?.haircutPriceUsd ?? valuation?.priceUsd;
+      if (!valuation || price === undefined || !Number.isFinite(price) || price <= 0) {
+        throw new Error(`Reliable valuation unavailable for ${b.symbol}`);
+      }
+      const value = b.total * price;
+      (b as any).value = Number(value.toFixed(2));
+      (b as any).valueReliable = true;
+      totalValue += value;
+    }
     // Update last sync time in database
     await pool.query(
       `UPDATE cex_credentials SET last_used_at = NOW() WHERE id = $1`,

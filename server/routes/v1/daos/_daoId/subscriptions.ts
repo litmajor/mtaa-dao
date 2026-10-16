@@ -33,14 +33,10 @@ interface SubscriptionsParams {
 
 type SubscriptionsRequest = Request<SubscriptionsParams>;
 
-interface RequestWithUser extends SubscriptionsRequest {
-  user?: { id?: string; claims?: { sub?: string } };
-}
-
 const router: Router = express.Router({ mergeParams: true });
 
 // Helper to get userId with proper type narrowing
-function getUserId(req: RequestWithUser): string | null {
+function getUserId(req: SubscriptionsRequest): string | null {
   return req.user?.id || req.user?.claims?.sub || null;
 }
 

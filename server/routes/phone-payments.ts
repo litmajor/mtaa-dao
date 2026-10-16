@@ -2,11 +2,12 @@
 import { Router } from 'express';
 import { db } from '../db';
 import { authenticate } from '../auth';
-import { otpService } from '../services/otpService';
+import { OTPService, otpService } from '../services/otpService';
 import { tokenService } from '../services/tokenService';
 import { users, walletTransactions } from '../../shared/schema';
 import { eq, and } from 'drizzle-orm';
 import { Logger } from '../utils/logger';
+import { getRequestUserId } from '../utils/requestUser';
 
 const router = Router();
 const logger = Logger.getLogger();
@@ -19,7 +20,7 @@ const CACHE_TTL = 5 * 60 * 1000; // 5 minutes
 router.post('/link-phone', authenticate, async (req, res) => {
   try {
     const { phoneNumber } = req.body;
-    const userId = req.user!.claims?.id;
+    const userId = getRequestUserId(req);
 
     if (!userId) {
       return res.status(401).json({ error: 'Unauthorized' });
@@ -41,7 +42,7 @@ router.post('/link-phone', authenticate, async (req, res) => {
     }
 
     // Generate and send OTP
-    const otp = await otpService.generateOTP(normalizedPhone);
+    const otp = await OTPService.generateOTP(userId, normalizedPhone);
     
     // Store pending phone verification
     await db.update(users)
@@ -68,7 +69,7 @@ router.post('/link-phone', authenticate, async (req, res) => {
 router.post('/verify-phone', authenticate, async (req, res) => {
   try {
     const { phoneNumber, otp } = req.body;
-    const userId = req.user!.claims?.id;
+    const userId = getRequestUserId(req);
 
     if (!userId) {
       return res.status(401).json({ error: 'Unauthorized' });
@@ -158,7 +159,7 @@ async function lookupWalletByPhone(phoneNumber: string): Promise<string | null> 
 router.post('/send-to-phone', authenticate, async (req, res) => {
   try {
     const { phoneNumber, amount, currency = 'cUSD' } = req.body;
-    const userId = req.user!.claims?.id;
+    const userId = getRequestUserId(req);
 
     if (!userId) {
       return res.status(401).json({ error: 'Unauthorized' });

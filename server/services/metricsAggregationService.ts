@@ -96,49 +96,49 @@ export class MonitoringAggregationService {
             const result = await db.select({ count: sql<number>`count(*)` }).from(daos);
             daoCount = result[0]?.count || 0;
           } catch (e) {
-            logger.warn('Failed to count DAOs:', (e as Error).message);
+            logger.warn('Failed to count DAOs:', { error: (e as Error).message });
           }
 
           try {
             const result = await db.select({ count: sql<number>`count(*)` }).from(daos).where(eq(daos.status, 'active'));
             activeDaoCount = result[0]?.count || 0;
           } catch (e) {
-            logger.warn('Failed to count active DAOs:', (e as Error).message);
+            logger.warn('Failed to count active DAOs:', { error: (e as Error).message });
           }
 
           try {
             const result = await db.select({ count: sql<number>`count(DISTINCT ${daoMemberships.userId})` }).from(daoMemberships);
             memberCount = result[0]?.count || 0;
           } catch (e) {
-            logger.warn('Failed to count members:', (e as Error).message);
+            logger.warn('Failed to count members:', { error: (e as Error).message });
           }
 
           try {
             const result = await db.select({ count: sql<number>`count(*)` }).from(users);
             userCount = result[0]?.count || 0;
           } catch (e) {
-            logger.warn('Failed to count users:', (e as Error).message);
+            logger.warn('Failed to count users:', { error: (e as Error).message });
           }
 
           try {
             const result = await db.select({ count: sql<number>`count(*)` }).from(vaults);
             vaultCount = result[0]?.count || 0;
           } catch (e) {
-            logger.warn('Failed to count vaults:', (e as Error).message);
+            logger.warn('Failed to count vaults:', { error: (e as Error).message });
           }
 
           try {
             const result = await db.select({ count: sql<number>`count(*)` }).from(vaults).where(eq(vaults.isActive, true));
             activeVaultCount = result[0]?.count || 0;
           } catch (e) {
-            logger.warn('Failed to count active vaults:', (e as Error).message);
+            logger.warn('Failed to count active vaults:', { error: (e as Error).message });
           }
 
           try {
             const result = await db.select({ count: sql<number>`count(*)` }).from(vaultTransactions);
             transactionCount = result[0]?.count || 0;
           } catch (e) {
-            logger.warn('Failed to count transactions:', (e as Error).message);
+            logger.warn('Failed to count transactions:', { error: (e as Error).message });
           }
 
           try {
@@ -147,7 +147,7 @@ export class MonitoringAggregationService {
               .from(vaults);
             tvl = result[0]?.total || '0';
           } catch (e) {
-            logger.warn('Failed to calculate TVL:', (e as Error).message);
+            logger.warn('Failed to calculate TVL:', { error: (e as Error).message });
           }
 
           try {
@@ -156,7 +156,7 @@ export class MonitoringAggregationService {
               .from(vaultTransactions);
             fees = result[0]?.total || '0';
           } catch (e) {
-            logger.warn('Failed to calculate fees:', (e as Error).message);
+            logger.warn('Failed to calculate fees:', { error: (e as Error).message });
           }
           // Get real system metrics instead of hardcoded values
           const systemMetrics = SystemMetricsCollector.getSystemMetrics();
@@ -185,7 +185,21 @@ export class MonitoringAggregationService {
           } else {
             // Contract valid - safe to insert
             try {
-              await db.insert(platformMetrics).values(metrics);
+              await db.insert(platformMetrics).values({
+                totalDaos: metrics.totalDAOs,
+                activeDaos: metrics.activeDAOs,
+                totalMembers: metrics.totalMembers,
+                totalVaults: metrics.totalVaults,
+                activeVaults: metrics.activeVaults,
+                totalTvl: metrics.totalTVL,
+                totalTransactions: metrics.totalTransactions,
+                totalFees: metrics.totalFees,
+                totalRevenue: metrics.totalRevenue,
+                cpuUsage: String(metrics.cpuUsage),
+                memoryUsage: String(metrics.memoryUsage),
+                diskUsage: String(metrics.diskUsage),
+                networkLatency: metrics.networkLatency,
+              });
             } catch (insertError) {
               // Extract clean error message - avoid serializing the full error object
               const errorMsg = getErrorMessage(insertError);
@@ -310,20 +324,20 @@ export class MonitoringAggregationService {
             protocolName: protocolData.protocol,
             status: healthPercentage >= 80 ? 'operational' : 'degraded',
             tvl: protocolData.totalTvl || '0',
-            apy: protocolData.avgApy || '0',
-            poolCount: protocolData.count || 0,
-            healthScore: healthPercentage,
-            volume24h: volume24h,
-            uniqueUsers: activeUsersResult[0]?.count || 0,
+            totalUsers: activeUsersResult[0]?.count || 0,
+            lastUpdate: now,
+            metadata: {
+              apy: protocolData.avgApy || '0',
+              poolCount: protocolData.count || 0,
+              healthScore: healthPercentage,
+              volume24h,
+            },
           }).onConflictDoUpdate({
             target: defiProtocolMetrics.protocolName,
             set: {
               tvl: sql`EXCLUDED.tvl`,
-              apy: sql`EXCLUDED.apy`,
-              poolCount: sql`EXCLUDED.pool_count`,
-              healthScore: sql`EXCLUDED.health_score`,
-              volume24h: sql`EXCLUDED.volume_24h`,
-              uniqueUsers: sql`EXCLUDED.unique_users`,
+              totalUsers: sql`EXCLUDED.total_users`,
+              metadata: sql`EXCLUDED.metadata`,
               lastUpdate: sql`NOW()`,
             },
           });
@@ -413,7 +427,16 @@ export class MonitoringAggregationService {
       };
 
       // Insert revenue metrics
-      await db.insert(revenueMetrics).values(metrics);
+      await db.insert(revenueMetrics).values({
+        date: new Date().toISOString().slice(0, 10),
+        totalRevenue: metrics.totalRevenue,
+        transactionFees: metrics.transactionFees,
+        platformFees: metrics.serviceFees,
+        otherRevenue: metrics.vaultFees,
+        revenueBySource: {
+          subscriptionRevenue: metrics.subscriptionRevenue,
+        },
+      });
       
       logger.info('Revenue metrics aggregated (REAL DATA)', {
         transactionFees,
@@ -514,7 +537,16 @@ export class MonitoringAggregationService {
         daoGrowthRate,
       };
 
-      await db.insert(platformGrowthMetrics).values(metrics);
+      await db.insert(platformGrowthMetrics).values({
+        date: now.toISOString().slice(0, 10),
+        totalUsers: metrics.totalUsers,
+        newUsers: metrics.newUsersToday,
+        totalDaos: metrics.totalDAOs,
+        newDaos: metrics.newDAOsToday,
+        monthlyActiveUsers: metrics.newUsersThisMonth,
+        weeklyActiveUsers: metrics.newUsersToday,
+        userRetention: metrics.userGrowthRate,
+      });
       
       logger.info('Platform growth metrics aggregated (CALCULATED)', {
         totalUsers: totalUsers[0]?.count,
@@ -615,7 +647,19 @@ export class CommunityAggregationService {
         recentTrend: trend,
       };
 
-      await db.insert(referralMetrics).values(metrics);
+      await db.insert(referralMetrics).values({
+        date: today.toISOString().slice(0, 10),
+        totalReferrals: metrics.totalReferrals,
+        newReferralsToday: metrics.newReferralsToday,
+        referredUsersCount: metrics.activeReferrers,
+        referredUsersActive: metrics.activeReferrers,
+        totalReferralRewards: metrics.totalRewardsDistributed,
+        rewardsDistributedToday: '0',
+        averageRewardPerReferral: metrics.totalReferrals > 0
+          ? (parseFloat(metrics.totalRewardsDistributed) / metrics.totalReferrals).toString()
+          : '0',
+        averageReferralsPerUser: metrics.conversionRate,
+      });
       
       logger.info('Referral metrics aggregated (REAL DATA)', {
         newReferralsThisMonth: thisMonth,
@@ -702,16 +746,18 @@ export class CommunityAggregationService {
           await db.insert(leaderboardRankings).values({
             userId: user.userId,
             rankingType: 'overall',
+            date: today.toISOString().slice(0, 10),
             rank: currentRank,
-            score: user.score || 0,
-            contributions: user.score || 0,
-            trend,
+            score: String(user.score || 0),
+            rankChange: previousRank === undefined ? 0 : previousRank - currentRank,
+            metricValue: String(user.score || 0),
           }).onConflictDoUpdate({
             target: [leaderboardRankings.userId, leaderboardRankings.rankingType],
             set: {
               rank: currentRank,
-              score: user.score || 0,
-              trend,
+              score: String(user.score || 0),
+              rankChange: previousRank === undefined ? 0 : previousRank - currentRank,
+              metricValue: String(user.score || 0),
             },
           });
         }
@@ -810,22 +856,23 @@ export class CommunityAggregationService {
 
         await db.insert(daoAnalytics).values({
           daoId: dao.id,
+          date: today.toISOString().slice(0, 10),
           daoType: dao.type || 'General',
           region: dao.region || 'Global',
-          cause: dao.cause || 'General',
-          memberCount: members,
-          proposalCount: proposalCount[0]?.count || 0,
-          treasuryValue: treasuryValue[0]?.total || '0',
-          healthScore,
-          growthRate,
+          causeCategory: dao.cause || 'General',
+          totalMembers: members,
+          totalProposals: proposalCount[0]?.count || 0,
+          activeProposals: activeProposals,
+          treasuryBalance: treasuryValue[0]?.total || '0',
+          averageParticipation: growthRate,
         }).onConflictDoUpdate({
           target: daoAnalytics.daoId,
           set: {
-            memberCount: members,
-            proposalCount: proposalCount[0]?.count || 0,
-            treasuryValue: treasuryValue[0]?.total || '0',
-            healthScore,
-            growthRate,
+            totalMembers: members,
+            totalProposals: proposalCount[0]?.count || 0,
+            activeProposals,
+            treasuryBalance: treasuryValue[0]?.total || '0',
+            averageParticipation: growthRate,
           },
         });
 

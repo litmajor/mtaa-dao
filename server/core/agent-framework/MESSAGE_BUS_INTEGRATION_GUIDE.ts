@@ -142,7 +142,7 @@ export async function initializeMessageBusSystem(
   registerMessageBusObservability(
     app,
     messageBus,
-    metricsExporter,
+    metricsExporter ?? undefined,
     config_.observabilityPath
   );
   logger.info(`Observability endpoints registered at ${config_.observabilityPath}`);
@@ -374,4 +374,3 @@ export function exampleGetStats() {
  * MESSAGE_BUS_MAX_DLQ - Max messages in DLQ (default: 5000)
  */
 
-export { MessageBusIntegrationConfig };

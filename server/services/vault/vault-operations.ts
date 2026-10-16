@@ -21,6 +21,7 @@ import { depositSchema, withdrawSchema, strategyAllocationSchema } from './types
 import type { VaultDepositRequest, VaultWithdrawRequest, StrategyAllocationRequest, PendingTransaction } from './types';
 import { vaultHelperService } from './vault-helpers';
 import { notificationService } from '../../notificationService';
+import { priceOracle } from '../priceOracle';
 
 /**
  * VaultOperationsService - Handles vault transactions and allocations
@@ -443,19 +444,15 @@ export class VaultOperationsService {
   }
 
   /**
-   * Get token price with fallback
+   * Get an allowlisted, quorum-validated price for vault accounting.
    */
   private async getTokenPrice(tokenSymbol: string): Promise<number> {
-    const fallbackPrices: Record<string, number> = {
-      'CELO': 0.65,
-      'cUSD': 1.00,
-      'cEUR': 1.08,
-      'USDT': 1.00,
-      'USDC': 1.00,
-      'MTAA': 0.10
-    };
-
-    return fallbackPrices[tokenSymbol] || 0.30;
+    const valuation = await priceOracle.getValuationPrice(tokenSymbol);
+    const priceUsd = valuation?.haircutPriceUsd ?? valuation?.priceUsd;
+    if (!valuation || priceUsd === undefined || !Number.isFinite(priceUsd) || priceUsd <= 0) {
+      throw new Error(`No reliable valuation price available for ${tokenSymbol}`);
+    }
+    return priceUsd;
   }
 }
 

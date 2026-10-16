@@ -6,7 +6,7 @@
 import { db } from '../db';
 import { internalTransfers } from '@shared/transactionFlowSchema';
 import { accounts, users } from '@shared/schema';
-import { eq, and, desc, limit, offset } from 'drizzle-orm';
+import { eq, and, desc, or } from 'drizzle-orm';
 import { v4 as uuidv4 } from 'uuid';
 
 /**
@@ -100,7 +100,6 @@ export async function transferBetweenAccounts(
     reason,
     status: 'completed',
     createdAt: new Date(),
-    updatedAt: new Date(),
   });
 
   // Update balances atomically
@@ -151,7 +150,6 @@ export async function getTransferHistory(
       reason: internalTransfers.reason,
       status: internalTransfers.status,
       createdAt: internalTransfers.createdAt,
-      updatedAt: internalTransfers.updatedAt,
     })
     .from(internalTransfers)
     .where(eq(internalTransfers.userId, userId))
@@ -177,8 +175,10 @@ export async function getAccountTransfers(
     .where(
       and(
         eq(internalTransfers.userId, userId),
-        (query) =>
-          query.where(eq(internalTransfers.fromAccountId, accountId)).orWhere(eq(internalTransfers.toAccountId, accountId))
+        or(
+          eq(internalTransfers.fromAccountId, accountId),
+          eq(internalTransfers.toAccountId, accountId)
+        )
       )
     )
     .orderBy(desc(internalTransfers.createdAt))

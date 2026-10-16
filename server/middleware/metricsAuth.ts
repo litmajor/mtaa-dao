@@ -15,15 +15,15 @@ function ipFromRequest(req: Request) {
 export function metricsAuth(req: Request, res: Response, next: NextFunction) {
   try {
     const ipAllowlist = parseAllowlist(process.env.METRICS_IP_ALLOWLIST);
-    const clientIp = ipFromRequest(req);
+    const clientIp = ipFromRequest(req) || '';
 
     // If allowlist provided and client IP matches, allow immediately
-    if (ipAllowlist.length > 0 && ipAllowlist.includes(clientIp)) {
+    if (ipAllowlist.length > 0 && clientIp && ipAllowlist.includes(clientIp)) {
       return next();
     }
 
     // Validate token: support Authorization Bearer, x-metrics-token header, or cookie named metrics_token
-    const headerAuth = (req.headers.authorization || '') as string;
+    const headerAuth = String(req.headers.authorization || '');
     const bearer = headerAuth.startsWith('Bearer ') ? headerAuth.split(' ')[1] : undefined;
     const headerToken = (req.headers['x-metrics-token'] as string) || undefined;
     const cookieToken = (req.cookies && (req.cookies.metrics_token || req.cookies.metricsToken)) || undefined;

@@ -60,8 +60,8 @@ export function useRealtimeMetrics<T = any>(
   const [isStale, setIsStale] = useState(false);
 
   const subscriptionIdRef = useRef<string>('');
-  const refreshTimerRef = useRef<NodeJS.Timer>();
-  const staleTimerRef = useRef<NodeJS.Timer>();
+  const refreshTimerRef = useRef<number | undefined>(undefined);
+  const staleTimerRef = useRef<number | undefined>(undefined);
 
   if (!context) {
     throw new Error(
@@ -83,9 +83,9 @@ export function useRealtimeMetrics<T = any>(
 
         // Reset stale timer
         if (staleTimerRef.current) {
-          clearTimeout(staleTimerRef.current);
+          window.clearTimeout(staleTimerRef.current);
         }
-        staleTimerRef.current = setTimeout(() => {
+        staleTimerRef.current = window.setTimeout(() => {
           setIsStale(true);
         }, staleTime);
 
@@ -110,7 +110,7 @@ export function useRealtimeMetrics<T = any>(
 
     // Setup auto-refresh if specified
     if (refreshInterval) {
-      refreshTimerRef.current = setInterval(async () => {
+      refreshTimerRef.current = window.setInterval(async () => {
         try {
           await context.refresh(channel);
         } catch (err) {
@@ -127,10 +127,10 @@ export function useRealtimeMetrics<T = any>(
         context.unsubscribe(channel, subscriptionIdRef.current);
       }
       if (refreshTimerRef.current) {
-        clearInterval(refreshTimerRef.current);
+        window.clearInterval(refreshTimerRef.current);
       }
       if (staleTimerRef.current) {
-        clearTimeout(staleTimerRef.current);
+        window.clearTimeout(staleTimerRef.current);
       }
     };
   }, [channel, enabled, staleTime, refreshInterval, context, onSuccess, onError]);
@@ -149,7 +149,8 @@ export function useRealtimeMetrics<T = any>(
   };
 
   const subscribe = (handler: (data: T) => void) => {
-    return context.subscribe(channel, handler);
+    const subscriptionId = context.subscribe(channel, handler);
+    return () => context.unsubscribe(channel, subscriptionId);
   };
 
   return {

@@ -99,7 +99,7 @@ router.post('/dao/:daoId/messages', async (req: any, res) => {
   try {
     const { daoId } = req.params;
     const { content, messageType = 'text', replyToMessageId } = req.body;
-    const userId = req.user?.claims?.sub;
+    const userId = req.user?.id;
 
     if (!userId) {
       return res.status(401).json({ error: 'Authentication required' });
@@ -132,7 +132,7 @@ router.post('/dao/:daoId/messages', async (req: any, res) => {
 router.delete('/dao/:daoId/messages/:messageId', async (req: any, res) => {
   try {
     const { daoId, messageId } = req.params;
-    const userId = req.user?.claims?.sub;
+    const userId = req.user?.id;
 
     if (!userId) {
       return res.status(401).json({ error: 'Authentication required' });
@@ -160,7 +160,7 @@ router.patch('/dao/:daoId/messages/:messageId', async (req: any, res) => {
   try {
     const { daoId, messageId } = req.params;
     const { content } = req.body;
-    const userId = req.user?.claims?.sub;
+    const userId = req.user?.id;
 
     if (!userId) {
       return res.status(401).json({ error: 'Authentication required' });
@@ -191,7 +191,7 @@ router.post('/dao/:daoId/upload', upload.single('file'), async (req: any, res) =
     }
 
     const { daoId } = req.params;
-    const userId = req.user?.claims?.sub;
+    const userId = req.user?.id;
 
     if (!userId) {
       return res.status(401).json({ error: 'Authentication required' });
@@ -260,7 +260,7 @@ router.post('/dao/:daoId/messages/:messageId/reactions', async (req: any, res) =
   try {
     const { daoId, messageId } = req.params;
     const { emoji } = req.body;
-    const userId = req.user?.claims?.sub;
+    const userId = req.user?.id;
 
     if (!userId) {
       return res.status(401).json({ error: 'Authentication required' });
@@ -283,7 +283,7 @@ router.post('/dao/:daoId/messages/:messageId/reactions', async (req: any, res) =
 router.delete('/dao/:daoId/messages/:messageId/reactions/:emoji', async (req: any, res) => {
   try {
     const { daoId, messageId, emoji: encodedEmoji } = req.params;
-    const userId = req.user?.claims?.sub;
+    const userId = req.user?.id;
 
     if (!userId) {
       return res.status(401).json({ error: 'Authentication required' });
@@ -312,7 +312,7 @@ router.delete('/dao/:daoId/messages/:messageId/reactions/:emoji', async (req: an
 router.post('/dao/:daoId/messages/:messageId/pin', async (req: any, res) => {
   try {
     const { daoId, messageId } = req.params;
-    const userId = req.user?.claims?.sub;
+    const userId = req.user?.id;
 
     if (!userId) {
       return res.status(401).json({ error: 'Authentication required' });
@@ -340,7 +340,7 @@ router.post('/dao/:daoId/typing', async (req, res) => {
   try {
     const { daoId } = req.params;
     const { isTyping } = req.body;
-    const userId = req.user?.claims?.sub;
+    const userId = req.user?.id;
     let userName = 'Anonymous';
     if (userId) {
       const [user] = await db.select({
@@ -420,7 +420,7 @@ router.get('/dao/:daoId/presence', async (req, res) => {
 router.delete('/dao/:daoId/attachments/:attachmentId', async (req, res) => {
   try {
     const { daoId, attachmentId } = req.params;
-    const userId = req.user?.claims?.sub;
+    const userId = req.user?.id;
 
     if (!userId) {
       return res.status(401).json({ error: 'Authentication required' });

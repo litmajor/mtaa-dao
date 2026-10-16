@@ -44,7 +44,8 @@ interface TaxReport {
   totalCapitalGains: number;
 
   // Summary
-  totalTaxablEvent: TaxEvent[];
+  totalTaxableEvent?: TaxEvent[];
+  totalTaxableEvents?: TaxEvent[];
   estimatedTaxLiability: number;
   
   // Exports
@@ -81,75 +82,86 @@ export class TaxReportingService {
       const events: TaxEvent[] = [];
 
       // Get vault transactions (deposits, withdrawals, yields)
-      const vaultTxns = await db.execute(sql`
+      const vaultTxnResult = await db.execute(sql`
         SELECT type, amount, created_at FROM vault_transactions
         WHERE member_id = ${memberId}
         AND created_at BETWEEN ${yearStart} AND ${yearEnd}
       `);
 
-      for (const txn of vaultTxns) {
+      for (const txn of vaultTxnResult.rows) {
+        const date = this._toDate(txn.created_at);
+        const amount = this._toNumber(txn.amount);
+        const type = String(txn.type);
         events.push({
-          date: txn.created_at,
-          eventType: txn.type === 'deposit' ? 'DEPOSIT' : txn.type === 'withdrawal' ? 'WITHDRAWAL' : 'YIELD',
-          amount: txn.amount,
-          amountUSD: await this._getHistoricalPrice(txn.created_at, 'MTAA', txn.amount),
+          date,
+          eventType: type === 'deposit' ? 'DEPOSIT' : type === 'withdrawal' ? 'WITHDRAWAL' : 'YIELD',
+          amount,
+          amountUSD: await this._getHistoricalPrice(date, 'MTAA', amount),
           asset: 'MTAA',
-          description: `Vault transaction: ${txn.type}`,
+          description: `Vault transaction: ${type}`,
         });
       }
 
       // Get wallet transactions (swaps, transfers)
-      const walletTxns = await db.execute(sql`
+      const walletTxnResult = await db.execute(sql`
         SELECT from_address, to_address, amount, token, tx_hash, timestamp 
         FROM wallet_transactions
         WHERE (from_address = ${memberId} OR to_address = ${memberId})
         AND timestamp BETWEEN ${yearStart} AND ${yearEnd}
       `);
 
-      for (const txn of walletTxns) {
+      for (const txn of walletTxnResult.rows) {
+        const date = this._toDate(txn.timestamp);
+        const amount = this._toNumber(txn.amount);
+        const token = String(txn.token);
+        const transactionHash = String(txn.tx_hash ?? '');
         events.push({
-          date: txn.timestamp,
+          date,
           eventType: 'SWAP',
-          amount: txn.amount,
-          amountUSD: await this._getHistoricalPrice(txn.timestamp, txn.token, txn.amount),
-          asset: txn.token,
-          description: `Token swap: ${txn.tx_hash.substring(0, 8)}...`,
+          amount,
+          amountUSD: await this._getHistoricalPrice(date, token, amount),
+          asset: token,
+          description: `Token swap: ${transactionHash.substring(0, 8)}...`,
         });
       }
 
       // Get governance rewards
-      const govRewards = await db.execute(sql`
+      const govRewardResult = await db.execute(sql`
         SELECT reward_amount, awarded_at FROM rewards
         WHERE member_id = ${memberId}
         AND reward_type = 'GOVERNANCE'
         AND awarded_at BETWEEN ${yearStart} AND ${yearEnd}
       `);
 
-      for (const reward of govRewards) {
+      for (const reward of govRewardResult.rows) {
+        const date = this._toDate(reward.awarded_at);
+        const amount = this._toNumber(reward.reward_amount);
         events.push({
-          date: reward.awarded_at,
+          date,
           eventType: 'GOVERNANCE_REWARD',
-          amount: reward.reward_amount,
-          amountUSD: await this._getHistoricalPrice(reward.awarded_at, 'MTAA', reward.reward_amount),
+          amount,
+          amountUSD: await this._getHistoricalPrice(date, 'MTAA', amount),
           asset: 'MTAA',
           description: 'Governance reward (taxable income)',
         });
       }
 
       // Get staking rewards
-      const stakingRewards = await db.execute(sql`
+      const stakingRewardResult = await db.execute(sql`
         SELECT reward_amount, awarded_at FROM rewards
         WHERE member_id = ${memberId}
         AND reward_type = 'STAKING'
         AND awarded_at BETWEEN ${yearStart} AND ${yearEnd}
       `);
 
-      for (const reward of stakingRewards) {
+      for (const reward of stakingRewardResult.rows) {
+        const date = this._toDate(reward.awarded_at);
+        const amount = this._toNumber(reward.reward_amount);
         events.push({
-          date: reward.awarded_at,
+          date,
           eventType: 'STAKE_REWARD',
-          amount: reward.reward_amount,
-          amountUSD: await this._getHistoricalPrice(reward.awarded_at, 'ETH', reward.reward_amount),
+          amount,
+          amountUSD: await this._getHistoricalPrice(date, 'ETH', amount),
           asset: 'ETH',
           description: 'Staking reward (taxable income)',
         });
@@ -161,6 +173,18 @@ export class TaxReportingService {
       console.error('❌ Error collecting tax events:', error);
       throw error;
     }
+  }
+
+  private _toDate(value: unknown): Date {
+    const date = value instanceof Date ? value : new Date(String(value));
+    if (Number.isNaN(date.getTime())) throw new Error(`Invalid tax event date: ${String(value)}`);
+    return date;
+  }
+
+  private _toNumber(value: unknown): number {
+    const amount = Number(value);
+    if (!Number.isFinite(amount)) throw new Error(`Invalid tax event amount: ${String(value)}`);
+    return amount;
   }
 
   // ==================== CAPITAL GAINS CALCULATION ====================
@@ -283,6 +307,7 @@ export class TaxReportingService {
         shortTermGains,
         totalCapitalGains,
         totalTaxableEvent: events,
+        totalTaxableEvents: events,
         estimatedTaxLiability,
         form8949Lines,
       };
@@ -439,7 +464,8 @@ RECOMMENDED NEXT STEPS:
     try {
       let csv = 'Date,EventType,Amount,AmountUSD,Asset,Description\n';
 
-      for (const event of report.totalTaxableEvent) {
+      const taxableEvents = report.totalTaxableEvents ?? report.totalTaxableEvent ?? [];
+      for (const event of taxableEvents) {
         csv += `${event.date.toISOString()},${event.eventType},${event.amount},${event.amountUSD.toFixed(2)},${event.asset},"${event.description}"\n`;
       }
 

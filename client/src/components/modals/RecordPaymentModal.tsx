@@ -1,10 +1,13 @@
 import React, { useState, useEffect } from 'react';
+import { initiateMpesaContribution, recordContribution } from '../../api/contributionsApi';
+import { authClient } from '../../utils/authClient';
 
 export default function RecordPaymentModal({ isOpen, onClose, daoId, onSuccess }: any) {
   const [members, setMembers] = useState<any[]>([]);
   const [memberId, setMemberId] = useState<string>('');
   const [amountKES, setAmountKES] = useState<string>('');
   const [method, setMethod] = useState<string>('M-Pesa');
+  const [requestStk, setRequestStk] = useState(false);
   const [mpesaCode, setMpesaCode] = useState<string>('');
   const [note, setNote] = useState<string>('');
   const [receiptFile, setReceiptFile] = useState<File | null>(null);
@@ -20,7 +23,7 @@ export default function RecordPaymentModal({ isOpen, onClose, daoId, onSuccess }
     if (!isOpen) return;
     (async () => {
       try {
-        const res = await fetch(`/api/v1/daos/${daoId}/members`);
+        const res = await authClient.fetch(`/api/v1/daos/${daoId}/members`);
         if (res.ok) {
           const j = await res.json();
           setMembers(j.data || []);
@@ -41,32 +44,28 @@ export default function RecordPaymentModal({ isOpen, onClose, daoId, onSuccess }
       if (!memberId) { setError('Select a member'); setLoading(false); return; }
       if (!amountKES || Number(amountKES) <= 0) { setError('Enter amount'); setLoading(false); return; }
 
-      const payload = { 
+      const payload = {
         memberId, 
         amountKES: Number(amountKES), 
-        method, 
-        mpesaCode: mpesaCode || undefined, 
+        currency: 'KES',
+        paymentMethod: method,
+        mpesaRef: mpesaCode || undefined,
         note,
         contributorName: contributorName || undefined,
         contributorPhone: contributorPhone || undefined,
         purpose,
         cycle: cycle || undefined
       };
-      const res = await fetch(`/api/v1/daos/${daoId}/payments/record`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
-      if (!res.ok) {
-        const j = await res.json();
-        setError(j?.error || 'Failed to record payment');
-        setLoading(false);
-        return;
-      }
-      const j = await res.json();
+      const j = method === 'M-Pesa' && requestStk
+        ? await initiateMpesaContribution(daoId, payload)
+        : await recordContribution(daoId, payload);
       onSuccess?.(j);
       // if user attached a receipt file, upload it
       if (receiptFile && j?.paymentId) {
         try {
           const form = new FormData();
           form.append('receipt', receiptFile);
-          const up = await fetch(`/api/v1/daos/${daoId}/payments/${j.paymentId}/receipt`, { method: 'POST', body: form });
+          const up = await authClient.fetch(`/api/v1/daos/${daoId}/treasury/contributions/${j.paymentId}/receipt`, { method: 'POST', body: form });
           if (!up.ok) {
             const uj = await up.json().catch(() => ({}));
             console.warn('Receipt upload failed', uj);
@@ -77,7 +76,11 @@ export default function RecordPaymentModal({ isOpen, onClose, daoId, onSuccess }
       }
       const sel = members.find(m => m.userId === memberId);
       const name = sel?.userName || sel?.userEmail || 'member';
-      setSuccessMsg(`✓ Payment recorded. Waiting for ${name} to confirm.`);
+      setSuccessMsg(
+        method === 'M-Pesa' && requestStk
+          ? `✓ M-Pesa prompt sent to ${name}. The contribution will be submitted for approval after payment confirmation.`
+          : `✓ Payment recorded. Waiting for a DAO treasurer to approve it for ${name}.`
+      );
       // keep modal open briefly so user sees confirmation
       setLoading(false);
       setTimeout(() => {
@@ -149,10 +152,18 @@ export default function RecordPaymentModal({ isOpen, onClose, daoId, onSuccess }
           </div>
 
           {method === 'M-Pesa' && (
-            <div>
-              <label className="text-xs text-slate-400">M-Pesa Code (KES till / STK code)</label>
-              <input value={mpesaCode} onChange={(e) => setMpesaCode(e.target.value.toUpperCase())} className="w-full mt-1 p-2 bg-slate-800 rounded text-white" placeholder="e.g., ABC123XYZ" />
-            </div>
+            <>
+              <label className="inline-flex items-center gap-2 text-sm">
+                <input type="checkbox" checked={requestStk} onChange={(e) => setRequestStk(e.target.checked)} />
+                Send an M-Pesa STK payment prompt
+              </label>
+              {!requestStk && (
+                <div>
+                  <label className="text-xs text-slate-400">M-Pesa Code (KES till / STK code)</label>
+                  <input value={mpesaCode} onChange={(e) => setMpesaCode(e.target.value.toUpperCase())} className="w-full mt-1 p-2 bg-slate-800 rounded text-white" placeholder="e.g., ABC123XYZ" />
+                </div>
+              )}
+            </>
           )}
 
           <div>
@@ -171,7 +182,9 @@ export default function RecordPaymentModal({ isOpen, onClose, daoId, onSuccess }
 
           <div className="flex gap-2 justify-end">
             <button onClick={onClose} className="px-3 py-2 bg-slate-700 rounded">Cancel</button>
-            <button onClick={submit} className="px-3 py-2 bg-blue-600 rounded" disabled={loading}>{loading ? 'Recording...' : 'Record Payment'}</button>
+            <button onClick={submit} className="px-3 py-2 bg-blue-600 rounded" disabled={loading}>
+              {loading ? (requestStk ? 'Sending prompt...' : 'Recording...') : (requestStk ? 'Send M-Pesa prompt' : 'Record Payment')}
+            </button>
           </div>
         </div>
       </div>

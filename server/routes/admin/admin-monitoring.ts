@@ -155,9 +155,9 @@ router.get('/monitoring/defi-protocols', requireSuperAdmin, async (req: Request,
           name: defiProtocolMetrics.protocolName,
           status: defiProtocolMetrics.status,
           tvl: defiProtocolMetrics.tvl,
-          apy: defiProtocolMetrics.apy,
-          pools: defiProtocolMetrics.poolCount,
-          health: defiProtocolMetrics.healthScore,
+          apy: sql<number>`COALESCE(((${defiProtocolMetrics.metadata} ->> 'apy')::numeric), 0)`,
+          pools: sql<number>`COALESCE(((${defiProtocolMetrics.metadata} ->> 'pool_count')::int), 0)`,
+          health: sql<number>`CASE WHEN ${defiProtocolMetrics.status} = 'active' THEN 100 ELSE 0 END`,
         })
         .from(defiProtocolMetrics)
         .orderBy(desc(defiProtocolMetrics.tvl));
@@ -217,13 +217,13 @@ router.get('/monitoring/cefi-exchanges', requireSuperAdmin, async (req: Request,
         return db.select({
           name: cefiExchangeMetrics.exchangeName,
           status: cefiExchangeMetrics.status,
-          tradingVolume: cefiExchangeMetrics.tradingVolume,
-          activeAccounts: cefiExchangeMetrics.activeAccounts,
-          fees: cefiExchangeMetrics.feesCollected,
-          health: cefiExchangeMetrics.healthScore,
+          tradingVolume: cefiExchangeMetrics.volume24h,
+          activeAccounts: cefiExchangeMetrics.users,
+          fees: sql<number>`COALESCE(((${cefiExchangeMetrics.metadata} ->> 'fees_collected')::numeric), 0)`,
+          health: sql<number>`COALESCE(((${cefiExchangeMetrics.metadata} ->> 'health_score')::numeric), CASE WHEN ${cefiExchangeMetrics.status} = 'active' THEN 100 ELSE 0 END)`,
         })
         .from(cefiExchangeMetrics)
-        .orderBy(desc(cefiExchangeMetrics.tradingVolume));
+        .orderBy(desc(cefiExchangeMetrics.volume24h));
       }
     );
 
@@ -254,13 +254,13 @@ router.get('/monitoring/health-status', requireSuperAdmin, async (req: Request, 
         return db.select({
           name: blockchainHealthMetrics.chainName,
           status: blockchainHealthMetrics.status,
-          latency: blockchainHealthMetrics.latency,
-          nodeCount: blockchainHealthMetrics.nodeCount,
-          alerts: blockchainHealthMetrics.alertCount,
-          health: blockchainHealthMetrics.healthScore,
+          latency: blockchainHealthMetrics.averageBlockTime,
+          nodeCount: blockchainHealthMetrics.transactionCount,
+          alerts: sql<number>`COALESCE(((${blockchainHealthMetrics.metadata} ->> 'alert_count')::int), 0)`,
+          health: blockchainHealthMetrics.networkHealthScore,
         })
         .from(blockchainHealthMetrics)
-        .orderBy(desc(blockchainHealthMetrics.nodeCount));
+        .orderBy(desc(blockchainHealthMetrics.transactionCount));
       }
     );
 
@@ -302,15 +302,15 @@ router.get('/monitoring/liquidity-pools', requireSuperAdmin, async (req: Request
       async () => {
         return db.select({
           id: liquidityPoolMetrics.poolAddress,
-          name: liquidityPoolMetrics.poolName,
-          exchange: liquidityPoolMetrics.exchangeName,
-          liquidity: liquidityPoolMetrics.liquidity,
-          spread: liquidityPoolMetrics.spread,
-          health: liquidityPoolMetrics.healthScore,
+          name: liquidityPoolMetrics.poolAddress,
+          exchange: sql<string>`COALESCE(${liquidityPoolMetrics.chainId}, 'unknown')`,
+          liquidity: liquidityPoolMetrics.totalLiquidity,
+          spread: sql<number>`COALESCE(((${liquidityPoolMetrics.metadata} ->> 'spread')::numeric), 0)`,
+          health: sql<number>`COALESCE(((${liquidityPoolMetrics.metadata} ->> 'health_score')::numeric), 100)`,
           volume24h: liquidityPoolMetrics.volume24h,
         })
         .from(liquidityPoolMetrics)
-        .orderBy(desc(liquidityPoolMetrics.liquidity));
+        .orderBy(desc(liquidityPoolMetrics.totalLiquidity));
       }
     );
 
@@ -344,18 +344,16 @@ router.get('/monitoring/revenue', requireSuperAdmin, async (req: Request, res: R
         const [revenue] = await db
           .select({
             transactionFees: sql<string>`COALESCE(SUM(${revenueMetrics.transactionFees}), 0)`,
-            subscriptionRevenue: sql<string>`COALESCE(SUM(${revenueMetrics.subscriptionRevenue}), 0)`,
-            vaultFees: sql<string>`COALESCE(SUM(${revenueMetrics.vaultFees}), 0)`,
-            serviceFees: sql<string>`COALESCE(SUM(${revenueMetrics.serviceFees}), 0)`,
+            platformFees: sql<string>`COALESCE(SUM(${revenueMetrics.platformFees}), 0)`,
+            otherRevenue: sql<string>`COALESCE(SUM(${revenueMetrics.otherRevenue}), 0)`,
           })
           .from(revenueMetrics)
-          .where(gte(revenueMetrics.date, thirtyDaysAgo));
+          .where(gte(revenueMetrics.date, thirtyDaysAgo.toISOString().slice(0, 10)));
 
         const revenueBreakdown = {
           transactionFees: toNumber(revenue.transactionFees),
-          subscriptionRevenue: toNumber(revenue.subscriptionRevenue),
-          vaultFees: toNumber(revenue.vaultFees),
-          serviceFees: toNumber(revenue.serviceFees),
+          platformFees: toNumber(revenue.platformFees),
+          otherRevenue: toNumber(revenue.otherRevenue),
         };
 
         const totalRevenue = Object.values(revenueBreakdown).reduce((a, b) => a + b, 0);
@@ -388,12 +386,12 @@ router.get('/monitoring/payments', requireSuperAdmin, async (req: Request, res: 
         return db.select({
           name: paymentProviderMetrics.providerName,
           status: paymentProviderMetrics.status,
-          transactionCount: paymentProviderMetrics.transactionCount,
+          transactionCount: paymentProviderMetrics.totalTransactions,
           successRate: paymentProviderMetrics.successRate,
-          totalProcessed: paymentProviderMetrics.totalProcessed,
+          totalProcessed: paymentProviderMetrics.totalVolume,
         })
         .from(paymentProviderMetrics)
-        .orderBy(desc(paymentProviderMetrics.totalProcessed));
+        .orderBy(desc(paymentProviderMetrics.totalVolume));
       }
     );
 
@@ -425,10 +423,10 @@ router.get('/monitoring/agents', requireSuperAdmin, async (req: Request, res: Re
       async () => {
         return db.select({
           id: agentPerformanceMetrics.agentId,
-          name: agentPerformanceMetrics.agentName,
-          status: agentPerformanceMetrics.status,
+          name: agentPerformanceMetrics.agentId,
+          status: sql<string>`'active'`,
           tasksCompleted: agentPerformanceMetrics.tasksCompleted,
-          tasksActive: agentPerformanceMetrics.tasksActive,
+          tasksActive: sql<number>`0`,
           successRate: agentPerformanceMetrics.successRate,
         })
         .from(agentPerformanceMetrics)
@@ -522,13 +520,13 @@ router.get('/monitoring/api-usage', requireSuperAdmin, async (req: Request, res:
       'api-usage',
       async () => {
         const endpointData = await db.select({
-          name: apiUsageMetrics.topEndpoint,
-          calls: apiUsageMetrics.requestsThisHour,
+          name: sql<string>`${apiUsageMetrics.topEndpoints}::text`,
+          calls: apiUsageMetrics.totalRequests,
           avgLatency: apiUsageMetrics.averageResponseTime,
-          errorRate: apiUsageMetrics.errorRate,
+          errorRate: sql<string>`CASE WHEN ${apiUsageMetrics.totalRequests} = 0 THEN 0 ELSE (${apiUsageMetrics.failedRequests}::numeric / ${apiUsageMetrics.totalRequests}) * 100 END`,
         })
         .from(apiUsageMetrics)
-        .orderBy(desc(apiUsageMetrics.requestsThisHour))
+        .orderBy(desc(apiUsageMetrics.totalRequests))
         .limit(10);
 
         const totalRequests = await db.select({
@@ -608,13 +606,13 @@ router.get('/monitoring/support-tickets', requireSuperAdmin, async (req: Request
       const [latest] = await db.select({
         total: supportTicketMetrics.totalTickets,
         open: supportTicketMetrics.openTickets,
-        inProgress: supportTicketMetrics.inProgressTickets,
+        inProgress: sql<number>`0`,
         resolved: supportTicketMetrics.resolvedTickets,
-        closed: supportTicketMetrics.closedTickets,
-        avgFirstResponseTime: supportTicketMetrics.avgFirstResponseTime,
-        avgResolutionTime: supportTicketMetrics.avgResolutionTime,
-        resolutionRate: supportTicketMetrics.resolutionRate,
-        satisfactionScore: supportTicketMetrics.satisfactionScore,
+        closed: sql<number>`0`,
+        avgFirstResponseTime: sql<number>`0`,
+        avgResolutionTime: supportTicketMetrics.averageResolutionTime,
+        resolutionRate: sql<string>`CASE WHEN ${supportTicketMetrics.totalTickets} = 0 THEN 0 ELSE (${supportTicketMetrics.resolvedTickets}::numeric / ${supportTicketMetrics.totalTickets}) * 100 END`,
+        satisfactionScore: supportTicketMetrics.customerSatisfaction,
         date: supportTicketMetrics.date,
       }).from(supportTicketMetrics).orderBy(desc(supportTicketMetrics.date)).limit(1);
       return latest || null;

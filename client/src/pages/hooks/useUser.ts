@@ -5,31 +5,12 @@ import { type User } from '../../types/user';
 
 // Fetch user from API (replace with your actual endpoint and logic)
 const fetchCurrentUser = async (): Promise<User | null> => {
-  const token = authClient.getToken();
-  if (!token) return null;
-
-  const headers: HeadersInit = {
-    'Content-Type': 'application/json',
-    ...(await authClient.getAuthHeaders()),
-  };
-
-  const res = await fetch('/api/auth/user', {
-    credentials: 'include',
-    headers,
-  });
-
-  if (!res.ok) {
-    if (res.status === 401) {
-      localStorage.removeItem('accessToken');
-      localStorage.removeItem('user');
-      return null;
-    }
-    throw new Error('Failed to fetch user');
+  try {
+    return await authClient.get<User>('/api/auth/user');
+  } catch (error) {
+    console.error('Failed to fetch current user:', error);
+    return null;
   }
-
-  const data = await res.json();
-  // Adjust this mapping if your API response shape is different
-  return data?.data?.user ?? null;
 };
 
 export function useUser(): User | null {

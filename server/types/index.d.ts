@@ -24,23 +24,6 @@ declare module 'next' {
 
 export {};
 
-declare module 'express' {
-  namespace Express {
-    interface Request {
-      user?: {
-        id?: string;
-        email?: string;
-        role?: string;
-        roles?: string | string[];
-        daos?: string[];
-        isSuperUser?: boolean;
-        isSuperuser?: boolean;
-        isAdmin?: boolean;
-        claims?: any;
-      };
-    }
-  }
-}
 declare module 'web3' {
   const web3: any;
   export = web3;

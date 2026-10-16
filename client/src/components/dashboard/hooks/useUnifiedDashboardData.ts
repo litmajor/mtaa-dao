@@ -5,18 +5,12 @@ import type { UnifiedDashboardDao } from '../../../../../shared/types/dao';
 // API Response Types
 // ---------------------------------------------------------------------------
 
-interface PlatformMetrics {
+export interface PlatformMetrics {
   tvl: number;
   assetCount: number;
   daoCount: number;
   memberCount: number;
-  healthScores: {
-    treasury: number;
-    liquidity: number;
-    governance: number;
-    security: number;
-    adoption: number;
-  };
+  healthScores: Record<string, number>;
   lastUpdated: number;
 }
 
@@ -123,13 +117,13 @@ function normalizeVaults(raw: any[]): Asset[] {
 // Hook
 // ---------------------------------------------------------------------------
 
-export function useUnifiedDashboardData(): UseUnifiedDashboardDataReturn {
+export function useUnifiedDashboardData(timeframe?: string): UseUnifiedDashboardDataReturn {
   const [data, setData] = useState<UnifiedDashboardData | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<Error | null>(null);
   const [lastUpdated, setLastUpdated] = useState(0);
 
-  const fetchData = useCallback(async () => {
+  const fetchData = useCallback(async (_timeframe?: string) => {
     try {
       setLoading(true);
       setError(null);
@@ -144,11 +138,15 @@ export function useUnifiedDashboardData(): UseUnifiedDashboardDataReturn {
         }
       };
 
+      const activeTimeframe = _timeframe ?? timeframe;
+
       const [statsRaw, myDaosRaw, vaultsRaw] = await Promise.all([
         fetchJson('/api/dashboard/stats', {}),
         fetchJson('/api/v1/users/my-daos', []),
         fetchJson('/api/dashboard/vaults', []),
       ]);
+
+      void activeTimeframe;
 
       const daos = normalizeApiDaos(Array.isArray(myDaosRaw) ? myDaosRaw : []);
       const assets = normalizeVaults(Array.isArray(vaultsRaw) ? vaultsRaw : []);
@@ -198,9 +196,9 @@ export function useUnifiedDashboardData(): UseUnifiedDashboardDataReturn {
     }
   }, []);
 
-  useEffect(() => { fetchData(); }, [fetchData]);
+  useEffect(() => { fetchData(timeframe); }, [fetchData, timeframe]);
 
-  return { data, loading, error, refetch: fetchData, lastUpdated };
+  return { data, loading, error, refetch: () => fetchData(timeframe), lastUpdated };
 }
 
 export default useUnifiedDashboardData;

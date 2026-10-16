@@ -159,7 +159,7 @@ class PoolGovernanceService {
       }
 
       // Check cooldown period
-      const cooldownHours = settings.proposalCooldownHours;
+      const cooldownHours = settings.proposalCooldownHours ?? 24;
       const cooldownDate = new Date();
       cooldownDate.setHours(cooldownDate.getHours() - cooldownHours);
 
@@ -188,7 +188,7 @@ class PoolGovernanceService {
 
       // Calculate voting end date
       const votingEndsAt = new Date();
-      votingEndsAt.setDate(votingEndsAt.getDate() + settings.votingPeriodDays);
+      votingEndsAt.setDate(votingEndsAt.getDate() + (settings.votingPeriodDays ?? 3));
 
       // Create proposal
       const [proposal] = await db
@@ -425,7 +425,7 @@ class PoolGovernanceService {
 
       if (settings) {
         const timelockEnd = new Date(proposal.votingEndsAt);
-        timelockEnd.setHours(timelockEnd.getHours() + settings.timelockHours);
+        timelockEnd.setHours(timelockEnd.getHours() + (settings.timelockHours ?? 24));
 
         if (new Date() < timelockEnd) {
           throw new Error(`Timelock active. Proposal can be executed after ${timelockEnd.toLocaleString()}`);
@@ -437,58 +437,9 @@ class PoolGovernanceService {
 
       switch (proposal.proposalType) {
         case 'allocation_change':
-          // Update asset allocations
-          const newAllocations = JSON.parse(proposal.details as string);
-          // Implement allocation change logic
-          // 1. Validate allocations sum to 100%
-          const totalAllocation = Object.values(newAllocations as any).reduce((a: number, b: number) => a + b, 0);
-          if (Math.abs(totalAllocation - 100) > 0.01) {
-            throw new Error(`Allocations must sum to 100%, got ${totalAllocation}%`);
-          }
-          
-          // 2. Get current pool positions
-          const currentAllocations = await db.query(sql`
-            SELECT asset, allocation_percentage FROM pool_allocations
-            WHERE pool_id = ${proposal.poolId}
-          `);
-          
-          // 3. Calculate rebalance trades needed
-          const trades = this.calculateRebalanceTrades(currentAllocations, newAllocations);
-          
-          // 4. Execute trades in order of priority
-          for (const trade of trades) {
-            const dexResult = await this.dexIntegration.executeSwap({
-              fromAsset: trade.fromAsset,
-              toAsset: trade.toAsset,
-              amount: trade.amount,
-              dex: 'uniswap' // or routing strategy
-            });
-            executionResult.trades = executionResult.trades || [];
-            executionResult.trades.push(dexResult);
-          }
-          
-          // 5. Update pool_allocations table
-          await db.execute(sql`
-            UPDATE pool_allocations
-            SET allocation_percentage = CASE
-              ${sql.raw(Object.entries(newAllocations as any).map(([asset, pct]) => 
-                `WHEN asset = '${asset}' THEN ${pct}`
-              ).join(' '))}
-            END
-            WHERE pool_id = ${proposal.poolId}
-          `);
-          
-          // 6. Emit rebalance event
-          await this.emitEvent('pool_rebalanced', {
-            poolId: proposal.poolId,
-            trades,
-            newAllocations
-          });
-          
-          // 7. Update performance metrics
-          executionResult.rebalanceStatus = 'completed';
-          executionResult = { message: 'Allocation change executed (simulated)', allocations: newAllocations };
-          break;
+          // This branch has no wired trade executor. Fail closed rather than
+          // persisting allocations and reporting success without rebalancing assets.
+          throw new Error('Allocation changes cannot be executed: pool rebalance integration is not configured');
 
         case 'fee_change':
           // Update performance fee
@@ -537,19 +488,14 @@ class PoolGovernanceService {
    */
   async getProposals(poolId: string, status?: string): Promise<any[]> {
     try {
-      let query = db
+      const filters = status
+        ? and(eq(poolProposals.poolId, poolId), eq(poolProposals.status, status))
+        : eq(poolProposals.poolId, poolId);
+      const proposals = await db
         .select()
         .from(poolProposals)
-        .where(eq(poolProposals.poolId, poolId));
-
-      if (status) {
-        query = query.where(and(
-          eq(poolProposals.poolId, poolId),
-          eq(poolProposals.status, status)
-        )) as any;
-      }
-
-      const proposals = await query.orderBy(desc(poolProposals.createdAt));
+        .where(filters)
+        .orderBy(desc(poolProposals.createdAt));
 
       return proposals;
     } catch (error) {

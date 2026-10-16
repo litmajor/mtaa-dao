@@ -28,9 +28,17 @@ const router = Router();
  */
 router.get('/ai-metrics', async (req, res) => {
   try {
-    // Check admin permissions
-    const userId = req.user?.claims?.id;
-    if (!userId || req.user?.claims?.role !== 'super_admin') {
+    const authUser = req.user as any;
+    const userId = authUser?.claims?.id ?? authUser?.claims?.sub ?? authUser?.id ?? authUser?.userId;
+    const userRoles = Array.isArray(authUser?.roles)
+      ? authUser.roles
+      : typeof authUser?.roles === 'string'
+        ? authUser.roles.split(',')
+        : authUser?.role
+          ? [authUser.role]
+          : [];
+
+    if (!userId || !userRoles.some((role: string) => role === 'super_admin' || role === 'super-admin')) {
       return res.status(403).json({ error: 'Admin access required' });
     }
 

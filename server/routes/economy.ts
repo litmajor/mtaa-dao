@@ -111,8 +111,8 @@ router.post('/redeem', authenticateToken, async (req, res) => {
     );
     
     res.json({
+      ...result,
       success: true,
-      ...result
     });
   } catch (error: any) {
     res.status(500).json({

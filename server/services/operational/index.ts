@@ -11,6 +11,7 @@ import {
   ServiceType,
   PrivilegeLevel,
   TrustLevel,
+  AuditActionType,
 } from './types';
 import { initializeDiscovery, getDiscovery } from './discovery/discovery';
 import { initializeAuditLogger, getAuditLogger } from './audit/logger';
@@ -60,7 +61,7 @@ export class OperationalFramework extends EventEmitter {
 
         // Log framework startup
         await auditLogger.logEvent(
-          'deployment_initiated',
+          AuditActionType.DEPLOYMENT_INITIATED,
           'system',
           undefined,
           'operational_framework',

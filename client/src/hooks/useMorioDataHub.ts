@@ -133,14 +133,9 @@ export function useMorioRealTime(daoId?: string) {
 
   useEffect(() => {
     // Only establish connection if user is authenticated
-    const token = authClient.getToken();
-    if (!token) return;
-
     // Initialize WebSocket connection
     const socket = io(window.location.origin, {
-      auth: {
-        token
-      },
+      withCredentials: true,
       reconnection: true,
       reconnectionDelay: 1000,
       reconnectionDelayMax: 5000,

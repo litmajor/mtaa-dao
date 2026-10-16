@@ -2,7 +2,7 @@
 import { z } from 'zod';
 import { db } from '../db';
 import { users, daos } from '../../shared/schema';
-import { eq } from 'drizzle-orm';
+import { desc, eq, sql } from 'drizzle-orm';
 
 // Comprehensive validation schemas
 export const daoCreationSchema = z.object({
@@ -54,14 +54,17 @@ export const daoCreationSchema = z.object({
   
   multisigEnabled: z.boolean(),
   
-  requiredSignatures: z.number().optional().refine((val, ctx) => {
-    if (ctx.parent.multisigEnabled && (!val || val < 2)) {
-      return false;
-    }
-    return true;
-  }, 'When multisig is enabled, at least 2 required signatures needed'),
+  requiredSignatures: z.number().optional(),
   
   peerInviteEnabled: z.boolean()
+}).superRefine((data, ctx) => {
+  if (data.multisigEnabled && (!data.requiredSignatures || data.requiredSignatures < 2)) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['requiredSignatures'],
+      message: 'When multisig is enabled, at least 2 required signatures needed',
+    });
+  }
 });
 
 export type DaoCreationInput = z.infer<typeof daoCreationSchema>;
@@ -96,12 +99,15 @@ export async function validateDaoCreation(
     // Check DAO creation eligibility (rate limiting, abuse prevention)
     const recentDaos = await db.select()
       .from(daos)
-      .where(eq(daos.createdBy, userId))
+      .where(eq(daos.creatorId, userId))
       .orderBy(desc(daos.createdAt))
       .limit(1);
     
     if (recentDaos.length > 0) {
-      const lastDaoCreated = new Date(recentDaos[0].createdAt);
+      const lastDaoCreated = recentDaos[0].createdAt;
+      if (!lastDaoCreated) {
+        return { valid: true, data: validatedData };
+      }
       const hoursSinceLastDao = (Date.now() - lastDaoCreated.getTime()) / (1000 * 60 * 60);
       
       if (hoursSinceLastDao < 1) {

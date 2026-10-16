@@ -71,7 +71,7 @@ export default function AdminRegisterPage() {
         name,
       });
 
-      if (!response.ok) {
+      if (data?.success === false) {
         setError(data.message || 'Registration failed. Please try again.');
         setIsLoading(false);
         return;

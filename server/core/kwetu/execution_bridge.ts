@@ -10,15 +10,17 @@
  */
 
 import { gatewayAggregator, type TreasuryProfile } from '../../services/gatewayAggregator';
-import { shardOrchestrator } from '../../services/intelligenceShards';
-import { assetGraphService } from '../../services/assetGraphService';
+import { tokenRegistry } from '../../services/tokenRegistry';
 import type { AssetStateSnapshot } from '../../types/assetGraph';
+import { getMarketSnapshot } from '../nuru/market_integration';
 
 export interface ExecutionPlan {
   transactionId: string;
   fromAsset: string;
   toAsset: string;
   amount: string;
+  recipient: string;
+  amountDecimals: number;
   estimatedOutput: string;
   selectedVenue: string;
   liquidityScore: number;
@@ -36,6 +38,7 @@ export interface TreasuryExecutionContext {
   fromAsset: string;
   toAsset: string;
   amount: string;
+  recipient: string;
   deadline: number; // Unix timestamp
   treasuryProfile: TreasuryProfile;
 }
@@ -79,6 +82,8 @@ export class TreasuryExecutionRouter {
         fromAsset: context.fromAsset,
         toAsset: context.toAsset,
         amount: context.amount,
+        recipient: context.recipient,
+        amountDecimals: this.getTokenDecimals(context.fromAsset),
         estimatedOutput: '0',
         selectedVenue: 'REJECTED',
         liquidityScore: 0,
@@ -106,11 +111,13 @@ export class TreasuryExecutionRouter {
         fromAsset: context.fromAsset,
         toAsset: context.toAsset,
         amount: context.amount,
+        recipient: context.recipient,
+        amountDecimals: this.getTokenDecimals(context.fromAsset),
         estimatedOutput: quote.quote.outputAmount,
         selectedVenue: quote.quote.protocol,
         liquidityScore: quote.score.liquidityScore,
         executionScore: quote.score.totalScore,
-        estimatedGas: quote.quote.estimatedGas || '0',
+        estimatedGas: this.formatGasEstimate(quote.quote.gasEstimate),
         estimatedSlippage: quote.quote.priceImpact || 0,
         riskScore,
         status: 'rejected',
@@ -132,11 +139,13 @@ export class TreasuryExecutionRouter {
         fromAsset: context.fromAsset,
         toAsset: context.toAsset,
         amount: context.amount,
+        recipient: context.recipient,
+        amountDecimals: this.getTokenDecimals(context.fromAsset),
         estimatedOutput: quote.quote.outputAmount,
         selectedVenue: quote.quote.protocol,
         liquidityScore: quote.score.liquidityScore,
         executionScore: quote.score.totalScore,
-        estimatedGas: quote.quote.estimatedGas || '0',
+        estimatedGas: this.formatGasEstimate(quote.quote.gasEstimate),
         estimatedSlippage: quote.quote.priceImpact || 0,
         riskScore,
         status: 'rejected',
@@ -150,11 +159,13 @@ export class TreasuryExecutionRouter {
       fromAsset: context.fromAsset,
       toAsset: context.toAsset,
       amount: context.amount,
+      recipient: context.recipient,
+      amountDecimals: this.getTokenDecimals(context.fromAsset),
       estimatedOutput: quote.quote.outputAmount,
       selectedVenue: quote.quote.protocol,
       liquidityScore: quote.score.liquidityScore,
       executionScore: quote.score.totalScore,
-      estimatedGas: quote.quote.estimatedGas || '0',
+      estimatedGas: this.formatGasEstimate(quote.quote.gasEstimate),
       estimatedSlippage: quote.quote.priceImpact || 0,
       riskScore,
       status: 'ready',
@@ -165,7 +176,7 @@ export class TreasuryExecutionRouter {
    * Validate execution context
    */
   private validateExecutionContext(context: TreasuryExecutionContext): void {
-    if (!context.daoId || !context.fromAsset || !context.toAsset || !context.amount) {
+    if (!context.daoId || !context.fromAsset || !context.toAsset || !context.amount || !context.recipient) {
       throw new Error('Invalid execution context: missing required fields');
     }
 
@@ -180,6 +191,29 @@ export class TreasuryExecutionRouter {
 
     if (context.fromAsset === context.toAsset) {
       throw new Error('Invalid swap: from and to assets are the same');
+    }
+
+    if (!/^0x[a-fA-F0-9]{40}$/.test(context.recipient)) {
+      throw new Error('Invalid recipient: must be a valid EVM address');
+    }
+  }
+
+  private getTokenDecimals(asset: string): number {
+    if (/^0x[a-fA-F0-9]{40}$/.test(asset)) return 18;
+    const token = tokenRegistry.filterTokens({ chain: 'celo', symbol: asset.toUpperCase() })[0];
+    if (!token) throw new Error(`Unsupported Celo token: ${asset}`);
+    return token.decimals;
+  }
+
+  private formatGasEstimate(gasEstimate?: bigint): string {
+    if (typeof gasEstimate === 'undefined' || gasEstimate === null) {
+      return '0';
+    }
+
+    try {
+      return gasEstimate.toString();
+    } catch {
+      return '0';
     }
   }
 
@@ -212,8 +246,8 @@ export class TreasuryExecutionRouter {
     toAsset: string
   ): Promise<{ fromSnapshot: AssetStateSnapshot; toSnapshot: AssetStateSnapshot }> {
     const [fromSnapshot, toSnapshot] = await Promise.all([
-      assetGraphService.getSnapshot(fromAsset),
-      assetGraphService.getSnapshot(toAsset),
+      getMarketSnapshot(fromAsset),
+      getMarketSnapshot(toAsset),
     ]);
 
     if (!fromSnapshot) throw new Error(`No snapshot available for ${fromAsset}`);
@@ -330,22 +364,28 @@ export class TreasuryOperationExecutor {
       // Log execution attempt
       this.executionLog.set(plan.transactionId, plan);
 
-      // Route to gateway aggregator for actual execution
+      const amountInHuman = Number(plan.amount) / 10 ** plan.amountDecimals;
+      if (!Number.isFinite(amountInHuman) || amountInHuman <= 0) {
+        return {
+          success: false,
+          error: `Invalid amount for execution: ${plan.amount}`,
+        };
+      }
+
       const result = await gatewayAggregator.executeSwap(
         plan.fromAsset,
         plan.toAsset,
-        plan.amount,
-        plan.selectedVenue,
-        {
-          maxSlippage: 0.5, // 50 bps
-          deadline: Math.floor(Date.now() / 1000) + 600, // 10 minute deadline
-        }
+        amountInHuman,
+        plan.recipient,
+        plan.estimatedSlippage || 0.5,
+        plan.selectedVenue
       );
 
       return {
-        success: true,
-        txHash: result.hash,
-        actualOutput: result.outputAmount,
+        success: result.success,
+        txHash: result.transactionHash,
+        actualOutput: result.amountOut?.toString(),
+        error: result.error,
       };
     } catch (error) {
       return {
@@ -468,7 +508,7 @@ export class TreasuryHealthMonitor {
     const snapshots = new Map<string, AssetStateSnapshot>();
     for (const symbol of symbols) {
       try {
-        const snapshot = await assetGraphService.getSnapshot(symbol);
+        const snapshot = await getMarketSnapshot(symbol);
         if (snapshot) snapshots.set(symbol, snapshot);
       } catch (e) {
         console.warn(`Failed to fetch snapshot for ${symbol}`);

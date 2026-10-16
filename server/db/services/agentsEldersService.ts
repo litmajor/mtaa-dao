@@ -3,7 +3,7 @@
  * Handles all database operations for Elders and Agents
  */
 
-import { db } from '../client';
+import { db } from '../../db';
 import {
   elders,
   agents,

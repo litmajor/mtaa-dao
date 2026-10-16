@@ -56,7 +56,7 @@ export { authRegisterHandler } from './api/auth_register';
 
 export interface AuthRequest extends Request {
   user?: {
-    id?: string;
+    id: string;
     email?: string;
     role?: string;
     roles?: string | string[];
@@ -65,7 +65,6 @@ export interface AuthRequest extends Request {
     isSuperuser?: boolean;
     isAdmin?: boolean;
     claims?: TokenPayload & {
-      sub?: string;
       isSuperUser?: boolean;
       isSuperuser?: boolean;
       isAdmin?: boolean;

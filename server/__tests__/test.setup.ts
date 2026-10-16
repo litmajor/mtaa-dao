@@ -7,6 +7,7 @@ process.env.JWT_SECRET = process.env.JWT_SECRET || 'test-jwt-secret-this-is-long
 process.env.JWT_REFRESH_SECRET = process.env.JWT_REFRESH_SECRET || 'test-jwt-refresh-secret-this-is-long-enough-for-32-chars';
 process.env.SESSION_SECRET = process.env.SESSION_SECRET || 'test-session-secret-this-is-long-enough-for-32-chars';
 process.env.NODE_ENV = process.env.NODE_ENV || 'test';
+process.env.EMAIL_FROM = 'tests@example.com';
 process.env.FLUTTERWAVE_SECRET_KEY = process.env.FLUTTERWAVE_SECRET_KEY || 'flutterwave-secret';
 process.env.PAYSTACK_SECRET_KEY = process.env.PAYSTACK_SECRET_KEY || 'paystack-secret';
 process.env.WHATSAPP_PHONE_ID = process.env.WHATSAPP_PHONE_ID || '123456';

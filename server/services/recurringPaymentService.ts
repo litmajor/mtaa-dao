@@ -1,7 +1,8 @@
 
 import { db } from '../db';
-import { walletTransactions, users } from '../../shared/schema';
-import { eq, and, lte } from 'drizzle-orm';
+import { walletTransactions, users, daos } from '../../shared/schema';
+import { eq, and, lte, or } from 'drizzle-orm';
+import { v4 as uuidv4 } from 'uuid';
 import { Logger } from '../utils/logger';
 import { tokenService } from './tokenService';
 import { gasPriceOracle } from './gasPriceOracle';
@@ -94,7 +95,10 @@ export class RecurringPaymentService {
       logger.info(`Processing ${duePayments.length} due recurring payments`);
 
       for (const payment of duePayments) {
-        await this.processPayment(payment as any);
+        const result = await executeMultiRecipientPayment(payment.id);
+        if (result.status !== 'succeeded') {
+          logger.error(`Recurring payment ${payment.id} failed: ${result.error ?? 'execution failed'}`);
+        }
       }
       
     } catch (error) {
@@ -493,6 +497,355 @@ export class RecurringPaymentService {
 
     logger.info(`Next payment scheduled for ${nextDate.toISOString()}`);
   }
+}
+
+export interface RecipientInput {
+  userId?: string;
+  daoId?: string;
+  walletAddress?: string;
+  receivePercentage?: number;
+  customAmount?: string;
+}
+
+type MultiRecipientInput = {
+  creatorId: string;
+  amount: string;
+  currency: string;
+  description?: string;
+  frequency: string;
+  startDate: Date;
+  endDate?: Date;
+  interval?: number;
+  paymentType?: string;
+  autoExecute?: boolean;
+  requireConfirmation?: boolean;
+  [key: string]: unknown;
+};
+
+export async function createMultiRecipientRecurringPayment(
+  input: MultiRecipientInput,
+  recipients: RecipientInput[] = []
+) {
+  if (recipients.length === 0) throw new Error('At least one recurring payment recipient is required');
+  const recipientKeys = new Set<string>();
+  for (const [index, recipient] of recipients.entries()) {
+    const targets = [recipient.userId, recipient.daoId, recipient.walletAddress].filter(Boolean);
+    if (targets.length !== 1) {
+      throw new Error(`Recipient ${index + 1} must specify exactly one user, DAO, or wallet destination`);
+    }
+    const targetKey = recipient.userId
+      ? `user:${recipient.userId}`
+      : recipient.daoId
+        ? `dao:${recipient.daoId}`
+        : `wallet:${recipient.walletAddress!.toLowerCase()}`;
+    if (recipientKeys.has(targetKey)) throw new Error(`Duplicate recurring payment recipient: ${targetKey}`);
+    recipientKeys.add(targetKey);
+
+    if (recipient.receivePercentage !== undefined &&
+        (!Number.isFinite(recipient.receivePercentage) || recipient.receivePercentage < 0 || recipient.receivePercentage > 100)) {
+      throw new Error(`Recipient ${index + 1} percentage must be between 0 and 100`);
+    }
+    if (recipient.customAmount !== undefined) {
+      const cents = Number(recipient.customAmount) * 100;
+      if (!Number.isFinite(cents) || !Number.isInteger(cents) || cents <= 0) {
+        throw new Error(`Recipient ${index + 1} custom amount must be positive with at most two decimals`);
+      }
+    }
+  }
+  const percentageRecipients = recipients.filter((recipient) => recipient.customAmount === undefined);
+  const hasPercentages = percentageRecipients.some((recipient) => recipient.receivePercentage !== undefined);
+  if (hasPercentages && (
+    percentageRecipients.some((recipient) => recipient.receivePercentage === undefined) ||
+    Math.abs(percentageRecipients.reduce((sum, recipient) => sum + (recipient.receivePercentage ?? 0), 0) - 100) > 0.01
+  )) {
+    throw new Error('Variable recipient percentages must all be specified and total 100');
+  }
+
+  const primaryRecipient = recipients[0];
+  const [payment] = await db.insert(walletTransactions).values({
+    id: uuidv4(),
+    fromUserId: input.creatorId,
+    walletAddress: primaryRecipient?.walletAddress || primaryRecipient?.userId || input.creatorId,
+    amount: input.amount,
+    currency: input.currency,
+    type: 'recurring',
+    status: input.autoExecute === false ? 'paused' : 'pending',
+    description: input.description || 'Recurring payment',
+    createdAt: input.startDate,
+    metadata: {
+      ...input,
+      recipients,
+      nextPayment: input.startDate.toISOString(),
+    },
+  }).returning();
+  return payment;
+}
+
+export async function getCreatedRecurringPayments(userId: string) {
+  return db.select().from(walletTransactions).where(and(
+    eq(walletTransactions.fromUserId, userId),
+    eq(walletTransactions.type, 'recurring')
+  ));
+}
+
+export async function getReceivedRecurringPayments(userId: string) {
+  return db.select().from(walletTransactions).where(and(
+    eq(walletTransactions.walletAddress, userId),
+    eq(walletTransactions.type, 'recurring')
+  ));
+}
+
+export async function getRecurringPaymentWithRecipients(id: string) {
+  const [payment] = await db.select().from(walletTransactions).where(eq(walletTransactions.id, id)).limit(1);
+  if (!payment) throw new Error('Recurring payment not found');
+  return { recurringPayment: payment, recipients: (payment.metadata as any)?.recipients || [], executions: [] };
+}
+
+async function updateRecurringStatus(id: string, status: string) {
+  await db.update(walletTransactions).set({ status, updatedAt: new Date() }).where(eq(walletTransactions.id, id));
+}
+
+export const cancelRecurringPaymentWithDAO = (id: string) => updateRecurringStatus(id, 'cancelled');
+export const pauseRecurringPayment = (id: string) => updateRecurringStatus(id, 'paused');
+export const resumeRecurringPayment = (id: string) => updateRecurringStatus(id, 'pending');
+
+export async function executeMultiRecipientPayment(id: string) {
+  const [payment] = await db.select().from(walletTransactions)
+    .where(and(eq(walletTransactions.id, id), eq(walletTransactions.type, 'recurring')))
+    .limit(1);
+  if (!payment) throw new Error('Recurring payment not found');
+
+  const metadata = payment.metadata && typeof payment.metadata === 'object'
+    ? payment.metadata as Record<string, unknown>
+    : {};
+  const configuredRecipients = Array.isArray(metadata.recipients)
+    ? metadata.recipients as RecipientInput[]
+    : [];
+  const recipients = configuredRecipients.length > 0
+    ? configuredRecipients
+    : payment.toUserId
+      ? [{ userId: payment.toUserId }]
+      : [{ walletAddress: payment.walletAddress }];
+  if (recipients.length === 0) throw new Error('Recurring payment has no recipients');
+
+  // Claim the due row atomically so overlapping workers cannot execute it twice.
+  const [claimed] = await db.update(walletTransactions)
+    .set({ status: 'processing', updatedAt: new Date() })
+    .where(and(
+      eq(walletTransactions.id, id),
+      eq(walletTransactions.type, 'recurring'),
+      eq(walletTransactions.status, 'pending')
+    ))
+    .returning();
+  if (!claimed) throw new Error(`Recurring payment ${id} is not pending or is already being processed`);
+
+  let results: Array<{ recipientIndex: number; executionId: string; status: string }> = [];
+  let latestExecutionId: string | undefined;
+  try {
+  const creatorId = payment.fromUserId;
+  if (!creatorId) {
+    await markRecurringPaymentFailed(id, metadata, 'Recurring payment has no creator');
+    throw new Error('Recurring payment has no creator');
+  }
+  const sender = await db.query.users.findFirst({ where: eq(users.id, creatorId) });
+  if (!sender?.walletAddress) {
+    await markRecurringPaymentFailed(id, metadata, 'Recurring payment creator has no registered wallet');
+    throw new Error('Recurring payment creator has no registered wallet');
+  }
+
+  const totalCents = Number(payment.amount) * 100;
+  if (!Number.isSafeInteger(totalCents) || !Number.isInteger(totalCents) || totalCents <= 0) {
+    await markRecurringPaymentFailed(id, metadata, 'Recurring payment amount must be a positive amount with at most two decimals');
+    throw new Error('Recurring payment amount must be a positive amount with at most two decimals');
+  }
+
+  const fixed = recipients.map((recipient) => recipient.customAmount === undefined
+    ? 0
+    : Number(recipient.customAmount) * 100);
+  if (fixed.some((amount) => !Number.isSafeInteger(amount) || amount < 0)) {
+    await markRecurringPaymentFailed(id, metadata, 'Recipient custom amounts must be non-negative amounts with at most two decimals');
+    throw new Error('Recipient custom amounts must be non-negative amounts with at most two decimals');
+  }
+  const fixedTotal = fixed.reduce((sum, amount) => sum + amount, 0);
+  if (fixedTotal > totalCents) {
+    await markRecurringPaymentFailed(id, metadata, 'Recipient custom amounts exceed the recurring payment total');
+    throw new Error('Recipient custom amounts exceed the recurring payment total');
+  }
+
+  const variableIndexes = recipients.map((recipient, index) => ({ recipient, index }))
+    .filter(({ recipient }) => recipient.customAmount === undefined);
+  const remaining = totalCents - fixedTotal;
+  const percentageTotal = variableIndexes.reduce((sum, { recipient }) => sum + (recipient.receivePercentage ?? 0), 0);
+  if (variableIndexes.length > 0 && percentageTotal > 0 && Math.abs(percentageTotal - 100) > 0.01) {
+    await markRecurringPaymentFailed(id, metadata, 'Recipient percentages must total 100 when percentage allocations are used');
+    throw new Error('Recipient percentages must total 100 when percentage allocations are used');
+  }
+  if (variableIndexes.length === 0 && remaining !== 0) {
+    await markRecurringPaymentFailed(id, metadata, 'Recipient custom amounts must equal the recurring payment total');
+    throw new Error('Recipient custom amounts must equal the recurring payment total');
+  }
+  if (variableIndexes.some(({ recipient }) => recipient.receivePercentage === undefined) && percentageTotal > 0) {
+    await markRecurringPaymentFailed(id, metadata, 'Every variable recipient must specify a percentage when percentage allocations are used');
+    throw new Error('Every variable recipient must specify a percentage when percentage allocations are used');
+  }
+
+  let allocated = fixed.slice();
+  if (variableIndexes.length > 0) {
+    let remainder = remaining;
+    variableIndexes.forEach(({ recipient, index }, position) => {
+      const share = position === variableIndexes.length - 1
+        ? remainder
+        : percentageTotal > 0
+          ? Math.floor(remaining * (recipient.receivePercentage ?? 0) / 100)
+          : Math.floor(remaining / variableIndexes.length);
+      allocated[index] = share;
+      remainder -= share;
+    });
+  }
+
+  const previousResults = Array.isArray(metadata.recipientExecutionResults)
+    ? metadata.recipientExecutionResults as Array<{ recipientIndex: number; executionId: string; status: string }>
+    : [];
+  const successfulIndexes = new Set(previousResults.filter((result) => result.status === 'succeeded').map((result) => result.recipientIndex));
+  results = [...previousResults];
+
+    for (let index = 0; index < recipients.length; index++) {
+      if (successfulIndexes.has(index)) continue;
+      const recipient = recipients[index];
+      const amountCents = allocated[index];
+      if (amountCents <= 0) throw new Error(`Recipient ${index + 1} has no allocated amount`);
+
+      let walletTo = recipient.walletAddress;
+      if (!walletTo && recipient.userId) {
+        const user = await db.query.users.findFirst({ where: eq(users.id, recipient.userId) });
+        walletTo = user?.walletAddress ?? undefined;
+      }
+      if (walletTo && !recipient.userId && !recipient.daoId) {
+        const user = await db.query.users.findFirst({ where: eq(users.id, walletTo) });
+        walletTo = user?.walletAddress ?? walletTo;
+      }
+      if (!walletTo && recipient.daoId) {
+        const dao = await db.query.daos.findFirst({ where: eq(daos.id, recipient.daoId) });
+        walletTo = dao?.vaultAddress ?? dao?.chamaTreasuryAddress ?? undefined;
+      }
+      if (!walletTo) throw new Error(`Recipient ${index + 1} does not resolve to a wallet address`);
+      if (walletTo.toLowerCase() === sender.walletAddress.toLowerCase()) {
+        throw new Error(`Recipient ${index + 1} resolves to the sender's own wallet`);
+      }
+
+      const saga = await paymentRecoverySAGA.executePaymentSAGA({
+        userId: creatorId,
+        amount: amountCents / 100,
+        currency: payment.currency ?? 'cUSD',
+        walletFrom: sender.walletAddress,
+        walletTo,
+        vaultId: payment.vaultId ?? undefined,
+        metadata: { recurringPaymentId: payment.id, recipientIndex: index, recipient },
+      });
+      latestExecutionId = saga.id;
+      results.push({ recipientIndex: index, executionId: saga.id, status: saga.status });
+
+      await db.update(walletTransactions)
+        .set({
+          metadata: { ...metadata, recipientExecutionResults: results },
+          updatedAt: new Date(),
+        })
+        .where(eq(walletTransactions.id, id));
+
+      if (saga.status !== 'succeeded') {
+        throw new Error(saga.lastError || `Payment SAGA failed for recipient ${index + 1}`);
+      }
+    }
+
+    await db.update(walletTransactions)
+      .set({ status: 'completed', updatedAt: new Date() })
+      .where(eq(walletTransactions.id, id));
+    await scheduleNextRecurringPayment(payment, metadata);
+    return { status: 'succeeded' as const, executionId: latestExecutionId ?? results.at(-1)?.executionId };
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    await db.update(walletTransactions)
+      .set({
+        status: 'failed',
+        metadata: { ...metadata, recipientExecutionResults: results, lastFailureReason: message },
+        updatedAt: new Date(),
+      })
+      .where(eq(walletTransactions.id, id));
+    return { status: 'failed' as const, executionId: latestExecutionId, error: message };
+  }
+}
+
+async function markRecurringPaymentFailed(id: string, metadata: Record<string, unknown>, reason: string): Promise<void> {
+  await db.update(walletTransactions)
+    .set({
+      status: 'failed',
+      metadata: { ...metadata, lastFailureReason: reason },
+      updatedAt: new Date(),
+    })
+    .where(eq(walletTransactions.id, id));
+}
+
+async function scheduleNextRecurringPayment(
+  payment: typeof walletTransactions.$inferSelect,
+  metadata: Record<string, unknown>
+): Promise<void> {
+  const occurrenceCount = Number(metadata.occurrenceCount ?? 0) + 1;
+  const maxOccurrences = metadata.maxOccurrences === undefined ? undefined : Number(metadata.maxOccurrences);
+  if (!Number.isInteger(occurrenceCount) || occurrenceCount < 1 ||
+      (maxOccurrences !== undefined && (!Number.isInteger(maxOccurrences) || maxOccurrences < 1))) {
+    throw new Error('Recurring payment occurrence metadata is invalid');
+  }
+  if (maxOccurrences !== undefined && occurrenceCount >= maxOccurrences) return;
+
+  const frequency = String(metadata.frequency ?? '').toLowerCase();
+  const interval = Number(metadata.interval ?? 1);
+  const scheduledDate = metadata.nextPayment ? new Date(String(metadata.nextPayment)) : payment.createdAt;
+  if (!scheduledDate || !Number.isFinite(scheduledDate.getTime()) || !Number.isInteger(interval) || interval < 1) {
+    throw new Error('Recurring payment schedule metadata is invalid');
+  }
+
+  const nextDate = new Date(scheduledDate);
+  switch (frequency) {
+    case 'daily': nextDate.setDate(nextDate.getDate() + interval); break;
+    case 'weekly': nextDate.setDate(nextDate.getDate() + 7 * interval); break;
+    case 'biweekly': nextDate.setDate(nextDate.getDate() + 14 * interval); break;
+    case 'monthly': nextDate.setMonth(nextDate.getMonth() + interval); break;
+    case 'quarterly': nextDate.setMonth(nextDate.getMonth() + 3 * interval); break;
+    case 'annual':
+    case 'yearly': nextDate.setFullYear(nextDate.getFullYear() + interval); break;
+    default: return;
+  }
+
+  const endDate = metadata.endDate ? new Date(String(metadata.endDate)) : undefined;
+  if (endDate && nextDate > endDate) return;
+
+  await db.insert(walletTransactions).values({
+    fromUserId: payment.fromUserId,
+    toUserId: payment.toUserId,
+    walletAddress: payment.walletAddress,
+    vaultId: payment.vaultId,
+    daoId: payment.daoId,
+    amount: payment.amount,
+    currency: payment.currency,
+    type: 'recurring',
+    status: 'pending',
+    description: payment.description,
+    createdAt: nextDate,
+    metadata: {
+      ...metadata,
+      occurrenceCount,
+      nextPayment: nextDate.toISOString(),
+      recipientExecutionResults: [],
+    },
+  });
+}
+
+export async function getPendingMultiRecipientExecutions() {
+  return db.select().from(walletTransactions).where(and(
+    eq(walletTransactions.type, 'recurring'),
+    eq(walletTransactions.status, 'pending'),
+    lte(walletTransactions.createdAt, new Date())
+  ));
 }
 
 export const recurringPaymentService = new RecurringPaymentService();

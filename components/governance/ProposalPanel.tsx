@@ -302,7 +302,6 @@ export const ProposalPanel: React.FC<ProposalPanelProps> = ({
           <label>Estimated Impact Level</label>
           <div className="impact-buttons">
             {(['low', 'medium', 'high', 'critical'] as const).map((level) => (
-              // eslint-disable-next-line react/style-prop-object
               <button
                 key={level}
                 type="button"

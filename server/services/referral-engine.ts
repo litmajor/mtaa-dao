@@ -4,7 +4,16 @@ import { db } from '../db';
 import { telegramReferralAttributions, users } from '../../shared/schema';
 
 const ATTRIBUTION_TTL_MS = 30 * 24 * 60 * 60 * 1000;
-const SIGNING_SECRET = process.env.TELEGRAM_REFERRAL_SECRET || process.env.JWT_SECRET;
+const signingSecretEnv = process.env.TELEGRAM_REFERRAL_SECRET || process.env.JWT_SECRET;
+
+function getSigningSecret(): string {
+  if (!signingSecretEnv) {
+    throw new Error('TELEGRAM_REFERRAL_SECRET or JWT_SECRET is required for referral attribution');
+  }
+  return signingSecretEnv;
+}
+
+const SIGNING_SECRET = getSigningSecret();
 
 if (!SIGNING_SECRET) {
   throw new Error('TELEGRAM_REFERRAL_SECRET or JWT_SECRET is required for referral attribution');

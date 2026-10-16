@@ -356,7 +356,6 @@ export const AssetAllocationPanel: React.FC<AssetAllocationPanelProps> = ({
             ].map((asset) => (
               <div key={asset.name} className="chart-item">
                 <div className="chart-bar">
-                  {/* eslint-disable-next-line react/style-prop-object */}
                   <div
                     className="bar-fill"
                     style={{

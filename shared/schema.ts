@@ -7,6 +7,7 @@ import {
   index,
   serial,
   integer,
+  bigint,
   decimal,
   boolean,
   uuid,
@@ -457,6 +458,7 @@ export const users = pgTable("users", {
   pinEnabledForLogin: boolean("pin_enabled_for_login").default(false),
   pinEnabledForTransfers: boolean("pin_enabled_for_transfers").default(true),
   pinEnabledFor2FA: boolean("pin_enabled_for_2fa").default(false),
+  verificationLevel: varchar("verification_level").default("none"),
 });
 
 // Beta Access table for tracking feature access
@@ -1109,8 +1111,43 @@ export const daoRotationCycles = pgTable("dao_rotation_cycles", {
   endDate: timestamp("end_date"),
   amountDistributed: decimal("amount_distributed", { precision: 18, scale: 8 }).default("0"),
   transactionHash: varchar("transaction_hash"), // Blockchain tx hash
+  paymentReference: varchar("payment_reference"),
   distributedAt: timestamp("distributed_at"),
   notes: text("notes"),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+}, (table) => ({
+  paymentReferenceUnique: uniqueIndex("dao_rotation_cycles_payment_reference_unique")
+    .on(sql`lower(${table.paymentReference})`)
+    .where(sql`${table.paymentReference} IS NOT NULL`),
+}));
+
+export const daoRotationPayoutConfirmations = pgTable("dao_rotation_payout_confirmations", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  daoId: uuid("dao_id").references(() => daos.id, { onDelete: 'cascade' }).notNull(),
+  cycleId: uuid("cycle_id").references(() => daoRotationCycles.id, { onDelete: 'cascade' }).notNull().unique(),
+  confirmerId: varchar("confirmer_id").references(() => users.id).notNull(),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+export const daoRotationPayouts = pgTable("dao_rotation_payouts", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  daoId: uuid("dao_id").references(() => daos.id, { onDelete: 'cascade' }).notNull(),
+  cycleId: uuid("cycle_id").references(() => daoRotationCycles.id, { onDelete: 'cascade' }).notNull().unique(),
+  attemptNumber: integer("attempt_number").notNull().default(1),
+  recipientPhone: varchar("recipient_phone").notNull(),
+  amountKes: integer("amount_kes").notNull(),
+  treasurerId: varchar("treasurer_id").references(() => users.id).notNull(),
+  elderId: varchar("elder_id").references(() => users.id).notNull(),
+  status: varchar("status").notNull().default("queued"), // queued, initiating, accepted, succeeded, failed, unknown
+  conversationId: varchar("conversation_id").unique(),
+  originatorConversationId: varchar("originator_conversation_id").unique(),
+  transactionId: varchar("transaction_id").unique(),
+  resultCode: integer("result_code"),
+  resultDescription: text("result_description"),
+  callbackMetadata: jsonb("callback_metadata").default({}),
+  requestedAt: timestamp("requested_at").defaultNow(),
+  completedAt: timestamp("completed_at"),
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
 });
@@ -1359,7 +1396,20 @@ export const daoContributions = pgTable("dao_contributions", {
   metadata: jsonb("metadata").default({}), // Can store additional info like investment terms, equity %
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
-});
+}, (table) => ({
+  mpesaReferenceUnique: uniqueIndex("dao_contributions_mpesa_reference_unique")
+    .on(
+      sql`lower(coalesce(nullif(${table.metadata}->>'mpesaCode', ''), nullif(${table.metadata}->>'mpesaReceipt', '')))`
+    )
+    .where(sql`
+      ${table.currency} = 'KES'
+      AND nullif(coalesce(
+        nullif(${table.metadata}->>'mpesaCode', ''),
+        nullif(${table.metadata}->>'mpesaReceipt', '')
+      ), '') IS NOT NULL
+      AND ${table.status} IS DISTINCT FROM 'rejected'
+    `),
+}));
 
 /**
  * Contribution Approvals Track
@@ -1373,7 +1423,10 @@ export const daoContributionApprovals = pgTable("dao_contribution_approvals", {
   approved: boolean("approved").notNull(),
   comment: text("comment"),
   approvedAt: timestamp("approved_at").defaultNow(),
-});
+}, (table) => ({
+  oneReviewPerApprover: uniqueIndex("dao_contribution_approvals_one_per_approver")
+    .on(table.contributionId, table.approverId),
+}));
 
 /**
  * DAO Multi-Signature Configuration
@@ -1874,8 +1927,176 @@ export const auditLogs = pgTable("audit_logs", {
   userAgent: varchar("user_agent").notNull(),
   status: integer("status").notNull(),
   details: jsonb("details"),
+  eventType: varchar("event_type"),
+  correlationId: varchar("correlation_id"),
+  deletedAt: timestamp("deleted_at"),
+  deleteReason: text("delete_reason"),
+  deletedBy: varchar("deleted_by"),
   severity: varchar("severity").default("low").notNull(),
   category: varchar("category").default("security").notNull(),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+export const valuationAssets = pgTable(
+  'valuation_assets',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    symbol: varchar('symbol', { length: 32 }).notNull(),
+    coingeckoId: varchar('coingecko_id', { length: 128 }),
+    assetClass: varchar('asset_class', { length: 16 }).notNull(),
+    maxDeviationPct: numeric('max_deviation_pct', { precision: 8, scale: 4 })
+      .notNull()
+      .default('2'),
+    haircutPct: numeric('haircut_pct', { precision: 8, scale: 4 })
+      .notNull()
+      .default('0'),
+    chain: varchar('chain', { length: 64 }),
+    contractAddress: varchar('contract_address', { length: 128 }),
+    isActive: boolean('is_active').notNull().default(true),
+    notes: text('notes'),
+    source: varchar('source', { length: 64 }).notNull().default('manual'),
+    addedReason: text('added_reason'),
+    lastQuorumAt: timestamp('last_quorum_at', { withTimezone: true }),
+    lastValuationCheckAt: timestamp('last_valuation_check_at', { withTimezone: true }),
+    quorumFailureSince: timestamp('quorum_failure_since', { withTimezone: true }),
+    reviewRequired: boolean('review_required').notNull().default(false),
+    reviewReason: text('review_reason'),
+    reviewFlaggedAt: timestamp('review_flagged_at', { withTimezone: true }),
+    reviewResolvedAt: timestamp('review_resolved_at', { withTimezone: true }),
+    reviewResolvedBy: varchar('review_resolved_by'),
+    createdBy: varchar('created_by'),
+    updatedBy: varchar('updated_by'),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow(),
+  },
+  (table) => ({
+    symbolUnique: uniqueIndex('valuation_assets_symbol_uq').on(table.symbol),
+  })
+);
+
+export const valuationAssetCandidates = pgTable(
+  'valuation_asset_candidates',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    symbol: varchar('symbol', { length: 32 }).notNull(),
+    coingeckoId: varchar('coingecko_id', { length: 128 }),
+    name: text('name'),
+    score: integer('score').notNull().default(0),
+    criteriaSnapshot: jsonb('criteria_snapshot').notNull().default({}),
+    status: varchar('status', { length: 24 }).notNull().default('proposed'),
+    source: varchar('source', { length: 16 }).notNull(),
+    reason: text('reason').notNull(),
+    reviewNotes: text('review_notes'),
+    proposedBy: varchar('proposed_by'),
+    reviewedBy: varchar('reviewed_by'),
+    reviewedAt: timestamp('reviewed_at', { withTimezone: true }),
+    firstSeenAt: timestamp('first_seen_at', { withTimezone: true }).notNull().defaultNow(),
+    lastSeenAt: timestamp('last_seen_at', { withTimezone: true }).notNull().defaultNow(),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => ({
+    symbolUnique: uniqueIndex('valuation_asset_candidates_symbol_uq').on(table.symbol),
+    coingeckoUnique: uniqueIndex('valuation_asset_candidates_coingecko_id_uq')
+      .on(table.coingeckoId)
+      .where(sql`${table.coingeckoId} IS NOT NULL`),
+    statusScoreIdx: index('valuation_asset_candidates_status_score_idx').on(
+      table.status,
+      table.score
+    ),
+  })
+);
+
+export const valuationAssetMarketObservations = pgTable(
+  'valuation_asset_market_observations',
+  {
+    coingeckoId: varchar('coingecko_id', { length: 128 }).notNull(),
+    observedOn: date('observed_on').notNull(),
+    symbol: varchar('symbol', { length: 32 }).notNull(),
+    marketCapRank: integer('market_cap_rank'),
+    trustedVolume24hUsd: numeric('trusted_volume_24h_usd', { precision: 30, scale: 8 }),
+    exchangeCount: integer('exchange_count'),
+    trustScore: numeric('trust_score', { precision: 5, scale: 2 }),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => ({
+    coingeckoDatePk: primaryKey({
+      name: 'valuation_asset_market_observations_pk',
+      columns: [table.coingeckoId, table.observedOn],
+    }),
+    dateIdx: index('valuation_asset_market_observations_date_idx').on(table.observedOn),
+  })
+);
+
+// Legacy compatibility tables retained for compatibility with older storage/service code paths.
+export const userPreferences = pgTable("user_preferences", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  userId: varchar("user_id").references(() => users.id, { onDelete: 'cascade' }).notNull().unique(),
+  theme: varchar("theme", { length: 20 }).default("light"),
+  language: varchar("language", { length: 10 }).default("en"),
+  dateFormat: varchar("date_format", { length: 20 }).default("YYYY-MM-DD"),
+  timeFormat: varchar("time_format", { length: 20 }).default("24h"),
+  timezone: varchar("timezone", { length: 100 }),
+  defaultView: varchar("default_view", { length: 50 }).default("grid"),
+  itemsPerPage: integer("items_per_page").default(20),
+  autoRefreshInterval: integer("auto_refresh_interval").default(30000),
+  showOnlineStatus: boolean("show_online_status").default(true),
+  allowSearchIndexing: boolean("allow_search_indexing").default(true),
+  showProfilePublicly: boolean("show_profile_publicly").default(true),
+  notificationSound: boolean("notification_sound").default(true),
+  desktopNotifications: boolean("desktop_notifications").default(true),
+  emailNotifications: boolean("email_notifications").default(true),
+  pushNotifications: boolean("push_notifications").default(true),
+  enableBeta: boolean("enable_beta").default(false),
+  enableAnalytics: boolean("enable_analytics").default(true),
+  highContrast: boolean("high_contrast").default(false),
+  reducedMotion: boolean("reduced_motion").default(false),
+  fontSize: varchar("font_size", { length: 20 }).default("medium"),
+  metadata: jsonb("metadata"),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+});
+
+export const cachingMetadata = pgTable("caching_metadata", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  cacheKey: varchar("cache_key", { length: 500 }).notNull().unique(),
+  cacheType: varchar("cache_type", { length: 50 }).notNull(),
+  entityType: varchar("entity_type", { length: 50 }),
+  entityId: varchar("entity_id", { length: 255 }),
+  userId: varchar("user_id").references(() => users.id, { onDelete: 'cascade' }),
+  daoId: uuid("dao_id").references(() => daos.id, { onDelete: 'cascade' }),
+  isValid: boolean("is_valid").default(true),
+  invalidatedAt: timestamp("invalidated_at"),
+  invalidationReason: varchar("invalidation_reason", { length: 255 }),
+  hitCount: integer("hit_count").default(0),
+  missCount: integer("miss_count").default(0),
+  lastAccessedAt: timestamp("last_accessed_at"),
+  expiresAt: timestamp("expires_at"),
+  ttlSeconds: integer("ttl_seconds"),
+  metadata: jsonb("metadata"),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+});
+
+export const auditEvents = pgTable("audit_events", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  actorId: varchar("actor_id").references(() => users.id, { onDelete: 'set null' }),
+  actorRole: varchar("actor_role", { length: 50 }),
+  action: varchar("action", { length: 100 }).notNull(),
+  resourceType: varchar("resource_type", { length: 100 }).notNull(),
+  resourceId: varchar("resource_id", { length: 255 }),
+  daoId: uuid("dao_id").references(() => daos.id, { onDelete: 'cascade' }),
+  beforeValue: jsonb("before_value"),
+  afterValue: jsonb("after_value"),
+  changesSummary: text("changes_summary"),
+  ipAddress: varchar("ip_address", { length: 45 }),
+  userAgent: text("user_agent"),
+  sessionId: varchar("session_id", { length: 255 }),
+  status: varchar("status", { length: 50 }).default("success"),
+  errorMessage: text("error_message"),
+  severity: varchar("severity", { length: 20 }).default("info"),
+  requiresReview: boolean("requires_review").default(false),
+  metadata: jsonb("metadata"),
   createdAt: timestamp("created_at").defaultNow(),
 });
 
@@ -2039,6 +2260,12 @@ export const treasuryMultisigTransactions = pgTable("treasury_multisig_transacti
   metadata: jsonb("metadata"), // additional transaction details
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
+});
+
+export const treasuryEventCursors = pgTable("treasury_event_cursors", {
+  contractAddress: varchar("contract_address", { length: 42 }).primaryKey(),
+  lastProcessedBlock: bigint("last_processed_block", { mode: "number" }).notNull().default(-1),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
 });
 
 // ════════════════════════════════════════════════════════════════════════════════
@@ -2210,6 +2437,18 @@ export const messageAttachments = pgTable("message_attachments", {
   createdAt: timestamp("created_at").defaultNow(),
 });
 
+// Direct user-to-user messages used by the private messaging routes.
+export const messages = pgTable("messages", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  senderId: varchar("sender_id").references(() => users.id).notNull(),
+  recipientId: varchar("recipient_id").references(() => users.id).notNull(),
+  daoId: uuid("dao_id").references(() => daos.id),
+  content: text("content").notNull(),
+  isRead: boolean("is_read").default(false).notNull(),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+});
+
 // Subscriptions table
 export const subscriptions = pgTable("subscriptions", {
   id: uuid("id").primaryKey().defaultRandom(),
@@ -2300,6 +2539,7 @@ export const poolInvestments = pgTable("pool_investments", {
   sharePriceAtInvestment: decimal("share_price_at_investment", { precision: 18, scale: 8 }).notNull(),
   paymentToken: varchar("payment_token", { length: 50 }),
   transactionHash: varchar("transaction_hash", { length: 255 }),
+  idempotencyKey: varchar("idempotency_key", { length: 200 }),
   status: varchar("status", { length: 50 }).default("pending"),
   investedAt: timestamp("investedAt").defaultNow(),
 });
@@ -2314,6 +2554,7 @@ export const poolWithdrawals = pgTable("pool_withdrawals", {
   feeCharged: decimal("fee_charged", { precision: 18, scale: 2 }).default("0"),
   netAmount: decimal("net_amount", { precision: 18, scale: 2 }),
   transactionHash: varchar("transaction_hash", { length: 255 }),
+  idempotencyKey: varchar("idempotency_key", { length: 200 }),
   status: varchar("status", { length: 50 }).default("pending"),
   withdrawnAt: timestamp("withdrawnAt").defaultNow(),
 });
@@ -2345,7 +2586,7 @@ export const poolPerformance = pgTable("pool_performance", {
   ltcPrice: decimal("ltc_price", { precision: 18, scale: 2 }),
   volatility: decimal("volatility", { precision: 10, scale: 4 }),
   sharpeRatio: decimal("sharpe_ratio", { precision: 10, scale: 4 }),
-  snapshot_at: timestamp("snapshot_at").defaultNow(),
+  snapshotAt: timestamp("snapshot_at").defaultNow(),
 });
 
 // Phase 2: Portfolio Templates
@@ -2475,10 +2716,17 @@ export const wallets = pgTable("wallets", {
   currency: varchar("currency").notNull(), // e.g., "KES", "USDC", "cUSD", "ETH"
   address: varchar("address").notNull().unique(), // wallet address
   walletType: varchar("wallet_type").default("personal"), // personal, dao, treasury, smart_contract
+  label: text("label"),
   isActive: boolean("is_active").default(true),
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
-});
+}, (table) => ({
+  userCurrencyTypeActiveUnique: uniqueIndex("wallets_user_currency_type_active_uq")
+    .on(table.userId, table.currency, table.walletType)
+    .where(sql`${table.isActive} = true`),
+  addressCaseInsensitiveUnique: uniqueIndex("wallets_address_uq")
+    .on(sql`lower(${table.address})`),
+}));
 
 // User Balance Tracking across wallets
 export const userBalances = pgTable("user_balances", {
@@ -2547,6 +2795,8 @@ export const walletSecuritySettings = pgTable("wallet_security_settings", {
   requiresPin: boolean("requires_pin").default(true),
   requiresBiometric: boolean("requires_biometric").default(false),
   encryptedPin: text("encrypted_pin"), // hashed PIN for local validation
+  failedPinAttempts: integer("failed_pin_attempts").notNull().default(0),
+  pinLockedUntil: timestamp("pin_locked_until", { withTimezone: true }),
   twoFactorEnabled: boolean("two_factor_enabled").default(false),
   twoFactorMethod: varchar("two_factor_method"), // sms, email, authenticator
   withdrawalLimit: decimal("withdrawal_limit", { precision: 18, scale: 8 }), // daily limit
@@ -2581,7 +2831,13 @@ export const walletSessions = pgTable("wallet_sessions", {
   location: varchar("location"), // Geolocation info
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
-});
+}, (table) => ({
+  activeLookupIdx: index("wallet_sessions_active_lookup_idx")
+    .on(table.userId, table.walletId, table.isActive, table.expiresAt),
+  expiryIdx: index("wallet_sessions_expiry_idx")
+    .on(table.expiresAt)
+    .where(sql`${table.isActive} = true`),
+}));
 
 // Wallet Access Log (audit trail)
 export const walletAccessLog = pgTable("wallet_access_log", {
@@ -2945,6 +3201,15 @@ export const userNotificationPreferences = pgTable("user_notification_preference
   dailyDigest: boolean("daily_digest").default(false),
   telegramNotifications: boolean("telegram_notifications").default(false),
   unsubscribeAll: boolean("unsubscribe_all").default(false),
+  paymentFailureEmail: boolean("payment_failure_email").notNull().default(true),
+  paymentFailureInApp: boolean("payment_failure_in_app").notNull().default(true),
+  retryUpdatesEmail: boolean("retry_updates_email").notNull().default(true),
+  retryUpdatesInApp: boolean("retry_updates_in_app").notNull().default(true),
+  recoveryHintsEmail: boolean("recovery_hints_email").notNull().default(true),
+  recoveryHintsInApp: boolean("recovery_hints_in_app").notNull().default(true),
+  systemAlertsEmail: boolean("system_alerts_email").notNull().default(true),
+  systemAlertsInApp: boolean("system_alerts_in_app").notNull().default(true),
+  emailFrequency: varchar("email_frequency").notNull().default("immediate"),
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
 });
@@ -2973,6 +3238,170 @@ export const activityFeed = pgTable("activity_feed", {
   metadata: jsonb("metadata").default({}),
   visibility: varchar("visibility").default("public"), // public, private, dao
   createdAt: timestamp("created_at").defaultNow(),
+});
+
+// Legacy compatibility tables retained for older storage/service code paths.
+export const snapshotHistory = pgTable("snapshot_history", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  daoId: uuid("dao_id").references(() => daos.id, { onDelete: 'cascade' }).notNull(),
+  snapshotType: varchar("snapshot_type").notNull(),
+  snapshotName: varchar("snapshot_name"),
+  description: text("description"),
+  blockNumber: integer("block_number"),
+  blockTimestamp: timestamp("block_timestamp"),
+  dataSnapshot: jsonb("data_snapshot").default({}),
+  createdBy: varchar("created_by").references(() => users.id, { onDelete: 'set null' }),
+  metadata: jsonb("metadata").default({}),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+});
+
+export const messageLogs = pgTable("message_logs", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  senderId: varchar("sender_id").references(() => users.id, { onDelete: 'cascade' }).notNull(),
+  recipientId: varchar("recipient_id").references(() => users.id, { onDelete: 'cascade' }).notNull(),
+  daoId: uuid("dao_id").references(() => daos.id, { onDelete: 'cascade' }),
+  content: text("content").notNull(),
+  contentType: varchar("content_type").default("text"),
+  threadId: uuid("thread_id"),
+  replyToId: uuid("reply_to_id"),
+  attachmentUrls: jsonb("attachment_urls").default([]),
+  metadata: jsonb("metadata").default({}),
+  isRead: boolean("is_read").default(false),
+  readAt: timestamp("read_at"),
+  isDeleted: boolean("is_deleted").default(false),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+});
+
+export const typeDefinitions = pgTable("type_definitions", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  daoId: uuid("dao_id").references(() => daos.id, { onDelete: 'cascade' }).notNull(),
+  entityType: varchar("entity_type").notNull(),
+  typeName: varchar("type_name").notNull(),
+  displayName: varchar("display_name"),
+  description: text("description"),
+  schema: jsonb("schema").default({}),
+  requiredFields: jsonb("required_fields").default([]),
+  defaultValues: jsonb("default_values").default({}),
+  icon: varchar("icon"),
+  color: varchar("color"),
+  category: varchar("category"),
+  sortOrder: integer("sort_order").default(0),
+  createdBy: varchar("created_by").references(() => users.id, { onDelete: 'set null' }),
+  metadata: jsonb("metadata").default({}),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+});
+
+export const featureFlags = pgTable("feature_flags", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  flagName: varchar("flag_name").notNull(),
+  daoId: uuid("dao_id").references(() => daos.id, { onDelete: 'cascade' }),
+  userId: varchar("user_id").references(() => users.id, { onDelete: 'cascade' }),
+  isEnabled: boolean("is_enabled").default(false),
+  context: jsonb("context").default({}),
+  metadata: jsonb("metadata").default({}),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+});
+
+export const analyticsEvents = pgTable("analytics_events", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  eventName: varchar("event_name").notNull(),
+  userId: varchar("user_id").references(() => users.id, { onDelete: 'set null' }),
+  daoId: uuid("dao_id").references(() => daos.id, { onDelete: 'cascade' }),
+  sessionId: varchar("session_id"),
+  metadata: jsonb("metadata").default({}),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+export const vaultBalanceHistory = pgTable("vault_balance_history", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  vaultId: uuid("vault_id").references(() => vaults.id, { onDelete: 'cascade' }).notNull(),
+  balance: decimal("balance", { precision: 18, scale: 8 }).default("0"),
+  previousBalance: decimal("previous_balance", { precision: 18, scale: 8 }).default("0"),
+  changeAmount: decimal("change_amount", { precision: 18, scale: 8 }).default("0"),
+  changePercentage: decimal("change_percentage", { precision: 12, scale: 8 }).default("0"),
+  changeReason: varchar("change_reason").notNull(),
+  transactionId: varchar("transaction_id"),
+  userId: varchar("user_id").references(() => users.id, { onDelete: 'set null' }),
+  notes: text("notes"),
+  tokenSymbol: varchar("token_symbol"),
+  recordedAt: timestamp("recorded_at").defaultNow(),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+export const budgetDetails = pgTable("budget_details", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  budgetPlanId: uuid("budget_plan_id").references(() => budgetPlans.id, { onDelete: 'cascade' }).notNull(),
+  category: varchar("category").notNull(),
+  description: text("description"),
+  allocatedAmount: decimal("allocated_amount", { precision: 10, scale: 2 }).default("0"),
+  spentAmount: decimal("spent_amount", { precision: 10, scale: 2 }).default("0"),
+  userId: varchar("user_id").references(() => users.id, { onDelete: 'set null' }),
+  priority: integer("priority").default(0),
+  metadata: jsonb("metadata").default({}),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+});
+
+export const delegations = voteDelegations;
+
+// DAO-scoped reputation is separate from the platform-wide user gamification score.
+export const memberReputation = pgTable("member_reputation", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  memberId: varchar("member_id").references(() => users.id, { onDelete: "cascade" }).notNull(),
+  daoId: uuid("dao_id").references(() => daos.id, { onDelete: "cascade" }).notNull(),
+  reputationScore: integer("reputation_score").notNull().default(0),
+  lastDecayApplied: timestamp("last_decay_applied", { withTimezone: true }),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow(),
+}, (table) => ({
+  memberDaoUnique: uniqueIndex("member_reputation_member_dao_unique").on(table.memberId, table.daoId),
+}));
+
+export const memberAchievements = pgTable("member_achievements", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  memberId: varchar("member_id").references(() => users.id, { onDelete: "cascade" }).notNull(),
+  daoId: uuid("dao_id").references(() => daos.id, { onDelete: "cascade" }).notNull(),
+  achievementType: varchar("achievement_type").notNull(),
+  earnedAt: timestamp("earned_at", { withTimezone: true }).defaultNow(),
+  isPorted: boolean("is_ported").notNull().default(false),
+  originalDaoId: uuid("original_dao_id").references(() => daos.id, { onDelete: "set null" }),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow(),
+});
+
+export const reputationTransfers = pgTable("reputation_transfers", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  memberId: varchar("member_id").references(() => users.id, { onDelete: "cascade" }).notNull(),
+  fromDaoId: uuid("from_dao_id").references(() => daos.id, { onDelete: "cascade" }).notNull(),
+  toDaoId: uuid("to_dao_id").references(() => daos.id, { onDelete: "cascade" }).notNull(),
+  transferredAmount: integer("transferred_amount").notNull(),
+  transferredAt: timestamp("transferred_at", { withTimezone: true }).defaultNow(),
+});
+
+export const reputationAppeals = pgTable("reputation_appeals", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  memberId: varchar("member_id").references(() => users.id, { onDelete: "cascade" }).notNull(),
+  daoId: uuid("dao_id").references(() => daos.id, { onDelete: "cascade" }).notNull(),
+  reason: text("reason").notNull(),
+  appealStatus: varchar("appeal_status").notNull().default("PENDING"),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow(),
+});
+
+export const proposalDisputes = pgTable("proposal_disputes", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  proposalId: uuid("proposal_id").references(() => proposals.id, { onDelete: 'cascade' }).notNull(),
+  disputantId: varchar("disputant_id").references(() => users.id, { onDelete: 'cascade' }).notNull(),
+  reason: text("reason").notNull(),
+  evidence: text("evidence"),
+  status: varchar("status").default("PENDING"),
+  filedAt: timestamp("filed_at").defaultNow(),
+  resolvedAt: timestamp("resolved_at"),
+  resolutionReasoning: text("resolution_reasoning"),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
 });
 
 // API Keys for Developer Integration
@@ -3021,10 +3450,25 @@ export const usersRelations = relations(users, ({ many, one }) => ({
   proposalLikes: many(proposalLikes),
   commentLikes: many(commentLikes),
   daoMessages: many(daoMessages),
+  sentMessages: many(messages, { relationName: "sentMessages" }),
+  receivedMessages: many(messages, { relationName: "receivedMessages" }),
   delegationsGiven: many(voteDelegations, { relationName: "delegationsGiven" }),
   delegationsReceived: many(voteDelegations, { relationName: "delegationsReceived" }),
   wallets: many(wallets),
   balances: many(userBalances),
+}));
+
+export const messagesRelations = relations(messages, ({ one }) => ({
+  sender: one(users, {
+    fields: [messages.senderId],
+    references: [users.id],
+    relationName: "sentMessages",
+  }),
+  recipient: one(users, {
+    fields: [messages.recipientId],
+    references: [users.id],
+    relationName: "receivedMessages",
+  }),
 }));
 
 export const daosRelations = relations(daos, ({ one, many }) => ({

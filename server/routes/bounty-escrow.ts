@@ -36,7 +36,7 @@ router.post('/', async (req, res) => {
   try {
     const validatedData = createEscrowSchema.parse(req.body);
     const { taskId, amount, currency } = validatedData;
-    const userId = req.user?.claims?.sub ?? '';
+    const userId = req.user?.id ?? '';
 
     // Verify task exists and user is creator
     const task = await db
@@ -111,7 +111,7 @@ router.post('/create', async (req, res) => {
   try {
     const validatedData = createEscrowSchema.parse(req.body);
     const { taskId, amount, currency } = validatedData;
-    const userId = req.user?.claims?.sub ?? '';
+    const userId = req.user?.id ?? '';
 
     // Verify task exists and user is creator
     const task = await db
@@ -172,7 +172,7 @@ router.post('/release', async (req, res) => {
   try {
     const validatedData = releaseEscrowSchema.parse(req.body);
     const { taskId, releaseToClaimant } = validatedData;
-  const userId = req.user?.claims?.sub ?? '';
+  const userId = req.user?.id ?? '';
 
     // Get task and verify permissions
     const task = await db
@@ -305,7 +305,7 @@ router.post('/:taskId/dispute', async (req, res) => {
   try {
     const { taskId } = req.params;
     const { reason } = req.body;
-  const userId = req.user?.claims?.sub ?? '';
+  const userId = req.user?.id ?? '';
 
     // Get task
     const task = await db

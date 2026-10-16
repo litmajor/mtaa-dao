@@ -84,8 +84,8 @@ export abstract class SimulationService {
   protected depth: SimulationDepth;
   protected actionType: string;
 
-  constructor(actionType: string, depth: SimulationDepth = SimulationDepth.BASIC) {
-    this.actionType = actionType;
+  constructor(actionType: string = 'UNKNOWN_ACTION', depth: SimulationDepth = SimulationDepth.BASIC) {
+    this.actionType = actionType || 'UNKNOWN_ACTION';
     this.depth = depth;
   }
 

@@ -121,9 +121,9 @@ export function UserFollowCard({ userId, userName }: UserFollowCardProps) {
           <Button
             onClick={() => {
               if (isFollowingData) {
-                unfollowMutation.mutate({});
+                unfollowMutation.mutate();
               } else {
-                followMutation.mutate({});
+                followMutation.mutate();
               }
             }}
             disabled={followMutation.isPending || unfollowMutation.isPending}

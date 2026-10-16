@@ -100,7 +100,7 @@ class CircuitBreaker {
    */
   setConfig(config: Partial<CircuitConfig>): void {
     this.config = { ...this.config, ...config };
-    logger.debug(`[CircuitBreaker:${this.label}] Config updated:`, this.config);
+    logger.debug(`[CircuitBreaker:${this.label}] Config updated:`, { ...this.config });
   }
 
   /**

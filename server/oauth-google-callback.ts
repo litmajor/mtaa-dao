@@ -1,4 +1,4 @@
-import type { NextApiRequest, NextApiResponse } from 'next';
+import type { Request, Response } from 'express';
 // Update the import path to the correct location of your storage functions
 //import { getUserByEmail, createUser, loginUser } from '@/server/storage';
 // If your storage file is actually located elsewhere, adjust the path accordingly.
@@ -33,7 +33,7 @@ async function getGoogleProfile(access_token: string) {
   return res.json();
 }
 
-export default async function handler(req: NextApiRequest, res: NextApiResponse) {
+export default async function handler(req: Request, res: Response) {
   const { code, state } = req.query;
   if (!code) return res.status(400).send('Missing code');
   let mode = 'login';
@@ -51,13 +51,13 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       user = await createUser({
         email: profile.email,
         name: profile.name,
-        avatar: profile.picture,
-        provider: 'google',
+        profileImageUrl: profile.picture,
+        password: '',
       });
     }
     if (!user) return res.status(401).send('No account found. Please register first.');
     // Log in user (set cookie/session)
-    await loginUser(res, user);
+    await loginUser(user.email || user.phone || '');
     res.redirect('/dashboard');
   } catch (e: any) {
     res.status(500).send(e.message || 'OAuth error');

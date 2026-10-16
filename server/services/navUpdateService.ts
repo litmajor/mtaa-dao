@@ -96,41 +96,41 @@ export class NAVUpdateService {
         where: eq(vaultTokenHoldings.vaultId, vaultId)
       });
 
-      let totalValueUSD = 0;
       const previousTVL = parseFloat(vault.totalValueLocked || '0');
-
-      // Calculate value of each holding
-      for (const holding of holdings) {
-        try {
-          const price = await priceOracle.getPrice(holding.tokenSymbol);
-          
-          if (price) {
-            const balance = parseFloat(holding.balance);
-            const valueUSD = balance * price.priceUsd;
-            totalValueUSD += valueUSD;
-
-            // Update holding with current price
-            await db.update(vaultTokenHoldings)
-              .set({
-                valueUSD: valueUSD.toString(),
-                lastPriceUpdate: new Date()
-              })
-              .where(eq(vaultTokenHoldings.id, holding.id));
-          } else {
-            this.logger.warn(`No price available for ${holding.tokenSymbol} in vault ${vaultId}`);
-          }
-        } catch (error) {
-          this.logger.error(`Failed to update price for ${holding.tokenSymbol}:`, error);
+      const symbols = [...new Set(holdings.map((holding) => holding.tokenSymbol))];
+      const prices = await priceOracle.getValuationPrices(symbols);
+      const holdingValues = holdings.map((holding) => {
+        const valuation = prices.get(holding.tokenSymbol.toUpperCase());
+        const priceUsd = valuation?.haircutPriceUsd ?? valuation?.priceUsd;
+        if (!valuation || priceUsd === undefined || !Number.isFinite(priceUsd) || priceUsd <= 0) {
+          throw new Error(`No reliable valuation price available for ${holding.tokenSymbol}`);
         }
-      }
 
-      // Update vault TVL
-      await db.update(vaults)
-        .set({
-          totalValueLocked: totalValueUSD.toString(),
-          updatedAt: new Date()
-        })
-        .where(eq(vaults.id, vaultId));
+        const balance = Number(holding.balance);
+        if (!Number.isFinite(balance) || balance < 0) {
+          throw new Error(`Invalid balance for ${holding.tokenSymbol} in vault ${vaultId}`);
+        }
+
+        return { holding, valueUSD: balance * priceUsd };
+      });
+      const totalValueUSD = holdingValues.reduce((sum, item) => sum + item.valueUSD, 0);
+
+      await db.transaction(async (tx) => {
+        for (const { holding, valueUSD } of holdingValues) {
+          await tx.update(vaultTokenHoldings)
+            .set({
+              valueUSD: valueUSD.toString(),
+              lastPriceUpdate: new Date()
+            })
+            .where(eq(vaultTokenHoldings.id, holding.id));
+        }
+        await tx.update(vaults)
+          .set({
+            totalValueLocked: totalValueUSD.toString(),
+            updatedAt: new Date()
+          })
+          .where(eq(vaults.id, vaultId));
+      });
 
       const changePercent = previousTVL > 0 
         ? ((totalValueUSD - previousTVL) / previousTVL) * 100 

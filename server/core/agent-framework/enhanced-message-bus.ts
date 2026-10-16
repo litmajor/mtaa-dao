@@ -15,7 +15,7 @@
 import { EventEmitter } from 'events';
 import type Redis from 'ioredis';
 import { Logger } from '../../utils/logger';
-import { v4 as uuidv4 } from 'crypto';
+import { v4 as uuidv4 } from 'uuid';
 
 const logger = new Logger('enhanced-message-bus');
 

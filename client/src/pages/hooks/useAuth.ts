@@ -7,17 +7,21 @@ interface User {
   email: string | null;
   phone: string | null;
   username: string;
+  name?: string | null;
   firstName: string;
   lastName: string;
-  roles: string;
-  role: string;
+  roles?: string | string[];
+  role?: string;
   walletAddress?: string | null;
-  isEmailVerified: boolean;
-  isPhoneVerified: boolean;
+  isEmailVerified?: boolean;
+  isPhoneVerified?: boolean;
   profilePicture?: string | null;
   // Optional extended properties used across the app
   isSuperUser?: boolean;
   currentDaoId?: string;
+  daoId?: string;
+  daos?: string[];
+  token?: string | null;
 }
 
 interface AuthResponse {
@@ -154,6 +158,7 @@ export function useAuth() {
 
   return {
     user: authData?.data?.user ?? null,
+    token: authData?.data?.accessToken ?? null,
     isLoading: isLoading,
     isAuthenticated: !!authData?.data?.user,
     // error from useQuery may be unknown; normalize safely

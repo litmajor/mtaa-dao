@@ -1,8 +1,9 @@
 import { Logger } from '../utils/logger';
 import { db } from '../storage';
 import { 
-  recurringPaymentExecutions,
+  walletTransactions,
   billSplitPayments,
+  billSplitParticipants,
   proposalExecutionQueue
 } from '../../shared/schema';
 import { eq, and, gte, sql } from 'drizzle-orm';
@@ -175,25 +176,25 @@ export class ConstraintChecker {
       const dayStart = new Date(now);
       dayStart.setUTCHours(0, 0, 0, 0);
 
-      // Check recent bill split payments
-      const billPayments = await db.select()
-        .from(billSplitPayments)
-        .where(and(
-          eq(billSplitPayments.payerId, constraints.userId),
-          gte(billSplitPayments.createdAt, dayStart)
-        ));
+        const billPayments = await db.select()
+          .from(billSplitPayments)
+          .innerJoin(billSplitParticipants, eq(billSplitPayments.paymentId, billSplitParticipants.id))
+          .where(and(
+            eq(billSplitParticipants.userId, constraints.userId),
+            gte(billSplitPayments.createdAt, dayStart)
+          ));
 
-      const billPaymentsToday = billPayments.reduce((sum, p) => sum + (p.amount || 0), 0);
+        const billPaymentsToday = billPayments.reduce((sum, row) => sum + Number(row.bill_split_payments.amount ?? 0), 0);
 
-      // Check recent recurring payment executions
       const recurringExecutions = await db.select()
-        .from(recurringPaymentExecutions)
+        .from(walletTransactions)
         .where(and(
-          eq(recurringPaymentExecutions.userId, constraints.userId),
-          gte(recurringPaymentExecutions.executedAt, dayStart)
+          eq(walletTransactions.fromUserId, constraints.userId),
+          eq(walletTransactions.type, 'recurring'),
+          gte(walletTransactions.createdAt, dayStart)
         ));
 
-      const recurringToday = recurringExecutions.reduce((sum, e) => sum + (e.amount || 0), 0);
+      const recurringToday = recurringExecutions.reduce((sum, execution) => sum + Number(execution.amount ?? 0), 0);
 
       const dailyTotal = billPaymentsToday + recurringToday + (constraints.amount || 0);
 
@@ -254,8 +255,7 @@ export class ConstraintChecker {
           eq(proposalExecutionQueue.status, 'completed')
         ));
 
-      const userExecutions = recentExecutions.filter(e => e.executedBy === constraints.userId).length;
-      const nextExecutionCount = userExecutions + 1;
+      const nextExecutionCount = recentExecutions.length + 1;
 
       if (nextExecutionCount > maxPerPeriod) {
         violations.push({
@@ -263,7 +263,8 @@ export class ConstraintChecker {
           message: `Rate limit exceeded: ${nextExecutionCount} executions in ${rateLimitMinutes}min period (max: ${maxPerPeriod})`,
           severity: 'high',
           metadata: {
-            userExecutions,
+            executionsInPeriod: recentExecutions.length,
+            proposedExecution: 1,
             maxPerPeriod,
             rateLimitMinutes,
             period: periodStart.toISOString()
@@ -276,7 +277,11 @@ export class ConstraintChecker {
         warnings.push(`Rate limit approaching: ${nextExecutionCount}/${maxPerPeriod} in last ${rateLimitMinutes}min`);
       }
 
-      logger.debug('Rate limit check', { userExecutions, maxPerPeriod, valid: violations.length === 0 });
+      logger.debug('Rate limit check', {
+        executionsInPeriod: recentExecutions.length,
+        maxPerPeriod,
+        valid: violations.length === 0,
+      });
     } catch (error: any) {
       logger.error('Rate limit check failed', error);
       violations.push({

@@ -18,11 +18,11 @@ export function MobileNav() {
 
   // Updated primary navigation items 
   const primaryNavItems = [
-    { to: "/dashboard", label: "Home", shortLabel: "H", icon: Home },
-    { to: "/daos", label: "DAOs", shortLabel: "D", icon: Building },
-    { to: "/defi-dex", label: "DeFi", shortLabel: "Dfi", icon: TrendingUp },
-    { to: "/exchange-markets", label: "Exchange", shortLabel: "Ex", icon: Zap },
-    { to: "/wallet", label: "Wallet", shortLabel: "W", icon: Wallet },
+    { to: "/dashboard", label: "Home", shortLabel: "H", icon: Home, badge: 0 },
+    { to: "/daos", label: "DAOs", shortLabel: "D", icon: Building, badge: 0 },
+    { to: "/defi-dex", label: "DeFi", shortLabel: "Dfi", icon: TrendingUp, badge: 0 },
+    { to: "/exchange-markets", label: "Exchange", shortLabel: "Ex", icon: Zap, badge: 0 },
+    { to: "/wallet", label: "Wallet", shortLabel: "W", icon: Wallet, badge: 0 },
 
   ];
 

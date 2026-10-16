@@ -15,17 +15,29 @@ import {
   getCacheStats
 } from '../api/dex-screener';
 import { rateLimit } from 'express-rate-limit';
+import { isAuthenticated, requireAdmin } from '../auth';
 import { validate } from '../middleware/validation';
 import { searchPairsQuerySchema, syncSymbolUniverseBodySchema } from '../validators/dex';
 
 const router = express.Router();
+
+// This router is mounted at /api/dex. Keep authentication at the router
+// boundary so a future mount cannot accidentally expose its endpoints.
+router.use(isAuthenticated);
+
+const isAdminUser = (req: express.Request): boolean => {
+  const roles = req.user?.claims?.roles ?? req.user?.claims?.role;
+  const roleList = typeof roles === 'string' ? roles.split(',').map((role) => role.trim()) : roles ?? [];
+  return req.user?.isAdmin === true || req.user?.claims?.isAdmin === true ||
+    (Array.isArray(roleList) && roleList.some((role) => role === 'admin' || role === 'super_admin'));
+};
 
 // Rate limiting configuration per endpoint
 const searchLimiter = rateLimit({
   windowMs: 60 * 1000, // 1 minute
   max: 60,
   message: 'Too many search requests, please try again later',
-  skip: (req) => req.user?.isAdmin // Skip rate limit for admins
+  skip: isAdminUser,
 });
 
 const pairDetailLimiter = rateLimit({
@@ -62,10 +74,10 @@ router.get('/token-pairs/:chain/:tokenAddress', searchLimiter, getTokenPairs);
 router.get('/trending-pairs', trendingLimiter, getTrendingPairs);
 
 // ✅ Symbol Universe sync (1 req/min)
-router.post('/symbol-universe/sync', discoveryLimiter, validate({ body: syncSymbolUniverseBodySchema }), syncSymbolUniverse);
+router.post('/symbol-universe/sync', requireAdmin, discoveryLimiter, validate({ body: syncSymbolUniverseBodySchema }), syncSymbolUniverse);
 
 // ✅ Cache management
-router.delete('/cache/clear', clearCache);
-router.get('/cache/stats', getCacheStats);
+router.delete('/cache/clear', requireAdmin, clearCache);
+router.get('/cache/stats', requireAdmin, getCacheStats);
 
 export default router;

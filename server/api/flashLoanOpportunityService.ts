@@ -187,12 +187,18 @@ async function evaluatePath(
     
     if (gasCostWei > 0n) {
       // Get live ETH/USD price
-      const ethPriceData = await priceOracle.getPrice('ETH').catch(() => null);
-      const ethToUsdRate = ethPriceData?.priceUsd ?? 2000; // Fallback $2000/ETH if unavailable
+      const ethPriceData = await priceOracle.getValuationPrice('ETH');
+      const ethToUsdRate = ethPriceData?.haircutPriceUsd ?? ethPriceData?.priceUsd;
+      if (!ethPriceData || ethToUsdRate === undefined || !Number.isFinite(ethToUsdRate) || ethToUsdRate <= 0) {
+        return { opportunity: null, error: 'Reliable ETH valuation price unavailable' };
+      }
       
       // Get live token/USD price
-      const tokenPriceData = await priceOracle.getPrice(tokenA.symbol).catch(() => null);
-      const tokenToUsdRate = tokenPriceData?.priceUsd ?? 1.0; // Stablecoins ~$1
+      const tokenPriceData = await priceOracle.getValuationPrice(tokenA.symbol);
+      const tokenToUsdRate = tokenPriceData?.haircutPriceUsd ?? tokenPriceData?.priceUsd;
+      if (!tokenPriceData || tokenToUsdRate === undefined || !Number.isFinite(tokenToUsdRate) || tokenToUsdRate <= 0) {
+        return { opportunity: null, error: `Reliable valuation price unavailable for ${tokenA.symbol}` };
+      }
       
       // Calculate gas cost in USD
       const gasCostUsd = Number(ethers.formatEther(gasCostWei)) * ethToUsdRate;
@@ -220,9 +226,11 @@ async function evaluatePath(
       }
     }
   } catch (gasErr) {
-    // If gas estimation fails, leave at 0 to avoid profit overstatement
     logger.warn(`[flashLoanOpportunity] Gas cost estimation failed:`, gasErr instanceof Error ? { error: gasErr.message } : { error: String(gasErr) });
-    estimatedGasCostInAsset = 0n;
+    return {
+      opportunity: null,
+      error: `Gas cost could not be reliably estimated: ${gasErr instanceof Error ? gasErr.message : String(gasErr)}`,
+    };
   }
 
   const netProfit = grossProfit - flashLoanFee - estimatedGasCostInAsset;

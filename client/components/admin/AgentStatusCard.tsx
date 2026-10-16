@@ -99,7 +99,6 @@ export const AgentStatusCard: React.FC<Props> = ({
             </span>
             <div className={styles.progressBar}>
               {/* CSS variable used for dynamic width percentage */}
-              {/* eslint-disable-next-line react/style-prop-object */}
               <div 
                 className={`${styles.progress} ${isCircuitBreakerTriggered ? styles.errorProgress : isPaused ? styles.warningProgress : styles.successProgress}`}
                 style={{ '--progress-width': `${percentageUsed}%` } as React.CSSProperties}

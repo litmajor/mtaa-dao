@@ -43,6 +43,8 @@ export async function migrateFuturesInfrastructure() {
         unrealized_pnl_pct DECIMAL(8, 4) DEFAULT 0,
         realized_pnl DECIMAL(20, 8) DEFAULT 0,
         funding_paid DECIMAL(20, 8) DEFAULT 0,
+        funding_is_estimated BOOLEAN NOT NULL DEFAULT FALSE,
+        opened_at TIMESTAMP,
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         closed_at TIMESTAMP,
@@ -50,6 +52,11 @@ export async function migrateFuturesInfrastructure() {
         FOREIGN KEY (credential_id) REFERENCES cex_credentials(id) ON DELETE CASCADE,
         UNIQUE(credential_id, exchange, position_id)
       );
+    `);
+    await pool.query(`
+      ALTER TABLE futures_positions
+        ADD COLUMN IF NOT EXISTS funding_is_estimated BOOLEAN NOT NULL DEFAULT FALSE,
+        ADD COLUMN IF NOT EXISTS opened_at TIMESTAMP;
     `);
     console.log('✅ Created futures_positions table');
 

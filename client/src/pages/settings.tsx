@@ -1,6 +1,6 @@
-import React, { Suspense, lazy } from "react";
+import React from "react";
 import { Helmet } from "react-helmet-async";
-import { PageLoading } from "../components/ui/page-loading";
+import CanonicalSettingsPage from './SettingsPage';
 
 /**
  * Settings Page - Phase 5
@@ -15,13 +15,6 @@ import { PageLoading } from "../components/ui/page-loading";
  * Single source of truth for all account settings.
  */
 
-// Lazy load unified Settings component from frontend
-const UnifiedSettings = lazy(() =>
-  import("../../frontend/components/Settings/Settings").then((m) => ({
-    default: m.Settings,
-  }))
-);
-
 export default function SettingsPage() {
   return (
     <>
@@ -34,9 +27,7 @@ export default function SettingsPage() {
         <meta name="og:title" content="Account Settings" />
       </Helmet>
 
-      <Suspense fallback={<PageLoading message="Loading your settings..." />}>
-        <UnifiedSettings />
-      </Suspense>
+      <CanonicalSettingsPage />
     </>
   );
 }

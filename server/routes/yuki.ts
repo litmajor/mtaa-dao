@@ -229,7 +229,13 @@ router.post(
     }
 
     // Use smart router to find optimal route (returns all alternatives)
-    const route: OptimalRoute = await getSmartRouter().calculateOptimalRoute(`${fromToken}/${toToken}`, amount);
+    const route: OptimalRoute = await getSmartRouter().calculateOptimalRoute(
+      `${fromToken}/${toToken}`,
+      amount,
+      'sell',
+      false,
+      req.user?.id
+    );
     
     // Use DEX service for swap preview
     const preview: SwapQuote | null = await dexService.getSwapQuote(fromToken, toToken, amount);
@@ -267,12 +273,12 @@ router.post(
         basePrice: alt.basePrice,
         netPrice: alt.netPrice,
         totalCost: alt.totalCost,
-        slippage: alt.slippageCalculation.slippagePercent * 100,
-        fees: alt.makerFee + alt.takerFee,
+        slippage: alt.slippageCalculation.slippagePercent,
+        fees: alt.feePaid,
         costDifference: alt.totalCost - route.totalCost,
       })) || [],
       summary: {
-        potentialSavings: route.savings,
+        potentialSavings: route.savingsVsWorst,
         alternativeCount: route.alternatives?.length || 0,
       },
     };
@@ -334,7 +340,13 @@ router.post('/execute/swap', [authenticateToken, yukiSwapLimiter], async (req: R
     }
 
     // Use smart router to find best route
-    const route = await getSmartRouter().calculateOptimalRoute(fromToken + '/' + toToken, amount);
+    const route = await getSmartRouter().calculateOptimalRoute(
+      fromToken + '/' + toToken,
+      amount,
+      'sell',
+      false,
+      userId
+    );
     
     // Execute swap via DEX integration service
     const result = await dexService.executeSwap(
@@ -532,8 +544,16 @@ router.post('/execute/bridge', [authenticateToken, yukiBridgeLimiter], async (re
     // 🔴 CRITICAL: Time-lock for high-value bridge transfers (>$50k or >1M tokens)
     const tokenSymbol = await resolveTokenSymbol(token);
     const bridgeRoute = getBridgeRouteInfo(tokenSymbol, fromChain, toChain);
-    const priceData = await priceOracle.getPrice(tokenSymbol).catch(() => null);
-    const estimatedUsdValue = priceData?.priceUsd ? amount * priceData.priceUsd : amount * 0.001;
+    const priceData = await priceOracle.getValuationPrice(tokenSymbol).catch(() => null);
+    const priceUsd = priceData?.haircutPriceUsd ?? priceData?.priceUsd;
+    if (!priceData || priceUsd === undefined || !Number.isFinite(priceUsd) || priceUsd <= 0) {
+      return res.status(503).json({
+        success: false,
+        error: `Reliable valuation unavailable for ${tokenSymbol}; bridge transfer cannot be risk-classified`,
+        code: 'VALUATION_UNAVAILABLE',
+      });
+    }
+    const estimatedUsdValue = amount * priceUsd;
     const isHighValue = estimatedUsdValue > 50000 || amount > 1000000;
 
     if (isHighValue) {
@@ -1857,22 +1877,32 @@ router.get('/exchanges/:id/balances', [authenticateToken], async (req: Request, 
       .sort((a, b) => b.total - a.total);
 
     const symbols = formattedBalances.map((b) => b.symbol.toUpperCase());
-    let pricesMap = new Map<string, { priceUsd?: number }>();
-    try {
-      pricesMap = await priceOracle.getPrices(symbols);
-    } catch (priceError) {
-      logger.warn('[YUKI-EXCHANGES] Price lookup failed for balances', { error: priceError });
+    const pricesMap = await priceOracle.getValuationPrices(symbols);
+    const missingSymbols = symbols.filter((symbol) => !pricesMap.has(symbol));
+    if (missingSymbols.length > 0) {
+      return res.status(503).json({
+        success: false,
+        error: `Reliable valuation unavailable for exchange assets: ${missingSymbols.join(', ')}`,
+        code: 'VALUATION_UNAVAILABLE',
+        balances: formattedBalances.map((balance) => ({
+          ...balance,
+          value: null,
+          valueReliable: false,
+        })),
+      });
     }
 
     let totalValue = 0;
     formattedBalances.forEach((b) => {
-      const priceObj = pricesMap.get(b.symbol.toUpperCase());
-      const price = priceObj?.priceUsd || 0;
-      const valueReliable = price > 0;
-      const value = valueReliable ? b.total * price : 0;
+      const valuation = pricesMap.get(b.symbol.toUpperCase());
+      const price = valuation?.haircutPriceUsd ?? valuation?.priceUsd;
+      if (!valuation || price === undefined || !Number.isFinite(price) || price <= 0) {
+        throw new Error(`Reliable valuation unavailable for ${b.symbol}`);
+      }
+      const value = b.total * price;
       (b as any).value = Number(value.toFixed(2));
-      (b as any).valueReliable = valueReliable;
-      if (valueReliable) totalValue += value;
+      (b as any).valueReliable = true;
+      totalValue += value;
     });
 
     let gasCost = 0;

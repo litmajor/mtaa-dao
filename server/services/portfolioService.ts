@@ -124,13 +124,20 @@ class PortfolioService {
 
       // Refresh prices for each holding
       const symbols = holdings.map(h => h.symbol);
-      const prices = await priceOracle.getPrices(symbols);
+      const prices = await priceOracle.getValuationPrices(symbols);
+      const missingSymbols = symbols.filter((symbol) => !prices.has(symbol.toUpperCase()));
+      if (missingSymbols.length > 0) {
+        throw new Error(`Reliable valuation unavailable for portfolio assets: ${missingSymbols.join(', ')}`);
+      }
 
-      // Update values with fresh prices
-      return holdings.map(holding => ({
-        ...holding,
-        valueUsd: (prices.get(holding.symbol)?.priceUsd || holding.valueUsd / holding.amount) * holding.amount
-      }));
+      return holdings.map((holding) => {
+        const valuation = prices.get(holding.symbol.toUpperCase());
+        const priceUsd = valuation?.haircutPriceUsd ?? valuation?.priceUsd;
+        if (!valuation || priceUsd === undefined || !Number.isFinite(priceUsd) || priceUsd <= 0) {
+          throw new Error(`Reliable valuation unavailable for ${holding.symbol}`);
+        }
+        return { ...holding, valueUsd: priceUsd * holding.amount };
+      });
     } catch (error) {
       logger.error(`Failed to get holdings for ${userId}:`, error);
       return null;

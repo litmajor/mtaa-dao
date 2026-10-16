@@ -74,11 +74,13 @@ export class DefenderAgent extends BaseAgent {
         case MessageType.THREAT_DETECTED:
           const behavior: AgentBehavior = {
             agentId: message.payload.agentId || message.from,
-            actionType: message.payload.type || 'unknown',
-            targetResource: message.payload.transaction?.id || 'unknown',
             timestamp: new Date(),
+            actions: [String(message.payload.type || message.type)],
+            resourceUsage: {},
+            communicationPatterns: {},
+            anomalyIndicators: {},
+            trustScore: 1 - Number(message.payload.severity || 0.5),
             maliciousScore: message.payload.severity || 0.5,
-            metadata: message.payload
           };
           await this.act(behavior);
           break;
@@ -449,7 +451,13 @@ export class DefenderAgent extends BaseAgent {
           .filter(([_, v]) => v > 0.9)
           .map(([k, _]) => k)
       },
-      quarantineStatus: this.quarantineManager.getQuarantineStatus()
+      quarantineStatus: this.quarantineManager.getQuarantineStatus(),
+      threatSummary: {
+        last24Hours: 0,
+        last7Days: 0,
+        highestThreat: Math.max(ThreatLevel.BENIGN, ...this.activeThreats.values()) as ThreatLevel,
+        topThreats: [],
+      }
     };
   }
 }

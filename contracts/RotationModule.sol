@@ -215,6 +215,7 @@ contract RotationModule is Ownable, ReentrancyGuard, Pausable {
     error MemberNotRegistered();
     error PendingProposal();
     error UnsupportedSelectionMethod();
+    error RecipientHasNotContributed();
 
     // =========================================================================
     // CONSTRUCTOR
@@ -390,6 +391,7 @@ contract RotationModule is Ownable, ReentrancyGuard, Pausable {
 
         if (cycle.hasBeenDistributed) revert CycleAlreadyDistributed();
         if (pendingProposal[vault][cycleNum]) revert PendingProposal();
+        if (!prog.hasPaid[cycleNum][cycle.currentRecipientId]) revert RecipientHasNotContributed();
 
         // Check participation threshold
         uint256 paidCount = prog.paidCountByCycle[cycleNum];

@@ -126,13 +126,13 @@ export function useLiquidityAlerts(
 ): UseQueryResult<{ alerts: string[]; metrics: OrderBookMetrics }, Error> {
   const { enabled = true, refetchInterval = 10000 } = options;
 
-  return useQuery({
+  return useQuery<{ alerts: string[]; metrics: OrderBookMetrics }, Error>({
     queryKey: ['liquidityAlerts', symbol, exchange],
     queryFn: () => fetchLiquidityAlerts(symbol, exchange),
     enabled: enabled && !!symbol,
     refetchInterval,
     gcTime: 15000
-  } as any);
+  });
 }
 
 /**
@@ -182,12 +182,12 @@ export function useLiquidityProfile(
 > {
   const { enabled = true } = options;
 
-  return useQuery({
+  return useQuery<Array<{ exchange: string; metrics: OrderBookMetrics; rating: string }>, Error>({
     queryKey: ['liquidityProfile', symbol, exchanges.join(',')],
     queryFn: () => fetchLiquidityProfile(symbol, exchanges),
     enabled: enabled && !!symbol,
     gcTime: 30000
-  } as any);
+  });
 }
 
 /**

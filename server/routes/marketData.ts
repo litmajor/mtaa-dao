@@ -159,7 +159,7 @@ router.get('/orderbook/:symbol', async (req: Request, res: Response) => {
  * 
  * Query params:
  * - amount: number (required) - Amount to trade
- * - userVolume30d: number (optional) - 30-day volume for fee tier
+ * - side: 'buy' | 'sell' (optional, defaults to buy)
  * - isMaker: boolean (optional) - Whether placing limit order
  * 
  * Returns: Best route + all alternatives with full cost breakdown
@@ -168,7 +168,17 @@ router.get('/optimal-routes/:symbol', authenticateToken, async (req: Request, re
   try {
     const { symbol } = req.params;
     const amount = parseFloat(req.query.amount as string);
-    const userVolume30d = parseFloat(req.query.userVolume30d as string) || 0;
+    const sideValue = String(req.query.side ?? 'buy').toLowerCase();
+    if (sideValue !== 'buy' && sideValue !== 'sell') {
+      return res.status(400).json(
+        createApiError(
+          ApiErrorCode.INVALID_PARAMETER,
+          'Side must be "buy" or "sell"',
+          400
+        )
+      );
+    }
+    const side = sideValue as 'buy' | 'sell';
     const isMaker = (req.query.isMaker as string)?.toLowerCase() === 'true' || false;
 
     if (!amount || amount <= 0) {
@@ -186,20 +196,22 @@ router.get('/optimal-routes/:symbol', authenticateToken, async (req: Request, re
     const optimalRoute = await smartRouter.calculateOptimalRoute(
       symbol,
       amount,
+      side,
       isMaker,
-      userVolume30d
+      req.user?.id
     );
 
     // Format response
     const data = {
       tradingPair: optimalRoute.tradingPair,
-      amount: optimalRoute.amount,
+      amount: optimalRoute.quantity,
+      side,
       bestRoute: {
         exchange: optimalRoute.bestExchange,
         basePrice: optimalRoute.bestPrice,
         totalCost: optimalRoute.totalCost,
         netPrice: optimalRoute.netPrice,
-        savings: optimalRoute.savings,
+        savings: optimalRoute.savingsVsWorst,
         breakdown: optimalRoute.costBreakdown,
         profitability: optimalRoute.netPrice < optimalRoute.bestPrice ? 'improved-execution' : 'standard',
       },
@@ -209,15 +221,19 @@ router.get('/optimal-routes/:symbol', authenticateToken, async (req: Request, re
         totalCost: alt.totalCost,
         netPrice: alt.netPrice,
         slippage: {
-          percent: parseFloat((alt.slippageCalculation.slippagePercent * 100).toFixed(4)),
+          percent: parseFloat(alt.slippageCalculation.slippagePercent.toFixed(4)),
           amount: alt.slippageCalculation.slippageAmount,
         },
         fees: {
-          maker: alt.makerFee,
-          taker: alt.takerFee,
-          total: alt.makerFee + alt.takerFee,
+          maker: alt.feeStructure.maker,
+          taker: alt.feeStructure.taker,
+          total: alt.feePaid,
         },
-        costVsBest: parseFloat((alt.totalCost - optimalRoute.totalCost).toFixed(8)),
+        costVsBest: parseFloat((
+          side === 'buy'
+            ? alt.netPrice - optimalRoute.netPrice
+            : optimalRoute.netPrice - alt.netPrice
+        ).toFixed(8)),
       })),
       summary: {
         totalAlternatives: optimalRoute.alternatives.length,
@@ -228,7 +244,7 @@ router.get('/optimal-routes/:symbol', authenticateToken, async (req: Request, re
             Math.min(...optimalRoute.alternatives.map((a) => a.totalCost)),
         },
         recommendedRoute: optimalRoute.bestExchange,
-        potentialSavings: optimalRoute.savings,
+        potentialSavings: optimalRoute.savingsVsWorst,
       },
       timestamp: optimalRoute.timestamp,
     };

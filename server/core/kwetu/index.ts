@@ -230,7 +230,10 @@ export class KwetuCore {
    */
   async analyzeHealth(assets: any[], riskProfile: string): Promise<any> {
     try {
-      return await this.healthMonitor.analyzeTreasuryHealth(assets, riskProfile);
+      return await this.healthMonitor.analyzeTreasuryHealth(
+        assets,
+        riskProfile as 'moderate' | 'conservative' | 'aggressive'
+      );
     } catch (error) {
       console.error('Error analyzing treasury health:', error);
       return {

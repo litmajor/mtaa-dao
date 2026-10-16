@@ -484,6 +484,9 @@ export class UnifiedRedisService {
     await this.ensureConnected();
     try {
       if (this.fallbackMode || !this.client) {
+        if (this.isSecuritySensitiveKey(key)) {
+          throw new Error(`[UnifiedRedis] Redis unavailable for security-sensitive key ${key}`);
+        }
         const existing = this.getFromFallback(key);
         if (existing) return false;
         this.setInMemory(key, value, expiresInSeconds ?? Number.MAX_SAFE_INTEGER);
@@ -499,6 +502,9 @@ export class UnifiedRedisService {
     } catch (error: any) {
       logger.warn(`[UnifiedRedis] SETNX error for ${key}:`, error.message);
       this.fallbackMode = true;
+      if (this.isSecuritySensitiveKey(key)) {
+        throw error;
+      }
       const existing = this.getFromFallback(key);
       if (existing) return false;
       this.setInMemory(key, value, expiresInSeconds ?? Number.MAX_SAFE_INTEGER);

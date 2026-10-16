@@ -256,14 +256,12 @@ export const ExecutionPanel: React.FC<ExecutionPanelProps> = ({
             </div>
 
             {/* Risk Assessment */}
-            {/* eslint-disable-next-line react/style-prop-object */}
             <div
               className="execution-risk"
               style={{ borderLeftColor: getRiskColor(selectedProposal.executionRisk) }}
             >
               <div className="risk-item">
                 <span>Execution Risk</span>
-                {/* eslint-disable-next-line react/style-prop-object */}
                 <span
                   className="risk-badge"
                   style={{ backgroundColor: getRiskColor(selectedProposal.executionRisk) }}

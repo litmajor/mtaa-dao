@@ -274,7 +274,7 @@ export default function DepositTab({ methods, accounts }: DepositTabProps) {
             <div className="flex gap-2 mt-4">
               <button onClick={() => setStep(2)} className="px-4 py-2 border rounded">Back</button>
               {selectedMethod.type === 'offramp' || selectedMethod.type === 'fiat_onramp' ? (
-                <button onClick={() => initiateOffRampMutation.mutate({ methodId: selectedMethod.id, amount })} disabled={initiateOffRampMutation.isPending} className="px-4 py-2 bg-blue-600 text-white rounded">{initiateOffRampMutation.isPending ? 'Processing...' : 'Proceed to Payment'}</button>
+                <button onClick={() => initiateOffRampMutation.mutate({ provider: selectedMethod.id, amount })} disabled={initiateOffRampMutation.isPending} className="px-4 py-2 bg-blue-600 text-white rounded">{initiateOffRampMutation.isPending ? 'Processing...' : 'Proceed to Payment'}</button>
               ) : (
                 // crypto deposit: show deposit instructions (simulate)
                 <button onClick={() => { setDepositingMethod(selectedMethod.id); setStep(4); }} className="px-4 py-2 bg-blue-600 text-white rounded">Show Deposit Address</button>

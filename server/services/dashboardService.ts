@@ -393,6 +393,7 @@ export async function getOkediDashboard(userId: string, selectedDaoId?: string):
       console.warn('Failed to fetch escrow data:', err);
     }
 
+    const kycStatus = (user as any)?.kycStatus || 'not-started';
     const pendingActionsCount =
       activeProposals.length +
       activeEscrows.length +
@@ -430,7 +431,6 @@ export async function getOkediDashboard(userId: string, selectedDaoId?: string):
     const tipOfTheDay = tips[dayOfYear % tips.length];
 
     // KYC and transfer limits (safe defaults if not present)
-    const kycStatus = (user as any)?.kycStatus || 'not-started';
     const kycProgress = Number((user as any)?.kycProgress || 0);
     const transferLimits = kycStatus === 'verified' ? {
       daily: 10000,

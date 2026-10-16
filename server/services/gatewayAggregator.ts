@@ -114,6 +114,8 @@
 
 import { logger } from '../utils/logger.ts';
 import { cacheService } from './cacheService';
+import { tokenRegistry } from './tokenRegistry';
+import { dexService } from './dexRoutingService';
 
 // ── Uniswap V3 SDK ────────────────────────────────────────────────────────────
 import { createRequire } from 'module';
@@ -217,6 +219,15 @@ export interface TreasuryProfile {
   maxGasPrice: bigint; // wei
   maxSlippageTolerance: number; // % (e.g., 0.5 = 0.5%)
   deadlineSeconds: number;
+}
+
+export interface SignedSwapResult {
+  success: boolean;
+  transactionHash?: string;
+  amountOut?: number;
+  actualRate?: number;
+  gasUsed?: number;
+  error?: string;
 }
 
 /**
@@ -1536,6 +1547,19 @@ export class GatewayAggregator {
     );
   }
 
+  private resolveCeloToken(asset: string): { symbol: string; address: string; decimals: number } {
+    const symbol = String(asset).toUpperCase();
+    if (ethers.isAddress(asset)) {
+      return { symbol: asset, address: asset, decimals: 18 };
+    }
+
+    const token = tokenRegistry.filterTokens({ chain: 'celo', symbol })[0];
+    if (!token) {
+      throw new Error(`Unsupported Celo token: ${asset}`);
+    }
+    return { symbol: token.symbol, address: token.address, decimals: token.decimals };
+  }
+
   /**
    * Get price quote with fallback cascade (Celo-native first)
    */
@@ -1648,9 +1672,11 @@ export class GatewayAggregator {
     amountIn: string,
     treasury: TreasuryProfile
   ): Promise<{ quote: DexQuote; score: ExecutionScore }> {
+    const input = this.resolveCeloToken(tokenIn);
+    const output = this.resolveCeloToken(tokenOut);
     const quotes = await Promise.allSettled(
       this.adapters.map(adapter =>
-        adapter.getPrice(tokenIn, tokenOut, amountIn)
+        adapter.getPrice(input.address, output.address, amountIn)
           .then(quote => quote.valid ? quote : null)
           .catch(() => null)
       )
@@ -1679,6 +1705,46 @@ export class GatewayAggregator {
     );
 
     return best;
+  }
+
+  /**
+   * Execute a quoted Celo treasury swap through the production router.
+   * The router owns allowance checks, calldata construction, signing, broadcast,
+   * and confirmation. Private keys are read only from server configuration.
+   */
+  async executeSwap(
+    tokenIn: string,
+    tokenOut: string,
+    amountInHuman: number,
+    recipient: string,
+    slippageTolerance = 0.5,
+    preferredProtocol?: string
+  ): Promise<SignedSwapResult> {
+    if (!ethers.isAddress(recipient)) {
+      return { success: false, error: 'A valid recipient address is required.' };
+    }
+
+    if (!Number.isFinite(amountInHuman) || amountInHuman <= 0) {
+      return { success: false, error: 'amountInHuman must be a positive finite number.' };
+    }
+
+    if (!Number.isFinite(slippageTolerance) || slippageTolerance < 0 || slippageTolerance > 100) {
+      return { success: false, error: 'slippageTolerance must be between 0 and 100 percent.' };
+    }
+
+    const input = this.resolveCeloToken(tokenIn);
+    const output = this.resolveCeloToken(tokenOut);
+    const venue = preferredProtocol?.toLowerCase();
+    const preferredDex = venue?.includes('mento') ? 'mento' : venue?.includes('ubeswap') ? 'ubeswap' : undefined;
+
+    return dexService.executeSwap(
+      input.symbol,
+      output.symbol,
+      amountInHuman,
+      recipient,
+      slippageTolerance,
+      preferredDex
+    );
   }
 
   /**

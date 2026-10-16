@@ -24,7 +24,11 @@ router.get('/user/:userId', async (req, res) => {
 // Get current user's achievements
 router.get('/me', async (req, res) => {
   try {
-    const userId = req.user?.claims?.sub;
+    const authUser = ((req as any).user ?? {}) as {
+      id?: string;
+      claims?: { sub?: string };
+    };
+    const userId = authUser.claims?.sub ?? authUser.id;
     if (!userId) {
       return res.status(401).json({ error: 'Unauthorized' });
     }
@@ -44,7 +48,11 @@ router.get('/me', async (req, res) => {
 // Check for new achievements
 router.post('/check', async (req, res) => {
   try {
-    const userId = req.user?.claims?.sub;
+    const authUser = ((req as any).user ?? {}) as {
+      id?: string;
+      claims?: { sub?: string };
+    };
+    const userId = authUser.claims?.sub ?? authUser.id;
     if (!userId) {
       return res.status(401).json({ error: 'Unauthorized' });
     }
@@ -64,7 +72,8 @@ router.post('/check', async (req, res) => {
 router.post('/:achievementId/claim', async (req, res) => {
   try {
     const { achievementId } = req.params;
-    const userId = req.user?.claims?.sub;
+    const authUser = req as any;
+    const userId = authUser.user?.claims?.sub ?? authUser.user?.id;
     if (!userId) {
       return res.status(401).json({ error: 'Unauthorized' });
     }

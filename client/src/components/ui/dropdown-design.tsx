@@ -163,7 +163,7 @@ export const Dropdown = React.forwardRef<HTMLDivElement, DropdownProps>(
       <div ref={ref} className={`relative ${className || ''}`}>
         {/* Trigger */}
         <div
-          ref={triggerRef}
+          ref={triggerRef as unknown as React.Ref<HTMLDivElement>}
           onClick={() => handleOpenChange(!isOpen)}
           className={triggerClassName}
         >

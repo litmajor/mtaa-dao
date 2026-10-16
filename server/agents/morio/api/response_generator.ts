@@ -43,13 +43,15 @@ export class ResponseGenerator {
    * KWETU Integration: Fetches real DAO data for treasury and proposal operations
    * Gating Integration: Handles feature unlock questions
    */
-  async generate(understanding: any, context: UserContext) {
+  async generate(understanding: any, context: UserContext, signal?: AbortSignal) {
+    this.throwIfAborted(signal);
     const { intent, entities, confidence } = understanding;
     const rawInput = understanding.rawInput || '';
     const sentiment = understanding.sentiment || 0;
 
     // Check for gating-related questions FIRST
     const gatingResult = await handleGatingQuestion(context.userId, rawInput);
+    this.throwIfAborted(signal);
     if (gatingResult.isGatingQuestion) {
       return {
         text: gatingResult.response,
@@ -70,15 +72,18 @@ export class ResponseGenerator {
       try {
         const llmResponse = await this.llmGenerator.generateResponse(
           rawInput,
-          context
+          context,
+          signal
         );
+        this.throwIfAborted(signal);
         
         return {
           text: llmResponse.text,
           suggestions: this.generateSuggestions(intent, context),
-          actions: await this.generateActions(intent, entities)
+          actions: await this.generateActions(intent, entities, signal)
         };
       } catch (error) {
+        this.throwIfAborted(signal);
         logger.warn('LLM generation failed, falling back to templates:', { error });
       }
     }
@@ -119,14 +124,16 @@ export class ResponseGenerator {
         // Fetch real treasury data via KWETU
         try {
           const treasuryData = await this.fetchTreasuryBalance(context.daoId);
+          this.throwIfAborted(signal);
           responseText = `Your DAO treasury: **${treasuryData.balance} ${treasuryData.currency}** across ${treasuryData.vaults} vault(s). Last updated: ${new Date(treasuryData.lastUpdated).toLocaleString()}`;
           suggestions = this.generateSuggestions(intent, context);
-          actions = await this.generateActions(intent, { ...entities, balance: treasuryData.balance });
+          actions = await this.generateActions(intent, { ...entities, balance: treasuryData.balance }, signal);
         } catch (error) {
+          this.throwIfAborted(signal);
           logger.warn('Failed to fetch treasury balance, using template:', { error });
           responseText = this.personalizeResponse(template.text, context, entities);
           suggestions = this.generateSuggestions(intent, context);
-          actions = await this.generateActions(intent, entities);
+          actions = await this.generateActions(intent, entities, signal);
         }
         break;
 
@@ -146,7 +153,9 @@ export class ResponseGenerator {
             responseText = 'To create a proposal, I need a title and DAO ID. Please provide these details.';
           } else {
             // Create proposal in database
+            this.throwIfAborted(signal);
             const proposal = await this.createProposalAsync(proposalData);
+            this.throwIfAborted(signal);
             responseText = `Proposal created successfully! 🎉\n\n**ID:** ${proposal.id}\n**Title:** ${proposal.title}\n\nNext steps:\n1. Add more details\n2. Submit to the DAO\n3. Community votes`;
             suggestions = ['View proposal', 'Submit to voting', 'Edit proposal'];
             actions = [{
@@ -156,10 +165,11 @@ export class ResponseGenerator {
             }];
           }
         } catch (error) {
+          this.throwIfAborted(signal);
           logger.warn('Failed to create proposal, using template:', { error });
           responseText = this.personalizeResponse(template.text, context, entities);
           suggestions = this.generateSuggestions(intent, context);
-          actions = await this.generateActions(intent, entities);
+          actions = await this.generateActions(intent, entities, signal);
         }
         break;
 
@@ -167,7 +177,7 @@ export class ResponseGenerator {
         // For other intents, proceed with default response generation
         responseText = this.personalizeResponse(template.text, context, entities);
         suggestions = this.generateSuggestions(intent, context);
-        actions = await this.generateActions(intent, entities);
+        actions = await this.generateActions(intent, entities, signal);
         break;
     }
 
@@ -278,15 +288,19 @@ export class ResponseGenerator {
   /**
    * Generate actionable buttons/actions
    */
-  private async generateActions(intent: string, entities: Record<string, any>): Promise<Action[]> {
+  private async generateActions(intent: string, entities: Record<string, any>, signal?: AbortSignal): Promise<Action[]> {
+    this.throwIfAborted(signal);
     const actions: Action[] = [];
 
     switch (intent) {
       case 'withdraw':
         try {
+          this.throwIfAborted(signal);
           const token = await pendingActionService.createPendingAction({ userId: entities.userId || '', daoId: entities.daoId, actionType: 'open_withdrawal', payload: entities, summary: `Withdrawal request: ${entities.amount || ''} ${entities.currency || ''}` });
+          this.throwIfAborted(signal);
           actions.push({ type: 'open_withdrawal', label: 'Start Withdrawal', data: { ...entities, pendingActionToken: token }, requiresConfirmation: true });
         } catch (e) {
+          this.throwIfAborted(signal);
           actions.push({ type: 'open_withdrawal', label: 'Start Withdrawal', data: entities });
         }
         break;
@@ -297,18 +311,24 @@ export class ResponseGenerator {
 
       case 'submit_proposal':
         try {
+          this.throwIfAborted(signal);
           const token = await pendingActionService.createPendingAction({ userId: entities.userId || '', daoId: entities.daoId, actionType: 'create_proposal', payload: entities, summary: `Create proposal: ${entities.title || 'untitled'}` });
+          this.throwIfAborted(signal);
           actions.push({ type: 'create_proposal', label: 'Create Proposal', data: { ...entities, pendingActionToken: token }, requiresConfirmation: true });
         } catch (e) {
+          this.throwIfAborted(signal);
           actions.push({ type: 'create_proposal', label: 'Create Proposal', data: entities });
         }
         break;
 
       case 'vote':
         try {
+          this.throwIfAborted(signal);
           const token = await pendingActionService.createPendingAction({ userId: entities.userId || '', daoId: entities.daoId, actionType: 'cast_vote', payload: entities, summary: `Cast vote on ${entities.proposalId}` });
+          this.throwIfAborted(signal);
           actions.push({ type: 'cast_vote', label: 'Cast Vote', data: { ...entities, pendingActionToken: token }, requiresConfirmation: true });
         } catch (e) {
+          this.throwIfAborted(signal);
           actions.push({ type: 'cast_vote', label: 'Cast Vote', data: entities });
         }
         break;
@@ -319,6 +339,10 @@ export class ResponseGenerator {
     }
 
     return actions;
+  }
+
+  private throwIfAborted(signal?: AbortSignal): void {
+    if (signal?.aborted) throw new Error('Morio response generation was aborted');
   }
 
   /**

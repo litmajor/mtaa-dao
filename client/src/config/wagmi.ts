@@ -1,4 +1,5 @@
-import { createConfig, http } from 'wagmi';
+import { createConfig } from 'wagmi';
+import { http } from 'viem';
 import { mainnet, sepolia, arbitrum, polygon } from 'wagmi/chains';
 
 export const wagmiConfig = createConfig({

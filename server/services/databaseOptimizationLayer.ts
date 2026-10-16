@@ -26,6 +26,7 @@ export interface OptimizedVaultData {
   currency: string;
   balance: string;
   totalValueLocked: string;
+  isActive: boolean;
   createdAt: Date;
   updatedAt: Date;
   holdings: Array<{
@@ -174,6 +175,7 @@ export class DatabaseOptimizationLayer {
             currency: row.vault.currency || 'KES',
             balance: row.vault.balance || '0',
             totalValueLocked: row.vault.totalValueLocked || '0',
+            isActive: row.vault.isActive ?? false,
             createdAt: row.vault.createdAt || new Date(),
             updatedAt: row.vault.updatedAt || new Date(),
             holdings: [],

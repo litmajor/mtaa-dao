@@ -33,15 +33,16 @@ export function useDashboardPersona() {
       try {
         // Fetch persona detection data
         const response = await apiRequest('GET', '/api/users/persona-data');
+        const payload = await response.json();
         
-        if (!response || typeof response !== 'object') {
+        if (!payload || typeof payload !== 'object') {
           console.error('Invalid persona data response');
           setPersona('okedi');
           setLoading(false);
           return;
         }
 
-        const data = response as PersonaData;
+        const data = payload as PersonaData;
         setPersonaData(data);
 
         // Logic to determine persona
@@ -49,12 +50,12 @@ export function useDashboardPersona() {
 
         // Amara: Advanced user (power user)
         // - Account age > 60 days OR
-        // - Total balance > $50,000 OR
+        // - Total balance > $5000 OR
         // - Has trading/arbitrage features unlocked OR
         // - Is an elder/proposer in multiple DAOs
         if (
           data.accountAge > 60 ||
-          data.totalBalance > 50000 ||
+          data.totalBalance > 5000 ||
           data.featuresUnlocked.includes('trading.dex') ||
           (data.daoRoles.includes('elder') || data.daoRoles.includes('proposer')) && data.daoCount > 2
         ) {
@@ -64,10 +65,10 @@ export function useDashboardPersona() {
         // - Account age > 14 days AND
         // - Has joined a DAO OR
         // - Created a proposal OR
-        // - Total balance > $5,000
+        // - Total balance > $1,000
         else if (
           (data.accountAge > 14 && (data.daoCount > 0 || data.daoRoles.includes('proposer'))) ||
-          data.totalBalance > 5000
+          data.totalBalance > 1000
         ) {
           detectedPersona = 'yuki';
         }

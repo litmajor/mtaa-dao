@@ -117,7 +117,7 @@ export default function MiniPayIntegration({ onPaymentSuccess, onError }: MiniPa
         txHash = await sendCUSD(sendTo, amount.toString());
       } else {
         // Send CELO (native token)
-        const walletClient = getWalletClientInstance();
+        const walletClient = await getWalletClientInstance();
         const [account] = await walletClient.getAddresses();
         const hash = await walletClient.sendTransaction({
           account,

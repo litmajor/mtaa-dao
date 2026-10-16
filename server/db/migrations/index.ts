@@ -27,6 +27,50 @@ import { migrateTreasuryDomainTables, rollbackTreasuryDomainTables } from './031
 import { migrateInvestmentPoolsTables, rollbackInvestmentPoolsTables } from './032-investment-pools';
 import { migrateMonitoringMetricsTables, rollbackMonitoringMetricsTables } from './033-monitoring-metrics';
 import { migrateTokenomicsTables, rollbackTokenomicsTables } from './034-tokenomics';
+import { migrateTreasuryEventCursors, rollbackTreasuryEventCursors } from './035-treasury-event-cursors';
+import { migrateWalletSessionIndexes, rollbackWalletSessionIndexes } from './036-wallet-session-indexes';
+import {
+  migratePaymentIdempotencyConstraints,
+  rollbackPaymentIdempotencyConstraints,
+} from './037-payment-idempotency-constraints';
+import { migrateAuditLogConsolidation, rollbackAuditLogConsolidation } from './038-audit-log-consolidation';
+import { migrateValuationAssets, rollbackValuationAssets } from './039-valuation-assets';
+import {
+  migrateTop100ValuationAssets,
+  rollbackTop100ValuationAssets,
+} from './040-valuation-assets-top-100';
+import {
+  migrateValuationAssetCandidates,
+  rollbackValuationAssetCandidates,
+} from './041-valuation-asset-candidates';
+import {
+  migrateExchangeFeeScheduleHistory,
+  rollbackExchangeFeeScheduleHistory,
+} from './042-exchange-fee-schedule-history';
+import {
+  migrateServiceAccountAccountingConstraints,
+  rollbackServiceAccountAccountingConstraints,
+} from './043-service-account-accounting-constraints';
+import {
+  migrateContributionGraphProofUniqueness,
+  rollbackContributionGraphProofUniqueness,
+} from './044-contribution-graph-proof-uniqueness';
+import {
+  migrateNavOracleState,
+  rollbackNavOracleState,
+} from './045-nav-oracle-state';
+import {
+  migratePoolShareIdempotency,
+  rollbackPoolShareIdempotency,
+} from './046-pool-share-idempotency';
+import {
+  migratePoolShareMarketplace,
+  rollbackPoolShareMarketplace,
+} from './047-pool-share-marketplace';
+import {
+  migrateWalletRegistrationHardening,
+  rollbackWalletRegistrationHardening,
+} from './048-wallet-registration-hardening';
 
 export interface MigrationResult {
   success: boolean;
@@ -204,6 +248,104 @@ export async function runAllMigrations(): Promise<MigrationResult> {
       throw err;
     }
 
+    try {
+      await migrateTreasuryEventCursors();
+    } catch (err: any) {
+      errors.push(`Treasury event cursor migration failed: ${err.message}`);
+      throw err;
+    }
+
+    try {
+      await migrateWalletSessionIndexes();
+    } catch (err: any) {
+      errors.push(`Wallet session indexes migration failed: ${err.message}`);
+      throw err;
+    }
+
+    try {
+      await migratePaymentIdempotencyConstraints();
+    } catch (err: any) {
+      errors.push(`Payment idempotency constraints migration failed: ${err.message}`);
+      throw err;
+    }
+
+    try {
+      await migrateAuditLogConsolidation();
+    } catch (err: any) {
+      errors.push(`Audit log consolidation migration failed: ${err.message}`);
+      throw err;
+    }
+
+    try {
+      await migrateValuationAssets();
+    } catch (err: any) {
+      errors.push(`Valuation assets migration failed: ${err.message}`);
+      throw err;
+    }
+
+    try {
+      await migrateTop100ValuationAssets();
+    } catch (err: any) {
+      errors.push(`Top-100 valuation assets migration failed: ${err.message}`);
+      throw err;
+    }
+
+    try {
+      await migrateValuationAssetCandidates();
+    } catch (err: any) {
+      errors.push(`Valuation asset candidates migration failed: ${err.message}`);
+      throw err;
+    }
+
+    try {
+      await migrateExchangeFeeScheduleHistory();
+    } catch (err: any) {
+      errors.push(`Exchange fee schedule history migration failed: ${err.message}`);
+      throw err;
+    }
+
+    try {
+      await migrateServiceAccountAccountingConstraints();
+    } catch (err: any) {
+      errors.push(`Service account accounting constraints migration failed: ${err.message}`);
+      throw err;
+    }
+
+    try {
+      await migrateContributionGraphProofUniqueness();
+    } catch (err: any) {
+      errors.push(`Contribution proof uniqueness migration failed: ${err.message}`);
+      throw err;
+    }
+
+    try {
+      await migrateNavOracleState();
+    } catch (err: any) {
+      errors.push(`NAV oracle state migration failed: ${err.message}`);
+      throw err;
+    }
+
+    try {
+      await migratePoolShareIdempotency();
+    } catch (err: any) {
+      errors.push(`Pool share idempotency migration failed: ${err.message}`);
+      throw err;
+    }
+
+    try {
+      await migratePoolShareMarketplace();
+    } catch (err: any) {
+      errors.push(`Pool share marketplace migration failed: ${err.message}`);
+      throw err;
+    }
+
+    try {
+      await migrateWalletRegistrationHardening();
+    } catch (err: any) {
+      errors.push(`Wallet registration hardening migration failed: ${err.message}`);
+      throw err;
+    }
+
     const duration = Date.now() - startTime;
     console.log(`\n✅ All migrations completed in ${duration}ms`);
 
@@ -229,11 +371,83 @@ export async function rollbackMigrations(): Promise<MigrationResult> {
 
   try {
     console.log('🔄 Rolling back migrations...\n');
-    
+
+    try {
+      await rollbackWalletRegistrationHardening();
+    } catch (err: any) {
+      errors.push(`Wallet registration hardening rollback failed: ${err.message}`);
+    }
+
+    try {
+      await rollbackPoolShareMarketplace();
+    } catch (err: any) {
+      errors.push(`Pool share marketplace rollback failed: ${err.message}`);
+    }
+
+    try {
+      await rollbackPoolShareIdempotency();
+    } catch (err: any) {
+      errors.push(`Pool share idempotency rollback failed: ${err.message}`);
+    }
+
+    try {
+      await rollbackNavOracleState();
+    } catch (err: any) {
+      errors.push(`NAV oracle state rollback failed: ${err.message}`);
+    }
+
+    try {
+      await rollbackContributionGraphProofUniqueness();
+    } catch (err: any) {
+      errors.push(`Contribution proof uniqueness rollback failed: ${err.message}`);
+    }
+
+    try {
+      await rollbackServiceAccountAccountingConstraints();
+    } catch (err: any) {
+      errors.push(`Service account accounting constraints rollback failed: ${err.message}`);
+    }
+
+    try {
+      await rollbackExchangeFeeScheduleHistory();
+    } catch (err: any) {
+      errors.push(`Exchange fee schedule history rollback failed: ${err.message}`);
+    }
+
+    try {
+      await rollbackValuationAssetCandidates();
+    } catch (err: any) {
+      errors.push(`Valuation asset candidates rollback failed: ${err.message}`);
+    }
+
+    try {
+      await rollbackTop100ValuationAssets();
+    } catch (err: any) {
+      errors.push(`Top-100 valuation assets rollback failed: ${err.message}`);
+    }
+
+    try {
+      await rollbackValuationAssets();
+    } catch (err: any) {
+      errors.push(`Valuation assets rollback failed: ${err.message}`);
+    }
+
+    try {
+      await rollbackAuditLogConsolidation();
+    } catch (err: any) {
+      errors.push(`Audit log consolidation rollback failed: ${err.message}`);
+    }
+
     try {
       await rollbackBlockchainTransactions();
     } catch (err: any) {
       errors.push(`Blockchain transactions rollback failed: ${err.message}`);
+    }
+
+    try {
+      await rollbackPaymentIdempotencyConstraints();
+    } catch (err: any) {
+      errors.push(`Payment idempotency constraints rollback failed: ${err.message}`);
     }
 
     try {
@@ -276,6 +490,18 @@ export async function rollbackMigrations(): Promise<MigrationResult> {
       await rollbackMonitoringMetricsTables();
     } catch (err: any) {
       errors.push(`Monitoring metrics rollback failed: ${err.message}`);
+    }
+
+    try {
+      await rollbackTreasuryEventCursors();
+    } catch (err: any) {
+      errors.push(`Treasury event cursor rollback failed: ${err.message}`);
+    }
+
+    try {
+      await rollbackWalletSessionIndexes();
+    } catch (err: any) {
+      errors.push(`Wallet session indexes rollback failed: ${err.message}`);
     }
 
     try {
@@ -438,8 +664,11 @@ export async function dryRunMigrations(): Promise<{
       'action_approvals',
       // Blockchain transaction tracking
       'blockchain_transactions',
+      'nav_oracle_state',
+      'exchange_fee_schedule_history',
     ],
     willModify: [
+      'pool_investments and pool_withdrawals (add: idempotency_key and per-user unique idempotency indexes)',
       'payment_sagas (add: wallet_from, wallet_to, vault_id, metadata)',
       'recovery_workflows (add: requires_user_consent, user_consent_granted)',
       'manual_intervention_requests (add: resolution_type, resolution_notes, resolved_at, resolved_by)',

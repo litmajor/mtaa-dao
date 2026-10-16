@@ -10,6 +10,7 @@ import ErrorBoundary from '../ErrorBoundary'; // Using ErrorBoundary from parent
 import { motion, AnimatePresence } from 'framer-motion';
 import { useQuery } from '@tanstack/react-query';
 import { useWalletOperatingStore } from '@/stores/wallet-operating-store';
+import type { Transaction as SharedTransaction } from '../../../../shared/types/wallet';
 
 interface Transaction {
   id: string;
@@ -36,6 +37,19 @@ interface Transaction {
 interface TransactionHistoryProps {
   userId?: string;
   walletAddress?: string;
+}
+
+function normalizeTransaction(transaction: SharedTransaction): Transaction {
+  return {
+    id: transaction.id || '',
+    type: transaction.type === 'received' ? 'deposit' : transaction.type === 'sent' ? 'transfer' : (transaction.type as Transaction['type']) || 'transfer',
+    amount: String(transaction.amount ?? '0'),
+    currency: 'cUSD',
+    status: transaction.status === 'confirmed' ? 'completed' : transaction.status === 'processing' ? 'pending' : (transaction.status as Transaction['status']) || 'pending',
+    transactionHash: transaction.hash,
+    description: transaction.description || transaction.memo,
+    createdAt: transaction.time instanceof Date ? transaction.time.toISOString() : new Date(transaction.timestamp || transaction.time || Date.now()).toISOString(),
+  };
 }
 
 // Component for displaying individual transaction items with accessibility in mind
@@ -219,7 +233,7 @@ const TransactionItemSkeleton = () => (
 
 export default function TransactionHistory({ userId, walletAddress }: TransactionHistoryProps) {
   const store = useWalletOperatingStore();
-  const [transactions, setTransactions] = useState<Transaction[]>(store.transactions || []);
+  const [transactions, setTransactions] = useState<Transaction[]>(store.transactions.map(normalizeTransaction));
   const [loading, setLoading] = useState(!store.transactions || store.transactions.length === 0);
   const [error, setError] = useState<string | null>(null); // State for error handling
   const [filter, setFilter] = useState({
@@ -295,7 +309,7 @@ export default function TransactionHistory({ userId, walletAddress }: Transactio
   useEffect(() => {
     // If central store has transactions, use them; otherwise fetch and populate store
     if (store.transactions && store.transactions.length > 0) {
-      setTransactions(store.transactions as Transaction[]);
+      setTransactions(store.transactions.map(normalizeTransaction));
       setLoading(false);
       return;
     }
@@ -327,7 +341,8 @@ export default function TransactionHistory({ userId, walletAddress }: Transactio
       }
       const data = await response.json();
       const fetched = data.data?.transactions || data.data || [];
-      setTransactions(fetched);
+      const normalized = (fetched as SharedTransaction[]).map(normalizeTransaction);
+      setTransactions(normalized);
       // update central store so other components can react
       store.setTransactions(fetched);
     } catch (err: any) {

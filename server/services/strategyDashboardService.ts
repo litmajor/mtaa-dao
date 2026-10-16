@@ -29,6 +29,7 @@ export interface StrategyMetadata {
   // Strategy Configuration
   targetAllocation: Record<string, number>; // { ETH: 0.4, USDC: 0.3, BTC: 0.3 }
   rebalanceFrequency: 'daily' | 'weekly' | 'monthly' | 'manual';
+  rebalanceFrequencyDays?: number;
   riskLevel: 'low' | 'medium' | 'high';
   
   // Performance
@@ -183,6 +184,7 @@ class StrategyDashboardService {
       createdAt: Date.now(),
       targetAllocation,
       rebalanceFrequency,
+      rebalanceFrequencyDays: input.rebalanceFrequencyDays ?? 7,
       riskLevel: (input.riskLevel || 'medium') as 'low' | 'medium' | 'high',
       totalValueLocked: 0,
       followers: 0,
@@ -735,11 +737,64 @@ class StrategyDashboardService {
   /**
    * Update strategy
    */
-  async updateStrategy(strategyId: string, updates: Partial<StrategyMetadata>): Promise<StrategyMetadata | undefined> {
+  async updateStrategy(
+    strategyId: string,
+    updates: {
+      name?: string;
+      description?: string;
+      tags?: string[];
+      riskLevel?: 'low' | 'medium' | 'high';
+      allocations?: Array<{ asset: string; weight: number }>;
+      rebalanceFrequencyDays?: number;
+    }
+  ): Promise<StrategyMetadata | undefined> {
     const strategy = this.strategies.get(strategyId);
     if (!strategy) return undefined;
-    
-    const updated = { ...strategy, ...updates };
+
+    const metadataUpdates: Partial<StrategyMetadata> = {};
+    if (updates.name !== undefined) metadataUpdates.name = updates.name;
+    if (updates.description !== undefined) metadataUpdates.description = updates.description;
+    if (updates.tags !== undefined) metadataUpdates.tags = updates.tags;
+    if (updates.riskLevel !== undefined) metadataUpdates.riskLevel = updates.riskLevel;
+
+    const updated: StrategyMetadata = { ...strategy, ...metadataUpdates };
+
+    if (updates.allocations !== undefined) {
+      const currentAllocations = new Map(
+        (this.allocations.get(strategyId) || []).map((allocation) => [
+          allocation.asset,
+          allocation,
+        ])
+      );
+      updated.targetAllocation = Object.fromEntries(
+        updates.allocations.map(({ asset, weight }) => [asset, weight])
+      );
+      this.allocations.set(
+        strategyId,
+        updates.allocations.map(({ asset, weight }) => {
+          const previous = currentAllocations.get(asset);
+          return {
+            strategyId,
+            asset,
+            weight,
+            targetAllocation: weight,
+            currentAllocation: previous?.currentAllocation ?? 0,
+            rebalanceAmount: previous?.rebalanceAmount ?? 0,
+          };
+        })
+      );
+    }
+
+    if (updates.rebalanceFrequencyDays !== undefined) {
+      updated.rebalanceFrequencyDays = updates.rebalanceFrequencyDays;
+      updated.rebalanceFrequency = this.determineFrequency(
+        updates.rebalanceFrequencyDays
+      );
+      updated.nextRebalance = this.calculateNextRebalance(
+        updated.rebalanceFrequency
+      );
+    }
+
     this.strategies.set(strategyId, updated);
     return updated;
   }

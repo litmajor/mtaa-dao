@@ -1,5 +1,6 @@
-import React, { useState } from 'react';
-import { RiskControl, Strategy } from '../../hooks/useStrategyRegistry';
+import { useState } from 'react';
+import type { FC } from 'react';
+import type { RiskControl, Strategy } from '../../hooks/useStrategyRegistry';
 
 interface RiskLevel {
   name: 'Conservative' | 'Moderate' | 'Aggressive';
@@ -59,16 +60,25 @@ const RISK_PRESETS: RiskLevel[] = [
   }
 ];
 
-interface RiskControlField {
-  key: keyof RiskControl;
+type NumericRiskControlKey = {
+  [Key in keyof RiskControl]: RiskControl[Key] extends number ? Key : never;
+}[keyof RiskControl];
+
+type BooleanRiskControlKey = {
+  [Key in keyof RiskControl]: RiskControl[Key] extends boolean ? Key : never;
+}[keyof RiskControl];
+
+type RiskControlField = {
   label: string;
   description: string;
   unit: string;
-  type: 'number' | 'toggle';
   min?: number;
   max?: number;
   step?: number;
-}
+} & (
+  | { key: NumericRiskControlKey; type: 'number' }
+  | { key: BooleanRiskControlKey; type: 'toggle' }
+);
 
 const RISK_FIELDS: RiskControlField[] = [
   {
@@ -85,25 +95,22 @@ const RISK_FIELDS: RiskControlField[] = [
     label: 'Max Loss Per Trade',
     description: 'Maximum loss allowed on single trade',
     unit: '%',
-          {RISK_PRESETS.map(preset => (
-            <button
-              key={preset.name}
-              onClick={() => handlePresetClick(preset)}
-              className={`p-3 rounded-lg border-2 transition-all text-left ${
-                selectedPreset === preset.name
-                  ? 'border-blue-500 bg-blue-50 dark:bg-blue-950'
-                  : 'border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 hover:border-blue-300'
-              }`}
-              aria-label={`Select ${preset.name} preset`}
-              title={`Select ${preset.name} preset`}
-            >
-              <div className="text-2xl mb-1">{preset.emoji}</div>
-              <div className="font-bold text-sm">{preset.name}</div>
-              <div className="text-xs text-slate-600 dark:text-slate-400">
-                {preset.description}
-              </div>
-            </button>
-          ))}
+    type: 'number',
+    min: 0.1,
+    max: 50,
+    step: 0.1
+  },
+  {
+    key: 'maxDailyLoss',
+    label: 'Max Daily Loss',
+    description: 'Maximum loss allowed in a single day',
+    unit: '%',
+    type: 'number',
+    min: 1,
+    max: 100
+  },
+  {
+    key: 'maxLossStreak',
     label: 'Max Loss Streak',
     description: 'Stop trading after this many consecutive losses',
     unit: 'trades',
@@ -157,7 +164,7 @@ interface RiskControlPanelProps {
   onRiskControlChange: (riskControl: RiskControl) => void;
 }
 
-export const RiskControlPanel: React.FC<RiskControlPanelProps> = ({
+export const RiskControlPanel: FC<RiskControlPanelProps> = ({
   strategy,
   onRiskControlChange
 }) => {
@@ -183,7 +190,10 @@ export const RiskControlPanel: React.FC<RiskControlPanelProps> = ({
     onRiskControlChange(preset.config);
   };
 
-  const handleRiskChange = (key: keyof RiskControl, value: any) => {
+  const handleRiskChange = <Key extends keyof RiskControl>(
+    key: Key,
+    value: RiskControl[Key]
+  ) => {
     const updated = { ...riskControl, [key]: value };
     setRiskControl(updated);
     setSelectedPreset(null); // Clear preset selection when manually editing

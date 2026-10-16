@@ -10,6 +10,7 @@ RUN apk add --no-cache python3 make g++ git
 
 # Copy dependency files first for optimal layer caching
 COPY package*.json ./
+COPY docs-site/package.json ./docs-site/package.json
 
 # Install ALL dependencies (dev + prod) for building
 RUN npm ci
@@ -36,6 +37,7 @@ RUN addgroup -g 1001 -S nodejs && \
 
 # Install only production dependencies
 COPY package*.json ./
+COPY docs-site/package.json ./docs-site/package.json
 RUN npm ci --omit=dev && \
     npm cache clean --force
 

@@ -115,25 +115,20 @@ async function calculateDynamicMinimumProfit(
     const gasCostWei = gasEstimate * gasPrice;
 
     // Step 3: Get live ETH price from priceOracle
-    const ethPriceData = await priceOracle.getPrice('ETH');
-    if (!ethPriceData) {
-      logger.warn(`[dynamicMinimumProfit] No ETH price available, using fallback $2000`);
-      const ethToUsdRate = 2000;
-      const gasCostUsd = Number(ethers.formatEther(gasCostWei)) * ethToUsdRate;
-      const totalRequiredUsd = gasCostUsd * GAS_BUFFER_MULTIPLIER + MIN_NET_PROFIT_USD;
-      const minProfitWei = ethers.parseUnits(
-        totalRequiredUsd.toFixed(tokenDecimals),
-        tokenDecimals
-      );
-      return minProfitWei;
+    const ethPriceData = await priceOracle.getValuationPrice('ETH');
+    const ethToUsdRate = ethPriceData?.haircutPriceUsd ?? ethPriceData?.priceUsd;
+    if (!ethPriceData || ethToUsdRate === undefined || !Number.isFinite(ethToUsdRate) || ethToUsdRate <= 0) {
+      throw new Error('No reliable ETH valuation price available');
     }
 
-    const ethToUsdRate = ethPriceData.priceUsd;
     const gasCostUsd = Number(ethers.formatEther(gasCostWei)) * ethToUsdRate;
 
     // Step 4: Get live token price to convert USD to token units
-    const tokenPriceData = await priceOracle.getPrice(assetSymbol);
-    const tokenUsdRate = tokenPriceData?.priceUsd ?? 1.0; // Default 1:1 for stablecoins
+    const tokenPriceData = await priceOracle.getValuationPrice(assetSymbol);
+    const tokenUsdRate = tokenPriceData?.haircutPriceUsd ?? tokenPriceData?.priceUsd;
+    if (!tokenPriceData || tokenUsdRate === undefined || !Number.isFinite(tokenUsdRate) || tokenUsdRate <= 0) {
+      throw new Error(`No reliable valuation price available for ${assetSymbol}`);
+    }
 
     // Step 5: Calculate total required USD
     const totalRequiredUsd = gasCostUsd * GAS_BUFFER_MULTIPLIER + MIN_NET_PROFIT_USD;
@@ -165,8 +160,7 @@ async function calculateDynamicMinimumProfit(
     return minProfitWei;
   } catch (err) {
     logger.error(`[dynamicMinimumProfit] Error calculating profit for ${assetSymbol}:`, err);
-    // Fallback: return a conservative estimate (0.5 token units as safety buffer)
-    return ethers.parseUnits('0.5', tokenDecimals);
+    throw new Error(`Unable to calculate minimum profit for ${assetSymbol}`);
   }
 }
 

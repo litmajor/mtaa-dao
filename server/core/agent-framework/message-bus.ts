@@ -51,6 +51,8 @@ export enum MessageType {
   TRANSACTION_EVENT = 'transaction_event',
   USER_EVENT = 'user_event',
   AUDIT_REQUEST = 'audit_request',
+  PROPOSAL_EVENT = 'proposal_event',
+  VOTING_EVENT = 'voting_event',
 
 
 }

@@ -232,6 +232,8 @@ router.get('/elders/:elderId/details', [
       return res.status(404).json({ error: 'Elder not found' });
     }
 
+    const performanceMetrics = await agentsEldersService.getPerformanceMetrics('elder', elderId, 10);
+
     // Query associated activity/metrics from audit logs
     const recentActivity = await db
       .select()
@@ -247,12 +249,22 @@ router.get('/elders/:elderId/details', [
     res.json({
       id: elder.id,
       name: elder.name,
-      type: elder.type,
-      status: elder.status || 'online',
-      version: elder.version || '1.0.0',
+      type: elder.name,
+      role: elder.role,
+      status: elder.status,
       lastUpdate: elder.updatedAt,
-      configuration: elder.configuration || {},
-      stats: elder.stats || {},
+      configuration: elder.configuration,
+      stats: {
+        proposalsAnalyzed: elder.proposalsAnalyzed,
+        optimizationsSuggested: elder.optimizationsSuggested,
+        implementationRate: elder.implementationRate,
+        threatsDetected: elder.threatsDetected,
+        risksIdentified: elder.risksIdentified,
+        complianceIssues: elder.complianceIssues,
+        proposalsReviewed: elder.proposalsReviewed,
+        ethicalConcerns: elder.ethicalConcerns,
+        approvalRate: elder.approvalRate,
+      },
       recentActivity: recentActivity.map(log => ({
         id: log.id,
         action: log.action,
@@ -260,7 +272,7 @@ router.get('/elders/:elderId/details', [
         result: log.status === 200 ? 'success' : 'failed',
         details: log.details
       })),
-      performanceMetrics: elder.performanceMetrics || {}
+      performanceMetrics,
     });
   } catch (error) {
     logger.error('Error fetching elder details:', error);
@@ -432,14 +444,12 @@ router.get('/agents/:agentId/details', [
       version: agent.version || '1.0.0',
       description: agent.description || '',
       lastUpdate: agent.updatedAt,
-      uptime: agent.uptime || 0.99,
+      uptime: agent.uptime,
       performance: {
-        messagesProcessed: (agent.stats as any)?.messagesProcessed || 0,
-        averageResponseTime: (agent.stats as any)?.avgResponseTime || 0,
-        peakLoad: (agent.stats as any)?.peakLoad || 0,
+        messagesProcessed: agent.messagesProcessed,
+        averageResponseTime: agent.averageResponseTime,
         errorRate: 1 - successRate,
         successRate,
-        queueSize: (agent.stats as any)?.queueSize || 0
       },
       capabilities: agent.capabilities || [],
       recentActivity: recentActivity.map(a => ({
@@ -642,7 +652,7 @@ router.get('/config/elders/:elderId', [
     res.json({
       elderId,
       name: elder.name,
-      type: elder.type,
+      type: elder.name,
       configuration: elder.configuration || {},
     });
   } catch (error) {
@@ -678,7 +688,7 @@ router.put('/config/elders/:elderId', [
     }
 
     // Validate configuration based on elder type
-    const validation = validateElderConfig(configuration, elder.type);
+    const validation = validateElderConfig(configuration, elder.name);
     if (!validation.valid) {
       return res.status(400).json({
         error: 'Invalid configuration',
@@ -993,7 +1003,7 @@ router.get('/config/all', [
         type: a.type,
         configuration: a.configuration || {},
       })),
-      system: systemConfig?.settings || {},
+      system: systemConfig?.systemSettings || {},
     });
   } catch (error) {
     logger.error('Error fetching all configurations:', error);
@@ -1050,7 +1060,7 @@ router.put('/config/bulk', [
             throw new Error('Elder not found');
           }
 
-          const validation = validateElderConfig(configuration, elder.type);
+          const validation = validateElderConfig(configuration, elder.name);
           if (!validation.valid) {
             throw new Error(validation.errors.join('; '));
           }

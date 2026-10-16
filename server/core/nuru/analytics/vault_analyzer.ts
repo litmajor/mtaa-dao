@@ -27,6 +27,13 @@ export class VaultAnalyzer {
     const metricsData = await this.calculateMetrics(daoId, timeframe);
     const insights = this.generateInsights(metricsData);
     const risks = this.identifyRisks(metricsData);
+    const highestRisk = risks.reduce<Risk | undefined>((highest, risk) => {
+      const current = risk.level ?? risk.severity ?? 'low';
+      const rank = { low: 1, medium: 2, high: 3, critical: 4 };
+      const currentRank = rank[current] ?? 1;
+      const highestRank = highest ? rank[highest.level ?? highest.severity ?? 'low'] ?? 1 : 1;
+      return currentRank > highestRank ? risk : highest;
+    }, undefined);
     
     const metrics: Record<string, number> = {};
     if (typeof metricsData === 'object' && metricsData !== null) {
@@ -43,7 +50,7 @@ export class VaultAnalyzer {
       insights,
       risks,
       recommendations: this.generateRecommendations(metricsData, risks),
-      threatLevel: risks.length > 0 ? 'medium' : 'low',
+      threatLevel: highestRisk ? (highestRisk.level ?? highestRisk.severity ?? 'low') : (risks.length > 0 ? 'medium' : 'low'),
       details: metricsData
     };
   }
@@ -51,7 +58,7 @@ export class VaultAnalyzer {
   /**
    * Analyze specific vault performance
    */
-  async analyzeVaultPerformance(vaultId: string, timeframe?: string = '30d') {
+  async analyzeVaultPerformance(vaultId: string, timeframe: string = '30d') {
     try {
       const vault = await db.query.vaults.findFirst({
         where: (vaults, { eq }) => eq(vaults.id, vaultId)
@@ -81,12 +88,12 @@ export class VaultAnalyzer {
       const deposits = transactions.filter(t => t.type === 'deposit');
       const withdrawals = transactions.filter(t => t.type === 'withdrawal');
 
-      const totalDeposited = deposits.reduce((sum, t) => sum + (t.amount || 0), 0);
-      const totalWithdrawn = withdrawals.reduce((sum, t) => sum + (t.amount || 0), 0);
+      const totalDeposited = deposits.reduce((sum, t) => sum + this.toNumber(t.amount), 0);
+      const totalWithdrawn = withdrawals.reduce((sum, t) => sum + this.toNumber(t.amount), 0);
       const netFlow = totalDeposited - totalWithdrawn;
 
       // Calculate returns (simplified)
-      const estimatedValue = (vault.balance || 0);
+      const estimatedValue = this.toNumber(vault.balance);
       const realizedReturn = estimatedValue - totalDeposited;
       const returnPercentage = totalDeposited > 0 ? (realizedReturn / totalDeposited) * 100 : 0;
 
@@ -97,7 +104,7 @@ export class VaultAnalyzer {
       return {
         vaultId,
         name: vault.name,
-        type: vault.type,
+        type: vault.vaultType || 'regular',
         balance: vault.balance,
         totalDeposited,
         totalWithdrawn,
@@ -132,10 +139,10 @@ export class VaultAnalyzer {
       let totalValue = 0;
 
       for (const vault of daoVaults) {
-        const value = vault.balance || 0;
+        const value = this.toNumber(vault.balance);
         totalValue += value;
-        
-        const vaultType = vault.type || 'unknown';
+
+        const vaultType = vault.vaultType || 'unknown';
         composition[vaultType] = (composition[vaultType] || 0) + value;
       }
 
@@ -164,7 +171,7 @@ export class VaultAnalyzer {
   /**
    * Track rebalancing impact and effectiveness
    */
-  async analyzeRebalancingImpact(vaultId: string, timeframe?: string = '90d') {
+  async analyzeRebalancingImpact(vaultId: string, timeframe: string = '90d') {
     try {
       const timeframeMs = this.parseTimeframeDays(timeframe) * 24 * 60 * 60 * 1000;
       const startDate = new Date(Date.now() - timeframeMs);
@@ -213,7 +220,7 @@ export class VaultAnalyzer {
   /**
    * Calculate fee impact analysis
    */
-  async analyzeFeeImpact(vaultId: string, timeframe?: string = '30d') {
+  async analyzeFeeImpact(vaultId: string, timeframe: string = '30d') {
     try {
       const vault = await db.query.vaults.findFirst({
         where: (vaults, { eq }) => eq(vaults.id, vaultId)
@@ -236,14 +243,14 @@ export class VaultAnalyzer {
       // Estimate fees (would need actual fee data in schema)
       const estimatedTotalFees = transactions.reduce((sum, tx) => {
         const feePercent = this.estimateFeePercent(tx.type as string);
-        return sum + ((tx.amount || 0) * feePercent);
+        return sum + (this.toNumber(tx.amount) * feePercent);
       }, 0);
 
-      const totalTransactionValue = transactions.reduce((sum, tx) => sum + (tx.amount || 0), 0);
+      const totalTransactionValue = transactions.reduce((sum, tx) => sum + this.toNumber(tx.amount), 0);
       const effectiveFeeRate = totalTransactionValue > 0 ? (estimatedTotalFees / totalTransactionValue) * 100 : 0;
 
       // Calculate impact on returns
-      const estimatedReturnWithoutFees = vault.balance ? (vault.balance * 0.1) : 0; // Assume 10% return
+      const estimatedReturnWithoutFees = this.toNumber(vault.balance) ? (this.toNumber(vault.balance) * 0.1) : 0; // Assume 10% return
       const returnImpact = (estimatedTotalFees / (estimatedReturnWithoutFees || 1)) * 100;
 
       return {
@@ -276,11 +283,11 @@ export class VaultAnalyzer {
         };
       }
 
-      const totalTVL = daoVaults.reduce((sum, v) => sum + (v.balance || 0), 0);
-      const averageAPY = daoVaults.reduce((sum, v) => sum + (v.apy || 0), 0) / daoVaults.length;
+      const totalTVL = daoVaults.reduce((sum, v) => sum + this.toNumber(v.balance), 0);
+      const averageAPY = daoVaults.reduce((sum, v) => sum + this.toNumber((v as any).interestRate ?? 0), 0) / daoVaults.length;
 
       // Find best and worst performing
-      const sortedByAPY = [...daoVaults].sort((a, b) => (b.apy || 0) - (a.apy || 0));
+      const sortedByAPY = [...daoVaults].sort((a, b) => this.toNumber((b as any).interestRate ?? 0) - this.toNumber((a as any).interestRate ?? 0));
       const bestPerforming = sortedByAPY[0]?.name || 'N/A';
       const worstPerforming = sortedByAPY[sortedByAPY.length - 1]?.name || 'N/A';
 
@@ -346,7 +353,7 @@ export class VaultAnalyzer {
         type: 'NO_VAULTS',
         severity: 'high',
         description: 'No vaults established',
-        recommendation: 'Create vaults to enable investment strategies'
+        mitigation: 'Create vaults to enable investment strategies'
       });
       return risks;
     }
@@ -356,7 +363,7 @@ export class VaultAnalyzer {
         type: 'LOW_TVL',
         severity: 'medium',
         description: `Low TVL: $${metrics.totalTVL}. Consider vault marketing to increase deposits`,
-        recommendation: 'Increase vault visibility and incentivize deposits'
+        mitigation: 'Increase vault visibility and incentivize deposits'
       });
     }
 
@@ -365,7 +372,7 @@ export class VaultAnalyzer {
         type: 'LOW_RETURNS',
         severity: 'medium',
         description: 'Below-market returns detected',
-        recommendation: 'Review strategy and consider rebalancing'
+        mitigation: 'Review strategy and consider rebalancing'
       });
     }
 
@@ -394,12 +401,12 @@ export class VaultAnalyzer {
 
   private assessRiskProfile(vault: any, transactions: any[]): string {
     // Simplified risk assessment
-    const volatility = transactions.length > 10 
-      ? 'moderate' 
+    const volatility = transactions.length > 10
+      ? 'moderate'
       : 'low';
-    
-    const size = vault.balance > 1000000 ? 'high' : 'moderate';
-    
+
+    const size = this.toNumber(vault.balance) > 1000000 ? 'high' : 'moderate';
+
     return `${volatility}-${size}`;
   }
 
@@ -424,14 +431,14 @@ export class VaultAnalyzer {
 
   private calculateDiversificationScore(percentages: Record<string, number>): number {
     // Herfindahl index for diversification
-    const hIndex = Object.values(percentages).reduce((sum, p) => sum + (p / 100) ** 2, 0);
+    const hIndex = Object.values(percentages).reduce((sum, p) => sum + (Number(p) / 100) ** 2, 0);
     return Math.round((1 - hIndex) * 100);
   }
 
   private recommendCompositionAdjustments(percentages: Record<string, number>): string[] {
     const recommendations: string[] = [];
     
-    const maxAllocation = Math.max(...Object.values(percentages));
+    const maxAllocation = Object.values(percentages).length > 0 ? Math.max(...Object.values(percentages).map(v => Number(v) || 0)) : 0;
     if (maxAllocation > 60) {
       recommendations.push('High concentration detected - consider diversification');
     }
@@ -456,6 +463,12 @@ export class VaultAnalyzer {
     }
 
     return recommendations;
+  }
+
+  private toNumber(value: string | number | null | undefined): number {
+    if (value === null || value === undefined || value === '') return 0;
+    const parsed = typeof value === 'string' ? Number(value) : Number(value);
+    return Number.isFinite(parsed) ? parsed : 0;
   }
 
   private estimateFeePercent(txType: string): number {

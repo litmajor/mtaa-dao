@@ -3,7 +3,7 @@
  * Multi-account system: Wallet, Trading, Vault, Escrow
  */
 
-import { pgTable, text, uuid, decimal, timestamp, index, varchar, integer, boolean } from 'drizzle-orm/pg-core';
+import { pgTable, text, uuid, decimal, timestamp, index, uniqueIndex, varchar, integer, boolean } from 'drizzle-orm/pg-core';
 import { createInsertSchema, createSelectSchema } from 'drizzle-zod';
 import { z } from 'zod';
 import { users } from './schema';
@@ -144,6 +144,7 @@ export const accountTransactions = pgTable(
     fromAccountIdx: index('idx_account_tx_from').on(table.fromAccountId),
     toAccountIdx: index('idx_account_tx_to').on(table.toAccountId),
     createdAtIdx: index('idx_account_tx_created').on(table.createdAt),
+    referenceIdx: uniqueIndex('account_transactions_reference_idx').on(table.reference),
   })
 );
 
@@ -362,11 +363,12 @@ export const chainAccounts = pgTable(
   'chain_accounts',
   {
     id: uuid('id').primaryKey().defaultRandom(),
-    serviceAccountId: uuid('service_account_id').notNull(), // Reference to unified service account
+    serviceAccountId: text('service_account_id').notNull(), // Opaque service-account identifier
     chain: varchar('chain').notNull(), // ethereum, bsc, polygon, arbitrum, optimism, tron, avalanche
     walletAddress: varchar('wallet_address').notNull(),
     balance: decimal('balance', { precision: 36, scale: 18 }).notNull().default('0'),
     balanceUSD: decimal('balance_usd', { precision: 18, scale: 6 }).notNull().default('0'),
+    balanceUSDUpdatedAt: timestamp('balance_usd_updated_at', { withTimezone: true }),
     
     // Token holdings on specific chain
     tokenSymbol: varchar('token_symbol').notNull(), // USDC, USDT, cUSD, etc
@@ -384,6 +386,11 @@ export const chainAccounts = pgTable(
   },
   (table) => ({
     chainAccountIdx: index('idx_chain_account').on(table.serviceAccountId, table.chain),
+    serviceChainTokenUnique: uniqueIndex('chain_accounts_svc_chain_token_uq').on(
+      table.serviceAccountId,
+      table.chain,
+      table.tokenSymbol
+    ),
     addressIdx: index('idx_wallet_address').on(table.walletAddress),
     chainIdx: index('idx_chain').on(table.chain),
     tokenChainIdx: index('idx_token_chain').on(table.tokenSymbol, table.chain),
@@ -399,6 +406,7 @@ export const crossChainTransfers = pgTable(
   {
     id: uuid('id').primaryKey().defaultRandom(),
     withdrawalId: uuid('withdrawal_id').notNull(),
+    serviceAccountId: text('service_account_id'),
     
     // Source
     sourceChain: varchar('source_chain').notNull(),
@@ -447,6 +455,10 @@ export const crossChainTransfers = pgTable(
     sourceTxIdx: index('idx_source_tx').on(table.sourceTxHash),
     targetTxIdx: index('idx_target_tx').on(table.targetTxHash),
     createDateIdx: index('idx_created_at').on(table.createdAt),
+    serviceAccountIdx: index('cross_chain_transfers_svc_idx').on(
+      table.serviceAccountId,
+      table.createdAt.desc()
+    ),
   })
 );
 

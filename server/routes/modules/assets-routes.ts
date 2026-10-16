@@ -1,12 +1,16 @@
 import { Router } from 'express';
 import { z } from 'zod';
+import type { SupportedChain } from '../../../shared/chainRegistry';
 import { crossChainService } from '../../services/crossChainService';
 import { tokenRegistry } from '../../services/tokenRegistry';
 import { asyncHandler } from '../../middleware/errorHandler';
+import { apiRateLimiter, analyticLimiter } from '../../middleware/rateLimiter';
+import { isAuthenticated } from '../../auth';
 import { logger } from '../../utils/logger';
 import { feesSchema } from './validation-schemas';
 
 const router = Router();
+router.use(apiRateLimiter);
 
 // Get supported chains
 router.get('/chains', asyncHandler(async (req, res) => {
@@ -26,6 +30,7 @@ router.get('/assets', asyncHandler(async (req, res) => {
     // Get assets with optional filtering
     const assets = tokenRegistry.getAssets(
       chain ? String(chain) : undefined,
+      
       category ? String(category) : undefined
     );
 
@@ -133,14 +138,15 @@ router.get('/assets/stats', asyncHandler(async (req, res) => {
 }));
 
 // Estimate bridge fees
-router.post('/estimate-fees', asyncHandler(async (req, res) => {
+router.post('/estimate-fees', isAuthenticated, analyticLimiter, asyncHandler(async (req, res) => {
   try {
     const validated = feesSchema.parse(req.body);
     
     const fees = await crossChainService.estimateBridgeFees(
-      validated.sourceChain,
-      validated.destinationChain,
-      validated.amount
+      validated.sourceChain as SupportedChain,
+      validated.destinationChain as SupportedChain,
+      validated.amount,
+      validated.tokenSymbol
     );
 
     res.json({

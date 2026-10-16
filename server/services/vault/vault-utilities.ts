@@ -7,6 +7,7 @@
 import { ethers } from 'ethers';
 import { Logger } from "../../utils/logger";
 import type { PriceCache } from './types';
+import { priceOracle } from '../priceOracle';
 
 export class VaultUtilities {
   // Price caches
@@ -157,16 +158,15 @@ export class VaultUtilities {
   }
 
   /**
-   * Get token price from multiple sources with fallback
-   * Priority: Chainlink > DeFiLlama > CoinGecko > Fallback
+   * Get an allowlisted, quorum-validated price for vault valuation.
    */
   async getTokenPriceUSD(tokenSymbol: string): Promise<number> {
-    const price = 
-      await this.getChainlinkPrice(tokenSymbol) ||
-      await this.getDeFiLlamaPrice(tokenSymbol) ||
-      await this.getCoinGeckoPrice(tokenSymbol);
-    
-    return price ?? this.getFallbackPrice(tokenSymbol);
+    const valuation = await priceOracle.getValuationPrice(tokenSymbol);
+    const price = valuation?.haircutPriceUsd ?? valuation?.priceUsd;
+    if (!valuation || price === undefined || !Number.isFinite(price) || price <= 0) {
+      throw new Error(`No reliable valuation price available for ${tokenSymbol}`);
+    }
+    return price;
   }
 
   /**

@@ -38,7 +38,6 @@ import {
   getReceivedRecurringPayments,
   pauseRecurringPayment,
   resumeRecurringPayment,
-  RecipientInput as RecurringRecipientInput,
 } from "../services/recurringPaymentService";
 
 import { Logger } from "../utils/logger";
@@ -60,7 +59,7 @@ const createBillSplitSchema = z.object({
   description: z.string().optional(),
   totalAmount: z.string().refine((v) => !isNaN(parseFloat(v)) && parseFloat(v) > 0),
   currency: z.string().default("cUSD"),
-  splitMethod: z.enum(["equal", "custom", "percentage", "weighted"]),
+  splitMethod: z.enum(["equal", "custom", "percentage"]),
   participants: z.array(
     z.object({
       userId: z.string().optional(),
@@ -74,10 +73,12 @@ const createBillSplitSchema = z.object({
 
 router.post("/bill-split", isAuthenticated, async (req: Request, res: Response) => {
   try {
+    const userId = req.user?.id;
+    if (!userId) return res.status(401).json({ success: false, error: "Not authenticated" });
     const validated = createBillSplitSchema.parse(req.body);
 
     const billSplit = await createBillSplit({
-      creatorId: req.user!.id,
+      creatorId: userId,
       ...validated,
     });
 
@@ -101,8 +102,10 @@ router.post("/bill-split", isAuthenticated, async (req: Request, res: Response) 
  */
 router.get("/bill-splits", isAuthenticated, async (req: Request, res: Response) => {
   try {
+    const userId = req.user?.id;
+    if (!userId) return res.status(401).json({ success: false, error: "Not authenticated" });
     const status = req.query.status as string | undefined;
-    const billSplits = await getUserBillSplits(req.user!.id, status);
+    const billSplits = await getUserBillSplits(userId, status);
 
     res.json({
       success: true,
@@ -150,9 +153,10 @@ router.post("/bill-split/:id/payment", isAuthenticated, async (req: Request, res
     const validated = recordPaymentSchema.parse(req.body);
 
     await recordBillSplitPayment(
+      req.params.id,
       validated.participantId,
-      validated.transactionHash,
-      validated.amount
+      parseFloat(validated.amount),
+      validated.transactionHash
     );
 
     res.json({
@@ -247,16 +251,30 @@ router.post(
   isAuthenticated,
   async (req: Request, res: Response) => {
     try {
+      const userId = req.user?.id;
+      if (!userId) return res.status(401).json({ success: false, error: "Not authenticated" });
       const validated = createRecurringPaymentSchema.parse(req.body);
+      const recipients = validated.recipients ?? [
+        {
+          userId: validated.recipientId,
+          daoId: validated.recipientDaoId,
+          walletAddress: validated.recipientWalletAddress,
+        },
+      ];
+      if (recipients.length === 0 || recipients.every((recipient) =>
+        !recipient.userId && !recipient.daoId && !recipient.walletAddress
+      )) {
+        return res.status(400).json({ success: false, error: "At least one recipient is required" });
+      }
 
       const recurringPayment = await createMultiRecipientRecurringPayment(
         {
-          creatorId: req.user!.id,
+          creatorId: userId,
+          ...validated,
           startDate: new Date(validated.startDate),
           endDate: validated.endDate ? new Date(validated.endDate) : undefined,
-          ...validated,
         },
-        validated.recipients
+        recipients
       );
 
       res.json({
@@ -280,14 +298,16 @@ router.post(
  */
 router.get("/recurring-payments", isAuthenticated, async (req: Request, res: Response) => {
   try {
+    const userId = req.user?.id;
+    if (!userId) return res.status(401).json({ success: false, error: "Not authenticated" });
     const type = (req.query.type as string) || "created"; // 'created' or 'received'
     const isActive = req.query.isActive !== "false";
 
     let payments;
     if (type === "received") {
-      payments = await getReceivedRecurringPayments(req.user!.id);
+      payments = await getReceivedRecurringPayments(userId);
     } else {
-      payments = await getCreatedRecurringPayments(req.user!.id);
+      payments = await getCreatedRecurringPayments(userId);
     }
 
     // Filter by active status if specified
@@ -340,12 +360,19 @@ router.post(
   isAuthenticated,
   async (req: Request, res: Response) => {
     try {
-      const executionId = await executeMultiRecipientPayment(req.params.id);
+      const result = await executeMultiRecipientPayment(req.params.id);
+      if (result.status !== "succeeded") {
+        return res.status(409).json({
+          success: false,
+          error: result.error ?? "Recurring payment execution failed",
+          executionId: result.executionId,
+        });
+      }
 
       res.json({
         success: true,
         message: "Payment execution initiated",
-        executionId,
+        executionId: result.executionId,
       });
     } catch (error) {
       logger.error("Failed to execute payment:", error);

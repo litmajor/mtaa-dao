@@ -22,8 +22,10 @@ import express from 'express';
 import type { Request, Response, Router } from 'express';
 import { db } from '../../../../storage';
 import { contributions, users, daos } from '../../../../../shared/schema';
-import { eq, and, desc, sql } from 'drizzle-orm';
+import { eq, and, desc, inArray, sql } from 'drizzle-orm';
 import { logger } from '../../../../utils/logger';
+import { contributionGraph } from '../../../../../shared/reputationSchema';
+import { ReputationService } from '../../../../reputationService';
 
 const router: Router = express.Router({ mergeParams: true });
 
@@ -39,6 +41,27 @@ function getDaoId(req: Request & UserRequest): string {
 // Helper to get userId from request
 function getUserId(req: Request & UserRequest): string | null {
   return req.user?.id || req.user?.claims?.sub || null;
+}
+
+const MAX_LIMIT = 100;
+const MAX_EXPORT_ROWS = 10_000;
+
+function parsePage(query: Request['query']): { limit: number; offset: number } {
+  const parsedLimit = Number.parseInt(String(query.limit ?? '50'), 10);
+  const parsedOffset = Number.parseInt(String(query.offset ?? '0'), 10);
+  return {
+    limit: Number.isFinite(parsedLimit)
+      ? Math.min(MAX_LIMIT, Math.max(1, parsedLimit))
+      : 50,
+    offset: Number.isFinite(parsedOffset) ? Math.max(0, parsedOffset) : 0,
+  };
+}
+
+function csvCell(value: unknown): string {
+  let cell = value == null ? '' : String(value);
+  if (/^[\s\u0000]*[=+\-@]/.test(cell)) cell = `'${cell}`;
+  if (/[",\n\r]/.test(cell)) cell = `"${cell.replace(/"/g, '""')}"`;
+  return cell;
 }
 
 // ════════════════════════════════════════════════════════════════════════════════
@@ -58,7 +81,7 @@ router.post('/generate-proof/:contributionId', async (req: Request, res: Respons
       return res.status(401).json({ error: 'User not authenticated' });
     }
 
-    const { contributionId } = (req as any).params;
+    const { contributionId } = req.params;
 
     const [contribution] = await db
       .select()
@@ -84,28 +107,90 @@ router.post('/generate-proof/:contributionId', async (req: Request, res: Respons
       .where(eq(daos.id, daoId))
       .limit(1);
 
-    // Create proof metadata
+    const [existing] = await db
+      .select()
+      .from(contributionGraph)
+      .where(and(
+        eq(contributionGraph.relatedEntityType, 'contribution'),
+        eq(contributionGraph.relatedEntityId, contribution.id),
+        eq(contributionGraph.contributionType, 'financial_contribution')
+      ))
+      .limit(1);
+
+    if (existing) {
+      return res.json({
+        success: true,
+        proof: existing.proofData,
+        graphId: existing.id,
+        message: 'Proof already exists',
+        idempotent: true,
+      });
+    }
+
     const proofData = {
       contributionId: contribution.id,
       contributor: userId,
       daoName: dao?.name || 'Unknown DAO',
       daoId: contribution.daoId,
       amount: contribution.amount,
-      currency: (contribution as any).currency || 'USD',
-      purpose: (contribution as any).purpose || 'DAO Contribution',
+      currency: contribution.currency || 'USD',
+      purpose: contribution.purpose || 'DAO Contribution',
       timestamp: contribution.createdAt,
-      transactionHash: (contribution as any).transactionHash,
+      transactionHash: contribution.transactionHash,
       proofGenerated: new Date().toISOString()
     };
 
-    res.json({
+    const [inserted] = await db
+      .insert(contributionGraph)
+      .values({
+        userId,
+        contributionType: 'financial_contribution',
+        daoId,
+        value: contribution.amount,
+        reputationWeight: 10,
+        impactScore: 50,
+        verified: Boolean(contribution.transactionHash),
+        proofData,
+        onChainTxHash: contribution.transactionHash,
+        relatedEntityId: contribution.id,
+        relatedEntityType: 'contribution',
+      })
+      .onConflictDoNothing()
+      .returning();
+
+    if (!inserted) {
+      const [concurrentProof] = await db
+        .select()
+        .from(contributionGraph)
+        .where(and(
+          eq(contributionGraph.relatedEntityType, 'contribution'),
+          eq(contributionGraph.relatedEntityId, contribution.id),
+          eq(contributionGraph.contributionType, 'financial_contribution')
+        ))
+        .limit(1);
+      if (!concurrentProof) {
+        throw new Error('Proof insert conflicted but no matching contribution proof exists');
+      }
+      return res.json({
+        success: true,
+        proof: concurrentProof.proofData,
+        graphId: concurrentProof.id,
+        message: 'Proof already exists',
+        idempotent: true,
+      });
+    }
+
+    return res.status(201).json({
       success: true,
       proof: proofData,
+      graphId: inserted.id,
       message: 'Contribution proof generated successfully'
     });
-  } catch (error: any) {
-    logger.error(`Error generating contribution proof for DAO ${daoId}:`, error);
-    res.status(500).json({ success: false, error: error.message });
+  } catch (error: unknown) {
+    logger.error(`Error generating contribution proof for DAO ${daoId}`, {
+      error: error instanceof Error ? error.message : String(error),
+    });
+    return res.status(500).json({ success: false, error: 'Failed to generate proof' });
   }
 });
 
@@ -123,24 +208,37 @@ router.get('/my-proofs', async (req: Request, res: Response) => {
       return res.status(401).json({ error: 'User not authenticated' });
     }
 
+    const { limit, offset } = parsePage(req.query);
+    const where = and(
+      eq(contributionGraph.userId, userId),
+      eq(contributionGraph.daoId, daoId),
+      eq(contributionGraph.contributionType, 'financial_contribution')
+    );
+    const [countRow] = await db
+      .select({ count: sql<number>`count(*)::int` })
+      .from(contributionGraph)
+      .where(where);
     const proofs = await db
       .select()
-      .from(contributions)
-      .where(and(
-        eq(contributions.userId, userId),
-        eq(contributions.daoId, daoId)
-      ))
-      .orderBy(desc(contributions.createdAt));
+      .from(contributionGraph)
+      .where(where)
+      .orderBy(desc(contributionGraph.createdAt))
+      .limit(limit)
+      .offset(offset);
 
-    res.json({
+    return res.json({
       success: true,
       daoId,
       proofs,
-      total: proofs.length
+      total: countRow?.count ?? 0,
+      limit,
+      offset,
     });
-  } catch (error: any) {
-    logger.error(`Error fetching contribution proofs for DAO ${daoId}:`, error);
-    res.status(500).json({ success: false, error: error.message });
+  } catch (error: unknown) {
+    logger.error(`Error fetching contribution proofs for DAO ${daoId}`, {
+      error: error instanceof Error ? error.message : String(error),
+    });
+    return res.status(500).json({ success: false, error: 'Failed to load proofs' });
   }
 });
 
@@ -153,51 +251,85 @@ router.get('/my-proofs', async (req: Request, res: Response) => {
  * Get user's reputation and trust score
  */
 router.get('/reputation/:userId', async (req: Request, res: Response) => {
+  const daoId = getDaoId(req);
   try {
-    const { userId: targetUserId } = (req as any).params;
+    const { userId: targetUserId } = req.params;
+    const [user] = await db
+      .select({ id: users.id })
+      .from(users)
+      .where(eq(users.id, targetUserId))
+      .limit(1);
+    if (!user) {
+      return res.status(404).json({ error: 'User not found' });
+    }
 
-    // Get contribution stats
-    const contributionStats = await db
-      .select({
-        totalContributions: sql<number>`COUNT(*)`,
-        totalAmount: sql<number>`SUM(CAST(${contributions.amount} AS NUMERIC))`,
-        avgContribution: sql<number>`AVG(CAST(${contributions.amount} AS NUMERIC))`
-      })
-      .from(contributions)
-      .where(eq(contributions.userId, targetUserId));
+    const [engineReputation, contributionStats, graphStats] = await Promise.all([
+      ReputationService.getUserReputation(targetUserId),
+      db
+        .select({
+          totalContributions: sql<number>`count(*)::int`,
+          verifiedContributions: sql<number>`count(*) filter (where ${contributions.transactionHash} is not null)::int`,
+          totalAmount: sql<string>`coalesce(sum(cast(${contributions.amount} as decimal)), 0)`,
+        })
+        .from(contributions)
+        .where(and(
+          eq(contributions.userId, targetUserId),
+          eq(contributions.daoId, daoId)
+        )),
+      db
+        .select({
+          financialCount: sql<number>`count(*) filter (where ${contributionGraph.contributionType} = 'financial_contribution')::int`,
+          verifiedFinancialCount: sql<number>`count(*) filter (
+            where ${contributionGraph.contributionType} = 'financial_contribution'
+              and ${contributionGraph.verified} = true
+          )::int`,
+          voteCount: sql<number>`count(*) filter (where ${contributionGraph.contributionType} = 'vote_cast')::int`,
+        })
+        .from(contributionGraph)
+        .where(and(
+          eq(contributionGraph.userId, targetUserId),
+          eq(contributionGraph.daoId, daoId)
+        )),
+    ]);
 
-    // Get verification status
-    const verifiedContributions = await db
-      .select({ count: sql<number>`COUNT(*)` })
-      .from(contributions)
-      .where(and(
-        eq(contributions.userId, targetUserId),
-        sql`${contributions.transactionHash} IS NOT NULL`
-      ));
+    const totalContributions = contributionStats[0]?.totalContributions ?? 0;
+    const verifiedCount = graphStats[0]?.verifiedFinancialCount ?? 0;
+    const financialCount = graphStats[0]?.financialCount ?? 0;
+    const voteCount = graphStats[0]?.voteCount ?? 0;
+    const verificationScore = financialCount > 0
+      ? (verifiedCount / financialCount) * 40
+      : 0;
+    const trustScore = Math.round(Math.min(
+      100,
+      verificationScore + Math.min(voteCount, 20) * 2 + Math.min(totalContributions, 10) * 2
+    ));
 
-    const totalContributions = contributionStats[0]?.totalContributions || 0;
-    const verifiedCount = verifiedContributions[0]?.count || 0;
-
-    // Calculate trust score (0-100)
-    const trustScore = Math.min(100,
-      (verifiedCount / Math.max(1, totalContributions) * 40) +
-      Math.min(totalContributions * 5, 60)
-    );
-
-    res.json({
+    return res.json({
       success: true,
       userId: targetUserId,
-      trustScore: Math.round(trustScore),
+      reputation: {
+        totalPoints: engineReputation.totalPoints ?? 0,
+        badge: engineReputation.badge,
+        level: engineReputation.level,
+        nextLevelPoints: engineReputation.nextLevelPoints,
+        source: 'ReputationService',
+      },
+      trustScore,
+      scoreType: 'heuristic_v1',
+      trustScorePurpose: 'UX only; not governance or financial weighting',
+      notGovernanceWeight: true,
       stats: {
         totalContributions,
         verifiedContributions: verifiedCount,
-        totalAmount: contributionStats[0]?.totalAmount || 0,
-        avgContribution: contributionStats[0]?.avgContribution || 0
+        totalAmount: contributionStats[0]?.totalAmount ?? '0',
+        voteParticipation: voteCount,
       }
     });
-  } catch (error: any) {
-    logger.error('Error calculating user reputation:', error);
-    res.status(500).json({ success: false, error: error.message });
+  } catch (error: unknown) {
+    logger.error('Error calculating user reputation', {
+      error: error instanceof Error ? error.message : String(error),
+    });
+    return res.status(500).json({ success: false, error: 'Failed to load reputation' });
   }
 });
 
@@ -232,15 +364,20 @@ router.get('/dao-reputation', async (req: Request, res: Response) => {
       success: true,
       daoId,
       trustScore: daoTrustScore,
+      scoreType: 'heuristic_v1',
+      trustScorePurpose: 'UX only; not governance or financial weighting',
+      notGovernanceWeight: true,
       stats: {
         totalContributions: totalContribs,
         verifiedContributions: verifiedContribs,
         totalAmount: contributionStats[0]?.totalAmount || 0
       }
     });
-  } catch (error: any) {
-    logger.error(`Error calculating DAO reputation for ${daoId}:`, error);
-    res.status(500).json({ success: false, error: error.message });
+  } catch (error: unknown) {
+    logger.error(`Error calculating DAO reputation for ${daoId}`, {
+      error: error instanceof Error ? error.message : String(error),
+    });
+    return res.status(500).json({ success: false, error: 'Failed to load DAO reputation' });
   }
 });
 
@@ -256,55 +393,65 @@ router.get('/ledger', async (req: Request, res: Response) => {
   const daoId = getDaoId(req);
   
   try {
-    const { limit = 50, offset = 0 } = req.query;
+    const { limit, offset } = parsePage(req.query);
 
+    const [countRow] = await db
+      .select({ count: sql<number>`count(*)::int` })
+      .from(contributions)
+      .where(eq(contributions.daoId, daoId));
     const ledger = await db
       .select({
         id: contributions.id,
         userId: contributions.userId,
         amount: contributions.amount,
         timestamp: contributions.createdAt,
-        transactionHash: (contributions as any).transactionHash,
-        isAnonymous: (contributions as any).isAnonymous
+        transactionHash: contributions.transactionHash,
+        isAnonymous: contributions.isAnonymous
       })
       .from(contributions)
       .where(eq(contributions.daoId, daoId))
       .orderBy(desc(contributions.createdAt))
-      .limit(parseInt(limit as string) || 50)
-      .offset(parseInt(offset as string) || 0);
+      .limit(limit)
+      .offset(offset);
 
-    // Enrich with user info
-    const enrichedLedger = await Promise.all(
-      ledger.map(async (entry) => {
-        if (entry.isAnonymous) {
-          return {
-            ...entry,
-            contributor: 'Anonymous'
-          };
-        }
+    const userIds = [...new Set(ledger
+      .filter((entry) => !entry.isAnonymous)
+      .map((entry) => entry.userId))];
+    const nameById = new Map<string, string>();
+    if (userIds.length) {
+      const namedUsers = await db
+        .select({ id: users.id, firstName: users.firstName, lastName: users.lastName })
+        .from(users)
+        .where(inArray(users.id, userIds));
+      for (const user of namedUsers) {
+        nameById.set(user.id, [user.firstName, user.lastName].filter(Boolean).join(' ').trim() || 'Unknown');
+      }
+    }
 
-        const [user] = await db
-          .select({ firstName: users.firstName, lastName: users.lastName })
-          .from(users)
-          .where(eq(users.id, entry.userId))
-          .limit(1);
+    const enrichedLedger = ledger.map((entry) => {
+      if (entry.isAnonymous) {
+        const { userId: _userId, ...anonymousEntry } = entry;
+        return { ...anonymousEntry, contributor: 'Anonymous' };
+      }
+      return {
+        ...entry,
+        contributor: nameById.get(entry.userId) || 'Unknown',
+      };
+    });
 
-        return {
-          ...entry,
-          contributor: user ? `${user.firstName} ${user.lastName}` : 'Unknown'
-        };
-      })
-    );
-
-    res.json({
+    return res.json({
       success: true,
       daoId,
       ledger: enrichedLedger,
-      total: ledger.length
+      total: countRow?.count ?? 0,
+      limit,
+      offset,
     });
-  } catch (error: any) {
-    logger.error(`Error fetching contribution ledger for DAO ${daoId}:`, error);
-    res.status(500).json({ success: false, error: error.message });
+  } catch (error: unknown) {
+    logger.error(`Error fetching contribution ledger for DAO ${daoId}`, {
+      error: error instanceof Error ? error.message : String(error),
+    });
+    return res.status(500).json({ success: false, error: 'Failed to load ledger' });
   }
 });
 
@@ -316,40 +463,51 @@ router.get('/ledger/export', async (req: Request, res: Response) => {
   const daoId = getDaoId(req);
   
   try {
-    const { format = 'csv' } = req.query;
+    const format = String(req.query.format || 'csv').toLowerCase();
 
     const ledger = await db
       .select()
       .from(contributions)
       .where(eq(contributions.daoId, daoId))
-      .orderBy(desc(contributions.createdAt));
+      .orderBy(desc(contributions.createdAt))
+      .limit(MAX_EXPORT_ROWS);
 
     if (format === 'csv') {
       const csv = [
         'Date,Contributor,Amount,Transaction Hash',
-        ...ledger.map((entry: any) => 
-          `"${entry.createdAt}","${entry.isAnonymous ? 'Anonymous' : entry.userId}","${entry.amount}","${entry.transactionHash || 'N/A'}"`
+        ...ledger.map((entry) =>
+          [
+            csvCell(entry.createdAt),
+            csvCell(entry.isAnonymous ? 'Anonymous' : entry.userId),
+            csvCell(entry.amount),
+            csvCell(entry.transactionHash || 'N/A'),
+          ].join(',')
         )
       ].join('\n');
 
       res.setHeader('Content-Type', 'text/csv');
       res.setHeader('Content-Disposition', `attachment; filename=dao-${daoId}-contributions.csv`);
-      res.send(csv);
+      return res.send(csv);
     } else {
-      res.json({
+      return res.json({
         success: true,
         daoId,
-        ledger: ledger.map((entry: any) => ({
+        ledger: ledger.map((entry) => ({
           date: entry.createdAt,
           contributor: entry.isAnonymous ? 'Anonymous' : entry.userId,
           amount: entry.amount,
-          transactionHash: (entry as any).transactionHash || 'N/A'
-        }))
+          transactionHash: entry.transactionHash || 'N/A',
+          isAnonymous: entry.isAnonymous,
+        })),
+        total: ledger.length,
+        limit: MAX_EXPORT_ROWS,
       });
     }
-  } catch (error: any) {
-    logger.error(`Error exporting contribution ledger for DAO ${daoId}:`, error);
-    res.status(500).json({ success: false, error: error.message });
+  } catch (error: unknown) {
+    logger.error(`Error exporting contribution ledger for DAO ${daoId}`, {
+      error: error instanceof Error ? error.message : String(error),
+    });
+    return res.status(500).json({ success: false, error: 'Failed to export ledger' });
   }
 });
 

@@ -1,7 +1,8 @@
 
-import { eq, and, desc, sql, gte, lte } from 'drizzle-orm';
+import { eq, and, desc, sql, gte, lte, inArray } from 'drizzle-orm';
 import { db } from '../db';
 import { 
+  daos,
   vaults, 
   vaultTokenHoldings, 
   vaultTransactions, 
@@ -22,7 +23,6 @@ import {
 } from '../../shared/schema';
 import { TokenRegistry, YIELD_STRATEGIES, type SupportedToken, SupportedTokenEnum } from '../../shared/tokenRegistry';
 import { ethers } from 'ethers';
-import { tokenService } from './tokenService';
 import { Logger } from "../utils/logger";
 import { getErrorMessage } from '../utils/errorUtils';
 import { AppError, ValidationError, NotFoundError } from "../middleware/errorHandler";
@@ -30,8 +30,6 @@ import { z } from "zod";
 import { distributedLockManager } from './concurrencyControl';
 import { cacheInvalidationManager } from './cacheInvalidationManager';
 import { priceOracle } from './priceOracle';
-import { symbolUniverse } from '../core/symbol_universe';
-import { assetGraphService } from './assetGraphService';
 import { dbOptimizationLayer } from './databaseOptimizationLayer';
 import EventEmitter from 'events';
 
@@ -72,17 +70,6 @@ export interface StrategyAllocationRequest {
   allocationPercentage: number; // 0-100
 }
 
-export interface PendingTransaction {
-  id: string;
-  vaultId: string;
-  type: 'deposit' | 'withdraw' | 'rebalance';
-  amount: string;
-  tokenSymbol: string;
-  status: 'pending' | 'completed' | 'failed';
-  retryCount?: number;
-  createdAt: Date;
-}
-
 type VaultOperation = 'view' | 'deposit' | 'withdraw' | 'allocate' | 'rebalance';
 
 // Zod Schemas for validation
@@ -103,8 +90,8 @@ const depositSchema = z.object({
   vaultId: z.string().min(1, "Vault ID is required"),
   userId: z.string().min(1, "User ID is required"),
   tokenSymbol: z.enum(['CELO', 'cUSD', 'cEUR', 'USDT', 'USDC', 'MTAA'] as const),
-  amount: z.string().refine((val) => !isNaN(parseFloat(val)) && parseFloat(val) >= 0, {
-    message: "Amount must be a non-negative number",
+  amount: z.string().refine((val) => Number.isFinite(Number(val)) && Number(val) > 0, {
+    message: "Amount must be a positive number",
   }),
   transactionHash: z.string().optional(),
 });
@@ -113,8 +100,8 @@ const withdrawSchema = z.object({
   vaultId: z.string().min(1, "Vault ID is required"),
   userId: z.string().min(1, "User ID is required"),
   tokenSymbol: z.enum(['CELO', 'cUSD', 'cEUR', 'USDT', 'USDC', 'MTAA'] as const),
-  amount: z.string().refine((val) => !isNaN(parseFloat(val)) && parseFloat(val) >= 0, {
-    message: "Amount must be a non-negative number",
+  amount: z.string().refine((val) => Number.isFinite(Number(val)) && Number(val) > 0, {
+    message: "Amount must be a positive number",
   }),
   transactionHash: z.string().optional(),
 });
@@ -129,94 +116,8 @@ const strategyAllocationSchema = z.object({
 
 
 export class VaultService {
-  // Simple in-memory cache for price feed (replace with Redis or similar for production)
-  private priceCache: Map<string, { price: number; timestamp: number }> = new Map();
-  
   // Event emission for vault operations
   private eventEmitter: EventEmitter = new EventEmitter();
-  
-  // Blockchain provider for Chainlink oracle interactions
-  private provider: ethers.Provider | null = null;
-
-  // Helper: Reasonable price check (basic circuit breaker)
-  private isReasonablePrice(newPrice: number, oldPrice?: number): boolean {
-    if (!oldPrice) return true;
-    // Allow up to 20% deviation
-    return Math.abs(newPrice - oldPrice) / oldPrice < 0.2;
-  }
-
-  // Fallback price (rarely used - price oracle has comprehensive sources)
-  private getFallbackPrice(tokenSymbol: string): number {
-    const stablecoins = ['cUSD', 'USDC', 'USDT', 'DAI', 'cEUR', 'EURS'];
-    if (stablecoins.includes(tokenSymbol)) return 1.00;
-    
-    const nativeAssets: Record<string, number> = {
-      'CELO': 0.65,
-      'BTC': 42000,
-      'ETH': 2200,
-      'SOL': 140,
-    };
-    
-    return nativeAssets[tokenSymbol] || 0.30;
-  }
-
-  // Queue management system for reliable transaction processing
-  private transactionQueue: PendingTransaction[] = [];
-  private isProcessingQueue: boolean = false;
-  
-  private async enqueueTransaction(tx: PendingTransaction): Promise<void> {
-    this.transactionQueue.push(tx);
-    await this.processQueue();
-  }
-  
-  private async processQueue(): Promise<void> {
-    if (this.isProcessingQueue || this.transactionQueue.length === 0) return;
-    
-    this.isProcessingQueue = true;
-    try {
-      while (this.transactionQueue.length > 0) {
-        const tx = this.transactionQueue[0];
-        
-        try {
-          // Execute transaction
-          const receipt = await this.executeTransactionInternal(tx);
-          
-          // Update database with result
-          await db.execute(sql`
-            UPDATE pending_transactions
-            SET status = 'completed', tx_hash = ${receipt.transactionHash}
-            WHERE id = ${tx.id}
-          `);
-          
-          // Remove from queue on success
-          this.transactionQueue.shift();
-        } catch (err) {
-          // Retry logic with exponential backoff
-          tx.retryCount = (tx.retryCount || 0) + 1;
-          if (tx.retryCount > 5) {
-            await db.execute(sql`
-              UPDATE pending_transactions
-              SET status = 'failed', error = ${String(err)}
-              WHERE id = ${tx.id}
-            `);
-            this.transactionQueue.shift();
-          } else {
-            // Wait before retry: 2^retryCount seconds
-            const retryCount = tx.retryCount || 0;
-            await new Promise(r => setTimeout(r, Math.pow(2, retryCount) * 1000));
-          }
-        }
-      }
-    } finally {
-      this.isProcessingQueue = false;
-    }
-  }
-
-  // Execute transaction with error handling
-  private async executeTransactionInternal(tx: PendingTransaction): Promise<{ transactionHash: string }> {
-    // Placeholder implementation - actual execution happens in deposit/withdraw
-    return { transactionHash: `0x${Math.random().toString(16).slice(2)}` };
-  }
 
   // Emit vault events
   private async emitEvent(eventName: string, data: Record<string, any>): Promise<void> {
@@ -244,92 +145,24 @@ export class VaultService {
   }
   // Allocate funds to a vault (handler integration)
   async allocateToVault(request: StrategyAllocationRequest): Promise<void> {
-    try {
-      // Validate request
-      const validatedRequest = strategyAllocationSchema.parse(request);
-
-      // Check authorization
-      const hasPermission = await this.checkVaultPermissions(validatedRequest.vaultId, validatedRequest.userId, 'allocate');
-      if (!hasPermission) {
-        throw new AppError('Unauthorized: You do not have permission to allocate funds for this vault', 403);
-      }
-
-      // Get vault and strategy
-      const vault = await this.getVaultById(validatedRequest.vaultId);
-      if (!vault) {
-        throw new NotFoundError('Vault not found');
-      }
-      const strategy = YIELD_STRATEGIES[validatedRequest.strategyId];
-      if (!strategy) {
-        throw new ValidationError(`Invalid strategy: ${validatedRequest.strategyId}`);
-      }
-      if (!strategy.supportedTokens.includes(validatedRequest.tokenSymbol)) {
-        throw new ValidationError(`Strategy ${validatedRequest.strategyId} does not support token ${validatedRequest.tokenSymbol}`);
-      }
-
-      // Get token holding
-      const holding = await this.getTokenHolding(validatedRequest.vaultId, validatedRequest.tokenSymbol);
-      if (!holding) {
-        throw new NotFoundError('No token holdings found');
-      }
-      const token = TokenRegistry.getToken(validatedRequest.tokenSymbol);
-      if (!token) {
-        throw new ValidationError(`Unsupported token: ${validatedRequest.tokenSymbol}`);
-      }
-
-      // Calculate allocation amount
-      const totalBalanceWei = ethers.parseUnits(holding.balance, token.decimals);
-      const allocationAmountWei = (totalBalanceWei * BigInt(Math.round(validatedRequest.allocationPercentage * 100))) / BigInt(10000);
-      const allocationAmount = ethers.formatUnits(allocationAmountWei, token.decimals);
-
-      // Upsert allocation
-      const existingAllocation = await db.query.vaultStrategyAllocations.findFirst({
-        where: and(
-          eq(vaultStrategyAllocations.vaultId, validatedRequest.vaultId),
-          eq(vaultStrategyAllocations.strategyId, validatedRequest.strategyId),
-          eq(vaultStrategyAllocations.tokenSymbol, validatedRequest.tokenSymbol)
-        )
-      });
-      if (existingAllocation) {
-        await db.update(vaultStrategyAllocations)
-          .set({
-            allocatedAmount: allocationAmount.toString(),
-            allocationPercentage: validatedRequest.allocationPercentage.toString(),
-            lastRebalance: new Date(),
-            updatedAt: new Date()
-          })
-          .where(eq(vaultStrategyAllocations.id, existingAllocation.id!));
-      } else {
-        await db.insert(vaultStrategyAllocations).values({
-          vaultId: validatedRequest.vaultId,
-          strategyId: validatedRequest.strategyId,
-          tokenSymbol: validatedRequest.tokenSymbol,
-          allocatedAmount: allocationAmount.toString(),
-          allocationPercentage: validatedRequest.allocationPercentage.toString(),
-          currentValue: allocationAmount.toString(),
-          isActive: true
-        });
-      }
-    } catch (error) {
-      const msg = getErrorMessage(error);
-      Logger.getLogger().error(`Failed to allocate to vault: ${msg}`, error);
-      if (error instanceof z.ZodError) {
-        throw new ValidationError(`Invalid input for vault allocation: ${error.errors.map(e => `${e.path.join('.')}: ${e.message}`).join(', ')}`);
-      }
-      if (error instanceof AppError) {
-        throw error;
-      }
-      throw new AppError(msg, 500);
-    }
+    return this.allocateToStrategy(request);
   }
 
   // Check if user has permission to perform specific vault operation
   private async checkVaultPermissions(
     vaultId: string, 
     userId: string, 
-    operation: VaultOperation = 'view'
+    operation: VaultOperation = 'view',
+    dbConnection: any = db
   ): Promise<boolean> {
-    const vault = await this.getVaultById(vaultId);
+    const vaultQuery = dbConnection
+      .select()
+      .from(vaults)
+      .where(eq(vaults.id, vaultId))
+      .limit(1);
+    const [vault] = dbConnection === db
+      ? await vaultQuery
+      : await vaultQuery.for('update');
     if (!vault) {
       throw new NotFoundError('Vault not found');
     }
@@ -341,13 +174,18 @@ export class VaultService {
 
     // DAO vault - check DAO membership and operation-specific permissions
     if (vault.daoId) {
-      const membership = await db.query.daoMemberships.findFirst({
-        where: and(
+      const membershipQuery = dbConnection
+        .select()
+        .from(daoMemberships)
+        .where(and(
           eq(daoMemberships.daoId, vault.daoId),
           eq(daoMemberships.userId, userId),
           eq(daoMemberships.status, 'approved')
-        )
-      });
+        ))
+        .limit(1);
+      const [membership] = dbConnection === db
+        ? await membershipQuery
+        : await membershipQuery.for('update');
 
       if (!membership || membership.isBanned) {
         Logger.getLogger().warn(`User ${userId} attempted unauthorized access to DAO vault ${vaultId}`);
@@ -373,9 +211,14 @@ export class VaultService {
           // - 'rotation' mode: Only designated recipients can withdraw
           
           // Get the DAO to check withdrawal mode
-          const dao = await db.query.daos.findFirst({
-            where: eq(sql`id`, vault.daoId!)
-          });
+          const daoQuery = dbConnection
+            .select()
+            .from(daos)
+            .where(eq(daos.id, vault.daoId))
+            .limit(1);
+          const [dao] = dbConnection === db
+            ? await daoQuery
+            : await daoQuery.for('update');
 
           if (!dao) {
             return false;
@@ -419,6 +262,49 @@ export class VaultService {
 
     Logger.getLogger().warn(`Vault ${vaultId} has neither userId nor daoId.`);
     return false;
+  }
+
+  private async findExistingVaultTransaction(
+    dbConnection: any,
+    request: {
+      vaultId: string;
+      transactionHash?: string;
+      transactionType: 'deposit' | 'withdrawal';
+      tokenSymbol: SupportedToken;
+      amountWei: bigint;
+      tokenDecimals: number;
+    }
+  ): Promise<VaultTransaction | null> {
+    if (!request.transactionHash) return null;
+
+    const [existing] = await dbConnection
+      .select()
+      .from(vaultTransactions)
+      .where(eq(vaultTransactions.transactionHash, request.transactionHash))
+      .limit(1);
+
+    if (!existing) return null;
+
+    const matchesRequest =
+      existing.vaultId === request.vaultId &&
+      existing.transactionType === request.transactionType &&
+      existing.tokenSymbol === request.tokenSymbol &&
+      ethers.parseUnits(existing.amount, request.tokenDecimals) === request.amountWei;
+
+    if (!matchesRequest) {
+      throw new ValidationError(
+        'Transaction hash has already been recorded with different vault transaction details'
+      );
+    }
+
+    if (existing.status !== 'completed') {
+      throw new AppError(
+        `Transaction hash is already recorded with status '${existing.status || 'unknown'}'`,
+        409
+      );
+    }
+
+    return existing;
   }
 
   // Create a new vault
@@ -565,55 +451,60 @@ export class VaultService {
       const result = await distributedLockManager.executeWithLock(
         lockKey,
         async () => {
-          // Wrap critical operations in database transaction with explicit isolation level
-      return await db.transaction(async (tx) => {
-        await tx.execute(sql`SET TRANSACTION ISOLATION LEVEL SERIALIZABLE`);
-        // Create transaction record
-        const [transaction] = await tx.insert(vaultTransactions).values({
-          vaultId: validatedRequest.vaultId,
-          userId: validatedRequest.userId,
-          transactionType: 'deposit',
-          tokenSymbol: validatedRequest.tokenSymbol,
-          amount: validatedRequest.amount,
-          valueUSD: valueUSD.toString(),
-          transactionHash: validatedRequest.transactionHash,
-          status: 'completed'
-        }).returning();
+          return db.transaction(async (tx) => {
+            await tx.execute(sql`SET TRANSACTION ISOLATION LEVEL SERIALIZABLE`);
 
-        // Atomic SQL update for token holdings
-        const amountDelta = ethers.formatUnits(depositAmountWei, token.decimals);
-        const updated = await tx.execute(sql`
-          UPDATE vault_token_holdings
-          SET 
-            balance = GREATEST(CAST(balance AS NUMERIC) + CAST(${amountDelta} AS NUMERIC), 0),
-            value_usd = GREATEST(CAST(balance AS NUMERIC) + CAST(${amountDelta} AS NUMERIC), 0) * ${priceUSD},
-            updated_at = NOW()
-          WHERE vault_id = ${validatedRequest.vaultId}
-            AND token_symbol = ${validatedRequest.tokenSymbol}
-            AND CAST(balance AS NUMERIC) + CAST(${amountDelta} AS NUMERIC) >= 0
-          RETURNING *
-    `);
-        if (!updated || !Array.isArray(updated) || updated.length === 0) {
-          // If no row updated, create new holding
-          await tx.insert(vaultTokenHoldings).values({
-            vaultId: String(validatedRequest.vaultId),
-            tokenSymbol: String(validatedRequest.tokenSymbol),
-            balance: String(validatedRequest.amount),
-            valueUSD: String(depositAmountFloat * priceUSD),
-          });
-        }
+            const permitted = await this.checkVaultPermissions(
+              validatedRequest.vaultId,
+              validatedRequest.userId,
+              'deposit',
+              tx
+            );
+            if (!permitted) {
+              throw new AppError('Unauthorized: You do not have permission to deposit to this vault', 403);
+            }
 
-        // Update vault balance and TVL
-        await this.updateVaultTVL(validatedRequest.vaultId, tx);
+            const existing = await this.findExistingVaultTransaction(tx, {
+              vaultId: validatedRequest.vaultId,
+              transactionHash: validatedRequest.transactionHash,
+              transactionType: 'deposit',
+              tokenSymbol: validatedRequest.tokenSymbol,
+              amountWei: depositAmountWei,
+              tokenDecimals: token.decimals,
+            });
+            if (existing) {
+              return { transaction: existing, duplicate: true };
+            }
 
-        return transaction;
-      }, { isolationLevel: 'serializable' });
+            const [transaction] = await tx.insert(vaultTransactions).values({
+              vaultId: validatedRequest.vaultId,
+              userId: validatedRequest.userId,
+              transactionType: 'deposit',
+              tokenSymbol: validatedRequest.tokenSymbol,
+              amount: validatedRequest.amount,
+              valueUSD: valueUSD.toString(),
+              transactionHash: validatedRequest.transactionHash,
+              status: 'completed'
+            }).returning();
+
+            await this.updateTokenHolding(
+              validatedRequest.vaultId,
+              validatedRequest.tokenSymbol,
+              depositAmountWei,
+              'deposit',
+              tx,
+              priceUSD
+            );
+
+            await this.updateVaultTVL(validatedRequest.vaultId, tx);
+            return { transaction, duplicate: false };
+          }, { isolationLevel: 'serializable' });
         },
-        { timeout: 5000, retries: 3 }  // CRITICAL FIX: Reduced from 30s to prevent lock timeout race condition
+        { timeout: 30000, retries: 3 }
       );
 
       // Invalidate related caches after successful deposit
-      if (vault.daoId) {
+      if (!result.duplicate && vault.daoId) {
         await cacheInvalidationManager.invalidateVaultCaches(
           validatedRequest.vaultId,
           vault.daoId
@@ -623,6 +514,7 @@ export class VaultService {
       // Trigger strategy allocation if configured (outside transaction)
       // Explicit rebalance authorization logic
       if (
+        !result.duplicate &&
         vault.yieldStrategy &&
         'autoRebalanceEnabled' in vault &&
         (vault as any).autoRebalanceEnabled
@@ -644,7 +536,7 @@ export class VaultService {
         }
       }
 
-      return result;
+      return result.transaction;
     } catch (error) {
       const msg = getErrorMessage(error);
       Logger.getLogger().error(`Failed to deposit token: ${msg}`, error);
@@ -680,7 +572,7 @@ export class VaultService {
       let withdrawalModeInfo = 'personal';
       if (vault.daoId) {
         const dao = await db.query.daos.findFirst({
-          where: eq(sql`id`, vault.daoId)
+          where: eq(daos.id, vault.daoId)
         });
         withdrawalModeInfo = dao?.withdrawalMode || 'multisig';
         Logger.getLogger().info(`Withdrawal initiated for DAO vault (mode: ${withdrawalModeInfo}) - User: ${validatedRequest.userId}, Amount: ${validatedRequest.amount} ${validatedRequest.tokenSymbol}`);
@@ -720,48 +612,67 @@ export class VaultService {
       const result = await distributedLockManager.executeWithLock(
         lockKey,
         async () => {
-          // Wrap critical operations in database transaction with explicit isolation level
-      return await db.transaction(async (tx) => {
-        await tx.execute(sql`SET TRANSACTION ISOLATION LEVEL SERIALIZABLE`);
-        // Create transaction record
-        const [transaction] = await tx.insert(vaultTransactions).values({
-          vaultId: validatedRequest.vaultId,
-          userId: validatedRequest.userId,
-          transactionType: 'withdrawal',
-          tokenSymbol: validatedRequest.tokenSymbol,
-          amount: validatedRequest.amount,
-          valueUSD: valueUSD.toString(),
-          transactionHash: validatedRequest.transactionHash,
-          status: 'completed'
-        }).returning();
+          return db.transaction(async (tx) => {
+            await tx.execute(sql`SET TRANSACTION ISOLATION LEVEL SERIALIZABLE`);
 
-        // Update token holding using BigInt precision (withdrawal is negative)
-        await this.updateTokenHolding(
-          validatedRequest.vaultId,
-          validatedRequest.tokenSymbol,
-          BigInt(withdrawAmountWei) * BigInt(-1),
-          false,
-          tx
-        );
+            const permitted = await this.checkVaultPermissions(
+              validatedRequest.vaultId,
+              validatedRequest.userId,
+              'withdraw',
+              tx
+            );
+            if (!permitted) {
+              throw new AppError('Unauthorized: You do not have permission to withdraw from this vault', 403);
+            }
 
-        // Update vault TVL
-        await this.updateVaultTVL(validatedRequest.vaultId, tx);
+            const existing = await this.findExistingVaultTransaction(tx, {
+              vaultId: validatedRequest.vaultId,
+              transactionHash: validatedRequest.transactionHash,
+              transactionType: 'withdrawal',
+              tokenSymbol: validatedRequest.tokenSymbol,
+              amountWei: withdrawAmountWei,
+              tokenDecimals: token.decimals,
+            });
+            if (existing) {
+              return { transaction: existing, duplicate: true };
+            }
 
-        return transaction;
-      }, { isolationLevel: 'serializable' });
+            const [transaction] = await tx.insert(vaultTransactions).values({
+              vaultId: validatedRequest.vaultId,
+              userId: validatedRequest.userId,
+              transactionType: 'withdrawal',
+              tokenSymbol: validatedRequest.tokenSymbol,
+              amount: validatedRequest.amount,
+              valueUSD: valueUSD.toString(),
+              transactionHash: validatedRequest.transactionHash,
+              status: 'completed'
+            }).returning();
+
+            await this.updateTokenHolding(
+              validatedRequest.vaultId,
+              validatedRequest.tokenSymbol,
+              withdrawAmountWei,
+              'withdrawal',
+              tx,
+              priceUSD
+            );
+
+            await this.updateVaultTVL(validatedRequest.vaultId, tx);
+            return { transaction, duplicate: false };
+          }, { isolationLevel: 'serializable' });
         },
         { timeout: 30000, retries: 3 }
       );
 
       // Invalidate related caches after successful withdrawal
-      if (vault.daoId) {
+      if (!result.duplicate && vault.daoId) {
         await cacheInvalidationManager.invalidateVaultCaches(
           validatedRequest.vaultId,
           vault.daoId
         );
       }
 
-      return result;
+      return result.transaction;
     } catch (error) {
       const msg = getErrorMessage(error);
       Logger.getLogger().error(`Failed to withdraw token: ${msg}`, error);
@@ -779,18 +690,6 @@ export class VaultService {
   async allocateToStrategy(request: StrategyAllocationRequest): Promise<void> {
     try {
       const validatedRequest = strategyAllocationSchema.parse(request);
-
-      // Check authorization first
-      const hasPermission = await this.checkVaultPermissions(validatedRequest.vaultId, validatedRequest.userId, 'allocate');
-      if (!hasPermission) {
-        throw new AppError('Unauthorized: You do not have permission to allocate strategy for this vault', 403);
-      }
-
-      const vault = await this.getVaultById(validatedRequest.vaultId);
-      if (!vault) {
-        throw new NotFoundError('Vault not found');
-      }
-
       const strategy = YIELD_STRATEGIES[validatedRequest.strategyId];
       if (!strategy) {
         throw new ValidationError(`Invalid strategy: ${validatedRequest.strategyId}`);
@@ -800,52 +699,70 @@ export class VaultService {
         throw new ValidationError(`Strategy ${validatedRequest.strategyId} does not support token ${validatedRequest.tokenSymbol}`);
       }
 
-      const holding = await this.getTokenHolding(validatedRequest.vaultId, validatedRequest.tokenSymbol);
-      if (!holding) {
-        throw new NotFoundError('No token holdings found');
-      }
-
-      // Use proper decimal handling
       const token = TokenRegistry.getToken(validatedRequest.tokenSymbol);
       if (!token) {
         throw new ValidationError(`Unsupported token: ${validatedRequest.tokenSymbol}`);
       }
 
-      const totalBalanceWei = ethers.parseUnits(holding.balance, token.decimals);
-      const allocationAmountWei = (totalBalanceWei * BigInt(Math.round(validatedRequest.allocationPercentage * 100))) / BigInt(10000);
-      const allocationAmount = ethers.formatUnits(allocationAmountWei, token.decimals);
+      await distributedLockManager.executeWithLock(
+        `vault:${validatedRequest.vaultId}:write`,
+        async () => db.transaction(async (tx) => {
+          const hasPermission = await this.checkVaultPermissions(
+            validatedRequest.vaultId,
+            validatedRequest.userId,
+            'allocate',
+            tx
+          );
+          if (!hasPermission) {
+            throw new AppError('Unauthorized: You do not have permission to allocate strategy for this vault', 403);
+          }
 
-      // Check if allocation already exists
-      const existingAllocation = await db.query.vaultStrategyAllocations.findFirst({
-        where: and(
-          eq(vaultStrategyAllocations.vaultId, validatedRequest.vaultId),
-          eq(vaultStrategyAllocations.strategyId, validatedRequest.strategyId),
-          eq(vaultStrategyAllocations.tokenSymbol, validatedRequest.tokenSymbol)
-        )
-      });
+          const holding = await this.getTokenHolding(
+            validatedRequest.vaultId,
+            validatedRequest.tokenSymbol,
+            tx
+          );
+          if (!holding) {
+            throw new NotFoundError('No token holdings found');
+          }
 
-      if (existingAllocation) {
-        // Update existing allocation
-        await db.update(vaultStrategyAllocations)
-          .set({
-            allocatedAmount: allocationAmount.toString(),
-            allocationPercentage: validatedRequest.allocationPercentage.toString(),
-            lastRebalance: new Date(),
-            updatedAt: new Date()
-          })
-          .where(eq(vaultStrategyAllocations.id, existingAllocation.id!));
-      } else {
-        // Create new allocation
-        await db.insert(vaultStrategyAllocations).values({
-          vaultId: validatedRequest.vaultId,
-          strategyId: validatedRequest.strategyId,
-          tokenSymbol: validatedRequest.tokenSymbol,
-          allocatedAmount: allocationAmount.toString(),
-          allocationPercentage: validatedRequest.allocationPercentage.toString(),
-          currentValue: allocationAmount.toString(),
-          isActive: true
-        });
-      }
+          const totalBalanceWei = ethers.parseUnits(holding.balance, token.decimals);
+          const allocationAmountWei =
+            (totalBalanceWei * BigInt(Math.round(validatedRequest.allocationPercentage * 100))) /
+            10000n;
+          const allocationAmount = ethers.formatUnits(allocationAmountWei, token.decimals);
+
+          const existingAllocation = await tx.query.vaultStrategyAllocations.findFirst({
+            where: and(
+              eq(vaultStrategyAllocations.vaultId, validatedRequest.vaultId),
+              eq(vaultStrategyAllocations.strategyId, validatedRequest.strategyId),
+              eq(vaultStrategyAllocations.tokenSymbol, validatedRequest.tokenSymbol)
+            )
+          });
+
+          if (existingAllocation) {
+            await tx.update(vaultStrategyAllocations)
+              .set({
+                allocatedAmount: allocationAmount,
+                allocationPercentage: validatedRequest.allocationPercentage.toString(),
+                lastRebalance: new Date(),
+                updatedAt: new Date()
+              })
+              .where(eq(vaultStrategyAllocations.id, existingAllocation.id));
+          } else {
+            await tx.insert(vaultStrategyAllocations).values({
+              vaultId: validatedRequest.vaultId,
+              strategyId: validatedRequest.strategyId,
+              tokenSymbol: validatedRequest.tokenSymbol,
+              allocatedAmount: allocationAmount,
+              allocationPercentage: validatedRequest.allocationPercentage.toString(),
+              currentValue: allocationAmount,
+              isActive: true
+            });
+          }
+        }),
+        { timeout: 30000, retries: 3 }
+      );
     } catch (error) {
       const msg = getErrorMessage(error);
       Logger.getLogger().error(`Failed to allocate to strategy: ${msg}`, error);
@@ -862,68 +779,87 @@ export class VaultService {
   // Rebalance vault strategy allocations
   async rebalanceVault(vaultId: string, userId?: string): Promise<void> {
     try {
-      // Check authorization if userId provided
-      if (userId) {
-        const hasPermission = await this.checkVaultPermissions(vaultId, userId, 'rebalance');
-        if (!hasPermission) {
-          throw new AppError('Unauthorized: You do not have permission to rebalance this vault', 403);
-        }
-      }
-
-      const vault = await this.getVaultById(vaultId);
-      if (!vault || !vault.yieldStrategy) {
-        Logger.getLogger().info(`Vault ${vaultId} has no yield strategy, skipping rebalance.`);
-        return;
-      }
-
-      const allocations = await db.query.vaultStrategyAllocations.findMany({
-        where: and(
-          eq(vaultStrategyAllocations.vaultId, vaultId),
-          eq(vaultStrategyAllocations.isActive, true)
-        )
-      });
-
-      // Update allocations based on current market conditions using proper decimal handling
-      for (const allocation of allocations) {
-        const holding = await this.getTokenHolding(vaultId, allocation.tokenSymbol);
-        if (holding) {
-          const token = TokenRegistry.getToken(allocation.tokenSymbol);
-          if (!token) {
-            Logger.getLogger().warn(`Token ${allocation.tokenSymbol} not found in registry during rebalance.`);
-            continue; 
+      await distributedLockManager.executeWithLock(
+        `vault:${vaultId}:write`,
+        async () => db.transaction(async (tx) => {
+          if (userId) {
+            const hasPermission = await this.checkVaultPermissions(vaultId, userId, 'rebalance', tx);
+            if (!hasPermission) {
+              throw new AppError('Unauthorized: You do not have permission to rebalance this vault', 403);
+            }
           }
 
-          const totalBalanceWei = ethers.parseUnits(holding.balance, token.decimals);
-          const targetPercentage = parseFloat(allocation.allocationPercentage);
-          const newAllocationWei = (totalBalanceWei * BigInt(Math.round(targetPercentage * 100))) / BigInt(10000);
-          const newAllocation = ethers.formatUnits(newAllocationWei, token.decimals);
+          const [vault] = await tx
+            .select()
+            .from(vaults)
+            .where(eq(vaults.id, vaultId))
+            .for('update')
+            .limit(1);
+          if (!vault) throw new NotFoundError('Vault not found');
+          if (!vault.yieldStrategy) {
+            Logger.getLogger().info(`Vault ${vaultId} has no yield strategy, skipping rebalance.`);
+            return;
+          }
 
-          await db.update(vaultStrategyAllocations)
-            .set({
-              allocatedAmount: newAllocation,
-              currentValue: newAllocation,
-              lastRebalance: new Date(),
-              updatedAt: new Date()
-            })
-            .where(eq(vaultStrategyAllocations.id, allocation.id!));
-        }
-      }
+          const allocations = await tx.query.vaultStrategyAllocations.findMany({
+            where: and(
+              eq(vaultStrategyAllocations.vaultId, vaultId),
+              eq(vaultStrategyAllocations.isActive, true)
+            )
+          });
 
-      // Record rebalance transaction
-      await db.insert(vaultTransactions).values({
-        vaultId: vaultId,
-        userId: userId || vault.userId || vault.daoId || 'system', // Use provided userId if available, else vault owner/DAO
-        transactionType: 'rebalance',
-        tokenSymbol: vault.currency as SupportedToken, // Assuming vault currency is the primary token for rebalance tx
-        amount: '0', // Rebalance doesn't involve a direct amount change in this transaction type
-        valueUSD: '0', // Value will be implicitly updated in holdings
-        status: 'completed',
-        metadata: { allocationsUpdated: allocations.length }
-      });
+          for (const allocation of allocations) {
+            const holding = await this.getTokenHolding(vaultId, allocation.tokenSymbol, tx);
+            if (!holding) continue;
+
+            const token = TokenRegistry.getToken(allocation.tokenSymbol);
+            if (!token) {
+              throw new ValidationError(
+                `Token ${allocation.tokenSymbol} not found in registry during rebalance`
+              );
+            }
+
+            const totalBalanceWei = ethers.parseUnits(holding.balance, token.decimals);
+            const targetPercentage = Number(allocation.allocationPercentage);
+            if (!Number.isFinite(targetPercentage) || targetPercentage < 0 || targetPercentage > 100) {
+              throw new ValidationError(`Invalid allocation percentage for ${allocation.strategyId}`);
+            }
+            const newAllocationWei =
+              (totalBalanceWei * BigInt(Math.round(targetPercentage * 100))) / 10000n;
+            const newAllocation = ethers.formatUnits(newAllocationWei, token.decimals);
+
+            await tx.update(vaultStrategyAllocations)
+              .set({
+                allocatedAmount: newAllocation,
+                currentValue: newAllocation,
+                lastRebalance: new Date(),
+                updatedAt: new Date()
+              })
+              .where(eq(vaultStrategyAllocations.id, allocation.id));
+          }
+
+          const actorId = userId || vault.userId || vault.creatorId;
+          if (!actorId) {
+            throw new ValidationError('Cannot record a rebalance without a valid user actor');
+          }
+          await tx.insert(vaultTransactions).values({
+            vaultId,
+            userId: actorId,
+            transactionType: 'rebalance',
+            tokenSymbol: vault.currency as SupportedToken,
+            amount: '0',
+            valueUSD: '0',
+            status: 'completed',
+            metadata: { allocationsUpdated: allocations.length }
+          });
+        }),
+        { timeout: 30000, retries: 3 }
+      );
     } catch (error) {
-  const msg = getErrorMessage(error);
-  Logger.getLogger().error(`Failed to rebalance vault ${vaultId}: ${msg}`, error);
-  throw new AppError(msg, 500);
+      const msg = getErrorMessage(error);
+      Logger.getLogger().error(`Failed to rebalance vault ${vaultId}: ${msg}`, error);
+      if (error instanceof AppError) throw error;
+      throw new AppError(msg, 500);
     }
   }
 
@@ -936,7 +872,7 @@ export class VaultService {
         throw new NotFoundError('Vault not found');
       }
 
-      const vault = vaultData.vault;
+      const vault = vaultData;
       const holdings = vaultData.holdings || [];
       const allocations = await db.query.vaultStrategyAllocations.findMany({
         where: eq(vaultStrategyAllocations.vaultId, vaultId)
@@ -1043,6 +979,9 @@ export class VaultService {
     try {
       // Optimized: Use batched query for all vaults + holdings instead of 1+N queries
       const userVaultsData = await dbOptimizationLayer.getVaultsForUser(userAddress);
+      const performanceByVault = await this.getLatestPerformanceByVaultIds(
+        userVaultsData.map((vault: any) => vault.id)
+      );
 
       // Calculate performance and format response
       const allVaults = userVaultsData.map((vault: any) => ({
@@ -1051,7 +990,7 @@ export class VaultService {
         currency: vault.currency,
         vaultType: vault.vaultType,
         balance: this.calculateVaultBalance(vault),
-        performance: this.calculatePerformance(vault),
+        performance: performanceByVault.get(vault.id) ?? 0,
         status: vault.isActive ? 'active' : 'inactive'
       }));
 
@@ -1118,37 +1057,49 @@ export class VaultService {
   // Helper methods
   private calculateVaultBalance(vault: any): string {
     // Calculate total balance from token holdings
-    if (!vault.tokenHoldings || vault.tokenHoldings.length === 0) {
+    const holdings = vault.tokenHoldings || vault.holdings || [];
+    if (holdings.length === 0) {
       return '0.00';
     }
 
     // Sum up all token holdings (simplified calculation)
-    const totalBalance = vault.tokenHoldings.reduce((sum: number, holding: any) => {
+    const totalBalance = holdings.reduce((sum: number, holding: any) => {
       return sum + parseFloat(holding.balance || '0');
     }, 0);
 
     return totalBalance.toFixed(2);
   }
 
-  private calculatePerformance(vault: any): number {
-    // Real performance calculation using vaultPerformance table
-    // Returns ROI (%) for the latest period
-    // NOTE: This method is now async
-    throw new Error('Use calculatePerformanceAsync instead');
+  private async getLatestPerformanceByVaultIds(vaultIds: string[]): Promise<Map<string, number>> {
+    if (vaultIds.length === 0) return new Map();
+
+    const records = await db.query.vaultPerformance.findMany({
+      where: inArray(vaultPerformance.vaultId, vaultIds),
+      orderBy: [desc(vaultPerformance.periodEnd)]
+    });
+    const performanceByVault = new Map<string, number>();
+
+    for (const record of records) {
+      if (performanceByVault.has(record.vaultId)) continue;
+      const startingValue = Number(record.startingValue);
+      const endingValue = Number(record.endingValue);
+      performanceByVault.set(
+        record.vaultId,
+        Number.isFinite(startingValue) &&
+          Number.isFinite(endingValue) &&
+          startingValue > 0
+          ? ((endingValue - startingValue) / startingValue) * 100
+          : 0
+      );
+    }
+
+    return performanceByVault;
   }
 
   // Async version for real calculation
   private async calculatePerformanceAsync(vault: any): Promise<number> {
-    const performances = await db.query.vaultPerformance.findMany({
-      where: eq(vaultPerformance.vaultId, vault.id),
-      orderBy: [desc(vaultPerformance.periodEnd)],
-      limit: 1
-    });
-    if (!performances.length) return 0;
-    const latest = performances[0];
-    const startValue = parseFloat(latest.startingValue);
-    const endValue = parseFloat(latest.endingValue);
-    return startValue > 0 ? ((endValue - startValue) / startValue) * 100 : 0;
+    const performances = await this.getLatestPerformanceByVaultIds([vault.id]);
+    return performances.get(vault.id) ?? 0;
   }
 
   // Get vault by ID with enhanced details
@@ -1199,20 +1150,29 @@ export class VaultService {
       const allVaultsRaw = await db.query.vaults.findMany({
         where: eq(vaults.isActive, true)
       });
-      // Fetch token holdings for each vault
-      const allVaults = await Promise.all(allVaultsRaw.map(async (vault: any) => {
-        const tokenHoldings = await this.getVaultHoldings(vault.id);
-        return { ...vault, tokenHoldings };
-      }));
+      const vaultIds = allVaultsRaw.map((vault) => vault.id);
+      const holdings = vaultIds.length
+        ? await db.query.vaultTokenHoldings.findMany({
+            where: inArray(vaultTokenHoldings.vaultId, vaultIds)
+          })
+        : [];
+      const holdingsByVault = new Map<string, VaultTokenHolding[]>();
+      for (const holding of holdings) {
+        const vaultHoldings = holdingsByVault.get(holding.vaultId) ?? [];
+        vaultHoldings.push(holding);
+        holdingsByVault.set(holding.vaultId, vaultHoldings);
+      }
+      const performanceByVault = await this.getLatestPerformanceByVaultIds(vaultIds);
 
       const result: any[] = [];
-      for (const vault of allVaults) {
+      for (const vault of allVaultsRaw) {
+        const tokenHoldings = holdingsByVault.get(vault.id) ?? [];
         result.push({
           id: vault.id,
           name: vault.name,
           currency: vault.currency,
-          balance: this.calculateVaultBalance(vault),
-          performance: await this.calculatePerformanceAsync(vault),
+          balance: this.calculateVaultBalance({ tokenHoldings }),
+          performance: performanceByVault.get(vault.id) ?? 0,
           status: vault.isActive ? 'active' : 'top performer',
           tvl: vault.totalValueLocked || '0',
         });
@@ -1585,9 +1545,10 @@ export class VaultService {
   private async updateTokenHolding(
     vaultId: string, 
     tokenSymbol: string, 
-    amountWei: bigint, 
-    isDeposit: boolean,
-    tx?: any
+    amountWei: bigint,
+    operation: 'deposit' | 'withdrawal',
+    tx?: any,
+    knownPriceUSD?: number
   ): Promise<void> {
     const dbConnection = tx || db;
     const token = TokenRegistry.getToken(tokenSymbol);
@@ -1595,8 +1556,13 @@ export class VaultService {
       throw new ValidationError(`Token ${tokenSymbol} not found in registry`);
     }
 
-    const priceUSD = await this.getTokenPriceUSD(tokenSymbol);
-    const amountFloat = parseFloat(ethers.formatUnits(amountWei < 0 ? -amountWei : amountWei, token.decimals));
+    const priceUSD = knownPriceUSD ?? await this.getTokenPriceUSD(tokenSymbol);
+    if (amountWei <= 0n) {
+      throw new ValidationError('Holding update amount must be positive');
+    }
+    const isDeposit = operation === 'deposit';
+    const amountDeltaWei = isDeposit ? amountWei : -amountWei;
+    const amountFloat = parseFloat(ethers.formatUnits(amountWei, token.decimals));
 
     // CRITICAL CONCURRENCY FIX: Use row locking to find existing holding
     const existing = await dbConnection
@@ -1614,7 +1580,7 @@ export class VaultService {
       const holdingRecord = existing[0];
 
       // ATOMIC UPDATE: Use SQL-level constraints to prevent race conditions
-      const amountDelta = ethers.formatUnits(amountWei, token.decimals);
+      const amountDelta = ethers.formatUnits(amountDeltaWei, token.decimals);
 
       // For withdrawals (negative amounts), enforce balance constraint at SQL level
       const updateResult = await dbConnection.update(vaultTokenHoldings)
@@ -1659,7 +1625,7 @@ export class VaultService {
         // Get current balance for detailed error message
         const currentHolding = await this.getTokenHolding(vaultId, tokenSymbol, tx);
         const currentBalance = currentHolding?.balance || '0';
-        const requestedAmount = ethers.formatUnits(amountWei < 0n ? -amountWei : amountWei, token.decimals);
+        const requestedAmount = ethers.formatUnits(amountWei, token.decimals);
 
         throw new ValidationError(
           `Insufficient balance for withdrawal. Available: ${parseFloat(currentBalance).toFixed(6)}, ` +
@@ -1668,7 +1634,7 @@ export class VaultService {
       }
     } else {
       // Create new holding - no concurrency risk for new records
-      const balanceStr = ethers.formatUnits(amountWei, token.decimals);
+      const balanceStr = ethers.formatUnits(amountDeltaWei, token.decimals);
       const balanceFloat = parseFloat(balanceStr);
 
       // Prevent creating holdings with negative balances
@@ -1713,72 +1679,23 @@ export class VaultService {
   }
 
   private async getTokenPriceUSD(tokenSymbol: string): Promise<number> {
+    if (!TokenRegistry.getToken(tokenSymbol)) {
+      throw new ValidationError(`Token ${tokenSymbol} not found in registry`);
+    }
+
     try {
-      // Validate token exists in registry
-      const token = TokenRegistry.getToken(tokenSymbol);
-      if (!token) {
-        throw new ValidationError(`Token ${tokenSymbol} not found in registry`);
+      const priceData = await priceOracle.getValuationPrice(tokenSymbol);
+      const priceUSD = priceData?.haircutPriceUsd ?? priceData?.priceUsd;
+      if (!priceData || priceUSD === undefined || !Number.isFinite(priceUSD) || priceUSD <= 0) {
+        throw new AppError(`No reliable valuation price available for ${tokenSymbol}`, 503);
       }
 
-      // PRIMARY: Try priceOracle service (multi-source: Gateway Agent + CoinGecko)
-      try {
-        const priceData = await priceOracle.getPrice(tokenSymbol);
-        if (priceData && priceData.priceUsd > 0) {
-          Logger.getLogger().debug(`[PriceOracle] Got ${tokenSymbol}: $${priceData.priceUsd}`);
-          return priceData.priceUsd;
-        }
-      } catch (oracleError) {
-        Logger.getLogger().debug(`[Price] priceOracle failed for ${tokenSymbol}, trying symbol universe`);
-      }
-
-      // SECONDARY: Try symbol universe for asset metadata and dexscreener lookup
-      try {
-        const asset = symbolUniverse.getAsset(tokenSymbol);
-        if (asset) {
-          // Symbol universe has metadata - could integrate dexscreener price lookup here
-          Logger.getLogger().debug(`[SymbolUniverse] Found asset metadata for ${tokenSymbol}`);
-          // Could extend to call dexscreener for real-time price if available
-        }
-      } catch (universeError) {
-        Logger.getLogger().debug(`[Price] symbolUniverse lookup failed for ${tokenSymbol}`);
-      }
-
-      // TERTIARY: Conservative fallback pricing based on token category
-      Logger.getLogger().debug(`[Price] Using fallback pricing for ${tokenSymbol}`);
-      
-      if (token.category === 'stablecoin') {
-        return 1.00; // Stablecoins are $1
-      }
-      
-      if (token.category === 'native') {
-        const nativeFallbacks: Record<string, number> = {
-          'CELO': 0.65,
-          'BTC': 42000,
-          'ETH': 2200,
-        };
-        return nativeFallbacks[tokenSymbol] || 0.50;
-      }
-
-      if (token.category === 'community' && token.riskLevel === 'high') {
-        return 0.10; // High-risk community tokens - very conservative
-      }
-
-      if (token.category === 'bridged') {
-        return 0.50; // Bridged tokens - conservative
-      }
-
-      // Default conservative price
-      return 0.30;
+      return priceUSD;
     } catch (error) {
-      const msg = getErrorMessage(error);
-      Logger.getLogger().error(`Error getting price for ${tokenSymbol}: ${msg}`, error);
-      
-      // Ultra-conservative fallback
-      if (tokenSymbol.includes('USD') || tokenSymbol.includes('EUR')) {
-        return 1.00;
-      }
-      
-      return 0.30;
+      const message = getErrorMessage(error);
+      Logger.getLogger().error(`Unable to obtain a valid price for ${tokenSymbol}: ${message}`, error);
+      if (error instanceof AppError) throw error;
+      throw new AppError(`Unable to obtain a valid price for ${tokenSymbol}`, 503);
     }
   }
 

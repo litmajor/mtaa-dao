@@ -52,13 +52,19 @@ class KwetuService {
       // Log audit
       try {
         await storage.createAuditLog({
-          actor: executingUserId,
-          daoId: pending.daoId,
-          actionType: pending.actionType,
-          payload: pending.payload,
-          result,
-          pendingActionToken: pending.token,
-          timestamp: new Date()
+          timestamp: new Date(),
+          userId: executingUserId,
+          action: pending.actionType,
+          resource: 'kwetu_pending_action',
+          resourceId: pending.token,
+          method: 'EXECUTE',
+          endpoint: '/kwetu/pending-actions',
+          ipAddress: 'system',
+          userAgent: 'kwetu-service',
+          status: 200,
+          details: { daoId: pending.daoId, payload: pending.payload, result },
+          severity: 'medium',
+          category: 'governance',
         });
       } catch (e) {
         logger.warn('Failed to write audit log for pending action:', { error: e });
@@ -69,13 +75,19 @@ class KwetuService {
       // In case of failure, create audit record with error
       try {
         await storage.createAuditLog({
-          actor: executingUserId,
-          daoId: pending.daoId,
-          actionType: pending.actionType,
-          payload: pending.payload,
-          error: (error as Error).message,
-          pendingActionToken: pending.token,
-          timestamp: new Date()
+          timestamp: new Date(),
+          userId: executingUserId,
+          action: pending.actionType,
+          resource: 'kwetu_pending_action',
+          resourceId: pending.token,
+          method: 'EXECUTE',
+          endpoint: '/kwetu/pending-actions',
+          ipAddress: 'system',
+          userAgent: 'kwetu-service',
+          status: 500,
+          details: { daoId: pending.daoId, payload: pending.payload, error: (error as Error).message },
+          severity: 'high',
+          category: 'governance',
         });
       } catch (e) {
         logger.warn('Failed to write failed audit log for pending action:', { error: e });

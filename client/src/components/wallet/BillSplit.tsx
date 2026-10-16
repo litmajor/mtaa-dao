@@ -50,13 +50,20 @@ export default function BillSplit() {
   const [selectedSplit, setSelectedSplit] = useState<BillSplit | null>(null);
   const [viewDetailsModalOpen, setViewDetailsModalOpen] = useState(false);
 
-  const [newSplit, setNewSplit] = useState({
+  const [newSplit, setNewSplit] = useState<{
+    title: string;
+    description: string;
+    totalAmount: string;
+    currency: string;
+    splitMethod: BillSplit['splitMethod'];
+    participants: BillSplitParticipant[];
+  }>({
     title: '',
     description: '',
     totalAmount: '',
     currency: 'cUSD',
-    splitMethod: 'equal' as const,
-    participants: [] as BillSplitParticipant[],
+    splitMethod: 'equal',
+    participants: [],
   });
 
   const [newParticipant, setNewParticipant] = useState({

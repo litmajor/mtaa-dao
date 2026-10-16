@@ -254,7 +254,7 @@ export const DAOOrchestratorProvider: React.FC<{ children: React.ReactNode }> = 
 
     // Determine urgency based on risk
     let urgency: 'relaxed' | 'normal' | 'elevated' | 'critical' = 'normal';
-    if (riskLevel === 'critical') urgency = 'critical';
+    if (riskLevel === 'alert') urgency = 'critical';
     if (riskLevel === 'alert') urgency = 'elevated';
     if (overallReadiness > 70) urgency = 'relaxed';
 
@@ -329,7 +329,7 @@ export const DAOOrchestratorProvider: React.FC<{ children: React.ReactNode }> = 
       }));
     },
 
-    updateGovernanceMetrics: (data) => {
+    updateGovernanceMetrics: (data: { governanceComplexity?: number; decentralizationLevel?: number; founderControl?: number; quorum?: number; memberCount?: number }) => {
       setState(prev => computeSystemState({
         ...prev,
         governanceComplexity: data.governanceComplexity ?? prev.governanceComplexity,
@@ -338,7 +338,7 @@ export const DAOOrchestratorProvider: React.FC<{ children: React.ReactNode }> = 
       }));
     },
 
-    updateTreasuryMetrics: (data) => {
+    updateTreasuryMetrics: (data: { treasuryRisk?: number; treasuryReadiness?: number; capitalAllocationHealth?: number }) => {
       setState(prev => computeSystemState({
         ...prev,
         treasuryRisk: data.treasuryRisk ?? prev.treasuryRisk,
@@ -347,7 +347,7 @@ export const DAOOrchestratorProvider: React.FC<{ children: React.ReactNode }> = 
       }));
     },
 
-    updateParticipationMetrics: (data) => {
+    updateParticipationMetrics: (data: { voterDistribution?: number; expectedParticipation?: number; quorumRealism?: number }) => {
       setState(prev => computeSystemState({
         ...prev,
         voterDistribution: data.voterDistribution ?? prev.voterDistribution,

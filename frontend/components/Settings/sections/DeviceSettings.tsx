@@ -28,7 +28,7 @@ export const DeviceSettings: React.FC<DeviceSettingsProps> = ({ devices, onRemov
     title: `Remove ${selectedDevice?.name || 'Device'}?`,
     whatsAtRisk: `This device will lose access to your account. If it's lost or stolen, they can't use it to access MTAA anymore.`,
     whyHelps: 'Removing devices you no longer use reduces security risks from old or compromised devices.',
-    whatsTheCost: 'You'll need to sign in again on this device if you want to use it in the future.',
+    whatsTheCost: "You'll need to sign in again on this device if you want to use it in the future.",
     icon: '🗑️',
     actionLabel: 'Remove Device',
     isDangerous: true,

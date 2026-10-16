@@ -32,6 +32,13 @@ export class ContributionAnalyzer {
     const metricsData = await this.calculateMetrics(daoId, timeframe);
     const insights = this.generateInsights(metricsData);
     const risks = this.identifyRisks(metricsData);
+    const maxRisk = risks.reduce<Risk | undefined>((highest, risk) => {
+      const current = risk.level ?? risk.severity ?? 'low';
+      const rank = { low: 1, medium: 2, high: 3, critical: 4 };
+      const currentRank = rank[current] ?? 1;
+      const highestRank = highest ? rank[highest.level ?? highest.severity ?? 'low'] ?? 1 : 1;
+      return currentRank > highestRank ? risk : highest;
+    }, undefined);
     
     const metrics: Record<string, number> = {};
     if (typeof metricsData === 'object' && metricsData !== null) {
@@ -49,7 +56,7 @@ export class ContributionAnalyzer {
       insights,
       risks,
       recommendations: this.generateRecommendations(metricsData, risks),
-      threatLevel: risks.length > 1 ? 'medium' : 'low',
+      threatLevel: maxRisk ? (maxRisk.level ?? maxRisk.severity ?? 'low') : (risks.length > 1 ? 'medium' : 'low'),
       details: metricsData
     };
   }
@@ -57,7 +64,7 @@ export class ContributionAnalyzer {
   /**
    * Get detailed contribution profile for a member
    */
-  async getMemberContributionProfile(memberId: string, daoId: string, timeframe?: string = '90d'): Promise<ContributionProfile> {
+  async getMemberContributionProfile(memberId: string, daoId: string, timeframe: string = '90d'): Promise<ContributionProfile> {
     try {
       const timeframeMs = this.parseTimeframeDays(timeframe) * 24 * 60 * 60 * 1000;
       const startDate = new Date(Date.now() - timeframeMs);
@@ -91,7 +98,7 @@ export class ContributionAnalyzer {
         };
       }
 
-      const totalContribution = memberContributions.reduce((sum, c) => sum + (c.amount || 0), 0);
+      const totalContribution = memberContributions.reduce<number>((sum, c) => sum + Number((c as any).amount ?? 0), 0);
       const contributionCount = memberContributions.length;
       const averageContribution = totalContribution / contributionCount;
       const lastContribution = memberContributions[0];
@@ -202,7 +209,7 @@ export class ContributionAnalyzer {
   /**
    * Analyze contribution distribution (Gini coefficient for inequality)
    */
-  async analyzeContributionDistribution(daoId: string, timeframe?: string = '30d') {
+  async analyzeContributionDistribution(daoId: string, timeframe: string = '30d') {
     try {
       const profiles = await this.getAllMemberProfiles(daoId, timeframe);
       
@@ -248,7 +255,7 @@ export class ContributionAnalyzer {
   /**
    * Calculate weighted random selection based on contributions (for selectProportional)
    */
-  async getContributionWeights(daoId: string, memberIds: string[], timeframe?: string = '90d'): Promise<Record<string, number>> {
+  async getContributionWeights(daoId: string, memberIds: string[], timeframe: string = '90d'): Promise<Record<string, number>> {
     try {
       const weights: Record<string, number> = {};
       
@@ -268,7 +275,7 @@ export class ContributionAnalyzer {
   /**
    * Detect contribution patterns and anomalies
    */
-  async detectPatterns(daoId: string, timeframe?: string = '90d') {
+  async detectPatterns(daoId: string, timeframe: string = '90d') {
     try {
       const profiles = await this.getAllMemberProfiles(daoId, timeframe);
 
@@ -296,7 +303,7 @@ export class ContributionAnalyzer {
     }
   }
 
-  private async calculateMetrics(daoId: string, timeframe?: string = '30d') {
+  private async calculateMetrics(daoId: string, timeframe: string = '30d') {
     try {
       const timeframeMs = this.parseTimeframeDays(timeframe) * 24 * 60 * 60 * 1000;
       const startDate = new Date(Date.now() - timeframeMs);
@@ -316,16 +323,17 @@ export class ContributionAnalyzer {
 
       const totalContributors = new Set(timeframeContributions.map(c => c.userId)).size;
       const activeContributors = totalContributors;
-      const totalContributions = timeframeContributions.reduce((sum, c) => sum + (c.amount || 0), 0);
+      const totalContributions = timeframeContributions.reduce<number>((sum, c) => sum + Number((c as any).amount ?? 0), 0);
       const avgContribution = activeContributors > 0 ? totalContributions / activeContributors : 0;
 
       // Calculate concentration (top contributor share)
       const byUser: Record<string, number> = {};
       for (const contrib of timeframeContributions) {
-        byUser[contrib.userId] = (byUser[contrib.userId] || 0) + (contrib.amount || 0);
+        byUser[contrib.userId] = (byUser[contrib.userId] || 0) + Number(contrib.amount || 0);
       }
 
-      const topContributor = Math.max(...Object.values(byUser), 0);
+      const userContributionValues = Object.values(byUser).map(value => Number(value) || 0);
+      const topContributor = userContributionValues.length > 0 ? Math.max(...userContributionValues, 0) : 0;
       const topContributorShare = totalContributions > 0 ? (topContributor / totalContributions) * 100 : 0;
 
       // Calculate health
@@ -411,7 +419,7 @@ export class ContributionAnalyzer {
         type: 'NO_CONTRIBUTIONS',
         severity: 'high',
         description: 'No member contributions detected',
-        recommendation: 'Launch contribution incentives and awareness campaigns'
+        mitigation: 'Launch contribution incentives and awareness campaigns'
       });
     }
 
@@ -420,7 +428,7 @@ export class ContributionAnalyzer {
         type: 'CONCENTRATION',
         severity: 'high',
         description: `Extreme concentration: ${Math.round(metrics.topContributorShare)}% from single contributor`,
-        recommendation: 'Diversify contribution sources and incentivize participation'
+        mitigation: 'Diversify contribution sources and incentivize participation'
       });
     }
 
@@ -430,7 +438,7 @@ export class ContributionAnalyzer {
         type: 'LOW_ENGAGEMENT',
         severity: 'medium',
         description: `Only ${Math.round(engagementRate)}% of members contributing`,
-        recommendation: 'Increase member education and contribution opportunities'
+        mitigation: 'Increase member education and contribution opportunities'
       });
     }
 
@@ -491,7 +499,7 @@ export class ContributionAnalyzer {
   }
 
   private assignTier(totalContribution: number, engagement: number): 'bronze' | 'silver' | 'gold' | 'platinum' {
-    const score = (totalContribution / 1000) + (engagement / 2);
+    const score = Number(totalContribution || 0) / 1000 + Number(engagement || 0) / 2;
     
     if (score < 10) return 'bronze';
     if (score < 30) return 'silver';
@@ -512,7 +520,7 @@ export class ContributionAnalyzer {
     const n = amounts.length;
     if (n === 0) return 0;
 
-    const total = amounts.reduce((a, b) => a + b, 0);
+    const total = amounts.reduce((a, b) => Number(a) + Number(b), 0);
     if (total === 0) return 0;
 
     let sumAbsoluteDifferences = 0;

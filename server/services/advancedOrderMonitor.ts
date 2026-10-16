@@ -68,9 +68,9 @@ export class AdvancedOrderMonitor {
     // Fetch current price
     let currentPriceUsd = 0;
     try {
-      // In a real scenario, map symbol to correct feed (e.g. BTC/USDT)
+      // we map symbol to correct feed (e.g. BTC/USDT)
       const feedId = symbol.replace('/', '');
-      currentPriceUsd = await priceOracle.getPrice(feedId) || 0;
+      currentPriceUsd = (await priceOracle.getPrice(feedId))?.priceUsd ?? 0;
     } catch (err) {
       logger.warn(`[AdvancedOrderMonitor] Could not fetch price for ${symbol}, skipping order ${id}`);
       return;

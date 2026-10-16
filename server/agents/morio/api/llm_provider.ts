@@ -32,6 +32,7 @@ export interface LLMRequest {
   context?: Record<string, any>;
   temperature?: number;
   maxTokens?: number;
+  signal?: AbortSignal;
 }
 
 /**
@@ -112,7 +113,8 @@ export class OpenAIProvider extends LLMProvider {
           ],
           temperature: request.temperature ?? this.config.temperature ?? 0.7,
           max_tokens: request.maxTokens ?? this.config.maxTokens ?? 500
-        })
+        }),
+        signal: request.signal
       });
 
       if (!response.ok) {
@@ -197,7 +199,8 @@ export class LLMResponseGenerator {
    */
   async generateResponse(
     userMessage: string,
-    context?: Record<string, any>
+    context?: Record<string, any>,
+    signal?: AbortSignal
   ): Promise<LLMResponse> {
     const enrichedSystemPrompt = this.enrichSystemPrompt(context);
 
@@ -206,7 +209,8 @@ export class LLMResponseGenerator {
       userMessage,
       context,
       temperature: 0.7,
-      maxTokens: 500
+      maxTokens: 500,
+      signal
     });
   }
 

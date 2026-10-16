@@ -3,8 +3,8 @@
  * Data access layer for arbitrage detection and tracking
  */
 
-import { db } from '../db';
-import { type ArbitrageOpportunity } from '../../types/cex.types';
+import { pool } from '../db';
+import { type ArbitrageOpportunity } from '../types/cex.types';
 
 export class ArbitrageRepository {
   /**
@@ -25,7 +25,7 @@ export class ArbitrageRepository {
     sellFeePercent?: string,
     netProfit?: string
   ): Promise<ArbitrageOpportunity> {
-    const result = await db.query(
+    const result = await pool.query(
       `INSERT INTO arbitrage_opportunities (
         trading_pair, buy_exchange, buy_price, sell_exchange, sell_price,
         spread_percent, spread_amount, estimated_profit, buy_liquidity,
@@ -58,7 +58,7 @@ export class ArbitrageRepository {
     minProfitPercent: string = '0.5',
     limit: number = 50
   ): Promise<ArbitrageOpportunity[]> {
-    const result = await db.query(
+    const result = await pool.query(
       `SELECT * FROM arbitrage_opportunities
        WHERE status = 'detected'
          AND spread_percent >= $1
@@ -77,7 +77,7 @@ export class ArbitrageRepository {
     tradingPair: string,
     limit: number = 20
   ): Promise<ArbitrageOpportunity[]> {
-    const result = await db.query(
+    const result = await pool.query(
       `SELECT * FROM arbitrage_opportunities
        WHERE trading_pair = $1 AND status = 'detected'
        ORDER BY detected_at DESC
@@ -93,7 +93,7 @@ export class ArbitrageRepository {
   static async getHighestProfitOpportunities(
     limit: number = 10
   ): Promise<ArbitrageOpportunity[]> {
-    const result = await db.query(
+    const result = await pool.query(
       `SELECT * FROM arbitrage_opportunities
        WHERE status = 'detected'
        ORDER BY net_profit DESC NULLS LAST
@@ -107,7 +107,7 @@ export class ArbitrageRepository {
    * Mark opportunity as executed
    */
   static async markAsExecuted(opportunityId: string): Promise<void> {
-    await db.query(
+    await pool.query(
       `UPDATE arbitrage_opportunities
        SET status = 'executed', executed_at = NOW()
        WHERE id = $1`,
@@ -119,7 +119,7 @@ export class ArbitrageRepository {
    * Mark opportunity as expired
    */
   static async markAsExpired(opportunityId: string): Promise<void> {
-    await db.query(
+    await pool.query(
       `UPDATE arbitrage_opportunities
        SET status = 'expired'
        WHERE id = $1`,
@@ -131,7 +131,7 @@ export class ArbitrageRepository {
    * Clean up old opportunities (older than specified minutes)
    */
   static async cleanupOldOpportunities(minutesOld: number = 30): Promise<number> {
-    const result = await db.query(
+    const result = await pool.query(
       `DELETE FROM arbitrage_opportunities
        WHERE status IN ('expired', 'executed')
          AND created_at < NOW() - INTERVAL '1 minute' * $1`,
@@ -151,7 +151,7 @@ export class ArbitrageRepository {
     maxProfit: string;
     lastDetected: Date | null;
   }> {
-    const result = await db.query(
+    const result = await pool.query(
       `SELECT
         COUNT(CASE WHEN status = 'detected' THEN 1 END) as total_detected,
         COUNT(CASE WHEN status = 'executed' THEN 1 END) as total_executed,
@@ -162,7 +162,7 @@ export class ArbitrageRepository {
        FROM arbitrage_opportunities`
     );
     
-    const row = result.rows[0];
+    const row = result.rows[0] as Record<string, any>;
     return {
       totalDetected: parseInt(row.total_detected) || 0,
       totalExecuted: parseInt(row.total_executed) || 0,

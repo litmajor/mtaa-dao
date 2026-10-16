@@ -1,5 +1,5 @@
 
-import { useState } from 'react';
+import { useState, type FormEvent } from 'react';
 import { MessageCircle, Sparkles, Send, Loader2, ChevronDown, ChevronUp } from 'lucide-react';
 import { Card, CardContent, CardHeader } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
@@ -23,14 +23,11 @@ export function MorioMiniWidget({ userId, daoId }: MorioMiniWidgetProps) {
   const [lastResponse, setLastResponse] = useState<string>('');
 
   const sendMessage = useMutation({
-    mutationFn: async (message: string) => {
-      const response = await apiRequest<ChatResponse>('/api/morio/chat', {
-        method: 'POST',
-        body: JSON.stringify({ userId, daoId, message })
-      });
-      return response;
+    mutationFn: async (message: string): Promise<ChatResponse> => {
+      const response = await apiRequest('POST', '/api/morio/chat', { userId, daoId, message });
+      return (await response.json()) as ChatResponse;
     },
-    onSuccess: (response) => {
+    onSuccess: (response: ChatResponse) => {
       setLastResponse(response.text);
     }
   });
@@ -40,7 +37,7 @@ export function MorioMiniWidget({ userId, daoId }: MorioMiniWidgetProps) {
     sendMessage.mutate(question);
   };
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = (e: FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     if (!input.trim()) return;
     sendMessage.mutate(input);

@@ -3,8 +3,8 @@
  * Data access layer for exchange-specific configuration settings
  */
 
-import { db } from '../db';
-import { type ExchangeSetting } from '../../types/cex.types';
+import { pool } from '../db';
+import { type ExchangeSetting } from '../types/cex.types';
 
 export class ExchangeSettingsRepository {
   /**
@@ -17,7 +17,7 @@ export class ExchangeSettingsRepository {
     settingValue: string,
     settingType: 'string' | 'number' | 'boolean' | 'json' = 'string'
   ): Promise<ExchangeSetting> {
-    const result = await db.query(
+    const result = await pool.query(
       `INSERT INTO exchange_settings (
         user_id, exchange, setting_key, setting_value, setting_type
       ) VALUES ($1, $2, $3, $4, $5)
@@ -39,7 +39,7 @@ export class ExchangeSettingsRepository {
     exchange: string,
     settingKey: string
   ): Promise<ExchangeSetting | null> {
-    const result = await db.query(
+    const result = await pool.query(
       `SELECT * FROM exchange_settings
        WHERE user_id = $1 AND exchange = $2 AND setting_key = $3`,
       [userId, exchange, settingKey]
@@ -54,7 +54,7 @@ export class ExchangeSettingsRepository {
     userId: string,
     exchange: string
   ): Promise<ExchangeSetting[]> {
-    const result = await db.query(
+    const result = await pool.query(
       `SELECT * FROM exchange_settings
        WHERE user_id = $1 AND exchange = $2
        ORDER BY setting_key`,
@@ -67,7 +67,7 @@ export class ExchangeSettingsRepository {
    * Get all settings for a user across all exchanges
    */
   static async getUserAllSettings(userId: string): Promise<ExchangeSetting[]> {
-    const result = await db.query(
+    const result = await pool.query(
       `SELECT * FROM exchange_settings
        WHERE user_id = $1
        ORDER BY exchange, setting_key`,
@@ -84,7 +84,7 @@ export class ExchangeSettingsRepository {
     exchange: string,
     settingKey: string
   ): Promise<void> {
-    await db.query(
+    await pool.query(
       `DELETE FROM exchange_settings
        WHERE user_id = $1 AND exchange = $2 AND setting_key = $3`,
       [userId, exchange, settingKey]
@@ -98,7 +98,7 @@ export class ExchangeSettingsRepository {
     userId: string,
     exchange: string
   ): Promise<number> {
-    const result = await db.query(
+    const result = await pool.query(
       `DELETE FROM exchange_settings
        WHERE user_id = $1 AND exchange = $2`,
       [userId, exchange]

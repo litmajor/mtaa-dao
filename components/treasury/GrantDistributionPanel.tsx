@@ -217,12 +217,10 @@ export const GrantDistributionPanel: React.FC<GrantDistributionPanelProps> = ({
         {/* Budget Overview */}
         <div className="budget-overview">
           <div className="budget-bar">
-            {/* eslint-disable-next-line react/style-prop-object */}
             <div
               className="bar-allocated"
               style={{ width: `${allocatedPercentage}%` }}
             />
-            {/* eslint-disable-next-line react/style-prop-object */}
             <div
               className="bar-remaining"
               style={{ width: `${availablePercentage}%` }}

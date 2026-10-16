@@ -228,18 +228,7 @@ router.get('/:notificationId', authenticateToken as any, async (req: any, res) =
     const userId = req.user?.id;
     const { notificationId } = req.params;
 
-    const { notifications } = await UserNotificationService.getUserNotifications(userId, {
-      limit: 1,
-      offset: 0
-    });
-
-    const notification = notifications.find(n => n.id === notificationId);
-
-    if (!notification) {
-      return res.status(404).json({
-        error: 'Notification not found'
-      });
-    }
+    const notification = await UserNotificationService.getNotification(userId, notificationId);
 
     res.json({
       timestamp: new Date(),

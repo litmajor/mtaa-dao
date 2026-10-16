@@ -30,6 +30,8 @@ declare module 'wagmi' {
   }
 
   export interface UseWriteContractReturnType {
+    writeContract: (args: any) => void;
+    writeContractAsync: (args: any) => Promise<any>;
     write?: (...args: any[]) => void;
     writeAsync?: (...args: any[]) => Promise<any>;
     data?: any;
@@ -52,7 +54,7 @@ declare module 'wagmi' {
 
   export function useAccount(): UseAccountReturnType;
   export function useReadContract(config: any): UseReadContractReturnType;
-  export function useWriteContract(config: any): UseWriteContractReturnType;
+  export function useWriteContract(config?: any): UseWriteContractReturnType;
   export function useConnect(): any;
   export function useDisconnect(): any;
   export function useChainId(): number;
@@ -66,6 +68,9 @@ declare module 'wagmi' {
   export function useContractEvent(config: any): any;
 
   export function createConfig(config: any): Config;
+  export function http(url?: string, config?: any): any;
+  export function WagmiProvider(props: any): any;
+  export function useWaitForTransactionReceipt(config: any): any;
   export function getConfig(): Config;
   export function getAccount(): UseAccountReturnType;
 }

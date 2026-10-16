@@ -11,6 +11,17 @@ interface MetaDAO {
   votingPower: Map<string, number>;
 }
 
+interface MetaDaoQueryRow extends Record<string, unknown> {
+  allocation_percentage?: number | string | null;
+  id?: string;
+  quorum_met?: boolean | null;
+  reputation_score?: number | string | null;
+  total_children?: number | string | null;
+  active_children?: number | string | null;
+  total_allocation?: number | string | null;
+  avg_child_size?: number | string | null;
+}
+
 export class MetaDaoService {
   /**
    * Calculate quadratic voting power for a DAO in MetaDAO
@@ -111,11 +122,11 @@ export class MetaDaoService {
     vote: 'yes' | 'no' | 'abstain';
   }) {
     // Get DAO's voting power
-    const [membership] = await db.execute(sql`
+    const [membership] = (await db.execute(sql`
       SELECT voting_power FROM meta_dao_memberships
       WHERE dao_id = ${params.daoId}
       AND meta_dao_id = (SELECT meta_dao_id FROM meta_dao_proposals WHERE id = ${params.proposalId})
-    `);
+    `)).rows as MetaDaoQueryRow[];
 
     if (!membership) {
       throw new Error('DAO not member of this MetaDAO');
@@ -135,7 +146,7 @@ export class MetaDaoService {
    * Check if proposal met quorum
    */
   private async checkProposalQuorum(proposalId: string) {
-    const result = await db.execute(sql`
+    const result = (await db.execute(sql`
       WITH proposal_meta AS (
         SELECT meta_dao_id, quorum_percentage
         FROM meta_dao_proposals mp
@@ -155,7 +166,7 @@ export class MetaDaoService {
       SELECT 
         (voted.voted / NULLIF(total.total, 0) * 100) >= pm.quorum_percentage as quorum_met
       FROM proposal_meta pm, total_power total, voted_power voted
-    `);
+    `)).rows as MetaDaoQueryRow[];
 
     if (result[0]?.quorum_met) {
       await db.execute(sql`
@@ -179,9 +190,9 @@ export class MetaDaoService {
     allocationPercentage: number;
   }) {
     // Verify parent is a meta DAO
-    const [parentDAO] = await db.execute(sql`
+    const [parentDAO] = (await db.execute(sql`
       SELECT id FROM daos WHERE id = ${params.parentDAOId}
-    `);
+    `)).rows as MetaDaoQueryRow[];
 
     if (!parentDAO) {
       throw new Error(`Parent DAO not found: ${params.parentDAOId}`);
@@ -225,11 +236,11 @@ export class MetaDaoService {
     description: string;
   }) {
     // Calculate allocations for each active child
-    const children = await db.execute(sql`
+    const children = (await db.execute(sql`
       SELECT id, allocation_percentage FROM meta_dao_child_registry
       WHERE parent_dao_id = ${params.parentDAOId}
       AND status = 'APPROVED'
-    `);
+    `)).rows as MetaDaoQueryRow[];
 
     const dividendId = crypto.randomUUID();
 
@@ -246,7 +257,7 @@ export class MetaDaoService {
 
     // Create allocations for each child
     for (const child of children) {
-      const allocation = Math.floor((params.totalAmount * child.allocation_percentage) / 10000);
+      const allocation = Math.floor((params.totalAmount * Number(child.allocation_percentage ?? 0)) / 10000);
       
       await db.execute(sql`
         INSERT INTO meta_dao_dividend_allocations (
@@ -305,18 +316,18 @@ export class MetaDaoService {
     toDAOId: string;
   }) {
     // Get source reputation
-    const [sourceRep] = await db.execute(sql`
+    const [sourceRep] = (await db.execute(sql`
       SELECT reputation_score FROM member_reputation
       WHERE member_id = ${params.memberId}
       AND dao_id = ${params.fromDAOId}
-    `);
+    `)).rows as MetaDaoQueryRow[];
 
     if (!sourceRep) {
       throw new Error(`Member reputation not found`);
     }
 
     // Transfer at 70% to prevent reputation arbitrage
-    const transferredReputation = Math.floor(sourceRep.reputation_score * 0.7);
+    const transferredReputation = Math.floor(Number(sourceRep.reputation_score ?? 0) * 0.7);
 
     // Record reputation transfer
     await db.execute(sql`
@@ -336,7 +347,7 @@ export class MetaDaoService {
    * PHASE 2: Get federation analytics
    */
   async getFederationAnalytics(parentDAOId: string) {
-    const [stats] = await db.execute(sql`
+    const [stats] = (await db.execute(sql`
       SELECT 
         COUNT(*) as total_children,
         SUM(CASE WHEN status = 'APPROVED' THEN 1 ELSE 0 END) as active_children,
@@ -344,14 +355,14 @@ export class MetaDaoService {
         AVG(member_count) as avg_child_size
       FROM meta_dao_child_registry
       WHERE parent_dao_id = ${parentDAOId}
-    `);
+    `)).rows as MetaDaoQueryRow[];
 
     return {
       parentDAOId,
-      totalChildren: stats?.total_children || 0,
-      activeChildren: stats?.active_children || 0,
-      totalAllocation: ((stats?.total_allocation || 0) / 100).toFixed(2),
-      avgChildSize: Math.round(stats?.avg_child_size || 0),
+      totalChildren: Number(stats?.total_children) || 0,
+      activeChildren: Number(stats?.active_children) || 0,
+      totalAllocation: ((Number(stats?.total_allocation) || 0) / 100).toFixed(2),
+      avgChildSize: Math.round(Number(stats?.avg_child_size) || 0),
     };
   }}
 

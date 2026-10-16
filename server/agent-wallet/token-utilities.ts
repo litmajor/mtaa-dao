@@ -117,9 +117,11 @@ export class TokenUtilitiesService {
 
       const tokenBalance: TokenBalance = {
         address: tokenAddress,
-        balance: balance.toString(),
-        balanceFormatted,
-        symbol: String(symbol || 'UNKNOWN')
+        amount: balanceFormatted.toString(),
+        valueUSD: '0', // No price oracle is available in this service; zero means not valued here.
+        decimals: decimalsNum,
+        symbol: String(symbol || 'UNKNOWN'),
+        accountAddress,
       };
 
       accountBalances.set(tokenAddress, tokenBalance);

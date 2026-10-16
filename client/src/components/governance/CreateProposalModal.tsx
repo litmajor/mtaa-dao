@@ -45,15 +45,16 @@ export function CreateProposalModal({
       title: string;
       description: string;
     }) => {
-      const response = await apiRequest(
+      const response: any = await apiRequest(
         'POST',
         `/api/governance/${daoId}/proposals`,
         data
       );
       return response;
     },
-    onSuccess: (data) => {
-      setSuccessProposalId(data.proposalId);
+    onSuccess: (data: any) => {
+      const proposalId = data?.proposalId ?? data?.id ?? '';
+      setSuccessProposalId(proposalId);
       setStep(5);
       queryClient.invalidateQueries({ queryKey: [`/api/governance/${daoId}/proposals`] });
       toast('Proposal created successfully! 🎉');

@@ -263,7 +263,12 @@ export default function EnhancedDAOs() {
               <h3 className="text-lg font-bold text-gray-900 dark:text-white mb-1 group-hover:text-transparent group-hover:bg-gradient-to-r group-hover:from-purple-600 group-hover:to-pink-600 group-hover:bg-clip-text transition-all duration-300">
                 {dao.name}
               </h3>
-              {getRoleBadge(dao.role, dao.theme)}
+              {getRoleBadge(
+                dao.role === 'elder' || dao.role === 'proposer' || dao.role === 'member'
+                  ? dao.role
+                  : null,
+                dao.theme || ''
+              )}
             </div>
           </div>
 
@@ -303,7 +308,7 @@ export default function EnhancedDAOs() {
             <div className="flex items-center justify-center gap-1 mb-1">
               <Wallet className={`w-4 h-4 text-green-500 group-hover/stat:scale-110 transition-transform duration-300`} />
               <span className="font-bold text-gray-900 dark:text-white">
-                ${dao.treasuryBalance.toLocaleString()}
+                ${Number(dao.treasuryBalance || 0).toLocaleString()}
               </span>
             </div>
             <p className="text-xs text-gray-500 dark:text-gray-400">Treasury</p>

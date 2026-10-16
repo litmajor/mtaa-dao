@@ -7,6 +7,7 @@
 import { getMultiChainProvider } from './multiChainProvider';
 import { CHAIN_CONFIG, type SupportedChain, getBestBridge } from '../../shared/chainConfiguration';
 import { Logger } from '../utils/logger';
+import { priceOracle } from './priceOracle';
 
 const logger = new Logger('fee-calculator');
 
@@ -82,10 +83,6 @@ interface ChainMetricsCache {
 
 export class FeeCalculator {
   private metricsCache: Map<SupportedChain, ChainMetricsCache> = new Map();
-  private readonly CACHE_TTL = 60 * 1000;  // 1 minute
-  private readonly PRICE_API_URLS = {
-    coingecko: 'https://api.coingecko.com/api/v3/simple/price',
-  };
 
   /**
    * Estimate gas cost for a native token transfer on a chain
@@ -96,6 +93,7 @@ export class FeeCalculator {
       if (!config) throw new Error(`Unknown chain: ${chain}`);
 
       const provider = getMultiChainProvider();
+      if (chain === 'tron') throw new Error('TRON fee data requires a TRON-specific provider');
       const feeData = await provider.getFeeData(chain);
       
       // Standard native transfer is 21,000 gas
@@ -124,15 +122,8 @@ export class FeeCalculator {
         buffer,
       };
     } catch (error) {
-      logger.warn(`Failed to estimate gas for ${chain}: ${(error as any).message}, using defaults`);
-      const config = CHAIN_CONFIG[chain];
-      return {
-        gas: BigInt(21000),
-        gasUSD: config!.gas.estimatedCostUSD.native.toString(),
-        gasPrice: config!.gas.standard.toString(),
-        congestionLevel: 'medium',
-        buffer: 1.15,
-      };
+      logger.warn(`Failed to estimate gas for ${chain}: ${(error as any).message}`);
+      throw error;
     }
   }
 
@@ -145,6 +136,7 @@ export class FeeCalculator {
       if (!config) throw new Error(`Unknown chain: ${chain}`);
 
       const provider = getMultiChainProvider();
+      if (chain === 'tron') throw new Error('TRON fee data requires a TRON-specific provider');
       const feeData = await provider.getFeeData(chain);
       
       // ERC20 transfer is ~65,000 gas
@@ -171,14 +163,7 @@ export class FeeCalculator {
       };
     } catch (error) {
       logger.warn(`Failed to estimate ERC20 gas for ${chain}: ${(error as any).message}`);
-      const config = CHAIN_CONFIG[chain];
-      return {
-        gas: BigInt(65000),
-        gasUSD: config!.gas.estimatedCostUSD.erc20.toString(),
-        gasPrice: config!.gas.standard.toString(),
-        congestionLevel: 'medium',
-        buffer: 1.15,
-      };
+      throw error;
     }
   }
 
@@ -445,6 +430,7 @@ export class FeeCalculator {
    */
   private async getNetworkCongestion(chain: SupportedChain): Promise<'low' | 'medium' | 'high'> {
     try {
+      if (chain === 'tron') return 'medium';
       const provider = getMultiChainProvider();
       const block = await provider.getBlock(chain, 'latest');
       
@@ -465,55 +451,12 @@ export class FeeCalculator {
    * Get token price in USD
    */
   private async getTokenPrice(token: string): Promise<number> {
-    try {
-      // Simple cache check
-      const cached = this.priceCache.get(token);
-      if (cached && Date.now() - cached.timestamp < this.CACHE_TTL) {
-        return cached.price;
-      }
-
-      // Map token to CoinGecko ID
-      const coinGeckoId = this.mapTokenToCoinGeckoId(token);
-      
-      const response = await fetch(
-        `${this.PRICE_API_URLS.coingecko}?ids=${coinGeckoId}&vs_currencies=usd`
-      );
-
-      if (!response.ok) throw new Error(`Failed to fetch price: ${response.statusText}`);
-      
-      const data = await response.json() as Record<string, { usd: number }>;
-      const price = data[coinGeckoId]?.usd || 1;
-      
-      // Cache the price
-      this.priceCache.set(token, { price, timestamp: Date.now() });
-      
-      return price;
-    } catch (error) {
-      logger.warn(`Failed to get price for ${token}: ${(error as any).message}, using 1.0`);
-      return 1;
+    const valuation = await priceOracle.getValuationPrice(token);
+    const priceUsd = valuation?.haircutPriceUsd ?? valuation?.priceUsd;
+    if (!valuation || priceUsd === undefined || !Number.isFinite(priceUsd) || priceUsd <= 0) {
+      throw new Error(`No reliable valuation price available for ${token}`);
     }
-  }
-
-  private priceCache = new Map<string, { price: number; timestamp: number }>();
-
-  /**
-   * Map token symbol to CoinGecko ID
-   */
-  private mapTokenToCoinGeckoId(token: string): string {
-    const mapping: Record<string, string> = {
-      ETH: 'ethereum',
-      BTC: 'bitcoin',
-      USDC: 'usd-coin',
-      USDT: 'tether',
-      cUSD: 'celo-dollar',
-      CELO: 'celo',
-      MATIC: 'matic-network',
-      BNB: 'binancecoin',
-      AVAX: 'avalanche-2',
-      TRX: 'tron',
-    };
-
-    return mapping[token] || token.toLowerCase();
+    return priceUsd;
   }
 }
 

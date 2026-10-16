@@ -277,21 +277,20 @@ router.post('/trigger', triggerLimiter, advancedModeGuard, async (req: Request, 
     logger.info(`[RebalancingAPI] Triggering rebalance for strategy: ${strategyId} (${safeOrders.length}/${orders.length} orders passed risk gate)`);
 
     // Get current prices for all assets in orders
-    let assetPrices: Record<string, number> = {};
-    try {
-      const assets = Array.from(new Set(safeOrders.map((o: RebalanceOrder) => o.asset)));
-      const prices = await priceOracle.getPrices(assets);
-      assets.forEach((asset: string) => {
-        const price = prices.get(asset);
-        assetPrices[asset] = price?.priceUsd || 0;
-      });
-      logger.info(`💰 Asset prices fetched: ${Object.keys(assetPrices).join(', ')}`);
-    } catch (e) {
-      const warnMeta: Record<string, unknown> = {
-        error: e instanceof Error ? e.message : String(e),
-      };
-      logger.warn('Price oracle unavailable, proceeding with DEX prices', warnMeta);
+    const assets = Array.from(new Set(safeOrders.map((o: RebalanceOrder) => o.asset)));
+    const prices = await priceOracle.getValuationPrices(assets);
+    const assetPrices: Record<string, number> = {};
+    for (const asset of assets) {
+      const valuation = prices.get(asset.toUpperCase());
+      const price = valuation?.haircutPriceUsd ?? valuation?.priceUsd;
+      if (!valuation || price === undefined || !Number.isFinite(price) || price <= 0) {
+        return res.status(503).json({
+          error: `Reliable valuation unavailable for ${asset}; rebalance was not started`,
+        });
+      }
+      assetPrices[asset] = price;
     }
+    logger.info(`💰 Asset valuations fetched: ${Object.keys(assetPrices).join(', ')}`);
 
     const rebalanceId = await dexRoutingExecution.executeRebalance({
       strategyId,

@@ -203,7 +203,7 @@ export default function ReferralWorkspace() {
                         <span>Day 60 (75%)</span>
                         <span>Day 90 (100%)</span>
                       </div>
-                      <Progress value={vestedPct} className="h-1.5 bg-slate-700" indicatorClassName="bg-purple-500" />
+                      <Progress value={vestedPct} className="h-1.5 bg-slate-700" />
                       <div className="flex justify-between text-xs mt-1 text-slate-400">
                         <span>{claimed.toFixed(2)} Claimed</span>
                         <span>{vestedPct}% Vested</span>

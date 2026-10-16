@@ -1,5 +1,13 @@
 import { describe, expect, it } from 'vitest';
-import { insertReferralRewardSchema, insertTaskSchema, insertUserSchema } from '../schema';
+import { getTableConfig } from 'drizzle-orm/pg-core';
+import {
+  daoContributionApprovals,
+  daoContributions,
+  daoRotationCycles,
+  insertReferralRewardSchema,
+  insertTaskSchema,
+  insertUserSchema,
+} from '../schema';
 
 describe('shared schema validation', () => {
   it('accepts a well-formed user insert and rejects injected extra fields', () => {
@@ -45,5 +53,17 @@ describe('shared schema validation', () => {
     });
 
     expect(invalid.success).toBe(false);
+  });
+
+  it('declares unique database indexes for reviewer, M-Pesa, and payout references', () => {
+    const indexNames = [
+      ...getTableConfig(daoContributionApprovals).indexes,
+      ...getTableConfig(daoContributions).indexes,
+      ...getTableConfig(daoRotationCycles).indexes,
+    ].filter((index) => index.config.unique).map((index) => index.config.name);
+
+    expect(indexNames).toContain('dao_contribution_approvals_one_per_approver');
+    expect(indexNames).toContain('dao_contributions_mpesa_reference_unique');
+    expect(indexNames).toContain('dao_rotation_cycles_payment_reference_unique');
   });
 });

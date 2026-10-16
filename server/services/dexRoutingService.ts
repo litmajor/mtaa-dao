@@ -49,8 +49,9 @@ class DexRoutingService {
       );
     }
 
-    const priceMap = await priceOracle.getPrices([fromAsset, toAsset]);
-    const fromPrice = priceMap.get(fromAsset)?.priceUsd ?? priceMap.get(fromUC)?.priceUsd ?? priceMap.get(fromAsset.toLowerCase())?.priceUsd;
+    const priceMap = await priceOracle.getValuationPrices([fromAsset, toAsset]);
+    const fromValuation = priceMap.get(fromUC);
+    const fromPrice = fromValuation?.haircutPriceUsd ?? fromValuation?.priceUsd;
 
     if (typeof fromPrice !== 'number' || !Number.isFinite(fromPrice) || fromPrice <= 0) {
       throw new Error(
@@ -59,7 +60,8 @@ class DexRoutingService {
     }
 
     if (!isCeloChain) {
-      const toPrice = priceMap.get(toAsset)?.priceUsd ?? priceMap.get(toUC)?.priceUsd ?? priceMap.get(toAsset.toLowerCase())?.priceUsd;
+      const toValuation = priceMap.get(toUC);
+      const toPrice = toValuation?.haircutPriceUsd ?? toValuation?.priceUsd;
 
       if (typeof toPrice !== 'number' || !Number.isFinite(toPrice) || toPrice <= 0) {
         throw new Error(
@@ -141,6 +143,7 @@ class DexRoutingService {
     slippageToleranceOrDex?: number | string,
     dex?: string
   ): Promise<SwapResult> {
+    productionDexRouting.initializeWallet('celo');
     let recipientAddress: string | undefined;
     let slippageTolerance = 0.5;
     let selectedDex = dex;

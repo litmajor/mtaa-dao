@@ -1,5 +1,5 @@
 import { sql, eq } from 'drizzle-orm';
-import type { PostgresDB } from 'drizzle-orm/postgres-js';
+import type { NodePgDatabase } from 'drizzle-orm/node-postgres';
 import { db } from '../db';
 import { vaults } from '../../shared/schema';
 

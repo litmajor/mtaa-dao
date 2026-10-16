@@ -1,7 +1,6 @@
-# frontend/src/components/StrategyInstructions.tsx
-"""
-In-app instructions and guidance for users uploading strategies
-"""
+/**
+ * In-app instructions and guidance for users uploading strategies.
+ */
 
 import React, { useState } from 'react';
 

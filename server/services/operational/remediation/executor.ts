@@ -12,6 +12,7 @@ import {
   type ArchitectureGap,
   type ServiceInstance,
   type OperationalFrameworkConfig,
+  AuditActionType,
   RemediationError,
 } from '../types';
 import { getAuditLogger } from '../audit/logger';
@@ -42,6 +43,9 @@ export class RemediationExecutor extends EventEmitter {
     requiresApproval?: boolean
   ): Promise<RemediationAction> {
     const targetServiceId = gap.affectedServices[0];
+    if (!targetServiceId) {
+      throw new RemediationError(`Gap has no affected service: ${gap.id}`, { gapId: gap.id });
+    }
     const now = new Date();
 
     // Determine if approval needed based on type
@@ -57,7 +61,7 @@ export class RemediationExecutor extends EventEmitter {
       targetServiceId,
       gapId: gap.id,
       requiresApproval: requiresApproval ?? (isDestructive || this.config.remediation.requiresApprovalForDestructive),
-      executionMode: 'pending',
+      executionMode: 'dry_run',
       status: 'pending',
       initiatedBy: 'system',
       initiatedAt: now,
@@ -96,14 +100,14 @@ export class RemediationExecutor extends EventEmitter {
       throw new RemediationError(`Action does not require approval: ${actionId}`, { actionId });
     }
 
-    if (action.executionMode !== 'pending') {
+    if (action.executionMode !== 'dry_run') {
       throw new RemediationError(`Action cannot be approved in state: ${action.executionMode}`, { actionId });
     }
 
     action.executionMode = 'approved';
 
     await getAuditLogger().logEvent(
-      'remediation_executed',
+      AuditActionType.REMEDIATION_EXECUTED,
       approver,
       action.targetServiceId,
       `remediation_${actionId}`,
@@ -182,7 +186,7 @@ export class RemediationExecutor extends EventEmitter {
       this.incrementAttemptCount(action.targetServiceId);
 
       await getAuditLogger().logEvent(
-        'remediation_executed',
+        AuditActionType.REMEDIATION_EXECUTED,
         executor,
         action.targetServiceId,
         `remediation_${actionId}`,
@@ -214,7 +218,7 @@ export class RemediationExecutor extends EventEmitter {
       this.incrementAttemptCount(action.targetServiceId);
 
       await getAuditLogger().logEvent(
-        'remediation_executed',
+        AuditActionType.REMEDIATION_EXECUTED,
         executor,
         action.targetServiceId,
         `remediation_${actionId}`,
@@ -253,7 +257,7 @@ export class RemediationExecutor extends EventEmitter {
     action.status = 'rolled_back';
 
     await getAuditLogger().logEvent(
-      'remediation_executed',
+      AuditActionType.REMEDIATION_EXECUTED,
       executor,
       action.targetServiceId,
       `remediation_${actionId}`,
@@ -330,7 +334,7 @@ export class RemediationExecutor extends EventEmitter {
       // Log restart initiation
       const auditLogger = getAuditLogger();
       await auditLogger.logEvent(
-        'remediation_restart',
+        AuditActionType.REMEDIATION_RESTART,
         'system',
         service.id,
         `restart_${service.id}`,
@@ -386,7 +390,7 @@ export class RemediationExecutor extends EventEmitter {
     try {
       const auditLogger = getAuditLogger();
       await auditLogger.logEvent(
-        'remediation_connection_reprovision',
+        AuditActionType.REMEDIATION_CONNECTION_REPROVISION,
         'system',
         service.id,
         `reprovision_${service.id}`,
@@ -435,11 +439,10 @@ export class RemediationExecutor extends EventEmitter {
     metadata?: Record<string, unknown>;
   }> {
     try {
-      const vault = getVault();
       const auditLogger = getAuditLogger();
 
       await auditLogger.logEvent(
-        'remediation_credential_rotation',
+        AuditActionType.REMEDIATION_CREDENTIAL_ROTATION,
         'system',
         service.id,
         `rotate_${service.id}`,
@@ -491,7 +494,7 @@ export class RemediationExecutor extends EventEmitter {
     try {
       const auditLogger = getAuditLogger();
       await auditLogger.logEvent(
-        'remediation_scale_instance',
+        AuditActionType.REMEDIATION_SCALE_INSTANCE,
         'system',
         service.id,
         `scale_${service.id}`,
@@ -551,7 +554,7 @@ export class RemediationExecutor extends EventEmitter {
     try {
       const auditLogger = getAuditLogger();
       await auditLogger.logEvent(
-        'remediation_cache_clear',
+        AuditActionType.REMEDIATION_CACHE_CLEAR,
         'system',
         service.id,
         `clear_${service.id}`,
@@ -598,7 +601,7 @@ export class RemediationExecutor extends EventEmitter {
     try {
       const auditLogger = getAuditLogger();
       await auditLogger.logEvent(
-        'remediation_pool_rebuild',
+        AuditActionType.REMEDIATION_POOL_REBUILD,
         'system',
         service.id,
         `rebuild_pool_${service.id}`,
@@ -650,7 +653,7 @@ export class RemediationExecutor extends EventEmitter {
     try {
       const auditLogger = getAuditLogger();
       await auditLogger.logEvent(
-        'remediation_config_update',
+        AuditActionType.REMEDIATION_CONFIG_UPDATE,
         'system',
         service.id,
         `update_config_${service.id}`,
@@ -701,7 +704,7 @@ export class RemediationExecutor extends EventEmitter {
     try {
       const auditLogger = getAuditLogger();
       await auditLogger.logEvent(
-        'remediation_emergency_stop',
+        AuditActionType.REMEDIATION_EMERGENCY_STOP,
         'system',
         service.id,
         `emergency_stop_${service.id}`,
@@ -748,7 +751,7 @@ export class RemediationExecutor extends EventEmitter {
     try {
       const auditLogger = getAuditLogger();
       await auditLogger.logEvent(
-        'remediation_failover',
+        AuditActionType.REMEDIATION_FAILOVER,
         'system',
         service.id,
         `failover_${service.id}`,

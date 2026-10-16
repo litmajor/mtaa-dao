@@ -5,17 +5,15 @@
  * Supports software signing and future HSM integration.
  */
 
-import { Connection, PublicKey, Transaction, SystemProgram, Keypair } from '@solana/web3.js';
-import { createTransferInstruction, createTransferCheckedInstruction, getAssociatedTokenAddress } from '@solana/spl-token';
+import { Connection, PublicKey, Transaction, TransactionInstruction, SystemProgram } from '@solana/web3.js';
+import { createTransferCheckedInstruction, TOKEN_PROGRAM_ID } from '@solana/spl-token';
 import { logger } from '../utils/logger';
 import { AppError } from '../middleware/errorHandler';
 
 // ============= TYPES & INTERFACES =============
 
 interface SolanaSigningConfig {
-  chainId: 'mainnet' | 'devnet';
   rpcUrl: string;
-  privateKey?: string; // For software signing (development only)
 }
 
 interface SolTransferRequest {
@@ -48,7 +46,7 @@ interface SolanaBroadcastResponse {
 
 interface SolanaTransactionStatus {
   signature: string;
-  status: 'confirmed' | 'finalized' | 'failed' | 'not_found';
+  status: 'processed' | 'confirmed' | 'finalized' | 'failed' | 'not_found';
   blockNumber?: number;
   blockTime?: number;
   fee?: number;
@@ -57,19 +55,15 @@ interface SolanaTransactionStatus {
 
 // ============= CONSTANTS =============
 
-const SOL_DECIMALS = 9; // SOL has 9 decimal places
 const LAMPORTS_PER_SOL = 1000000000;
+const MEMO_PROGRAM_ID = 'MemoSq4gqABAXKb96qnH8TysNcWxMyWCqXgDLGmfcHr';
 
 // ============= SOLANA TRANSACTION SIGNING SERVICE =============
 
 class SolanaTransactionSigningService {
   private connection: Connection;
-  private config: SolanaSigningConfig;
-  private chainType: 'mainnet' | 'devnet';
 
   constructor(config: SolanaSigningConfig) {
-    this.config = config;
-    this.chainType = config.chainId;
     this.connection = new Connection(config.rpcUrl, 'confirmed');
   }
 
@@ -90,37 +84,32 @@ class SolanaTransactionSigningService {
 
       // Validate amount
       const amountNum = BigInt(amount);
-      if (amountNum <= 0n) {
-        throw new AppError('Amount must be greater than 0', 400);
+      if (amountNum <= 0n || amountNum > BigInt(Number.MAX_SAFE_INTEGER)) {
+        throw new AppError('Amount must be positive and within Solana client numeric precision', 400);
       }
 
       logger.info(`Creating SOL transfer: ${fromAddress} -> ${toAddress} (${amount} lamports)`);
 
-      const fromPubkey = new PublicKey(fromAddress);
-      const toPubkey = new PublicKey(toAddress);
-
       // Get latest blockhash
       const { blockhash } = await this.connection.getLatestBlockhash('confirmed');
-
-      // Create transfer instruction
-      const instruction = SystemProgram.transfer({
-        fromPubkey,
-        toPubkey,
-        lamports: Number(amount)
-      });
-
-      // Create transaction
-      const transaction = new Transaction({
-        recentBlockhash: blockhash,
-        feePayer: fromPubkey
-      });
-
-      transaction.add(instruction);
-
-      // Add memo if provided
+      const feePayer = new PublicKey(fromAddress);
+      const recipient = new PublicKey(toAddress);
+      const transaction = new Transaction({ recentBlockhash: blockhash, feePayer })
+        .add(SystemProgram.transfer({ fromPubkey: feePayer, toPubkey: recipient, lamports: Number(amountNum) }));
       if (memo) {
-        // Memo instruction would go here (requires separate implementation)
-        logger.info(`Memo requested but not implemented: ${memo}`);
+        transaction.add(new TransactionInstruction({
+          keys: [],
+          programId: new PublicKey(MEMO_PROGRAM_ID),
+          data: Buffer.from(memo, 'utf8'),
+        }));
+      }
+      const [balance, fee] = await Promise.all([
+        this.connection.getBalance(feePayer, 'confirmed'),
+        this.connection.getFeeForMessage(transaction.compileMessage(), 'confirmed'),
+      ]);
+      if (fee.value === null) throw new AppError('Solana RPC could not estimate the transaction fee', 503);
+      if (BigInt(balance) < amountNum + BigInt(fee.value)) {
+        throw new AppError('Source wallet balance does not cover the SOL amount and network fee', 400);
       }
 
       logger.info(`SOL transfer transaction created for ${fromAddress}`);
@@ -165,18 +154,47 @@ class SolanaTransactionSigningService {
         throw new AppError('Invalid to token account address', 400);
       }
 
-      // Validate amount
-      const amountNum = BigInt(amount);
-      if (amountNum <= 0n) {
-        throw new AppError('Amount must be greater than 0', 400);
-      }
-
-      logger.info(`Creating SPL token transfer: ${amount} tokens (${decimals} decimals)`);
-
       const ownerPublicKey = new PublicKey(fromAddress);
       const sourcePublicKey = new PublicKey(fromTokenAccount);
       const destinationPublicKey = new PublicKey(toTokenAccount);
       const mintPublicKey = new PublicKey(mint);
+
+      // Validate amount
+      const amountNum = BigInt(amount);
+      if (amountNum <= 0n || amountNum > (2n ** 64n) - 1n) {
+        throw new AppError('SPL token amount must be positive and fit the token program u64 range', 400);
+      }
+
+      const mintInfo = await this.connection.getParsedAccountInfo(mintPublicKey, 'confirmed');
+      const sourceInfo = await this.connection.getParsedAccountInfo(sourcePublicKey, 'confirmed');
+      const destinationInfo = await this.connection.getParsedAccountInfo(destinationPublicKey, 'confirmed');
+      if (!mintInfo.value || !('parsed' in mintInfo.value.data) || mintInfo.value.data.parsed.type !== 'mint' ||
+          !sourceInfo.value || !('parsed' in sourceInfo.value.data) ||
+          sourceInfo.value.data.parsed.type !== 'account' ||
+          !destinationInfo.value || !('parsed' in destinationInfo.value.data) ||
+          destinationInfo.value.data.parsed.type !== 'account') {
+        throw new AppError('Mint and token accounts must exist on the selected Solana cluster', 400);
+      }
+      if (!mintInfo.value.owner.equals(TOKEN_PROGRAM_ID) ||
+          !sourceInfo.value.owner.equals(TOKEN_PROGRAM_ID) ||
+          !destinationInfo.value.owner.equals(TOKEN_PROGRAM_ID)) {
+        throw new AppError('Only SPL Token Program accounts are supported by this transfer route', 400);
+      }
+      const mintData = mintInfo.value.data.parsed.info;
+      const sourceData = sourceInfo.value.data.parsed.info;
+      const destinationData = destinationInfo.value.data.parsed.info;
+      if (sourceData.owner !== fromAddress || destinationData.owner !== toAddress ||
+          sourceData.mint !== mint || destinationData.mint !== mint) {
+        throw new AppError('Source owner and token account mints do not match the transfer request', 400);
+      }
+      if (mintData.decimals !== decimals) {
+        throw new AppError(`Token mint decimals are ${mintData.decimals}; request supplied ${decimals}`, 400);
+      }
+      if (BigInt(sourceData.tokenAmount.amount) < amountNum) {
+        throw new AppError('Source token account balance is less than the requested transfer amount', 400);
+      }
+
+      logger.info(`Creating SPL token transfer: ${amount} tokens (${decimals} decimals)`);
 
       // Get latest blockhash
       const { blockhash } = await this.connection.getLatestBlockhash('confirmed');
@@ -198,6 +216,22 @@ class SolanaTransactionSigningService {
       });
 
       transaction.add(instruction);
+      if (request.memo) {
+        transaction.add(new TransactionInstruction({
+          keys: [],
+          programId: new PublicKey(MEMO_PROGRAM_ID),
+          data: Buffer.from(request.memo, 'utf8'),
+        }));
+      }
+
+      const [nativeBalance, fee] = await Promise.all([
+        this.connection.getBalance(ownerPublicKey, 'confirmed'),
+        this.connection.getFeeForMessage(transaction.compileMessage(), 'confirmed'),
+      ]);
+      if (fee.value === null) throw new AppError('Solana RPC could not estimate the SPL transaction fee', 503);
+      if (BigInt(nativeBalance) < BigInt(fee.value)) {
+        throw new AppError('Fee payer SOL balance does not cover the SPL transaction network fee', 400);
+      }
 
       logger.info(`SPL token transfer transaction created`);
 
@@ -206,50 +240,6 @@ class SolanaTransactionSigningService {
       if (error instanceof AppError) throw error;
       logger.error('Failed to create SPL token transfer transaction', { error });
       throw new AppError('Failed to create SPL token transfer transaction', 500);
-    }
-  }
-
-  /**
-   * Sign transaction with private key (software signing)
-   */
-  async signTransaction(
-    transaction: Transaction,
-    privateKey: string
-  ): Promise<SignedSolanaTransaction> {
-    try {
-      if (!privateKey || privateKey.length !== 88) {
-        // Base58 encoded keypair is 88 characters
-        throw new AppError('Invalid private key format', 400);
-      }
-
-      logger.info(`Signing Solana transaction`);
-
-      // Import keypair from secret key
-      const keypair = Keypair.fromSecretKey(
-        Buffer.from(privateKey, 'base64') // Assuming base64 encoded
-      );
-
-      // Sign transaction
-      transaction.sign(keypair);
-
-      // Verify transaction is signed
-      if (!transaction.signature) {
-        throw new AppError('Failed to sign transaction', 500);
-      }
-
-      const signature = transaction.signature.toString('base64');
-
-      logger.info(`Transaction signed successfully`);
-
-      return {
-        signature,
-        transaction: transaction.serialize({ requireAllSignatures: false }).toString('base64'),
-        blockHash: transaction.recentBlockhash || ''
-      };
-    } catch (error) {
-      if (error instanceof AppError) throw error;
-      logger.error('Failed to sign Solana transaction', { error });
-      throw new AppError('Failed to sign Solana transaction', 500);
     }
   }
 
@@ -292,83 +282,22 @@ class SolanaTransactionSigningService {
     }
   }
 
-  /**
-   * Create and sign transaction in one call
-   */
-  async createAndSignSolTransfer(
-    request: SolTransferRequest & { privateKey: string }
-  ): Promise<SignedSolanaTransaction> {
+  async submitWalletSignedTransaction(transaction: Transaction): Promise<SolanaBroadcastResponse> {
     try {
-      const { privateKey, ...transferRequest } = request;
-
-      // Create transaction
-      const transaction = await this.createSolTransferTransaction(transferRequest);
-
-      // Sign transaction
-      return await this.signTransaction(transaction, privateKey);
+      const feePayer = transaction.compileMessage().accountKeys[0];
+      if (!feePayer || !transaction.signature || !transaction.verifySignatures()) {
+        throw new AppError('Transaction must contain valid signatures from every required signer', 400);
+      }
+      const serialized = transaction.serialize({ requireAllSignatures: true, verifySignatures: true });
+      return await this.broadcastTransaction({
+        signature: transaction.signature.toString('base64'),
+        transaction: serialized.toString('base64'),
+        blockHash: transaction.recentBlockhash ?? '',
+      });
     } catch (error) {
       if (error instanceof AppError) throw error;
-      logger.error('Failed to create and sign SOL transfer', { error });
-      throw new AppError('Failed to create and sign SOL transfer', 500);
-    }
-  }
-
-  /**
-   * Create and sign token transfer in one call
-   */
-  async createAndSignSplTokenTransfer(
-    request: SplTokenTransferRequest & { privateKey: string }
-  ): Promise<SignedSolanaTransaction> {
-    try {
-      const { privateKey, ...transferRequest } = request;
-
-      // Create transaction
-      const transaction = await this.createSplTokenTransferTransaction(transferRequest);
-
-      // Sign transaction
-      return await this.signTransaction(transaction, privateKey);
-    } catch (error) {
-      if (error instanceof AppError) throw error;
-      logger.error('Failed to create and sign SPL token transfer', { error });
-      throw new AppError('Failed to create and sign SPL token transfer', 500);
-    }
-  }
-
-  /**
-   * Execute full transfer flow
-   */
-  async executeSolTransfer(
-    request: SolTransferRequest & { privateKey: string }
-  ): Promise<SolanaBroadcastResponse> {
-    try {
-      // Create and sign
-      const signedTx = await this.createAndSignSolTransfer(request);
-
-      // Broadcast
-      return await this.broadcastTransaction(signedTx);
-    } catch (error) {
-      if (error instanceof AppError) throw error;
-      logger.error('Failed to execute SOL transfer', { error });
-      throw new AppError('Failed to execute SOL transfer', 500);
-    }
-  }
-
-  /**
-   * Execute full token transfer flow
-   */
-  async executeSplTokenTransfer(
-    request: SplTokenTransferRequest & { privateKey: string }
-  ): Promise<SolanaBroadcastResponse> {
-    try {
-      // Create and sign
-      const signedTx = await this.createAndSignSplTokenTransfer(request);
-
-      // Broadcast
-      return await this.broadcastTransaction(signedTx);
-    } catch (error) {
-      if (error instanceof AppError) throw error;
-      logger.error('Failed to execute SPL token transfer', { error });
-      throw new AppError('Failed to execute SPL token transfer', 500);
+      logger.error('Failed to submit wallet-signed Solana transaction', { error });
+      throw new AppError('Failed to verify or submit the wallet-signed Solana transaction', 400);
     }
   }
 
@@ -379,29 +308,29 @@ class SolanaTransactionSigningService {
     try {
       logger.info(`Fetching Solana transaction status: ${signature}`);
 
+      const [signatureStatus] = (await this.connection.getSignatureStatuses(
+        [signature],
+        { searchTransactionHistory: true }
+      )).value;
+      if (!signatureStatus) return { signature, status: 'not_found' };
+
       const tx = await this.connection.getTransaction(signature, {
         maxSupportedTransactionVersion: 0
       });
-
-      if (!tx) {
-        return {
-          signature,
-          status: 'not_found'
-        };
-      }
-
-      let status: SolanaTransactionStatus['status'] = 'confirmed';
-      if (tx.blockTime) {
-        // If we have blockTime, it's confirmed
-        status = 'confirmed';
-      }
+      const status: SolanaTransactionStatus['status'] = signatureStatus.err
+        ? 'failed'
+        : signatureStatus.confirmationStatus === 'finalized'
+          ? 'finalized'
+          : signatureStatus.confirmationStatus === 'confirmed'
+            ? 'confirmed'
+            : 'processed';
 
       return {
         signature,
         status,
-        blockNumber: tx.slot,
-        blockTime: tx.blockTime || undefined,
-        fee: tx.meta?.fee
+        blockNumber: tx?.slot ?? signatureStatus.slot,
+        blockTime: tx?.blockTime ?? undefined,
+        fee: tx?.meta?.fee,
       };
     } catch (error) {
       logger.error('Failed to get Solana transaction status', { error });
@@ -412,26 +341,37 @@ class SolanaTransactionSigningService {
   /**
    * Estimate transaction fees
    */
-  async estimateFees(): Promise<{
-    minRent: number;
-    recentFees: number;
-    averageFee: number;
-  }> {
+  async estimateFees(address: string): Promise<{ minimumTokenAccountRentLamports: number; networkFeeLamports: number }> {
     try {
-      const fees = await this.connection.getRecentBlockhash('confirmed');
-      const feeCalculator = fees.feeCalculator;
-
-      // Get minimum rent for token account
+      const feePayer = new PublicKey(address);
+      const { blockhash } = await this.connection.getLatestBlockhash('confirmed');
+      const transaction = new Transaction({ feePayer, recentBlockhash: blockhash });
+      transaction.add(SystemProgram.transfer({ fromPubkey: feePayer, toPubkey: feePayer, lamports: 1 }));
+      const networkFeeLamports = await this.connection.getFeeForMessage(transaction.compileMessage(), 'confirmed');
+      if (networkFeeLamports.value === null) throw new AppError('Solana RPC could not estimate the transfer fee', 503);
       const minRent = await this.connection.getMinimumBalanceForRentExemption(165); // SPL Token account size
 
       return {
-        minRent,
-        recentFees: feeCalculator.lamportsPerSignature,
-        averageFee: feeCalculator.lamportsPerSignature
+        minimumTokenAccountRentLamports: minRent,
+        networkFeeLamports: networkFeeLamports.value,
       };
     } catch (error) {
       logger.error('Failed to estimate Solana fees', { error });
+      if (error instanceof AppError) throw error;
       throw new AppError('Failed to estimate Solana fees', 500);
+    }
+  }
+
+  async getTokenDecimals(mint: string): Promise<number> {
+    try {
+      const mintInfo = await this.connection.getParsedAccountInfo(new PublicKey(mint), 'confirmed');
+      if (!mintInfo.value || !('parsed' in mintInfo.value.data) || mintInfo.value.data.parsed.type !== 'mint') {
+        throw new AppError('Token mint not found on the selected Solana cluster', 404);
+      }
+      return mintInfo.value.data.parsed.info.decimals;
+    } catch (error) {
+      if (error instanceof AppError) throw error;
+      throw new AppError('Failed to read token mint decimals from the configured Solana RPC', 503);
     }
   }
 
@@ -483,12 +423,10 @@ class SolanaTransactionSigningService {
 // ============= SERVICE INSTANCES =============
 
 const solanaSigningService = new SolanaTransactionSigningService({
-  chainId: 'mainnet',
   rpcUrl: process.env.SOLANA_RPC_URL || 'https://api.mainnet-beta.solana.com'
 });
 
 const solanaDevnetSigningService = new SolanaTransactionSigningService({
-  chainId: 'devnet',
   rpcUrl: process.env.SOLANA_DEVNET_RPC_URL || 'https://api.devnet.solana.com'
 });
 
@@ -496,7 +434,9 @@ export {
   SolanaTransactionSigningService,
   solanaSigningService,
   solanaDevnetSigningService,
-  // Types
+};
+
+export type {
   SolanaSigningConfig,
   SolTransferRequest,
   SplTokenTransferRequest,

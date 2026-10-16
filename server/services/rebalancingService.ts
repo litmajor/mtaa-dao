@@ -159,17 +159,21 @@ class RebalancingService {
       }
 
       const assetSymbols = assets.map(a => a.assetSymbol);
-      const prices = await priceOracle.getPrices(assetSymbols);
+      const prices = await priceOracle.getValuationPrices(assetSymbols);
 
       let totalValue = 0;
       const allocations: AssetAllocation[] = [];
 
       for (const asset of assets) {
-        const priceData = prices.get(asset.assetSymbol);
-        if (!priceData) continue;
+        const priceData = prices.get(asset.assetSymbol.toUpperCase());
+        const priceUsd = priceData?.haircutPriceUsd ?? priceData?.priceUsd;
+        if (!priceData || priceUsd === undefined || !Number.isFinite(priceUsd) || priceUsd <= 0) {
+          logger.warn(`Cannot rebalance pool ${poolId}: valuation unavailable for ${asset.assetSymbol}`);
+          return false;
+        }
 
         const currentBalance = Number(asset.currentBalance) || 0;
-        const currentValueUsd = currentBalance * priceData.priceUsd;
+        const currentValueUsd = currentBalance * priceUsd;
         totalValue += currentValueUsd;
 
         allocations.push({
@@ -293,12 +297,13 @@ class RebalancingService {
       let swapsExecuted = 0;
       let swapsBlocked = 0;
       const blockedSwaps: Array<{ fromAsset: string; toAsset: string; amountUsd: number; reason?: string }> = [];
-      const fromAssetPrices = await priceOracle.getPrices(
+      const fromAssetPrices = await priceOracle.getValuationPrices(
         Array.from(new Set(swaps.map(s => s.fromAsset)))
       );
 
       for (const swap of swaps) {
-        const fromPrice = fromAssetPrices.get(swap.fromAsset)?.priceUsd;
+        const fromPriceData = fromAssetPrices.get(swap.fromAsset.toUpperCase());
+        const fromPrice = fromPriceData?.haircutPriceUsd ?? fromPriceData?.priceUsd;
         if (!fromPrice || fromPrice <= 0) {
           swapsBlocked++;
           blockedSwaps.push({
@@ -521,7 +526,7 @@ class RebalancingService {
       const assetSymbols = Array.from(
         new Set([...holdingsByToken.keys(), ...normalizedTargets.keys()])
       );
-      const prices = await priceOracle.getPrices(assetSymbols);
+      const prices = await priceOracle.getValuationPrices(assetSymbols);
 
       let totalValue = 0;
       const allocationsForRebalance: AssetAllocation[] = [];
@@ -529,9 +534,13 @@ class RebalancingService {
       for (const assetSymbol of assetSymbols) {
         const holding = holdingsByToken.get(assetSymbol);
         const currentBalance = holding?.currentBalance || 0;
-        const priceData = prices.get(assetSymbol);
-        const currentValueUsd = holding?.currentValueUsd ??
-          (currentBalance && priceData ? currentBalance * priceData.priceUsd : 0);
+        const priceData = prices.get(assetSymbol.toUpperCase());
+        const priceUsd = priceData?.haircutPriceUsd ?? priceData?.priceUsd;
+        if (!priceData || priceUsd === undefined || !Number.isFinite(priceUsd) || priceUsd <= 0) {
+          logger.warn(`Cannot rebalance vault ${vaultId}: valuation unavailable for ${assetSymbol}`);
+          return false;
+        }
+        const currentValueUsd = currentBalance * priceUsd;
 
         totalValue += currentValueUsd;
 
@@ -607,12 +616,13 @@ class RebalancingService {
     let swapsBlocked = 0;
     const blockedSwaps: Array<{ fromAsset: string; toAsset: string; amountUsd: number; reason?: string }> = [];
     const riskSummaries: Array<{ asset: string; toxicity?: number; priceImpact?: number; resilience?: number; liquidityDepth?: number }> = [];
-    const fromAssetPrices = await priceOracle.getPrices(
+    const fromAssetPrices = await priceOracle.getValuationPrices(
       Array.from(new Set(swaps.map(s => s.fromAsset)))
     );
 
     for (const swap of swaps) {
-      const fromPrice = fromAssetPrices.get(swap.fromAsset)?.priceUsd;
+      const fromPriceData = fromAssetPrices.get(swap.fromAsset.toUpperCase());
+      const fromPrice = fromPriceData?.haircutPriceUsd ?? fromPriceData?.priceUsd;
       if (!fromPrice || fromPrice <= 0) {
         swapsBlocked++;
         blockedSwaps.push({

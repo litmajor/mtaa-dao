@@ -237,13 +237,28 @@ export class OnboardingService {
 
       if (result.rows.length === 0) return null;
 
-      const data = result.rows[0].metadata;
+      const metadata = result.rows[0].metadata;
+      const data = typeof metadata === 'object' && metadata !== null
+        ? metadata as Partial<OnboardingSession>
+        : {};
+      const createdAt = result.rows[0].created_at;
+      const startedAt = createdAt instanceof Date
+        ? createdAt
+        : typeof createdAt === 'string' || typeof createdAt === 'number'
+          ? new Date(createdAt)
+          : new Date();
+      const completedAtValue = data.completedAt;
+      const completedAt = completedAtValue instanceof Date
+        ? completedAtValue
+        : typeof completedAtValue === 'string' || typeof completedAtValue === 'number'
+          ? new Date(completedAtValue)
+          : undefined;
       return {
         userId,
         currentStep: data.currentStep || 0,
         steps: data.steps || this.defaultSteps,
-        startedAt: new Date(result.rows[0].created_at),
-        completedAt: data.completedAt ? new Date(data.completedAt) : undefined,
+        startedAt,
+        completedAt,
         progress: data.progress || 0
       };
     } catch (error) {

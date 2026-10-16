@@ -31,14 +31,23 @@ export async function getAccountBalancesForUserExchange(userId: string, exchange
 
     // Aggregate total value in USD using price oracle
     const symbols = Object.keys(balances).map(s => s.toUpperCase());
-    const prices = await priceOracle.getPrices(symbols).catch(() => new Map());
+    const prices = await priceOracle.getValuationPrices(symbols);
+    const missingPrices = symbols.filter((symbol) => !prices.has(symbol.toUpperCase()));
+    if (missingPrices.length > 0) {
+      return {
+        unavailableReason: `Reliable valuation unavailable for: ${missingPrices.join(', ')}`,
+      };
+    }
 
     const holdings = Object.entries(balances).map(([sym, data]: any) => {
       const total = data.total ?? 0;
-      const pd = prices.get(sym.toUpperCase());
-      const price = pd?.priceUsd ?? null;
-      const value = price ? total * price : 0;
-      return { symbol: sym, amount: total, value, valueReliable: !!price };
+      const valuation = prices.get(sym.toUpperCase());
+      const price = valuation?.haircutPriceUsd ?? valuation?.priceUsd;
+      if (!valuation || price === undefined || !Number.isFinite(price) || price <= 0) {
+        throw new Error(`Reliable valuation unavailable for ${sym}`);
+      }
+      const value = total * price;
+      return { symbol: sym, amount: total, value, valueReliable: true };
     }).filter(h => h.amount > 0);
 
     const totalValue = holdings.reduce((s, h) => s + (h.value || 0), 0);

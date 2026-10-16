@@ -22,7 +22,7 @@ export function UnifiedDashboard() {
   const { data, loading, error, refetch } = useUnifiedDashboardData(filterTimeframe);
 
   // WebSocket for real-time updates
-  const { messages, connected } = useWebSocket(!isPaused);
+  const { messages, connected } = useWebSocket({ enabled: !isPaused });
 
   // Update data when WebSocket messages arrive
   useEffect(() => {
@@ -132,8 +132,11 @@ export function UnifiedDashboard() {
 
         {/* User Balance Aggregation */}
         <UserBalanceSection
-          balances={data?.userBalances}
-          daos={data?.daos || []}
+          balances={data?.userBalances || {}}
+          daoNames={data?.daoNames || {}}
+          totalNetWorth={data?.totalNetWorth || 0}
+          stakingAmount={data?.stakingAmount || 0}
+          poolAmount={data?.poolAmount || 0}
           loading={loading}
         />
 
@@ -145,13 +148,7 @@ export function UnifiedDashboard() {
 
         {/* Real-time Activity Feed */}
         <RealtimeActivityFeed
-          opportunities={data?.opportunities || []}
-          activities={data?.activities || []}
-          marketData={data?.marketData || {}}
-          globalMetrics={data?.globalMetrics}
-          isPaused={isPaused}
-          timeUntilNextUpdate={timeUntilNextUpdate}
-          wsMessages={messages}
+          activities={((data?.activities || []) as any) || []}
           loading={loading}
         />
 

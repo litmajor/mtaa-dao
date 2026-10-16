@@ -100,7 +100,7 @@ export function initializeDataSources(
 // ============================================================================
 
 class PriceShardupdatePattern {
-  private assetAddress: string;
+  constructor(private readonly assetAddress: string) {}
 
   async compute(
     context: { latestPrice: number },
@@ -153,7 +153,7 @@ class PriceShardupdatePattern {
 // ============================================================================
 
 class RiskIndexShardUpdatePattern {
-  private assetAddress: string;
+  constructor(private readonly assetAddress: string) {}
 
   async compute(
     context: any,
@@ -246,7 +246,7 @@ class RiskIndexShardUpdatePattern {
 // ============================================================================
 
 class LiquidityShardUpdatePattern {
-  private assetAddress: string;
+  constructor(private readonly assetAddress: string) {}
 
   async compute(
     context: { latestPrice: number },
@@ -312,7 +312,7 @@ class LiquidityShardUpdatePattern {
 // ============================================================================
 
 class GovernanceShardUpdatePattern {
-  private daoId: string;
+  constructor(private readonly daoId: string) {}
 
   async compute(
     context: any,
@@ -372,8 +372,10 @@ class GovernanceShardUpdatePattern {
 // ============================================================================
 
 class CorrelationGraphShardUpdatePattern {
-  private assetAddress: string;
-  private priceHistoryService: PriceHistoryService;
+  constructor(
+    private readonly assetAddress: string,
+    private readonly priceHistoryService: PriceHistoryService
+  ) {}
 
   async compute(
     context: any,
@@ -477,9 +479,9 @@ export class ShardOrchestratorWithDataSources {
     try {
       // Fast shards (parallel)
       console.log('⚡ Fast shards...');
-      const [price, liquidity, technical] = await Promise.all([
-        new PriceShardupdatePattern().compute({ latestPrice: 2000 }, this.dataSourceManager),
-        new LiquidityShardUpdatePattern().compute(
+      const [price, liquidity] = await Promise.all([
+        new PriceShardupdatePattern(assetAddress).compute({ latestPrice: 2000 }, this.dataSourceManager),
+        new LiquidityShardUpdatePattern(assetAddress).compute(
           { latestPrice: 2000 },
           this.dataSourceManager,
           this.gatewayAggregator
@@ -492,13 +494,13 @@ export class ShardOrchestratorWithDataSources {
 
       // Slow shards (sequential)
       console.log('🔄 Slow shards...');
-      const risk = await new RiskIndexShardUpdatePattern().compute(
+      const risk = await new RiskIndexShardUpdatePattern(assetAddress).compute(
         {},
         this.dataSourceManager
       );
       results.risk = risk;
 
-      const governance = await new GovernanceShardUpdatePattern().compute(
+      const governance = await new GovernanceShardUpdatePattern(assetAddress).compute(
         {},
         this.dataSourceManager,
         this.snapshotService
@@ -507,7 +509,7 @@ export class ShardOrchestratorWithDataSources {
 
       // Correlation (high dedup value)
       console.log('📈 Correlation...');
-      const correlation = await new CorrelationGraphShardUpdatePattern().compute(
+      const correlation = await new CorrelationGraphShardUpdatePattern(assetAddress, this.priceHistoryService).compute(
         {},
         this.dataSourceManager
       );

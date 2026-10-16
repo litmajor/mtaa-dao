@@ -25,6 +25,7 @@ import adminBillingRouter from './admin-billing';
 import adminDashboardStatusRouter from './admin-dashboard-status';
 import adminSupportRouter from './admin-support';
 import adminAgentsKillSwitchRouter from './admin-agents-kill-switch';
+import adminExchangeFeesRouter from './admin-exchange-fees';
 
 const router = Router();
 
@@ -53,5 +54,6 @@ router.use(adminRecoveryRouter); // Recovery Workflows: /api/admin/recovery/* (P
 router.use(adminBillingRouter);      // Billing: /api/admin/billing/* (Platform analytics)
 router.use('/dashboard', adminDashboardStatusRouter); // Dashboard status and recovery overview
 router.use(adminSupportRouter); // Support ticket administration
+router.use(adminExchangeFeesRouter); // Effective-dated exchange fee schedules
 
 export default router;

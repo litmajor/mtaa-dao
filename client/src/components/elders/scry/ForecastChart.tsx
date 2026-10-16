@@ -10,7 +10,7 @@ interface ChartData {
   community?: number;
 }
 
-interface ForecastChartProps {
+export interface ForecastChartProps {
   daoId: string;
   dataPoints?: number;
 }
