@@ -4,10 +4,10 @@ import { DocsThemeConfig } from 'nextra-theme-docs'
 
 const config: DocsThemeConfig = {
   logo: (
-    <div className="flex items-center gap-2">
-      <img src="/mtaa_dao_logos/icon_dark_sm.png" alt="MtaaDAO" className="h-8 w-8 dark:hidden" />
-      <img src="/mtaa_dao_logos/icon_light_sm.png" alt="MtaaDAO" className="h-8 w-8 hidden dark:block" />
-      <span className="font-bold text-xl">MtaaDAO Docs</span>
+    <div className="docs-site-logo">
+      <img className="docs-site-logo__light" src="/mtaa_dao_logos/icon_dark_sm.png" alt="" />
+      <img className="docs-site-logo__dark" src="/mtaa_dao_logos/icon_light_sm.png" alt="" />
+      <span className="docs-site-logo__label">MtaaDAO Docs</span>
     </div>
   ),
   project: {

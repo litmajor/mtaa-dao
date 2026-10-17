@@ -1,0 +1,33 @@
+.docs-site-logo {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.docs-site-logo img {
+  width: 2rem;
+  height: 2rem;
+  flex: 0 0 2rem;
+  object-fit: contain;
+}
+
+.docs-site-logo__light {
+  display: block;
+}
+
+.docs-site-logo__dark {
+  display: none;
+}
+
+html.dark .docs-site-logo__light {
+  display: none;
+}
+
+html.dark .docs-site-logo__dark {
+  display: block;
+}
+
+.docs-site-logo__label {
+  font-size: 1.25rem;
+  font-weight: 700;
+}
