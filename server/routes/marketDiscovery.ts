@@ -20,7 +20,9 @@ import { logger } from '../utils/logger';
 const router = Router();
 
 // All market discovery endpoints require super_admin authentication
-router.use(isAuthenticated, requireRole('super_admin'));
+// Scoped to this router's path prefix: the router is mounted at the app root,
+// so an unscoped router.use() would gate every route registered after it.
+router.use('/api/admin/market-discovery', isAuthenticated, requireRole('super_admin'));
 
 /**
  * GET /api/admin/market-discovery/status

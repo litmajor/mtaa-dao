@@ -18,11 +18,8 @@ import { db } from '../storage';
 import { metricsCollector } from '../monitoring/metricsCollector';
 import { logger } from '../utils/logger';
 import { env } from '../../shared/config.js';
-import {
-  getRedisInstance,
-  getRedisInstanceCount,
-  isRedisConnected,
-} from '../config/redisConnectionManager';
+import { getRedisInstanceCount } from '../config/redisConnectionManager';
+import { redisService } from '../services/redis';
 import { RedisViolationScanner } from '../utils/redisViolationScanner';
 import type { RedisViolation } from '../utils/redisViolationScanner';
 
@@ -118,46 +115,23 @@ async function checkRedis(): Promise<HealthCheckResult> {
   const startTime = Date.now();
   const componentName = COMPONENT_NAMES.redis;
 
-  try {
-    if (!isRedisConnected()) {
-      const latency = Date.now() - startTime;
-      const err = new Error('Redis connection not established');
-      healthRegistry.recordComponentFailure(componentName, err, 'warn');
+  // Bounded ping via UnifiedRedis (timeout + circuit breaker); never hangs.
+  const healthy = await redisService.healthCheck();
+  const status = redisService.getStatus();
+  const latency = Date.now() - startTime;
+  const details = { instanceCount: getRedisInstanceCount(), ...status };
 
-      return {
-        status: 'fail',
-        responseTime: latency,
-        message: 'Redis connection not established',
-        details: { instanceCount: getRedisInstanceCount(), status: 'disconnected' },
-      };
-    }
-
-    const redis = getRedisInstance();
-    await redis.ping();
-    const latency = Date.now() - startTime;
-
-    // ── Registry update ──
+  if (healthy && status.status === 'up') {
     healthRegistry.recordComponentSuccess(componentName, latency);
-
-    return {
-      status: 'pass',
-      responseTime: latency,
-      details: { instanceCount: getRedisInstanceCount(), status: 'connected' },
-    };
-  } catch (error) {
-    const latency = Date.now() - startTime;
-    const err = error instanceof Error ? error : new Error(String(error));
-
-    // ── Registry update ──
-    healthRegistry.recordComponentFailure(componentName, err, 'error');
-
-    return {
-      status: 'fail',
-      responseTime: latency,
-      message: 'Redis connection failed',
-      details: { instanceCount: getRedisInstanceCount(), error: err.message },
-    };
+    return { status: 'pass', responseTime: latency, details };
   }
+
+  // Redis down/degraded is served by the in-memory fallback: degrade, don't fail.
+  const message = status.status === 'down'
+    ? 'Redis unavailable – serving from in-memory fallback'
+    : 'Redis degraded';
+  healthRegistry.recordComponentFailure(componentName, new Error(status.lastError || message), 'warn');
+  return { status: 'warn', responseTime: latency, message, details };
 }
 
 function checkMemory(): HealthCheckResult {
@@ -355,12 +329,20 @@ function buildAgentSummaryPayload(): {
 
 // ── Basic health (public) ──
 router.get('/', async (_req: Request, res: Response) => {
+  const redisStatus = redisService.getStatus();
   res.json({
-    status: 'ok',
+    status: redisStatus.status === 'up' ? 'ok' : 'degraded',
     timestamp: new Date().toISOString(),
     environment: env.NODE_ENV,
     version: process.env.npm_package_version || '1.0.0',
     uptime: process.uptime(),
+    redis: {
+      status: redisStatus.status,
+      usingFallback: redisStatus.usingFallback,
+      lastError: redisStatus.lastError,
+      lastErrorAt: redisStatus.lastErrorAt,
+      circuitState: redisStatus.circuitState,
+    },
   });
 });
 
@@ -642,18 +624,11 @@ router.get('/propagation', authenticate, requireRole('super_admin'), (_req: Requ
 router.get('/redis', authenticate, requireRole('super_admin'), async (_req: Request, res: Response) => {
   try {
     const instanceCount = getRedisInstanceCount();
-    const connected = isRedisConnected();
-    const redis = getRedisInstance();
-
-    let pingStatus = 'unknown';
-    let lastError = null;
-    try {
-      await redis.ping();
-      pingStatus = 'healthy';
-    } catch (e) {
-      pingStatus = 'unhealthy';
-      lastError = e instanceof Error ? e.message : String(e);
-    }
+    const pingOk = await redisService.healthCheck();
+    const status = redisService.getStatus();
+    const connected = status.connected;
+    const pingStatus = pingOk ? 'healthy' : 'unhealthy';
+    const lastError = status.lastError;
 
     const violationStatus = instanceCount > 1 ? 'VIOLATION DETECTED' : 'OK';
 
@@ -672,6 +647,7 @@ router.get('/redis', authenticate, requireRole('super_admin'), async (_req: Requ
           pingStatus,
           lastError,
         },
+        resilience: status,
         recommendations:
           instanceCount > 1
             ? [

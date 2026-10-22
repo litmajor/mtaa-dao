@@ -1,4 +1,4 @@
-import express, { type Express } from "express";
+import express, { type Express, type Router } from "express";
 import path from "path";
 import { dirname } from "path";
 import { fileURLToPath } from "url";
@@ -19,7 +19,7 @@ export function log(message: string, source = "express") {
   console.log(`${formattedTime} [${source}] ${message}`);
 }
 
-export async function setupVite(app: Express, server: Server) {
+export async function setupVite(app: Router, server: Server) {
   console.log('[STARTUP] setupVite: importing Vite');
   const { createServer: createViteServer, createLogger } = await import('vite');
   console.log('[STARTUP] setupVite: importing Vite config');

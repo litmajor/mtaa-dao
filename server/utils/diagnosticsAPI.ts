@@ -11,8 +11,9 @@ const requireAdmin = [authenticate, requireRole('super_admin')];
 export const createDiagnosticsRouter = () => {
   const router = Router();
 
-  // Enforce auth across all diagnostics routes
-  router.use(requireAdmin);
+  // Scoped to /diagnostics: this router is mounted at /api, so an unscoped
+  // router.use() would gate every route registered after it (incl. the SPA).
+  router.use('/diagnostics', requireAdmin);
 
   /**
    * GET /diagnostics/jobs
