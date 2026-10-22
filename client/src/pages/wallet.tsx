@@ -242,6 +242,10 @@ const EnhancedWalletPage = () => {
   }, [sendTo, sendAmount]);
 
   async function handleDeposit() {
+    if (!(Number(depositAmount) > 0)) {
+      setActionError('Enter an amount greater than 0.');
+      return;
+    }
     setActionLoading(true);
     setActionError('');
     try {
@@ -250,8 +254,7 @@ const EnhancedWalletPage = () => {
         const res = await (actions as any).depositOnRamp({ amount: depositAmount, currency: selectedCurrency });
         if (!res.success) throw new Error(res.error || 'Deposit failed');
       } else {
-        // Fallback: open payment modal (external on-ramp integration)
-        setPaymentOpen(true);
+        throw new Error('Card / mobile-money deposits are not available yet. Send funds to your wallet address instead.');
       }
       setDepositAmount('');
     } catch (err: unknown) {
@@ -261,6 +264,10 @@ const EnhancedWalletPage = () => {
   }
 
   async function handleWithdraw() {
+    if (!sendTo.trim() || !(Number(withdrawAmount) > 0)) {
+      setActionError('Enter a recipient address and an amount greater than 0.');
+      return;
+    }
     setActionLoading(true); setActionError('');
     try {
       const res = await actions.withdraw({ to: sendTo, amount: withdrawAmount, currency: selectedCurrency });
