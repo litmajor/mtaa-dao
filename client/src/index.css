@@ -1,9 +1,19 @@
 /* Import design system theme variables */
 @import './styles/theme-variables.css';
 
-@tailwind base;
-@tailwind components;
-@tailwind utilities;
+@import "tailwindcss";
+@config "../../tailwind.config.ts";
+
+/* Tailwind v4 changed the default border color to currentColor; keep the v3 default. */
+@layer base {
+  *,
+  ::after,
+  ::before,
+  ::backdrop,
+  ::file-selector-button {
+    border-color: var(--color-gray-200, currentColor);
+  }
+}
 
 /* Accessibility Improvements */
 @layer base {
