@@ -422,14 +422,7 @@ export default function EnhancedDAOs() {
   );
 
   return (
-    <Shell
-      brand={
-        <div>
-          <h1 className="text-4xl md:text-5xl font-bold bg-gradient-to-r from-purple-600 via-pink-600 to-orange-500 bg-clip-text text-transparent mb-2">👥 My Groups</h1>
-          <p className="text-gray-600 dark:text-gray-400 text-lg">Save together, invest together, grow together</p>
-        </div>
-      }
-    >
+    <Shell>
     <div className="min-h-screen bg-gradient-to-br from-gray-50 via-blue-50 to-purple-50 dark:from-gray-900 dark:via-gray-800 dark:to-purple-900">
       {joinedDAOs.length > 0 && (
         <DaoOnboardingTour
@@ -448,7 +441,7 @@ export default function EnhancedDAOs() {
         {/* Enhanced header */}
         <div className="flex flex-col gap-6 sm:flex-row sm:items-center sm:justify-between mb-12">
           <div className="space-y-2 min-w-0">
-            <h1 className="text-4xl md:text-5xl font-bold bg-gradient-to-r from-purple-600 via-pink-600 to-orange-500 bg-clip-text text-transparent mb-2">
+            <h1 className="text-3xl sm:text-4xl md:text-5xl font-bold bg-gradient-to-r from-purple-600 via-pink-600 to-orange-500 bg-clip-text text-transparent mb-2">
               👥 My Groups
             </h1>
             <p className="text-gray-600 dark:text-gray-400 text-lg">
