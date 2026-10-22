@@ -138,7 +138,7 @@ export function MobileNav() {
     <>
       {/* Top Navigation Bar */}
       <nav className="fixed top-0 left-0 right-0 bg-white/95 dark:bg-gray-900/95 backdrop-blur-xl border-b border-gray-200/50 dark:border-gray-700/50 z-50 lg:hidden shadow-sm">
-        <div className="flex items-center justify-end px-3 py-3 safe-area-inset-top gap-2">
+        <div className="flex items-center justify-end px-3 h-14 safe-area-inset-top gap-2">
           {topNavItems.map((item) => {
             const Icon = item.icon;
             const isItemActive = isActive(item.to);

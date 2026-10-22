@@ -144,7 +144,7 @@ export default function GlobalNav() {
   ];
 
   return (
-    <nav className="sticky top-0 z-50 border-b border-slate-700 bg-slate-900/95 backdrop-blur-sm">
+    <nav className="sticky top-14 mt-14 lg:top-0 lg:mt-0 z-40 border-b border-slate-700 bg-slate-900/95 backdrop-blur-sm">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         <div className="flex items-center justify-between h-16">
           {/* Logo */}
@@ -156,7 +156,7 @@ export default function GlobalNav() {
           </div>
 
           {/* Main Navigation (4 items - Desktop only, hidden on mobile) */}
-          <div className="hidden md:flex md:gap-1">
+          <div className="hidden lg:flex lg:gap-1">
             {mainNavItems.map((item) => {
               const IconComponent = item.icon;
               const active = isActive(item.href);
@@ -168,7 +168,7 @@ export default function GlobalNav() {
                       <Button
                         variant={active ? "primary" : "ghost"}
                         size="sm"
-                        className="gap-2"
+                        className={active ? "gap-2" : "gap-2 text-slate-300 hover:text-white hover:bg-slate-800"}
                       >
                         <IconComponent className="h-4 w-4" />
                         <span>{item.label}</span>
@@ -237,7 +237,7 @@ export default function GlobalNav() {
                       }
                     >
                       <span className="text-sm">{profile.icon}</span>
-                      <span className="hidden md:inline font-medium">{profile.name}</span>
+                      <span className="hidden xl:inline font-medium">{profile.name}</span>
                     </Button>
                   </TooltipTrigger>
                   <TooltipContent side="bottom" className="text-xs">
@@ -292,7 +292,7 @@ export default function GlobalNav() {
                       {((user as any)?.username || (user as any)?.firstName || "U").toString().substring(0, 2).toUpperCase()}
                     </AvatarFallback>
                   </Avatar>
-                  <span className="hidden sm:inline text-sm font-medium text-slate-200 max-w-[100px] truncate">
+                  <span className="hidden xl:inline text-sm font-medium text-slate-200 max-w-[100px] truncate">
                     {(user as any)?.username || `${(user as any)?.firstName || ''} ${(user as any)?.lastName || ''}`.trim() || (user as any)?.email || "User"}
                   </span>
                 </button>
@@ -334,7 +334,7 @@ export default function GlobalNav() {
         </div>
 
         {/* Mobile Navigation - Simplified bottom nav */}
-        <div className="md:hidden flex gap-1 pb-2 overflow-x-auto">
+        <div className="lg:hidden flex gap-1 pb-2 overflow-x-auto">
           {mainNavItems.map((item) => {
             const IconComponent = item.icon;
             const active = isActive(item.href);
@@ -344,6 +344,7 @@ export default function GlobalNav() {
                 <Button
                   variant={active ? "primary" : "ghost"}
                   size="sm"
+                  className={active ? undefined : "text-slate-300 hover:text-white hover:bg-slate-800"}
                 >
                   <IconComponent className="h-4 w-4" />
                   <span className="text-xs ml-1">{item.label}</span>

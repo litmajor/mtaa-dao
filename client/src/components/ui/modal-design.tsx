@@ -1,4 +1,5 @@
 import React, { useEffect, useRef, useCallback, useState } from 'react';
+import ReactDOM from 'react-dom';
 import { Card } from './card';
 import { Button } from './button';
 import { Icon } from './icon-design';
@@ -213,10 +214,3 @@ export const Modal = React.forwardRef<HTMLDivElement, ModalProps>(
 
 Modal.displayName = 'Modal';
 
-// Fallback for ReactDOM if not available
-let ReactDOM: any;
-try {
-  ReactDOM = require('react-dom');
-} catch {
-  ReactDOM = null;
-}

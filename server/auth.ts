@@ -314,7 +314,8 @@ export const refreshTokenHandler = async (req: Request, res: Response) => {
       httpOnly: false,
       secure: process.env.NODE_ENV === 'production',
       sameSite: 'strict',
-      maxAge: 15 * 60 * 1000,
+      // Must outlive the access token: /api/auth/refresh-token requires it after the access token expires.
+      maxAge: 7 * 24 * 60 * 60 * 1000, // matches refresh_token
       path: '/',
     });
 

@@ -38,21 +38,17 @@ export const TreasuryMode: React.FC<TreasuryModeProps> = ({ exchanges }) => {
     refreshInterval: 30000, // Refresh every 30 seconds
   });
 
-  // Use fetched data or fallback to mock data
+  // No fabricated figures: show zeros until real treasury data arrives.
   const treasury = treasuryDataFromContract || {
-    totalAssets: 48500000,
-    tokenHoldings: [
-      { symbol: 'ETH', amount: 15000, value: 36750000, allocation: 75.8 },
-      { symbol: 'USDC', amount: 8000000, value: 8000000, allocation: 16.5 },
-      { symbol: 'DAO', amount: 300000, value: 3750000, allocation: 7.7 },
-    ],
-    governanceWeight: 42.3,
-    monthlyBudget: 500000,
-    spentThisMonth: 287500,
+    totalAssets: 0,
+    tokenHoldings: [] as { symbol: string; amount: number; value: number; allocation: number }[],
+    governanceWeight: 0,
+    monthlyBudget: 0,
+    spentThisMonth: 0,
   };
 
   const budgetRemaining = treasury.monthlyBudget - treasury.spentThisMonth;
-  const budgetUsage = (treasury.spentThisMonth / treasury.monthlyBudget) * 100;
+  const budgetUsage = treasury.monthlyBudget > 0 ? (treasury.spentThisMonth / treasury.monthlyBudget) * 100 : 0;
 
   return (
     <div className="min-h-screen bg-slate-900 text-white">
@@ -65,7 +61,7 @@ export const TreasuryMode: React.FC<TreasuryModeProps> = ({ exchanges }) => {
       {error && (
         <div className="bg-red-900/30 border border-red-500 rounded-lg p-3 m-4 flex items-center gap-2 text-sm">
           <AlertCircle className="h-4 w-4 text-red-400" />
-          <span className="text-red-200">Error fetching treasury data. Using cached data.</span>
+          <span className="text-red-200">Treasury data is unavailable right now. Figures below are not live.</span>
         </div>
       )}
 

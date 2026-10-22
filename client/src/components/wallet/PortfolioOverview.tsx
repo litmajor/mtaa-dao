@@ -1,10 +1,11 @@
 import React, { useState, useMemo, useEffect } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import ChartJS from '@/components/charts/ChartJSSetup';
-import { Pie, Line, Bar } from 'react-chartjs-2';
+import { Pie } from 'react-chartjs-2';
 import { TrendingUp, TrendingDown, DollarSign, Wallet, Eye, EyeOff } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { useQuery } from '@tanstack/react-query';
+import { useWallet } from '@/pages/hooks/useWallet';
 import { PriceBadge } from './PriceDisplay';
 
 interface Asset {
@@ -85,13 +86,13 @@ export function PortfolioOverview() {
     return amount;
   };
 
-  // Mock portfolio data - replace with real data from API
-  const assets: Asset[] = [
-    { name: 'CELO', balance: 25.5, value: 3825, percentage: 45, color: '#13C41E' },
-    { name: 'cUSD', balance: 3200, value: 3200, percentage: 38, color: '#1890FF' },
-    { name: 'Investment Pools', balance: 0, value: 1200, percentage: 14, color: '#722ED1' },
-    { name: 'DAO Treasury', balance: 0, value: 295, percentage: 3, color: '#FA8C16' },
-  ];
+  // Real connected-wallet balance only; no fabricated holdings.
+  const { balance: walletBalance } = useWallet();
+  const celoBalance = Number(walletBalance) || 0;
+  const celoUsdRate = exchangeRates['CELO-USD']?.rate;
+  const assets: Asset[] = celoBalance > 0
+    ? [{ name: 'CELO', balance: celoBalance, value: celoUsdRate ? celoBalance * celoUsdRate : 0, percentage: 100, color: '#13C41E' }]
+    : [];
 
   const totalValue = assets.reduce((sum, asset) => sum + asset.value, 0);
   
@@ -265,14 +266,14 @@ export function PortfolioOverview() {
                   }
                 </p>
                 <p className="text-xs text-gray-500 dark:text-gray-500 mt-1">
-                  Real-time Conversion
+                  {Object.keys(exchangeRates).length > 0 ? 'Real-time Conversion' : 'Conversion rates unavailable'}
                 </p>
               </div>
 
               {/* Performance Indicator */}
               <div className="flex items-center gap-2 mt-4">
-                <TrendingUp className="w-4 h-4 text-green-600" />
-                <p className="text-sm text-green-600 font-semibold" data-testid="text-performance-change">{getPerformanceData.change} this period</p>
+                <TrendingUp className="w-4 h-4 text-gray-400" />
+                <p className="text-sm text-gray-500" data-testid="text-performance-change">Performance history not available yet</p>
               </div>
             </div>
             <div className="bg-gradient-to-br from-purple-500 to-pink-500 rounded-full p-4">
@@ -291,13 +292,17 @@ export function PortfolioOverview() {
           </CardHeader>
           <CardContent>
             <div style={{ height: 300 }}>
-              <Pie
-                data={{
-                  labels: chartData.map(c => c.name),
-                  datasets: [{ data: chartData.map(c => c.value), backgroundColor: chartData.map(c => c.color), borderWidth: 0 }]
-                }}
-                options={{ responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false }, tooltip: { callbacks: { label: (ctx: any) => `$${ctx.raw.toLocaleString()}` } } } }}
-              />
+              {chartData.length > 0 ? (
+                <Pie
+                  data={{
+                    labels: chartData.map(c => c.name),
+                    datasets: [{ data: chartData.map(c => c.value), backgroundColor: chartData.map(c => c.color), borderWidth: 0 }]
+                  }}
+                  options={{ responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false }, tooltip: { callbacks: { label: (ctx: any) => `$${ctx.raw.toLocaleString()}` } } } }}
+                />
+              ) : (
+                <div className="flex h-full items-center justify-center text-sm text-gray-500 dark:text-gray-400">No holdings to allocate yet.</div>
+              )}
             </div>
           </CardContent>
         </Card>
@@ -325,18 +330,8 @@ export function PortfolioOverview() {
             </div>
           </CardHeader>
           <CardContent>
-            <div style={{ height: 300 }}>
-              {timePeriod === '1d' || timePeriod === '7d' ? (
-                <Line
-                  data={{ labels: getPerformanceData.data.map((d: any) => d[getPerformanceData.xKey]), datasets: [{ label: getPerformanceData.title, data: getPerformanceData.data.map((d: any) => d.value), borderColor: '#8B5CF6', backgroundColor: 'rgba(139,92,246,0.08)', fill: true, tension: 0.2, pointRadius: 0 }] }}
-                  options={{ responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false }, tooltip: { callbacks: { label: (ctx: any) => `$${ctx.raw.toLocaleString()}` } } } }}
-                />
-              ) : (
-                <Bar
-                  data={{ labels: getPerformanceData.data.map((d: any) => d[getPerformanceData.xKey]), datasets: [{ label: getPerformanceData.title, data: getPerformanceData.data.map((d: any) => d.value), backgroundColor: '#8B5CF6', borderRadius: 8 }] }}
-                  options={{ responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false }, tooltip: { callbacks: { label: (ctx: any) => `$${ctx.raw.toLocaleString()}` } } } }}
-                />
-              )}
+            <div style={{ height: 300 }} className="flex items-center justify-center text-sm text-gray-500 dark:text-gray-400" data-testid="text-performance-empty">
+              Performance history will appear once your portfolio has activity.
             </div>
           </CardContent>
         </Card>
@@ -349,6 +344,11 @@ export function PortfolioOverview() {
         </CardHeader>
         <CardContent>
           <div className="space-y-4">
+            {assets.length === 0 && (
+              <p className="text-sm text-gray-500 dark:text-gray-400" data-testid="text-no-assets">
+                No assets yet. Deposit funds or connect a wallet to see your holdings here.
+              </p>
+            )}
             {assets.map((asset) => {
               // Get unit price for this asset
               const assetPricePair = `${asset.name}-USD`;

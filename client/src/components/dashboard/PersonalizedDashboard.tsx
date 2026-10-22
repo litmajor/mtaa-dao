@@ -8,6 +8,7 @@ import { usePersona, useActiveSubprofile, type SubprofileType } from "@/contexts
 import OkediDashboard from "./OkediDashboard";
 import YukiDashboard from "../trading/YukiDashboard";
 import { AmaraDashboard } from "./AmaraDashboard";
+import { AmaraDashboardSkeleton } from "./AmaraDashboardSkeleton";
 
 /**
  * PersonalizedDashboard Router Component
@@ -74,7 +75,6 @@ export function PersonalizedDashboard() {
   if (personaLoading || loading) {
     // Show persona-specific skeletons if available
     if (currentPersona === 'amara') {
-      const { AmaraDashboardSkeleton } = require('./AmaraDashboardSkeleton');
       return <AmaraDashboardSkeleton />;
     }
 
@@ -92,7 +92,7 @@ export function PersonalizedDashboard() {
   return (
     <div className="min-h-screen bg-gradient-to-b from-slate-900 via-slate-800 to-slate-900">
       {/* Header */}
-      <div className="sticky top-16 z-40 border-b border-slate-700 bg-slate-900/50 backdrop-blur-sm">
+      <div className="lg:sticky lg:top-16 z-30 border-b border-slate-700 bg-slate-900/50 backdrop-blur-sm">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4">
           <div className="flex items-center justify-between">
             <div>

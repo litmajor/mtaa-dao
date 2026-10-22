@@ -422,14 +422,7 @@ export default function EnhancedDAOs() {
   );
 
   return (
-    <Shell
-      brand={
-        <div>
-          <h1 className="text-4xl md:text-5xl font-bold bg-gradient-to-r from-purple-600 via-pink-600 to-orange-500 bg-clip-text text-transparent mb-2">👥 My Groups</h1>
-          <p className="text-gray-600 dark:text-gray-400 text-lg">Save together, invest together, grow together</p>
-        </div>
-      }
-    >
+    <Shell>
     <div className="min-h-screen bg-gradient-to-br from-gray-50 via-blue-50 to-purple-50 dark:from-gray-900 dark:via-gray-800 dark:to-purple-900">
       {joinedDAOs.length > 0 && (
         <DaoOnboardingTour
@@ -446,9 +439,9 @@ export default function EnhancedDAOs() {
 
       <div className="relative max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
         {/* Enhanced header */}
-        <div className="flex items-center justify-between mb-12">
-          <div className="space-y-2">
-            <h1 className="text-4xl md:text-5xl font-bold bg-gradient-to-r from-purple-600 via-pink-600 to-orange-500 bg-clip-text text-transparent mb-2">
+        <div className="flex flex-col gap-6 sm:flex-row sm:items-center sm:justify-between mb-12">
+          <div className="space-y-2 min-w-0">
+            <h1 className="text-3xl sm:text-4xl md:text-5xl font-bold bg-gradient-to-r from-purple-600 via-pink-600 to-orange-500 bg-clip-text text-transparent mb-2">
               👥 My Groups
             </h1>
             <p className="text-gray-600 dark:text-gray-400 text-lg">
@@ -475,7 +468,7 @@ export default function EnhancedDAOs() {
 
         {/* Enhanced tabs with discovery filters */}
         <div className="space-y-4 mb-8">
-          <div className="flex items-center gap-2 p-1 bg-white dark:bg-gray-800 rounded-2xl shadow-lg w-fit">
+          <div className="flex items-center gap-2 p-1 bg-white dark:bg-gray-800 rounded-2xl shadow-lg w-fit max-w-full overflow-x-auto">
             {[ 
               { key: "joined", label: `👥 My Groups (${joinedDAOs.length})`, icon: Shield },
               { key: "available", label: `🔍 Discover Groups (${availableDAOs.length})`, icon: Eye },
@@ -488,7 +481,7 @@ export default function EnhancedDAOs() {
                   setActiveTab(key);
                   navigate(`${window.location.pathname}#${key}`);
                 }}
-                className={`flex items-center gap-2 px-6 py-3 rounded-xl font-semibold transition-all duration-300 ${
+                className={`flex flex-shrink-0 items-center gap-2 whitespace-nowrap px-4 sm:px-6 py-3 rounded-xl font-semibold transition-all duration-300 ${
                   currentView === key // Use currentView for conditional styling
                     ? 'bg-gradient-to-r from-purple-500 to-pink-500 text-white shadow-lg'
                     : 'text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700'

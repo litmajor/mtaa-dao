@@ -44,7 +44,9 @@ export function useAuth() {
 
   const queryFn = async (): Promise<AuthResponse> => {
     try {
-      const user = await authClient.get<User>("/api/auth/user");
+      // /api/auth/user responds with { success, data: { user } }; authClient unwraps `data`.
+      const payload = await authClient.get<User | { user: User }>("/api/auth/user");
+      const user = (payload as { user?: User })?.user ?? (payload as User);
       return {
         success: true,
         data: {

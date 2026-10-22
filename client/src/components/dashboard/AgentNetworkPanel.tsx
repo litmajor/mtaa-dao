@@ -37,6 +37,7 @@ const AGENT_TIERS = [
 export default function AgentNetworkPanel({ daoId }: AgentNetworkPanelProps) {
   const [agents, setAgents] = useState<AgentSubscription[]>([]);
   const [loading, setLoading] = useState(true);
+  const [unavailable, setUnavailable] = useState(false);
 
   useEffect(() => {
     const fetchAgents = async () => {
@@ -46,16 +47,12 @@ export default function AgentNetworkPanel({ daoId }: AgentNetworkPanelProps) {
           const data = await res.json();
           setAgents(data.agents || []);
         } else {
-          // Fallback mocks if endpoint not fully ready
-          setAgents([
-            { agentId: '1', agentName: 'Nuru', tier: 'Tier 1', isSubscribed: true, status: 'active', lastActive: new Date().toISOString(), description: 'Core data layer', category: 'orchestration' },
-            { agentId: '2', agentName: 'Elder Kaizen', tier: 'Tier 2', isSubscribed: true, status: 'idle', lastActive: new Date(Date.now() - 3600000).toISOString(), description: 'Optimization', category: 'elder' },
-            { agentId: '3', agentName: 'Defender', tier: 'Tier 4', isSubscribed: true, status: 'active', lastActive: new Date().toISOString(), description: 'Security', category: 'security' },
-            { agentId: '4', agentName: 'Financial Analyzer', tier: 'Domain Analyzers', isSubscribed: false, status: 'offline', lastActive: null, description: 'Treasury analytics', category: 'analyzer' },
-          ]);
+          setAgents([]);
+          setUnavailable(true);
         }
       } catch (e) {
         console.error(e);
+        setUnavailable(true);
       } finally {
         setLoading(false);
       }
@@ -75,7 +72,9 @@ export default function AgentNetworkPanel({ daoId }: AgentNetworkPanelProps) {
           Agent Network Status
         </CardTitle>
         <p className="text-xs text-slate-400 font-normal">
-          Live connection status for {agents.length} intelligent agents. Subscriptions via AgentPaymentGateway.
+          {unavailable
+            ? 'Agent network status is unavailable right now.'
+            : `Live connection status for ${agents.length} intelligent agents. Subscriptions via AgentPaymentGateway.`}
         </p>
       </CardHeader>
       <CardContent className="pt-4 overflow-y-auto flex-1 space-y-6">

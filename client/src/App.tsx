@@ -324,7 +324,7 @@ function App() {
                     {/* WEEK 1 UPDATE: Use new GlobalNav */}
                     {isAuthenticated && <Suspense fallback={null}><GlobalNav /></Suspense>}
 
-                    <main id="main-content" className={isAuthenticated ? "pt-44 pb-32 lg:pb-0 lg:pt-20" : "w-full"} role="main">
+                    <main id="main-content" className={isAuthenticated ? "pt-4 pb-32 lg:pb-0" : "w-full"} role="main">
                       <Routes>
                         {/* Public routes - Authentication & Info Pages */}
                         <Route path="/" element={isAuthenticated ? <Navigate to="/dashboard" /> : <Landing />} />

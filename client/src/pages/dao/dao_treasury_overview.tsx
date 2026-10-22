@@ -1,6 +1,7 @@
 
 import { useEffect, useState } from "react";
-import { useParams } from "react-router-dom";
+import { Link, useParams } from "react-router-dom";
+import { useDaoContext } from "@/contexts/dao-context";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Progress } from "@/components/ui/progress";
 import { Badge } from "@/components/ui/badge";
@@ -35,16 +36,24 @@ interface DaoStats {
 }
 
 export default function DaoDashboard() {
-  const { daoId } = useParams();
+  const { daoId: routeDaoId } = useParams();
+  const { selectedDaoId, isLoading: daosLoading } = useDaoContext();
+  // /dao/treasury-overview has no :daoId segment, so fall back to the user's selected DAO.
+  const daoId = routeDaoId ?? selectedDaoId ?? undefined;
   const { toast } = useToast();
   const [stats, setStats] = useState<DaoStats | null>(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
+    if (!daoId) {
+      setLoading(false);
+      return;
+    }
     fetchDashboardStats();
   }, [daoId]);
 
   const fetchDashboardStats = async () => {
+    setLoading(true);
     try {
       const data = await apiGet(`/api/v1/daos/${daoId}/dashboard-stats`);
       setStats(data);
@@ -77,12 +86,26 @@ export default function DaoDashboard() {
     }
   };
 
-  if (loading) {
+  if (loading || (!daoId && daosLoading)) {
     return <div className="flex items-center justify-center p-8">Loading dashboard...</div>;
   }
 
+  if (!daoId) {
+    return (
+      <div className="p-8 text-center">
+        <p className="text-gray-600 dark:text-gray-300 mb-4">Select a DAO to view its treasury overview.</p>
+        <Link to="/daos"><Button>Browse your DAOs</Button></Link>
+      </div>
+    );
+  }
+
   if (!stats) {
-    return <div className="p-8 text-center text-gray-500">No data available</div>;
+    return (
+      <div className="p-8 text-center">
+        <p className="text-gray-500 mb-4">Couldn't load DAO statistics.</p>
+        <Button variant="outline" onClick={() => fetchDashboardStats()}>Retry</Button>
+      </div>
+    );
   }
 
   return (
