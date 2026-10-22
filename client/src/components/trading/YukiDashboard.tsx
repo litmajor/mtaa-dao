@@ -15,11 +15,7 @@
  */
 
 import React, { useState, useEffect, lazy, Suspense } from 'react';
-// lucide-react may lack types in this project; require and cast to any to avoid TS errors
- 
-const _lucide = require('lucide-react') as any;
-const TrendingUp = _lucide.TrendingUp as any;
-const Settings = _lucide.Settings as any;
+import { TrendingUp, Settings } from 'lucide-react';
 import CexManager from './CexManager';
 import StrategyMarketplace from './StrategyMarketplace';
 import type { OpportunityData as Opportunity } from '../../types/opportunities';

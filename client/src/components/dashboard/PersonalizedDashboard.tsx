@@ -8,6 +8,7 @@ import { usePersona, useActiveSubprofile, type SubprofileType } from "@/contexts
 import OkediDashboard from "./OkediDashboard";
 import YukiDashboard from "../trading/YukiDashboard";
 import { AmaraDashboard } from "./AmaraDashboard";
+import { AmaraDashboardSkeleton } from "./AmaraDashboardSkeleton";
 
 /**
  * PersonalizedDashboard Router Component
@@ -74,7 +75,6 @@ export function PersonalizedDashboard() {
   if (personaLoading || loading) {
     // Show persona-specific skeletons if available
     if (currentPersona === 'amara') {
-      const { AmaraDashboardSkeleton } = require('./AmaraDashboardSkeleton');
       return <AmaraDashboardSkeleton />;
     }
 
