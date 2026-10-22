@@ -14,6 +14,7 @@ export const daoDataSchema = z.object({
   customTokenAddress: ethAddress.optional(),
   durationDays: z.number().int().positive().optional(),
   rotationFrequency: z.enum(['weekly', 'monthly', 'quarterly']).optional(),
+  rotationContributionAmountKes: z.number().int().positive().max(2_147_483_647).optional(),
 });
 
 export const daoDeploySchema = z.object({

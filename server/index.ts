@@ -68,6 +68,7 @@ import operationalFrameworkRoutes from './routes/admin/operational-framework';
 import healthAdminRoutes from './routes/admin/health';
 import valuationAssetsRoutes from './routes/admin/valuation-assets';
 import kotaniPayStatusRoutes from './routes/kotanipay-status';
+import { kotaniRampWebhookRouter } from './routes/v1/wallets/self-custody-ramps';
 import mpesaStatusRoutes from './routes/mpesa-status';
 import stripeStatusRoutes from './routes/stripe-status';
 import referralsRoutes from './routes/referrals';
@@ -213,11 +214,15 @@ async function withStartupStageTimeout<T>(
   timeoutMs = 10000
 ): Promise<T> {
   console.log(`[STARTUP] >>> ${stage} START`);
+  let timeoutHandle: NodeJS.Timeout | undefined;
   try {
     const result = await Promise.race([
       operation(),
       new Promise<T>((_, reject) => {
-        setTimeout(() => reject(new Error(`[STARTUP] ${stage} timed out after ${timeoutMs}ms`)), timeoutMs);
+        timeoutHandle = setTimeout(
+          () => reject(new Error(`[STARTUP] ${stage} timed out after ${timeoutMs}ms`)),
+          timeoutMs
+        );
       })
     ]);
     console.log(`[STARTUP] <<< ${stage} COMPLETE`);
@@ -225,6 +230,8 @@ async function withStartupStageTimeout<T>(
   } catch (error) {
     console.error(`[STARTUP] !!! ${stage} FAILED or TIMED OUT`, error instanceof Error ? error.message : error);
     throw error;
+  } finally {
+    if (timeoutHandle) clearTimeout(timeoutHandle);
   }
 }
 
@@ -424,7 +431,27 @@ app.use(cors({
 // CRITICAL (C5): express.json() and cookie-parser were missing entirely.
 // Without these, req.body is undefined on every JSON request and req.cookies
 // is always undefined — breaking auth, CSRF, and every POST handler.
-app.use(express.json({ limit: '10mb' }));
+const captureWebhookRawBody = (req: Request, _res: Response, body: Buffer) => {
+  (req as Request & { rawBody?: Buffer }).rawBody = Buffer.from(body);
+};
+const webhookRawJsonParser = express.raw({
+  type: 'application/json',
+  limit: '10mb',
+  verify: captureWebhookRawBody,
+});
+app.use('/api/v1/wallets/self-custody-ramps/webhook', webhookRawJsonParser);
+app.use('/api/payments/kotanipay/callback', webhookRawJsonParser);
+app.use('/api/kotanipay-status/callback', webhookRawJsonParser);
+app.use(express.json({
+  limit: '10mb',
+  verify: (req: Request, _res, body) => {
+    if (req.originalUrl.startsWith('/api/v1/wallets/self-custody-ramps/webhook')
+      || req.originalUrl.startsWith('/api/payments/kotanipay/callback')
+      || req.originalUrl.startsWith('/api/kotanipay-status/callback')) {
+      (req as Request & { rawBody?: Buffer }).rawBody = Buffer.from(body);
+    }
+  },
+}));
 app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 app.use(cookieParser());
 
@@ -644,6 +671,7 @@ publicRouter.use('/events', eventsRoutes);
 
 // Payment-provider status pages (webhook-level, no PII)
 publicRouter.use('/kotanipay-status', kotaniPayStatusRoutes);
+publicRouter.use('/v1/wallets/self-custody-ramps/webhook', kotaniRampWebhookRouter);
 publicRouter.use('/mpesa-status', mpesaStatusRoutes);
 publicRouter.use('/stripe-status', stripeStatusRoutes);
 
@@ -1765,10 +1793,16 @@ process.on('uncaughtException', (error) => {
     });
     if (env.NODE_ENV === "development") {
       try {
-        const { setupVite } = await import('./vite');
-        await setupVite(app, server);
+        await withStartupStageTimeout(
+          'setupVite',
+          async () => {
+            const { setupVite } = await import('./vite');
+            await setupVite(app, server);
+          },
+          45000
+        );
       } catch (err) {
-        logger.warn('⚠️ Dev Vite setup failed:', metaFromUnknown(err));
+        logger.warn('⚠️ Dev Vite setup failed or timed out; continuing with API startup:', metaFromUnknown(err));
       }
     } else {
       try {
@@ -1895,6 +1929,12 @@ process.on('uncaughtException', (error) => {
           logger.info('✅ Webhook reconciliation worker started (background)');
         } catch (err) {
           logger.error('Failed to initialize webhook reconciliation worker:', metaFromUnknown(err));
+        }
+        try {
+          const { startKotaniSelfCustodyRampReconciliationWorker } = await import('./workers/kotaniSelfCustodyRampReconciliationWorker');
+          startKotaniSelfCustodyRampReconciliationWorker();
+        } catch (err) {
+          logger.error('Failed to initialize KotaniPay ramp status reconciliation worker:', metaFromUnknown(err));
         }
       }, deferredBackgroundStartupDelayMs);
       

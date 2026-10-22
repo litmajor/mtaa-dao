@@ -21,9 +21,15 @@ vi.mock('../services/rotation_contract', () => ({
 vi.mock('../services/mpesaB2cPayoutService', () => ({
   getB2cCallbackToken: vi.fn(() => 'test-callback-token'),
   initiateDarajaB2cPayout: vi.fn(),
+  MAX_B2C_AMOUNT_KES: 150_000,
 }));
 
-import { completeManualRotation, processRotation } from '../api/rotation_service';
+import {
+  completeManualRotation,
+  processRotation,
+  reconcileRotationB2cCallback,
+  shouldUseOnChainRotationRail,
+} from '../api/rotation_service';
 import { db } from '../db';
 import { distributeToRecipientOnChain } from '../services/rotation_contract';
 
@@ -79,6 +85,71 @@ function createTransaction(selectResults: unknown[]) {
 describe('completeManualRotation', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+  });
+
+  describe('shouldUseOnChainRotationRail', () => {
+    it('switches only when the expected KES pool exceeds the B2C request ceiling', () => {
+      expect(shouldUseOnChainRotationRail(150_000)).toBe(false);
+      expect(shouldUseOnChainRotationRail(150_001)).toBe(true);
+      expect(shouldUseOnChainRotationRail(Number.MAX_SAFE_INTEGER + 1)).toBe(false);
+    });
+  });
+
+  describe('reconcileRotationB2cCallback', () => {
+    beforeEach(() => {
+      vi.clearAllMocks();
+    });
+
+    it('completes the cycle and advances the DAO after a verified B2C result', async () => {
+      const { tx, updates } = createTransaction([
+        [{
+          id: 'payout-1',
+          daoId: 'dao-1',
+          cycleId: 'cycle-1',
+          status: 'accepted',
+          amountKes: 2400,
+        }],
+        [{
+          id: 'cycle-1',
+          cycleNumber: 1,
+          status: 'pending_b2c_payout',
+          notes: 'Authorized payout',
+        }],
+        [{ id: 'contribution-1' }],
+        [{ rotationFrequency: 'monthly' }],
+      ]);
+      vi.mocked(db.transaction).mockImplementation(async (callback: any) => callback(tx));
+
+      const result = await reconcileRotationB2cCallback({
+        OriginatorConversationID: 'originator-1',
+        ResultCode: 0,
+        ResultDesc: 'Success',
+        TransactionID: 'transaction-1',
+        ResultParameters: {
+          ResultParameter: [
+            { Key: 'TransactionAmount', Value: 2400 },
+            { Key: 'TransactionReceipt', Value: 'QWE123ABC' },
+          ],
+        },
+      }, 'test-callback-token');
+
+      expect(result).toMatchObject({
+        status: 'succeeded',
+        duplicate: false,
+        payoutId: 'payout-1',
+        transactionId: 'transaction-1',
+        receipt: 'QWE123ABC',
+      });
+      expect(updates.map((update) => update.values)).toEqual(expect.arrayContaining([
+        expect.objectContaining({ status: 'succeeded', transactionId: 'transaction-1' }),
+        expect.objectContaining({ status: 'completed' }),
+        expect.objectContaining({ currentRotationCycle: 1 }),
+      ]));
+      expect(updates[3].values).toMatchObject({
+        nextRotationDate: expect.any(Date),
+        updatedAt: expect.any(Date),
+      });
+    });
   });
 
   it('records the first active elder confirmation without marking a payout complete', async () => {
@@ -168,9 +239,10 @@ describe('completeManualRotation', () => {
     expect(updates).toHaveLength(0);
   });
 
-  it('creates an awaiting manual KES payout from approved contributions without calling the chain', async () => {
+  it('waits for every member to contribute the fixed KES amount before preparing a rotation payout', async () => {
     const dao = {
       id: 'dao-1',
+      daoType: 'merryGoRound',
       durationModel: 'rotation',
       nextRotationDate: new Date(Date.now() - 1000),
       rotationSelectionMethod: 'sequential',
@@ -179,17 +251,29 @@ describe('completeManualRotation', () => {
       treasuryBalance: '0',
       vaultAddress: null,
       chamaTreasuryAddress: null,
+      rotationContributionAmountKes: 1200,
     };
     const availableContributions = [{
       id: 'contribution-1',
-      amount: '1200.50',
+      contributorId: 'member-1',
+      amount: '1200',
+      status: 'approved',
+      metadata: {},
+    }, {
+      id: 'contribution-2',
+      contributorId: 'member-2',
+      amount: '1200',
       status: 'approved',
       metadata: {},
     }];
-    const selectResults = [ [dao], [], [], [dao], [{
+    const members = [{
       userId: 'member-1',
       joinedAt: new Date(Date.now() - 1000),
-    }], availableContributions ];
+    }, {
+      userId: 'member-2',
+      joinedAt: new Date(),
+    }];
+    const selectResults = [ [dao], [], [], [dao], members, availableContributions, members ];
     vi.mocked(db.select).mockImplementation(() => {
       const result = selectResults.shift();
       const query: any = {
@@ -245,7 +329,7 @@ describe('completeManualRotation', () => {
       cycleId: 'cycle-1',
       cycleNumber: 1,
       recipientUserId: 'member-1',
-      amountDistributed: '1200.50',
+      amountDistributed: '2400',
       currency: 'KES',
     });
     expect(tx.insert).toHaveBeenCalled();

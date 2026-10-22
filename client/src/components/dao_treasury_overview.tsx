@@ -8,6 +8,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Plus } from "lucide-react";
 import { VaultCreationWizard } from "./vault/VaultCreationWizard";
+import { RotationWidget } from "./RotationWidget";
 
 // Optionally accept daoId as prop for multi-DAO support
 export function DaoTreasuryOverview({ daoId = "root-dao" }: { daoId?: string }) {
@@ -122,6 +123,8 @@ export function DaoTreasuryOverview({ daoId = "root-dao" }: { daoId?: string }) 
 
   return (
     <div className="space-y-4">
+      <RotationWidget daoId={daoId} />
+
       {/* Persistent Treasury Context Bar */}
       <TreasuryContextBar treasury={treasury} signerSummary={signerSummary} pendingCount={pendingActions.length} loading={loading} />
 

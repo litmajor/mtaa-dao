@@ -73,6 +73,21 @@ describe('PaymentGatewayService - mpesaDeposit Phone Ownership', () => {
     expect(response.success).toBe(true);
     expect((response as any).status).toBe('pending');
     expect((gateway as any).requestWithTimeout).toHaveBeenCalled();
+
+    const [stkUrl, stkRequest] = (gateway as any).requestWithTimeout.mock.calls[0] as [string, RequestInit];
+    const stkPayload = JSON.parse(String(stkRequest.body)) as Record<string, unknown>;
+    const callbackToken = new URL(String(stkPayload.CallBackURL)).searchParams.get('token');
+    expect(stkUrl).toContain('/mpesa/stkpush/v1/processrequest');
+    expect(stkPayload).toMatchObject({ Amount: 100, PhoneNumber: '254712345678' });
+    expect(callbackToken).toMatch(/^[a-f0-9]{64}$/);
+
+    const transactionMetadata =
+      (gateway as any).recordTransaction.mock.calls[0][7] as Record<string, unknown>;
+    expect(transactionMetadata).toMatchObject({
+      callbackToken,
+      phone: '254712345678',
+      checkoutRequestID: 'ws_123',
+    });
   });
 
   it('fails before STK push when phone does not match', async () => {

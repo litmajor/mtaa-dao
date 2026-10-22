@@ -8,6 +8,7 @@ import { useMutation, useQuery } from '@tanstack/react-query';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { AlertCircle, CheckCircle, Clock } from 'lucide-react';
 import { authClient } from '@/utils/authClient';
+import StablecoinWalletPanel from '@/components/wallet/StablecoinWalletPanel';
 
 interface WithdrawalMethod {
   id: string;
@@ -182,11 +183,21 @@ export default function WithdrawTab({ methods, accounts }: WithdrawTabProps) {
 
   return (
     <div className="space-y-6">
+      <StablecoinWalletPanel mode="send" />
+      <Card>
+        <CardHeader>
+          <CardTitle>Platform balance · M-Pesa/provider withdrawals</CardTitle>
+        </CardHeader>
+        <CardContent className="pt-6 text-sm text-muted-foreground">
+          The withdrawal methods below use a platform/provider balance and are separate from the on-chain wallet above. Sending cUSD from your connected wallet does not cash out to M-Pesa. Use the separate self-custody offramp above when enabled; it requires provider confirmation of both the on-chain transfer and M-Pesa payout.
+        </CardContent>
+      </Card>
+
       {/* Step 0: Choose lane (destination type) */}
       {step === 0 && (
         <Card>
           <CardHeader>
-            <CardTitle>Withdraw — Choose Destination Type</CardTitle>
+            <CardTitle>Withdraw from platform balance — Choose Destination Type</CardTitle>
           </CardHeader>
           <CardContent>
             <div className="grid grid-cols-1 md:grid-cols-4 gap-4">

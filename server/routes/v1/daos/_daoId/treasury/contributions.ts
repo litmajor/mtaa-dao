@@ -1,8 +1,8 @@
 import express from 'express';
 import type { Request, Response, NextFunction } from 'express';
 import path from 'path';
-import { randomBytes, randomUUID } from 'crypto';
-import { and, desc, eq, sql } from 'drizzle-orm';
+import { randomUUID } from 'crypto';
+import { and, count, desc, eq, sql } from 'drizzle-orm';
 import { db } from '../../../../../storage';
 import {
   daoContributionApprovals,
@@ -19,6 +19,7 @@ import { rateLimitPerUser } from '../../../../../middleware/rateLimit';
 import { paymentReceiptUpload } from '../../../../../middleware/paymentReceiptUpload';
 import { logConsolidatedAuditEvent } from '../../../../../services/auditConsolidated';
 import { paymentGatewayService } from '../../../../../services/paymentGatewayService';
+import { MAX_B2C_AMOUNT_KES } from '../../../../../services/mpesaB2cPayoutService';
 
 const router = express.Router({ mergeParams: true });
 const adminRoles = new Set(['admin', 'elder', 'owner', 'founder']);
@@ -124,6 +125,37 @@ router.post(
 
       const [dao] = await db.select().from(daos).where(eq(daos.id, daoId)).limit(1);
       if (!dao) return res.status(404).json({ error: 'DAO not found' });
+      if (dao.daoType === 'merryGoRound' && dao.durationModel === 'rotation') {
+        const fixedContribution = Number(dao.rotationContributionAmountKes);
+        if (!Number.isSafeInteger(fixedContribution) || fixedContribution <= 0) {
+          return res.status(409).json({ error: 'The merry-go-round fixed KES contribution is not configured' });
+        }
+        const [{ memberCount }] = await db.select({ memberCount: count() })
+          .from(daoMemberships)
+          .where(and(
+            eq(daoMemberships.daoId, daoId),
+            eq(daoMemberships.status, 'approved'),
+            eq(daoMemberships.isBanned, false)
+          ));
+        const expectedPoolKes = fixedContribution * memberCount;
+        if (!Number.isSafeInteger(expectedPoolKes)) {
+          return res.status(409).json({ error: 'The expected rotation pool is outside the supported amount range' });
+        }
+        if (expectedPoolKes > MAX_B2C_AMOUNT_KES) {
+          return res.status(409).json({
+            error: `This rotation pool is above the app's KES ${MAX_B2C_AMOUNT_KES.toLocaleString()} B2C request ceiling. M-Pesa contributions are disabled for this cycle; use the direct stablecoin rotation rail.`,
+            expectedPoolKes,
+            recommendedRail: 'on_chain',
+          });
+        }
+        if (Number(amount) !== fixedContribution) {
+          return res.status(400).json({ error: `Each member must contribute exactly ${fixedContribution} KES` });
+        }
+        const expectedCycle = String((dao.currentRotationCycle || 0) + 1);
+        if (typeof cycle !== 'string' || cycle !== expectedCycle) {
+          return res.status(409).json({ error: `M-Pesa contribution is for rotation cycle ${expectedCycle}` });
+        }
+      }
       const contributorId = typeof memberId === 'string' && memberId ? memberId : userId;
       if (contributorId !== userId) {
         const [actorMembership] = await db
@@ -206,26 +238,17 @@ router.post(
       }).returning();
       contributionId = contribution.id;
 
-      const callbackBaseUrl = process.env.APP_BASE_URL || process.env.BACKEND_URL || 'http://localhost:5000';
-      const callbackToken = randomBytes(32).toString('hex');
-      const callbackUrl = new URL(
-        process.env.MPESA_CALLBACK_URL ||
-        `${callbackBaseUrl.replace(/\/+$/, '')}/api/webhooks/mpesa`
-      );
-      callbackUrl.searchParams.set('token', callbackToken);
       const payment = await paymentGatewayService.initiateDeposit('mpesa', {
         userId: contributorId,
         amount: String(amount),
         currency: 'KES',
         method: 'mobile_money',
-        callbackUrl: callbackUrl.toString(),
         idempotencyKey: `dao-contribution:${contribution.id}`,
         metadata: {
           phone: contributor.phone,
           purpose: 'dao_contribution',
           daoId,
           contributionId: contribution.id,
-          callbackToken,
           description: `Contribution to DAO ${dao.name}`,
         },
       });

@@ -8,6 +8,7 @@ import { useQuery, useMutation } from '@tanstack/react-query';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { AlertCircle, CheckCircle, Clock } from 'lucide-react';
 import { authClient } from '@/utils/authClient';
+import StablecoinWalletPanel from '@/components/wallet/StablecoinWalletPanel';
 
 interface DepositMethod {
   id: string;
@@ -141,11 +142,21 @@ export default function DepositTab({ methods, accounts }: DepositTabProps) {
 
   return (
     <div className="space-y-6">
+      <StablecoinWalletPanel mode="receive" />
+      <Card>
+        <CardHeader>
+          <CardTitle>Platform balance · M-Pesa/provider deposits</CardTitle>
+        </CardHeader>
+        <CardContent className="pt-6 text-sm text-muted-foreground">
+          The platform-balance M-Pesa methods below credit a provider ledger, not the on-chain wallet above, and cannot be sent from your connected wallet. Use the separate self-custody onramp above when it is enabled to request a provider-confirmed cUSD delivery directly to your address.
+        </CardContent>
+      </Card>
+
       {/* Deposit Router - Step 1: Choose lane */}
       {step === 0 && (
         <Card>
           <CardHeader>
-            <CardTitle>Deposit Router</CardTitle>
+            <CardTitle>Platform balance deposit methods</CardTitle>
           </CardHeader>
           <CardContent className="space-y-4">
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
@@ -153,8 +164,8 @@ export default function DepositTab({ methods, accounts }: DepositTabProps) {
                 role="button"
                 onClick={() => { setSelectedLane('fiat'); setStep(1); }}
                 className={`p-4 border rounded-lg cursor-pointer ${selectedLane === 'fiat' ? 'border-blue-500' : 'border-gray-200'}`}>
-                <div className="font-semibold">💳 Fiat On-Ramp</div>
-                <div className="text-sm text-muted-foreground mt-1">Visa, Mastercard, M-Pesa, Bank</div>
+                <div className="font-semibold">💳 Fiat / M-Pesa provider flow</div>
+                <div className="text-sm text-muted-foreground mt-1">Platform balance, not connected-wallet cUSD</div>
                 <div className="text-xs mt-2">Fee: medium · Speed: instant–10 min · Best for: beginners</div>
                 <div className="mt-3 text-sm text-muted-foreground">Recommended when you need to buy crypto with card or local mobile money.</div>
               </div>
@@ -293,9 +304,10 @@ export default function DepositTab({ methods, accounts }: DepositTabProps) {
           <CardContent>
             {selectedMethod.type === 'external_wallet' || selectedMethod.type === 'crypto_deposit' ? (
               <div>
-                <div className="text-sm">Send {selectedMethod.supportedCurrencies[0]} to this address:</div>
-                <div className="mt-3 p-4 bg-gray-100 rounded font-mono">0xDEADBEEF...FAKEADDRESS</div>
-                <div className="text-xs text-muted-foreground mt-2">Transaction will be credited after required confirmations.</div>
+                <div className="text-sm font-medium">No platform deposit address is generated for this method.</div>
+                <div className="text-xs text-muted-foreground mt-2">
+                  To receive cUSD on Celo, use the self-custody wallet address above. This only receives funds into your own wallet; it does not credit a platform balance. Do not send other assets or networks to that address.
+                </div>
                 <div className="flex gap-2 mt-4">
                   <button onClick={() => { setStep(0); setSelectedMethod(null); setAmount(''); }} className="px-4 py-2 border rounded">Done</button>
                 </div>

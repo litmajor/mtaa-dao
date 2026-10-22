@@ -1,6 +1,7 @@
 import type express from 'express';
 import type { RequestHandler } from 'express';
 import { type Server as HTTPServer } from 'http';
+import { randomBytes } from 'crypto';
 import { isAuthenticated } from './auth';
 import { logger } from './utils/logger';
 import Stripe from "stripe"; // Stripe integration
@@ -247,15 +248,9 @@ export async function registerRoutes(app: express.Application, server: HTTPServe
     }
   });
 
-  // Backwards compatibility redirects for health check consolidation
-  // Route: /health → /api/health (rename)
-  app.get('/health', (req, res) => {
-    res.set('X-Deprecated', 'true');
-    res.set('X-Redirect-To', '/api/health');
-    res.status(301).redirect('/api/health');
-  });
-
-  // Route: /api-health → /api/health (rename)
+  // Backwards compatibility redirects for health check consolidation.
+  // Preserve the canonical root health endpoint as a live 200 because the
+  // container-level healthcheck and deployment smoke scripts call /health directly.
   app.get('/api-health', (req, res) => {
     res.set('X-Deprecated', 'true');
     res.set('X-Redirect-To', '/api/health');
@@ -802,11 +797,23 @@ export async function registerRoutes(app: express.Application, server: HTTPServe
 
       const shortcode = process.env.MPESA_SHORTCODE;
       const passkey = process.env.MPESA_PASSKEY || process.env.MPESA_PASSWORD;
-      const callbackUrl = process.env.MPESA_CALLBACK_URL || `${process.env.APP_BASE_URL || ''}/webhooks/mpesa`;
-      const mpesaEnv = (process.env.MPESA_ENVIRONMENT || 'sandbox').toLowerCase();
+      const mpesaEnv = (process.env.MPESA_ENVIRONMENT || process.env.MPESA_ENV || 'sandbox').toLowerCase();
       if (!shortcode || !passkey) {
         return res.status(503).json({ error: 'M-Pesa shortcode/passkey not configured' });
       }
+      const callbackToken = randomBytes(32).toString('hex');
+      const callbackUrl = new URL(
+        process.env.MPESA_CALLBACK_URL ||
+          `${(process.env.APP_BASE_URL || process.env.BACKEND_URL || 'http://localhost:5000').replace(/\/+$/, '')}/api/webhooks/mpesa`
+      );
+      if (
+        (mpesaEnv === 'live' || mpesaEnv === 'production') &&
+        (callbackUrl.protocol !== 'https:' ||
+          ['localhost', '127.0.0.1', '::1'].includes(callbackUrl.hostname))
+      ) {
+        return res.status(503).json({ error: 'Live M-Pesa callback URL must be publicly reachable over HTTPS' });
+      }
+      callbackUrl.searchParams.set('token', callbackToken);
 
       const timestamp = new Date().toISOString().replace(/[-:TZ.]/g, '').slice(0, 14);
       const password = Buffer.from(`${shortcode}${passkey}${timestamp}`).toString('base64');
@@ -817,7 +824,10 @@ export async function registerRoutes(app: express.Application, server: HTTPServe
       if (!mpesaConsumerKey || !mpesaConsumerSecret) {
         return res.status(503).json({ error: 'M-Pesa consumer key/secret not configured' });
       }
-      const mpesaBase = mpesaEnv === 'live' ? 'https://api.safaricom.co.ke' : 'https://sandbox.safaricom.co.ke';
+      const mpesaBase =
+        mpesaEnv === 'live' || mpesaEnv === 'production'
+          ? 'https://api.safaricom.co.ke'
+          : 'https://sandbox.safaricom.co.ke';
       const tokenResp = await fetch(
         `${mpesaBase}/oauth/v1/generate?grant_type=client_credentials`,
         { headers: { Authorization: `Basic ${Buffer.from(`${mpesaConsumerKey}:${mpesaConsumerSecret}`).toString('base64')}` } }
@@ -837,7 +847,7 @@ export async function registerRoutes(app: express.Application, server: HTTPServe
         PartyA: phone.replace(/[^0-9+]/g, ''),
         PartyB: shortcode,
         PhoneNumber: phone.replace(/[^0-9+]/g, ''),
-        CallBackURL: callbackUrl,
+        CallBackURL: callbackUrl.toString(),
         AccountReference: `MtaaDAO-${daoType.toUpperCase()}`,
         TransactionDesc: `MtaaDAO ${daoType} DAO Spawn Fee`,
       };
@@ -878,6 +888,8 @@ export async function registerRoutes(app: express.Application, server: HTTPServe
           metadata: {
             purpose: 'dao_spawn_fee',
             spawnStatus: 'awaiting_payment',
+            phone: phone.replace(/\D/g, ''),
+            callbackToken,
             checkoutRequestId,
             founderWallet,
             daoType,

@@ -155,7 +155,7 @@ const NetWorthCard = memo(function NetWorthCard({ netWorth }: { netWorth: string
     <div className="wallet-balance-card wallet-networth-card">
       <div className="wallet-card-header">
         <span className="wallet-card-glyph">⬡</span>
-        <span className="wallet-card-label">NET WORTH</span>
+        <span className="wallet-card-label">PLATFORM ACCOUNT TOTAL</span>
       </div>
       <div className="wallet-card-balance">
         <span className="wallet-balance-currency">USD</span>
@@ -196,6 +196,9 @@ function OverviewTab({
 }) {
   return (
     <div className="wallet-overview">
+      <p className="mb-4 text-sm text-muted-foreground">
+        These are platform account balances. Your connected Celo wallet is separate and is not included in this account total.
+      </p>
       <div className="wallet-overview-grid">
         <div className="wallet-panel">
           <div className="wallet-panel-title">// ACCOUNTS</div>

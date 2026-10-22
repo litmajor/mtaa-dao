@@ -2,45 +2,184 @@ name: CI
 
 on:
   push:
-    branches: [main]
+    branches: [main, develop]
   pull_request:
-    branches: [main]
+    branches: [main, develop]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
-  build:
+  validate:
+    name: Validate, test, and build
     runs-on: ubuntu-latest
+    timeout-minutes: 45
+
+    services:
+      postgres:
+        image: postgres:15
+        env:
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: mtaadao_test
+        options: >-
+          --health-cmd "pg_isready -U postgres -d mtaadao_test"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+        ports:
+          - 5432:5432
+      redis:
+        image: redis:7
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+        ports:
+          - 6379:6379
+
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - name: Check out source
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
         with:
-          node-version: '24'
-      - name: Install dependencies
+          node-version: 22.16.0
+          cache: npm
+
+      - name: Install locked dependencies
         run: npm ci
+
+      - name: Apply database schema
+        run: npm run migrate
+        env:
+          DATABASE_URL: postgres://postgres:postgres@localhost:5432/mtaadao_test
+
       - name: Lint
         run: npm run lint
-      - name: TypeScript check
+
+      - name: Type check
         run: npm run typecheck
+
       - name: Test
-        run: npm test --if-present
+        run: npm run test
+        env:
+          DATABASE_URL: postgres://postgres:postgres@localhost:5432/mtaadao_test
+          REDIS_URL: redis://localhost:6379
+
       - name: Build
         run: npm run build
 
-  docker:
+      - name: Dependency security audit (report-only)
+        run: npm audit --audit-level moderate
+        continue-on-error: true
+
+  deploy-vps:
+    name: Deploy to VPS over SSH
+    needs: validate
+    if: >-
+      needs.validate.result == 'success' &&
+      (github.event_name == 'push' || github.event_name == 'workflow_dispatch') &&
+      github.ref == 'refs/heads/main' &&
+      vars.VPS_DEPLOY_ENABLED == 'true'
     runs-on: ubuntu-latest
-    needs: build
+    timeout-minutes: 45
     steps:
-      - uses: actions/checkout@v4
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
-      - name: Login to DockerHub
-        uses: docker/login-action@v3
-        with:
-          username: ${{ secrets.DOCKERHUB_USERNAME }}
-          password: ${{ secrets.DOCKERHUB_TOKEN }}
-      - name: Build and push Docker image
-        uses: docker/build-push-action@v5
-        with:
-          context: .
-          file: ./DockerFile.backend
-          push: true
-          tags: ${{ secrets.DOCKERHUB_USERNAME }}/mtaadao-api:latest
+      - name: Check out source
+        uses: actions/checkout@v4
+
+      - name: Build production container images
+        run: |
+          docker build --pull -f DockerFile.backend -t "mtaadao/api:${GITHUB_SHA}" .
+          docker build --pull -f DockerFile.frontend -t "mtaadao/frontend:${GITHUB_SHA}" .
+          docker save "mtaadao/api:${GITHUB_SHA}" "mtaadao/frontend:${GITHUB_SHA}" | gzip -1 > "$RUNNER_TEMP/mtaa-dao-images.tar.gz"
+
+      - name: Configure SSH
+        env:
+          VPS_HOST: ${{ secrets.VPS_HOST }}
+          VPS_SSH_KEY: ${{ secrets.VPS_SSH_KEY }}
+          VPS_KNOWN_HOSTS: ${{ secrets.VPS_KNOWN_HOSTS }}
+          VPS_SSH_PORT: ${{ vars.VPS_SSH_PORT || '22' }}
+          VPS_DEPLOY_PATH: ${{ vars.VPS_DEPLOY_PATH || '/srv/mtaadao' }}
+        run: |
+          set -euo pipefail
+          for name in VPS_HOST VPS_SSH_KEY VPS_KNOWN_HOSTS; do
+            if [[ -z "${!name}" ]]; then
+              echo "::error::Required VPS secret $name is not configured."
+              exit 1
+            fi
+          done
+          if [[ ! "$VPS_SSH_PORT" =~ ^[0-9]+$ ]]; then
+            echo "::error::VPS_SSH_PORT must be a number."
+            exit 1
+          fi
+          if [[ ! "$VPS_DEPLOY_PATH" =~ ^/[A-Za-z0-9._/-]+$ ]]; then
+            echo "::error::VPS_DEPLOY_PATH must be an absolute path without spaces or shell metacharacters."
+            exit 1
+          fi
+          install -m 700 -d "$HOME/.ssh"
+          printf '%s\n' "$VPS_SSH_KEY" > "$HOME/.ssh/vps_deploy_key"
+          printf '%s\n' "$VPS_KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
+          chmod 600 "$HOME/.ssh/vps_deploy_key" "$HOME/.ssh/known_hosts"
+          known_host_query="$VPS_HOST"
+          if [[ "$VPS_SSH_PORT" != "22" ]]; then
+            known_host_query="[$VPS_HOST]:$VPS_SSH_PORT"
+          fi
+          ssh-keygen -F "$known_host_query" -f "$HOME/.ssh/known_hosts" >/dev/null || {
+            echo "::error::VPS_KNOWN_HOSTS does not contain a host key for VPS_HOST."
+            exit 1
+          }
+
+      - name: Verify VPS prerequisites
+        env:
+          VPS_HOST: ${{ secrets.VPS_HOST }}
+          VPS_USER: ${{ secrets.VPS_USER }}
+          VPS_SSH_PORT: ${{ vars.VPS_SSH_PORT || '22' }}
+          VPS_DEPLOY_PATH: ${{ vars.VPS_DEPLOY_PATH || '/srv/mtaadao' }}
+        run: |
+          set -euo pipefail
+          if [[ -z "$VPS_USER" ]]; then
+            echo "::error::Required VPS secret VPS_USER is not configured."
+            exit 1
+          fi
+          ssh -i "$HOME/.ssh/vps_deploy_key" -p "$VPS_SSH_PORT" \
+            -o BatchMode=yes -o StrictHostKeyChecking=yes \
+            "$VPS_USER@$VPS_HOST" \
+            "test -f '$VPS_DEPLOY_PATH/.env.production' && docker info >/dev/null && docker compose version"
+
+      - name: Transfer images and production configuration
+        env:
+          VPS_HOST: ${{ secrets.VPS_HOST }}
+          VPS_USER: ${{ secrets.VPS_USER }}
+          VPS_SSH_PORT: ${{ vars.VPS_SSH_PORT || '22' }}
+          VPS_DEPLOY_PATH: ${{ vars.VPS_DEPLOY_PATH || '/srv/mtaadao' }}
+        run: |
+          set -euo pipefail
+          scp -i "$HOME/.ssh/vps_deploy_key" -P "$VPS_SSH_PORT" \
+            -o BatchMode=yes -o StrictHostKeyChecking=yes \
+            "$RUNNER_TEMP/mtaa-dao-images.tar.gz" \
+            docker-compose.yml nginx.conf \
+            "$VPS_USER@$VPS_HOST:$VPS_DEPLOY_PATH/"
+          scp -r -i "$HOME/.ssh/vps_deploy_key" -P "$VPS_SSH_PORT" \
+            -o BatchMode=yes -o StrictHostKeyChecking=yes \
+            config monitoring nginx.frontend.conf \
+            "$VPS_USER@$VPS_HOST:$VPS_DEPLOY_PATH/"
+
+      - name: Activate release
+        env:
+          VPS_HOST: ${{ secrets.VPS_HOST }}
+          VPS_USER: ${{ secrets.VPS_USER }}
+          VPS_SSH_PORT: ${{ vars.VPS_SSH_PORT || '22' }}
+          VPS_DEPLOY_PATH: ${{ vars.VPS_DEPLOY_PATH || '/srv/mtaadao' }}
+        run: |
+          set -euo pipefail
+          ssh -i "$HOME/.ssh/vps_deploy_key" -p "$VPS_SSH_PORT" \
+            -o BatchMode=yes -o StrictHostKeyChecking=yes \
+            "$VPS_USER@$VPS_HOST" \
+              "set -eu; cd '$VPS_DEPLOY_PATH'; gzip -dc mtaa-dao-images.tar.gz | docker load; IMAGE_TAG='${GITHUB_SHA}' docker compose --env-file .env.production up -d --no-build --wait --wait-timeout 180; rm -f mtaa-dao-images.tar.gz"

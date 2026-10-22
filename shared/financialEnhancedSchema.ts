@@ -221,6 +221,49 @@ export const mpesaTransactions = pgTable("mpesa_transactions", {
   updatedAt: timestamp("updated_at").defaultNow(),
 });
 
+export const selfCustodyRampTransactions = pgTable("self_custody_ramp_transactions", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  referenceId: varchar("reference_id").notNull().unique(),
+  userId: varchar("user_id").references(() => users.id).notNull(),
+  direction: varchar("direction").notNull(), // onramp or offramp
+  status: varchar("status").notNull().default("quoted"),
+  fiatCurrency: varchar("fiat_currency").notNull().default("KES"),
+  fiatAmount: decimal("fiat_amount", { precision: 18, scale: 2 }).notNull(),
+  cryptoAmount: decimal("crypto_amount", { precision: 30, scale: 18 }).notNull(),
+  exchangeRate: decimal("exchange_rate", { precision: 30, scale: 18 }),
+  phoneNumber: varchar("phone_number").notNull(),
+  walletAddress: varchar("wallet_address").notNull(),
+  depositAddress: varchar("deposit_address"),
+  chain: varchar("chain").notNull().default("CELO"),
+  token: varchar("token").notNull().default("CUSD"),
+  transactionHash: varchar("transaction_hash"),
+  refundTransactionHash: varchar("refund_transaction_hash"),
+  cryptoAmountSettled: decimal("crypto_amount_settled", { precision: 30, scale: 18 }),
+  fiatAmountSettled: decimal("fiat_amount_settled", { precision: 18, scale: 2 }),
+  providerTransactionId: varchar("provider_transaction_id"),
+  onchainStatus: varchar("onchain_status"),
+  fiatStatus: varchar("fiat_status"),
+  providerEvent: varchar("provider_event"),
+  providerMetadata: jsonb("provider_metadata"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+  completedAt: timestamp("completed_at"),
+});
+
+export const selfCustodyRampWebhookEvents = pgTable("self_custody_ramp_webhook_events", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  eventDigest: varchar("event_digest", { length: 64 }).notNull().unique(),
+  referenceId: varchar("reference_id", { length: 120 }).notNull(),
+  event: varchar("event", { length: 120 }).notNull(),
+  payload: jsonb("payload").notNull(),
+  status: varchar("status", { length: 16 }).notNull().default("pending"),
+  attempts: integer("attempts").notNull().default(0),
+  lastError: text("last_error"),
+  receivedAt: timestamp("received_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+  processedAt: timestamp("processed_at"),
+});
+
 /**
  * 6. GAS PRICE HISTORY TABLE (MEDIUM PRIORITY) ⭐⭐⭐
  * Purpose: Track Celo gas prices for cost optimization
@@ -467,4 +510,3 @@ export const insertNonceCountersSchema = createInsertSchema(nonceCounters);
 export const insertReferralPayoutSchema = createInsertSchema(referralPayouts);
 export const insertRecurringPaymentSchema = createInsertSchema(recurringPayments);
 export const insertFinancialReportSchema = createInsertSchema(financialReports);
-

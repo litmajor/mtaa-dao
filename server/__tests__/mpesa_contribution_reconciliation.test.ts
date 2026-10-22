@@ -37,7 +37,10 @@ function createTransaction(payment: Record<string, unknown>, contribution: Recor
 }
 
 describe('reconcileMpesaCallback DAO contributions', () => {
-  beforeEach(() => vi.clearAllMocks());
+  beforeEach(() => {
+    vi.clearAllMocks();
+    delete process.env.MPESA_AUTO_SETTLEMENT_ENABLED;
+  });
 
   const payment = {
     id: 'payment-1',
@@ -118,7 +121,81 @@ describe('reconcileMpesaCallback DAO contributions', () => {
       CheckoutRequestID: 'checkout-1',
       ResultCode: 0,
       CallbackMetadata: { Item: [{ Name: 'Amount', Value: 1200 }] },
-    })).rejects.toThrow('Invalid callback authorization token');
+    })).rejects.toThrow('Invalid M-Pesa callback authorization token');
     expect(updates).toHaveLength(0);
+  });
+
+  it('requires the per-payment token for non-contribution STK callbacks too', async () => {
+    const walletPayment = {
+      ...payment,
+      metadata: { ...payment.metadata, purpose: 'wallet_deposit' },
+    };
+    const { tx, updates } = createTransaction(walletPayment, contribution);
+    vi.mocked(db.transaction).mockImplementation(async (callback: any) => callback(tx));
+
+    await expect(reconcileMpesaCallback({
+      CheckoutRequestID: 'checkout-1',
+      ResultCode: 1032,
+      ResultDesc: 'Cancelled',
+    })).rejects.toThrow('Invalid M-Pesa callback authorization token');
+    expect(updates).toHaveLength(0);
+  });
+
+  it("auto-approves a returning user's clean ordinary STK payment under the policy limits", async () => {
+    const walletPayment = {
+      ...payment,
+      metadata: { ...payment.metadata, purpose: 'wallet_deposit' },
+    };
+    let selectCount = 0;
+    const updates: Array<{ table: unknown; values: Record<string, unknown> }> = [];
+    const tx: any = {
+      select: vi.fn(() => {
+        const query: any = {
+          from: vi.fn(() => query),
+          where: vi.fn(() => query),
+          for: vi.fn(() => query),
+          limit: vi.fn(() => Promise.resolve(
+            (() => {
+              const index = selectCount++;
+              if (index === 0) return [walletPayment];
+              if (index === 1) return [{
+                id: 'member-1',
+                phone: '254712345678',
+                phoneVerified: true,
+              }];
+              if (index === 2) return [{ id: 'previous-payment' }];
+              return [];
+            })()
+          )),
+        };
+        return query;
+      }),
+      update: vi.fn((table: unknown) => ({
+        set: vi.fn((values: Record<string, unknown>) => ({
+          where: vi.fn(async () => { updates.push({ table, values }); }),
+        })),
+      })),
+    };
+    vi.mocked(db.transaction).mockImplementation(async (callback: any) => callback(tx));
+
+    const result = await reconcileMpesaCallback({
+      CheckoutRequestID: 'checkout-1',
+      ResultCode: 0,
+      ResultDesc: 'Success',
+      CallbackMetadata: {
+        Item: [
+          { Name: 'Amount', Value: 1200 },
+          { Name: 'MpesaReceiptNumber', Value: 'QWE123ABC' },
+          { Name: 'PhoneNumber', Value: 254712345678 },
+        ],
+      },
+    }, 'trusted-callback-token');
+
+    expect(result.status).toBe('completed');
+    expect(updates).toHaveLength(1);
+    expect(updates[0].values).toMatchObject({
+      status: 'completed',
+      metadata: { settlementStatus: 'auto_approved', settlementReviewReasons: [], mpesaReceipt: 'QWE123ABC' },
+    });
   });
 });

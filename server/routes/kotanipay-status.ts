@@ -1,28 +1,60 @@
 import express from 'express';
-import { z } from 'zod';
-import crypto from 'crypto';
 import { db } from '../db';
 import { mpesaTransactions } from '../../shared/financialEnhancedSchema';
-import { eq, and, gte, lte, sql } from 'drizzle-orm';
+import { eq, and, sql } from 'drizzle-orm';
 import { authenticate } from '../auth';
 import { KotanipayService } from '../services/kotanipayService';
+import { KotaniSelfCustodyRampService } from '../services/kotaniSelfCustodyRampService';
 
 const router = express.Router();
+
+type LedgerWebhook = {
+  referenceId: string;
+  status: string;
+  receipt?: string;
+  conversationId?: string;
+  errorMessage?: string;
+  data: Record<string, unknown>;
+};
+
+function getObject(value: unknown): Record<string, unknown> | undefined {
+  return typeof value === 'object' && value !== null && !Array.isArray(value)
+    ? value as Record<string, unknown>
+    : undefined;
+}
+
+function getString(...values: unknown[]): string | undefined {
+  return values.find((value): value is string => typeof value === 'string' && value.length > 0);
+}
+
+export function normalizeKotaniLedgerWebhook(payload: unknown): LedgerWebhook | undefined {
+  const envelope = getObject(payload);
+  if (!envelope) return undefined;
+  const data = getObject(envelope.data) ?? envelope;
+  const referenceId = getString(data.reference_id, data.referenceId, data.transactionId);
+  const status = getString(data.status);
+  if (!referenceId || !status) return undefined;
+  return {
+    referenceId,
+    status: status.toUpperCase(),
+    receipt: getString(data.telco_id, data.mpesaReceipt, data.mpesa_receipt),
+    conversationId: getString(data.conversationId, data.conversation_id, data.telco_id),
+    errorMessage: getString(data.error_message, data.errorMessage),
+    data,
+  };
+}
+
+function getRawBody(req: express.Request): Buffer | undefined {
+  return (req as express.Request & { rawBody?: Buffer }).rawBody;
+}
+
+function acknowledgeWebhook(res: express.Response): void {
+  res.status(200).json({ received: true });
+}
 
 // ════════════════════════════════════════════════════════════════════════════════
 // 1. PUBLIC ENDPOINTS (No User Auth - Protected by Cryptographic Signatures)
 // ════════════════════════════════════════════════════════════════════════════════
-
-const kotaniWebhookSchema = z.object({
-  transactionId: z.string(), // Corresponds to checkoutRequestId / internal tracking ID
-  status: z.enum(['pending', 'completed', 'failed', 'cancelled', 'successful']),
-  amount: z.number(),
-  currency: z.string(),
-  phone: z.string(),
-  mpesaReceipt: z.string().optional(),
-  conversationId: z.string().optional(),
-  errorMessage: z.string().optional()
-});
 
 /**
  * POST /api/payments/kotanipay/callback
@@ -30,65 +62,74 @@ const kotaniWebhookSchema = z.object({
  */
 router.post('/callback', async (req, res) => {
   try {
-    // 🛡️ Verify Webhook Payload Origin Authenticity
-    const signature = req.headers['x-kotani-signature'];
-    if (process.env.NODE_ENV === 'production' && !signature) {
-      return res.status(401).json({ success: false, message: 'Missing webhook signature context.' });
-    }
-
-    if (signature && process.env.KOTANIPAY_WEBHOOK_SECRET) {
-      const computedHash = crypto
-        .createHmac('sha256', process.env.KOTANIPAY_WEBHOOK_SECRET)
-        .update(JSON.stringify(req.body))
-        .digest('hex');
-
-      if (signature !== computedHash) {
-        return res.status(401).json({ success: false, message: 'Tampered signature payload verification rejected.' });
+    const rawBody = getRawBody(req);
+    const payload: unknown = rawBody ? JSON.parse(rawBody.toString('utf8')) : req.body;
+    const envelope = getObject(payload);
+    const data = getObject(envelope?.data) ?? envelope;
+    const signature = req.header('x-kotani-signature')
+      || (typeof envelope?.signature === 'string' ? envelope.signature : undefined);
+    const secret = process.env.KOTANIPAY_WEBHOOK_SECRET;
+    if (process.env.NODE_ENV === 'production' || signature) {
+      const signedBody = rawBody
+        ? KotaniSelfCustodyRampService.getWebhookSignedBody(rawBody)
+        : undefined;
+      if (!rawBody || !signature || !secret
+        || !KotaniSelfCustodyRampService.verifyWebhookSignature(rawBody, signature, secret, signedBody)) {
+        console.warn('Invalid KotaniPay ledger webhook signature; acknowledging without processing.');
+        acknowledgeWebhook(res);
+        return;
       }
     }
 
-    const webhook = kotaniWebhookSchema.parse(req.body);
-    
-    // Look up tracking context within the master PostgreSQL ledger
-    const [transaction] = await (db as any)
-      .select()
-      .from(mpesaTransactions)
-      .where(eq(mpesaTransactions.checkoutRequestId, webhook.transactionId));
-
-    if (!transaction) {
-      return res.status(404).json({ code: 'TRANSACTION_NOT_FOUND', message: 'Transaction tracking index missing.' });
+    const webhook = normalizeKotaniLedgerWebhook(payload);
+    if (!webhook || !data) {
+      console.warn('Malformed KotaniPay ledger webhook; acknowledging without processing.');
+      acknowledgeWebhook(res);
+      return;
     }
 
-    const rawStatus = webhook.status.toLowerCase();
-    const isSuccess = ['completed', 'successful'].includes(rawStatus);
+    // Look up tracking context within the master PostgreSQL ledger
+    const [transaction] = await db
+      .select()
+      .from(mpesaTransactions)
+      .where(eq(mpesaTransactions.checkoutRequestId, webhook.referenceId))
+      .limit(1);
+
+    if (!transaction) {
+      console.warn('Unknown KotaniPay ledger reference; acknowledging webhook.', webhook.referenceId);
+      acknowledgeWebhook(res);
+      return;
+    }
+
+    const isSuccess = ['COMPLETED', 'SUCCESSFUL', 'SUCCESS'].includes(webhook.status);
 
     if (isSuccess) {
       if (transaction.transactionType === 'stk_push') {
         // Handle M-Pesa → Stablecoin Inflow Execution Loop
         await KotanipayService.completeDeposit(
-          webhook.transactionId,
-          webhook.mpesaReceipt || webhook.transactionId,
-          req.body
+          webhook.referenceId,
+          webhook.receipt || webhook.referenceId,
+          webhook.data
         );
       } else if (transaction.transactionType === 'b2c') {
         // Handle Stablecoin → M-Pesa Outflow Clearing Pipeline
         await KotanipayService.completeWithdrawal(
-          webhook.transactionId,
-          { ConversationID: webhook.conversationId || webhook.transactionId }
+          webhook.referenceId,
+          { ConversationID: webhook.conversationId || webhook.referenceId }
         );
       }
-    } else if (['failed', 'cancelled'].includes(rawStatus)) {
+    } else if (['FAILED', 'CANCELLED', 'CANCELED'].includes(webhook.status)) {
       if (transaction.transactionType === 'stk_push') {
-        await KotanipayService.failDeposit(webhook.transactionId, webhook.errorMessage || 'Transaction rejected');
+        await KotanipayService.failDeposit(webhook.referenceId, webhook.errorMessage || 'Transaction rejected');
       } else if (transaction.transactionType === 'b2c') {
-        await KotanipayService.refundWithdrawal(webhook.transactionId);
+        await KotanipayService.refundWithdrawal(webhook.referenceId);
       }
     }
 
-    res.json({ success: true, reconciled: true, status: webhook.status });
-  } catch (error: any) {
-    console.error('KotaniPay callback validation failure:', error);
-    res.status(400).json({ code: 'INVALID_CALLBACK', message: error.message });
+    acknowledgeWebhook(res);
+  } catch (error) {
+    console.error('KotaniPay ledger webhook processing failed; acknowledging provider callback.', error);
+    acknowledgeWebhook(res);
   }
 });
 
@@ -155,39 +196,10 @@ router.post('/retry/:transactionId', async (req, res) => {
       return res.status(400).json({ code: 'INVALID_STATUS', message: 'Only transactions marked explicitly as failed can enter the manual correction loop.' });
     }
 
-    const currentRetries = (transaction.metadata as any)?.retryCount || 0;
-    if (currentRetries >= 3) {
-      return res.status(400).json({ code: 'RETRY_LIMIT_EXCEEDED', message: 'Maximum engine fallback recovery thresholds exceeded.' });
-    }
-
-    // Atomically increment retry indexes within row execution metadata logs
-    const updatedMetadata = {
-      ...(typeof transaction.metadata === 'object' ? transaction.metadata : {}),
-      retryCount: currentRetries + 1,
-      lastRetryAt: new Date().toISOString()
-    };
-
-    await (db as any)
-      .update(mpesaTransactions)
-      .set({
-        status: 'pending',
-        metadata: updatedMetadata,
-        updatedAt: new Date()
-      })
-      .where(eq(mpesaTransactions.checkoutRequestId, transactionId));
-
-    // Re-dispatch target operational task context to service engine
-    if (transaction.transactionType === 'stk_push') {
-      await KotanipayService.initiateDeposit({
-        userId: transaction.userId,
-        phone: transaction.phoneNumber,
-        amountKES: parseFloat(transaction.amount),
-        reference: transaction.checkoutRequestId,
-        daoId: (transaction.metadata as any)?.daoId
-      });
-    }
-
-    res.json({ success: true, message: 'Kotani Pay transactional queue recovery sequence re-dispatched.', retryCount: currentRetries + 1 });
+    return res.status(409).json({
+      code: 'RETRY_UNSUPPORTED',
+      message: 'A safe retry is unavailable until KotaniPay confirms same-transaction STK idempotency. The failed transaction was not changed.',
+    });
   } catch (error: any) {
     res.status(500).json({ code: 'RETRY_FAILED', message: error.message });
   }

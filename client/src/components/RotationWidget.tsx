@@ -4,16 +4,25 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { RotateCw, TrendingUp, Users, Clock } from 'lucide-react';
 import { authClient } from '../utils/authClient';
+import { initiateMpesaContribution } from '../api/contributionsApi';
 
 interface RotationStatus {
   daoId: string;
   daoType: string;
   durationModel: string;
   rotationFrequency: string;
+  rotationContributionAmountKes?: number;
+  expectedPoolKes?: number | null;
+  recommendedPayoutRail?: 'mpesa' | 'on_chain';
+  hasCurrentCycleKesContributions?: boolean;
+  onChainPaidMembers?: number;
+  stableInflowTrackingEnabled?: boolean;
+  stableOutflowTrackingEnabled?: boolean;
+  b2cEnabled?: boolean;
   selectionMethod: string;
   currentCycle: number;
   totalCycles?: number;
-  nextRotationDate: string;
+  nextRotationDate: string | null;
   treasuryBalance: string;
   treasuryCurrency?: string;
   onChainRotationStatus?: 'not_configured' | 'not_initialized' | 'initialized' | 'unknown';
@@ -63,6 +72,7 @@ export function RotationWidget({ daoId }: RotationWidgetProps) {
   const [minimumParticipationBps, setMinimumParticipationBps] = useState('10000');
   const [contributionTransactionHash, setContributionTransactionHash] = useState('');
   const [paymentReference, setPaymentReference] = useState('');
+  const [contributionMessage, setContributionMessage] = useState<string | null>(null);
 
   useEffect(() => {
     fetchRotationStatus();
@@ -98,14 +108,21 @@ export function RotationWidget({ daoId }: RotationWidgetProps) {
   }
   if (!status || status.durationModel !== 'rotation') return null;
 
-  const nextRotationDate = new Date(status.nextRotationDate);
-  const daysUntilRotation = Math.ceil((nextRotationDate.getTime() - Date.now()) / (1000 * 60 * 60 * 24));
+  const nextRotationDate = status.nextRotationDate ? new Date(status.nextRotationDate) : null;
+  const daysUntilRotation = nextRotationDate && !Number.isNaN(nextRotationDate.getTime())
+    ? Math.ceil((nextRotationDate.getTime() - Date.now()) / (1000 * 60 * 60 * 24))
+    : null;
   const currency = status.treasuryCurrency || 'cUSD';
+  const highValueOnChain = status.recommendedPayoutRail === 'on_chain';
   const startRotation = async () => {
     setProcessing(true);
     setError(null);
+    setContributionMessage(null);
     try {
-      await authClient.post(`/api/dao/${daoId}/rotation/process`, {});
+      const result = await authClient.post(`/api/dao/${daoId}/rotation/process`, {});
+      if (result?.reason || result?.message) {
+        setContributionMessage(result.reason || result.message);
+      }
       await fetchRotationStatus();
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to start rotation');
@@ -176,6 +193,27 @@ export function RotationWidget({ daoId }: RotationWidgetProps) {
       setProcessing(false);
     }
   };
+  const submitRotationContribution = async () => {
+    if (!status.rotationContributionAmountKes) return;
+    setProcessing(true);
+    setError(null);
+    setContributionMessage(null);
+    try {
+      const result = await initiateMpesaContribution(daoId, {
+        amountKES: status.rotationContributionAmountKes,
+        currency: 'KES',
+        purpose: 'monthly',
+        cycle: String(status.currentCycle + 1),
+        note: `Rotation cycle ${status.currentCycle + 1}`,
+      });
+      setContributionMessage(result.message || 'M-Pesa payment prompt sent. Waiting for payment confirmation.');
+      await fetchRotationStatus();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to start M-Pesa contribution');
+    } finally {
+      setProcessing(false);
+    }
+  };
 
   return (
     <Card className="border-teal-200 bg-gradient-to-br from-teal-50 to-green-50 dark:from-teal-950/30 dark:to-green-950/30">
@@ -207,10 +245,14 @@ export function RotationWidget({ daoId }: RotationWidgetProps) {
         <div className="bg-white dark:bg-gray-900 p-3 rounded-lg space-y-2">
           <div className="flex items-center justify-between">
             <span className="text-sm font-medium">Next Rotation</span>
-            <Badge variant="outline">{daysUntilRotation} days</Badge>
+            <Badge variant="outline">
+              {daysUntilRotation === null ? 'Not scheduled' : `${daysUntilRotation} days`}
+            </Badge>
           </div>
           <p className="text-sm text-gray-600 dark:text-gray-400">
-            {nextRotationDate.toLocaleDateString()}
+            {nextRotationDate && !Number.isNaN(nextRotationDate.getTime())
+              ? nextRotationDate.toLocaleDateString()
+              : 'Set a rotation schedule to continue'}
           </p>
           <p className="text-xs text-gray-500">
             Method: <strong>{status.selectionMethod}</strong>
@@ -248,10 +290,46 @@ export function RotationWidget({ daoId }: RotationWidgetProps) {
           Refresh Status
         </Button>
 
+        {highValueOnChain && (
+          <div className="space-y-2 rounded-lg border border-amber-300 bg-amber-50 p-3 dark:border-amber-800 dark:bg-amber-950/30">
+            <p className="text-sm font-medium">
+              High-value cycle: estimated pool {Number(status.expectedPoolKes || 0).toLocaleString()} KES
+            </p>
+            <p className="text-xs text-amber-800 dark:text-amber-200">
+              This exceeds the app's KES 150,000 M-Pesa B2C request ceiling. KES contributions are disabled for this cycle. MtaaDAO does not convert or custody those KES funds for the on-chain route: each member must send the configured stablecoin directly to the ChamaTreasury.
+            </p>
+            <p className="text-xs text-amber-800 dark:text-amber-200">
+              Stable flow ledgers: inflow {status.stableInflowTrackingEnabled ? 'enabled' : 'disabled'}; outflow {status.stableOutflowTrackingEnabled ? 'enabled' : 'disabled'}.
+            </p>
+            {status.hasCurrentCycleKesContributions && (
+              <p className="text-xs font-medium text-red-700 dark:text-red-300">
+                KES payments already exist for this cycle. Reconcile or refund them before initializing or using the stablecoin rail; the app will not mix or convert them.
+              </p>
+            )}
+          </div>
+        )}
+
+        {!highValueOnChain && !status.pendingManualPayout && !status.pendingOnChainPayout && status.rotationContributionAmountKes && (
+          <div className="space-y-2 rounded-lg border border-teal-300 bg-white p-3 dark:border-teal-800 dark:bg-gray-900">
+            <p className="text-sm font-medium">
+              Your contribution this cycle: {status.rotationContributionAmountKes.toLocaleString()} KES
+            </p>
+            <p className="text-xs text-gray-600 dark:text-gray-400">
+              Pay from your verified M-Pesa number. The payment is counted only after Safaricom confirms it and the DAO approval requirements are met.
+            </p>
+            <Button size="sm" className="w-full" onClick={submitRotationContribution} disabled={processing}>
+              {processing ? 'Sending payment prompt...' : 'Pay contribution with M-Pesa'}
+            </Button>
+          </div>
+        )}
+
         {!status.pendingManualPayout && !status.pendingOnChainPayout &&
-          daysUntilRotation <= 0 && parseFloat(status.treasuryBalance || '0') > 0 && (
+          daysUntilRotation !== null && daysUntilRotation <= 0 &&
+          (highValueOnChain && !status.hasCurrentCycleKesContributions
+            ? (status.onChainPaidMembers || 0) >= status.totalMembers
+            : !highValueOnChain && parseFloat(status.treasuryBalance || '0') > 0) && (
           <Button size="sm" className="w-full" onClick={startRotation} disabled={processing}>
-            {processing ? 'Preparing payout...' : 'Prepare manual payout'}
+            {processing ? 'Preparing payout...' : 'Prepare cycle payout'}
           </Button>
         )}
 
@@ -269,12 +347,17 @@ export function RotationWidget({ daoId }: RotationWidgetProps) {
           </div>
         )}
 
-        {status.onChainRotationStatus === 'not_initialized' && (
+        {(highValueOnChain || !status.rotationContributionAmountKes) &&
+          !status.hasCurrentCycleKesContributions &&
+          status.onChainRotationStatus === 'not_initialized' && (
           <div className="space-y-2 rounded-lg border border-blue-300 bg-blue-50 p-3 dark:border-blue-800 dark:bg-blue-950/30">
-            <p className="text-sm font-medium">Initialize on-chain rotation</p>
+            <p className="text-sm font-medium">Set up direct stablecoin rotation</p>
             <p className="text-xs text-gray-600 dark:text-gray-400">
-              This fixes the current approved members and their wallets into the on-chain rotation roster.
-              New members cannot be added to this contract rotation.
+              Set the exact stablecoin amount each member will contribute per cycle. This is not an FX conversion of the KES estimate. The approved members and their registered wallets will be fixed in the contract roster; later membership changes require resolving the on-chain rotation.
+            </p>
+            <p className="text-xs text-gray-600 dark:text-gray-400">
+              M-Pesa-sized KES estimate: {Number(status.expectedPoolKes || 0).toLocaleString()} KES.
+              Confirm the stablecoin amount and fees with members before initialization.
             </p>
             <label className="block text-xs" htmlFor={`rotation-contribution-${daoId}`}>
               Fixed per-member contribution (stablecoin)
@@ -312,13 +395,25 @@ export function RotationWidget({ daoId }: RotationWidgetProps) {
           </div>
         )}
 
-        {status.onChainRotationStatus === 'initialized' && (
+        {highValueOnChain &&
+          (status.onChainRotationStatus === 'not_configured' || status.onChainRotationStatus === 'unknown') && (
+          <p className="rounded-lg border border-red-300 bg-red-50 p-3 text-xs text-red-700 dark:border-red-800 dark:bg-red-950/30 dark:text-red-300">
+            A deployed ChamaTreasury, configured RotationModule, stablecoin token, and server signer are required before this high-value cycle can accept or pay out stablecoin.
+          </p>
+        )}
+
+        {(highValueOnChain || !status.rotationContributionAmountKes) &&
+          !status.hasCurrentCycleKesContributions &&
+          status.onChainRotationStatus === 'initialized' && (
           <div className="space-y-2 rounded-lg border border-green-300 bg-green-50 p-3 dark:border-green-800 dark:bg-green-950/30">
             <p className="text-xs text-green-700 dark:text-green-300">
               On-chain rotation is initialized for {status.onChainRotationDetails?.totalMembers ?? 'the'} members.
               Transfer exactly {status.onChainRotationDetails?.monthlyContribution ?? ''}{' '}
               {status.onChainRotationDetails?.currency ?? 'stablecoin'} from your registered wallet to the
-              ChamaTreasury for the active cycle.
+              ChamaTreasury for cycle {status.currentCycle + 1}. This is a direct stablecoin payment, not a conversion of KES.
+            </p>
+            <p className="text-xs text-green-700 dark:text-green-300">
+              Verified contributions: {status.onChainPaidMembers || 0}/{status.totalMembers}.
             </p>
             <label className="block text-xs" htmlFor={`rotation-contribution-tx-${daoId}`}>
               Confirmed stablecoin transfer transaction hash
@@ -346,7 +441,9 @@ export function RotationWidget({ daoId }: RotationWidgetProps) {
             <p className="text-sm font-medium">
               Cycle {status.pendingManualPayout.cycleNumber}: {Number(status.pendingManualPayout.amount).toLocaleString()} KES to the recipient.
             </p>
-            {status.pendingManualPayout.cycleStatus === 'pending_manual_payout' ? (
+            {status.pendingManualPayout.cycleStatus === 'pending_manual_payout' &&
+            !status.b2cEnabled &&
+            !status.rotationContributionAmountKes ? (
               <>
                 <p className="text-xs text-amber-800 dark:text-amber-200">
                   Send the payout manually (for example, through M-Pesa), then record its payment reference.
@@ -373,6 +470,11 @@ export function RotationWidget({ daoId }: RotationWidgetProps) {
               </>
             ) : (
               <>
+                {!status.b2cEnabled && status.rotationContributionAmountKes && (
+                  <p className="text-xs text-amber-800 dark:text-amber-200">
+                    Verified M-Pesa B2C payouts are not enabled. Configure the payout service before authorizing this rotation; this cycle cannot be completed by manually entering a payment reference.
+                  </p>
+                )}
                 {status.pendingManualPayout.payoutStatus ? (
                   <p className="text-xs text-amber-800 dark:text-amber-200">
                     {status.pendingManualPayout.payoutStatus === 'accepted' || status.pendingManualPayout.payoutStatus === 'initiating' || status.pendingManualPayout.payoutStatus === 'queued'
@@ -386,7 +488,8 @@ export function RotationWidget({ daoId }: RotationWidgetProps) {
                     First confirmation recorded. An active member with the other required role must confirm this payout.
                   </p>
                 ) : null}
-                {(!status.pendingManualPayout.payoutStatus || status.pendingManualPayout.payoutStatus === 'failed') && (
+                {status.b2cEnabled &&
+                  (!status.pendingManualPayout.payoutStatus || status.pendingManualPayout.payoutStatus === 'failed') && (
                   <Button
                     size="sm"
                     className="w-full"
@@ -402,6 +505,12 @@ export function RotationWidget({ daoId }: RotationWidgetProps) {
                 )}
               </>
             )}
+          </div>
+        )}
+
+        {contributionMessage && (
+          <div className="text-xs text-green-700 bg-green-50 dark:bg-green-900/20 p-2 rounded">
+            {contributionMessage}
           </div>
         )}
 

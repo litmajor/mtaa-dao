@@ -71,6 +71,16 @@ import {
   migrateWalletRegistrationHardening,
   rollbackWalletRegistrationHardening,
 } from './048-wallet-registration-hardening';
+import {
+  migrateRotationContributionAmount,
+  rollbackRotationContributionAmount,
+} from './049-rotation-contribution-amount';
+import { migrateSelfCustodyRamps } from './050-self-custody-ramps';
+import { migrateAuthSessionStore, rollbackAuthSessionStore } from './051-auth-session-store';
+import {
+  migrateSelfCustodyRampWebhookInbox,
+  rollbackSelfCustodyRampWebhookInbox,
+} from './052-self-custody-ramp-webhook-inbox';
 
 export interface MigrationResult {
   success: boolean;
@@ -346,6 +356,34 @@ export async function runAllMigrations(): Promise<MigrationResult> {
       throw err;
     }
 
+    try {
+      await migrateRotationContributionAmount();
+    } catch (err: any) {
+      errors.push(`Rotation contribution amount migration failed: ${err.message}`);
+      throw err;
+    }
+
+    try {
+      await migrateSelfCustodyRamps();
+    } catch (err: any) {
+      errors.push(`Self-custody ramp migration failed: ${err.message}`);
+      throw err;
+    }
+
+    try {
+      await migrateAuthSessionStore();
+    } catch (err: any) {
+      errors.push(`Auth session store migration failed: ${err.message}`);
+      throw err;
+    }
+
+    try {
+      await migrateSelfCustodyRampWebhookInbox();
+    } catch (err: any) {
+      errors.push(`Self-custody ramp webhook inbox migration failed: ${err.message}`);
+      throw err;
+    }
+
     const duration = Date.now() - startTime;
     console.log(`\n✅ All migrations completed in ${duration}ms`);
 
@@ -371,6 +409,18 @@ export async function rollbackMigrations(): Promise<MigrationResult> {
 
   try {
     console.log('🔄 Rolling back migrations...\n');
+
+    try {
+      await rollbackSelfCustodyRampWebhookInbox();
+    } catch (err: any) {
+      errors.push(`Self-custody ramp webhook inbox rollback failed: ${err.message}`);
+    }
+
+    try {
+      await rollbackAuthSessionStore();
+    } catch (err: any) {
+      errors.push(`Auth session store rollback failed: ${err.message}`);
+    }
 
     try {
       await rollbackWalletRegistrationHardening();
@@ -666,6 +716,7 @@ export async function dryRunMigrations(): Promise<{
       'blockchain_transactions',
       'nav_oracle_state',
       'exchange_fee_schedule_history',
+      'auth_sessions',
     ],
     willModify: [
       'pool_investments and pool_withdrawals (add: idempotency_key and per-user unique idempotency indexes)',

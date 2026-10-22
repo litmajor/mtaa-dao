@@ -137,6 +137,19 @@ export async function getRotationMemberAddress(vaultAddress: string, memberId: s
   });
 }
 
+export async function getCurrentRotationCycleOnChain(vaultAddress: string) {
+  if (!ROTATION_MODULE_ADDRESS) throw new Error('ROTATION_MODULE_ADDRESS not configured');
+  const resilientProvider = new ResilientRpcProvider({
+    primary: { name: 'primary-rpc', httpUrl: RPC_URL },
+    fallback: providerUrls.fallbackRpcUrl ? { name: 'fallback-rpc', httpUrl: providerUrls.fallbackRpcUrl } : undefined,
+    cooldownMs: 60_000,
+  });
+  return resilientProvider.call(async (provider) => {
+    const contract = new ethers.Contract(ROTATION_MODULE_ADDRESS, loadAbi(), provider);
+    return contract.getCurrentCycle(vaultAddress);
+  });
+}
+
 export async function inspectRotationContribution(vaultAddress: string, memberId: string) {
   if (!ROTATION_MODULE_ADDRESS) throw new Error('ROTATION_MODULE_ADDRESS not configured');
   const resilientProvider = new ResilientRpcProvider({
@@ -167,7 +180,7 @@ export async function verifyStablecoinTransfer(input: {
   stablecoin: string;
   sender: string;
   recipient: string;
-  amount: bigint;
+  amount?: bigint;
   notBeforeTimestamp: number;
 }) {
   const resilientProvider = new ResilientRpcProvider({
@@ -194,18 +207,29 @@ export async function verifyStablecoinTransfer(input: {
         if (!parsed ||
             String(parsed.args.from).toLowerCase() !== input.sender.toLowerCase() ||
             String(parsed.args.to).toLowerCase() !== input.recipient.toLowerCase() ||
-            BigInt(parsed.args.value) !== input.amount) {
+            (input.amount !== undefined && BigInt(parsed.args.value) !== input.amount)) {
           return [];
         }
-        return [parsed];
+        return [{ logIndex: log.index, amount: BigInt(parsed.args.value) }];
       } catch {
         return [];
       }
     });
     if (matches.length !== 1) {
-      throw new Error('Transaction must contain exactly one matching stablecoin transfer to the ChamaTreasury');
+      throw new Error('Transaction must contain exactly one matching stablecoin transfer between the specified addresses');
     }
-    return { blockNumber: receipt.blockNumber, blockTimestamp: block.timestamp };
+    const [network, currentBlockNumber] = await Promise.all([
+      provider.getNetwork(),
+      provider.getBlockNumber(),
+    ]);
+    return {
+      blockNumber: receipt.blockNumber,
+      blockTimestamp: block.timestamp,
+      chainId: Number(network.chainId),
+      confirmations: Math.max(0, currentBlockNumber - receipt.blockNumber + 1),
+      logIndex: matches[0].logIndex,
+      amount: matches[0].amount,
+    };
   });
 }
 

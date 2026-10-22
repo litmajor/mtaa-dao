@@ -18,6 +18,7 @@ nginx.conf.prod
 visibility/
 
 .git-rewrite/
+.tsbuildinfo
 
 
 # Project-specific

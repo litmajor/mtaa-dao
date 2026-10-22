@@ -1,5 +1,9 @@
 # KotaniPay Deposits & Withdrawals Implementation Guide
 
+> **Settlement boundary:** The current KotaniPay integration records provider-confirmed M-Pesa deposits as internal cUSD ledger balances. It does not establish that cUSD was transferred on-chain to the user or a ChamaTreasury. The stable inflow/outflow modules are event-ledger and risk-monitoring components, not conversion or transfer executors. High-value rotation contributions are now tracked from verified on-chain transfers; actual KES-to-ChamaTreasury conversion requires a provider settlement tx and an on-chain transfer path.
+
+> **Self-custody ramp:** A distinct, opt-in KotaniPay v3 onramp/offramp path has been added under `/api/v1/wallets/self-custody-ramps`. It records provider quotes and callbacks separately and never credits the provider-ledger balance. It remains disabled until API credentials, webhook secret, public callback URL, and the provider-confirmed signing mode are configured. Use [the quick reference](./KOTANIPAY_QUICK_REFERENCE.md#kotanipay-v3-onrampofframp-implementation) for endpoints and the safety gates.
+
 ## Overview
 
 Comprehensive guide for implementing M-Pesa ↔ cUSD conversions through KotaniPay integration.

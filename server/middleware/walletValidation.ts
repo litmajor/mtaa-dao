@@ -7,8 +7,8 @@
 
 import type { Request, Response, NextFunction } from 'express';
 import { db } from '../db';
-import { users } from '../../shared/schema';
-import { eq } from 'drizzle-orm';
+import { users, wallets } from '../../shared/schema';
+import { and, desc, eq } from 'drizzle-orm';
 import { Logger } from '../utils/logger';
 
 declare global {
@@ -40,7 +40,7 @@ const getAuthenticatedUserId = (req: Request): string | null => {
  * 
  * Validates that:
  * 1. User is authenticated
- * 2. User has connected a wallet (walletAddress exists)
+ * 2. User has an active wallet registered to their account
  * 
  * If validation passes, attaches wallet info to request object.
  * If validation fails, returns 400 or 401 error with guidance.
@@ -68,7 +68,6 @@ export async function requireConnectedWallet(
       where: eq(users.id, userId),
       columns: {
         id: true,
-        walletAddress: true,
         username: true
       }
     });
@@ -81,8 +80,18 @@ export async function requireConnectedWallet(
       });
     }
 
-    // Check if wallet is connected
-    if (!user.walletAddress) {
+    const wallet = await db.query.wallets.findFirst({
+      where: and(
+        eq(wallets.userId, userId),
+        eq(wallets.isActive, true)
+      ),
+      orderBy: [desc(wallets.createdAt)],
+      columns: {
+        address: true
+      }
+    });
+
+    if (!wallet) {
       logger.debug(`Vault operation attempted by user without wallet: ${userId} (${user.username})`);
       return res.status(400).json({
         error: 'Wallet connection required',
@@ -96,11 +105,11 @@ export async function requireConnectedWallet(
 
     // Attach wallet info to request for use in handlers
     req.wallet = {
-      address: user.walletAddress,
+      address: wallet.address,
       userId: String(user.id)
     };
 
-    logger.debug(`Wallet validation passed for user: ${user.username} (${user.walletAddress})`);
+    logger.debug(`Wallet validation passed for user: ${user.username} (${wallet.address})`);
     next();
   } catch (error) {
     logger.error('Error in wallet validation middleware:', error);

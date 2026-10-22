@@ -64,6 +64,8 @@ provider with routes in the code (`GET /api/auth/oauth/google` and its callback)
 
 `SMTP_HOST`, `SMTP_PORT`, `SMTP_SECURE`, `SMTP_USER`, `SMTP_PASS`, `SMTP_FROM`,
 `SMTP_FROM_NAME`, `EMAIL_FROM` (email), `EMAIL_FROM_NAME` — all optional.
+An invalid sender address does not prevent the server from starting; configure a
+valid address before relying on outbound email delivery.
 
 ## Payments
 
@@ -71,16 +73,59 @@ provider with routes in the code (`GET /api/auth/oauth/google` and its callback)
 | --- | --- |
 | Stripe | `STRIPE_SECRET_KEY`, `STRIPE_PUBLIC_KEY`, `STRIPE_WEBHOOK_SECRET` |
 | KotaniPay | `KOTANIPAY_API_KEY`, `KOTANIPAY_SECRET_KEY`, `KOTANIPAY_WEBHOOK_SECRET` |
-| M-Pesa (Daraja) | `MPESA_CONSUMER_KEY`, `MPESA_CONSUMER_SECRET`, `MPESA_PASSKEY`, `MPESA_SHORTCODE` |
+| M-Pesa STK (Daraja) | `MPESA_ENVIRONMENT`, `MPESA_CONSUMER_KEY`, `MPESA_CONSUMER_SECRET`, `MPESA_PASSKEY`, `MPESA_SHORTCODE`, `MPESA_CALLBACK_URL` |
+| M-Pesa B2C payouts | `MPESA_B2C_ENABLED`, `MPESA_B2C_SHORTCODE`, `MPESA_B2C_INITIATOR_NAME`, `MPESA_B2C_SECURITY_CREDENTIAL`, `MPESA_B2C_RESULT_URL`, `MPESA_B2C_TIMEOUT_URL`, `MPESA_B2C_CALLBACK_TOKEN` |
+| M-Pesa C2B PayBill | `MPESA_C2B_ENABLED`, `MPESA_C2B_SHORTCODE`, `MPESA_C2B_CALLBACK_TOKEN`, `MPESA_C2B_VALIDATION_URL`, `MPESA_C2B_CONFIRMATION_URL` |
+| M-Pesa auto-approval policy | `MPESA_AUTO_APPROVAL_MAX_KES` (defaults to `20000`), `MPESA_AUTO_APPROVAL_MAX_PAYMENTS_24H` (defaults to `5`) |
+| Legacy M-Pesa automatic settlement execution | `MPESA_AUTO_SETTLEMENT_ENABLED` (defaults off; only enables existing downstream execution for payments that pass the auto-approval policy) |
 
 All optional at the schema level: the platform boots without them, and the corresponding
-provider is simply unusable.
+provider is simply unusable. The separate self-custody Celo cUSD ramp additionally reads
+`KOTANIPAY_ONOFFRAMP_ENABLED`, `KOTANIPAY_V3_API_URL`,
+`KOTANIPAY_ONOFFRAMP_WEBHOOK_URL`, and
+`KOTANIPAY_ONOFFRAMP_SIGNATURE_MODE`; optional `KOTANIPAY_RECONCILE_INTERVAL_MS`
+controls webhook/status reconciliation cadence (minimum 15 seconds). It remains disabled until all required values and
+provider support are confirmed. The only accepted API roots are
+`https://sandbox-api.kotanipay.io/v3` and `https://api.kotanipay.io/api/v3`; a production
+server rejects the sandbox root. The self-custody wallet supports only explicitly
+allowlisted token contracts: cUSD/USDC/USDT on Celo, USDC/USDT on Ethereum, USDC on Base,
+and test cUSD on Alfajores. M-Pesa ramps remain Celo-mainnet cUSD only; wallet token
+support does not imply provider cash-out or cross-chain swap support.
+
+M-Pesa C2B callback URLs are registered with Safaricom by an administrator at
+`POST /api/v1/wallets/rails/c2b/register`. A user creates a pending payment
+reference at `POST /api/v1/wallets/rails/c2b/request`; a C2B confirmation is
+accepted only when its reference, amount, payer phone, and transaction ID match.
+Daraja does not provide a signed webhook for these callbacks, so the configured
+high-entropy callback token is required on both registered callback URLs.
+Confirmed STK and C2B payments are evaluated against an automated policy:
+amount/reference match, matching payer phone and verified account phone,
+unique receipt, returning payer, the configured KES limit, velocity, and known
+risk flags. Clean returning payments at or below the default KES 20,000 threshold are marked
+`auto_approved`; first payments and exceptions are marked `pending_review` with
+reason codes. `MPESA_AUTO_APPROVAL_MAX_PAYMENTS_24H` defaults to 5 prior
+successful M-Pesa payments in the rolling 24-hour window. Invalid policy
+configuration fails closed to review.
+
+Auto-approval is a policy decision, not a KES wallet credit, token conversion,
+or MaonoVault deposit. The pre-existing generic payment SAGA and
+AgentPaymentGateway execution paths remain separately gated by
+`MPESA_AUTO_SETTLEMENT_ENABLED=true` and are not a mature general-purpose ramp;
+keep that flag off until the applicable downstream flow is verified. Admins can
+inspect exceptions at `GET /api/v1/wallets/rails/mpesa/settlements/pending`.
+Admins can view backlog age and rolling 24-hour auto/manual rates at
+`GET /api/v1/wallets/rails/mpesa/settlements/metrics`.
 
 ## Blockchain
 
 `CELO_RPC_URL`, `CELO_ALFAJORES_RPC_URL`, `ETHEREUM_RPC_URL`, `POLYGON_RPC_URL`,
 `ARBITRUM_RPC_URL`, `OPTIMISM_RPC_URL`, `BASE_RPC_URL`, `BSC_RPC_URL` (all URLs, optional),
 plus `CUSD_CONTRACT_ADDRESS` and `WALLET_PRIVATE_KEY`.
+
+The client defaults to Alfajores. Set `VITE_CELO_NETWORK=mainnet` in the frontend build
+environment to select Celo mainnet for the wallet; use `alfajores` (or omit the variable)
+for testnet. Keep the client network and provider environment aligned, and never treat
+testnet cUSD as redeemable value.
 
 ## Treasury reconciliation
 

@@ -187,14 +187,15 @@ class RedisConnectionManager {
    */
   private static async ensureNoEvictionPolicy(client: RedisClientType): Promise<void> {
     try {
-      // Use a loose typing for config access since client.config may vary between redis clients
-      const resp = await (client as any).config('GET', 'maxmemory-policy');
+      const resp = await client.sendCommand(['CONFIG', 'GET', 'maxmemory-policy']);
       let current: string | undefined;
 
       if (Array.isArray(resp) && resp.length >= 2) {
         current = String(resp[1]);
       } else if (resp && typeof resp === 'object') {
-        current = (resp['maxmemory-policy'] || resp.maxmemory_policy || Object.values(resp)[0]) as string;
+        const config = resp as Record<string, unknown>;
+        const value = config['maxmemory-policy'] || config.maxmemory_policy || Object.values(config)[0];
+        current = typeof value === 'string' ? value : undefined;
       } else if (typeof resp === 'string') {
         current = resp;
       }
@@ -206,7 +207,7 @@ class RedisConnectionManager {
 
       if (current.toLowerCase() !== 'noeviction') {
         logger.warn(`[REDIS] Eviction policy is ${current}. Correcting to noeviction`);
-        await (client as any).config('SET', 'maxmemory-policy', 'noeviction');
+        await client.sendCommand(['CONFIG', 'SET', 'maxmemory-policy', 'noeviction']);
         logger.info('[REDIS] Eviction policy set to noeviction');
       }
     } catch (err) {

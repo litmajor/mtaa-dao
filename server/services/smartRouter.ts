@@ -572,5 +572,3 @@ export class SmartRouter {
     return 'low';
   }
 }
-
-export const smartRouter = SmartRouter.getInstance();

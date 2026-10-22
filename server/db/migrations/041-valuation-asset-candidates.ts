@@ -179,7 +179,8 @@ export async function migrateValuationAssetCandidates(): Promise<void> {
             ) THEN candidate.reason || ' This symbol is already allowlisted; no new approval is implied.'
             ELSE candidate.reason
           END,
-          'seed:cmc-watchlist'
+          'seed:cmc-watchlist',
+          NULL
         FROM (VALUES ${values}) AS candidate(symbol, coingecko_id, tier, reason)
         ON CONFLICT (symbol) DO NOTHING;
       `,

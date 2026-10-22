@@ -15,7 +15,7 @@ export interface B2cInitiationResult {
 
 /** Safaricom B2C amount limits (KES) */
 const MIN_AMOUNT = 10;
-const MAX_AMOUNT = 150_000;
+export const MAX_B2C_AMOUNT_KES = 150_000;
 
 function requiredSetting(name: string): string {
   const value = process.env[name]?.trim();
@@ -53,9 +53,9 @@ function normalizeKenyanPhone(phone: string): string {
 }
 
 function validateAmount(amountKes: number): number {
-  if (!Number.isInteger(amountKes) || amountKes < MIN_AMOUNT || amountKes > MAX_AMOUNT) {
+  if (!Number.isInteger(amountKes) || amountKes < MIN_AMOUNT || amountKes > MAX_B2C_AMOUNT_KES) {
     throw new Error(
-      `Amount must be an integer between ${MIN_AMOUNT} and ${MAX_AMOUNT} KES (received ${amountKes})`
+      `Amount must be an integer between ${MIN_AMOUNT} and ${MAX_B2C_AMOUNT_KES} KES (received ${amountKes})`
     );
   }
   return amountKes;

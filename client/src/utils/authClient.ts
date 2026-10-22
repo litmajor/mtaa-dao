@@ -31,7 +31,24 @@ interface AuthResponse<T = any> {
   data?: T;
   error?: {
     message: string;
+    code?: string;
   };
+}
+
+export class AuthApiError extends Error {
+  constructor(message: string, readonly code?: string, readonly statusCode?: number) {
+    super(message);
+    this.name = 'AuthApiError';
+  }
+}
+
+async function responseError(response: Response): Promise<AuthApiError> {
+  const payload = await response.json().catch(() => undefined) as AuthResponse | undefined;
+  return new AuthApiError(
+    payload?.error?.message || `HTTP ${response.status}`,
+    payload?.error?.code,
+    response.status,
+  );
 }
 
 /**
@@ -226,8 +243,7 @@ export const authClient = {
     });
 
     if (!response.ok) {
-      const error = await response.json().catch(() => ({ error: { message: response.statusText } }));
-      throw new Error(error?.error?.message || `HTTP ${response.status}`);
+      throw await responseError(response);
     }
 
     const data = (await response.json()) as AuthResponse<T>;
@@ -251,8 +267,7 @@ export const authClient = {
     });
 
     if (!response.ok) {
-      const error = await response.json().catch(() => ({ error: { message: response.statusText } }));
-      throw new Error(error?.error?.message || `HTTP ${response.status}`);
+      throw await responseError(response);
     }
 
     const data = (await response.json()) as AuthResponse<T>;

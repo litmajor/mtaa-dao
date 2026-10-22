@@ -1,5 +1,9 @@
 # KotaniPay Deposits & Withdrawals - Implementation Summary
 
+> **Current settlement note:** This integration credits an internal cUSD balance after a provider callback; it is not proof of on-chain cUSD settlement. Stable inflow/outflow modules observe verified token movements but do not execute conversions. High-value rotations use direct stablecoin transfers into the ChamaTreasury, with those inflows/outflows linked to the stable event ledgers. KES-to-stablecoin treasury conversion remains dependent on a provider settlement transaction and supported transfer API.
+
+> **Separate self-custody path:** The v3 onramp/offramp endpoints are implemented separately from the legacy provider-ledger service and are disabled by default. They require a confirmed webhook-signature configuration and a real Celo/cUSD-enabled KotaniPay account before activation. See the [quick reference](./KOTANIPAY_QUICK_REFERENCE.md#kotanipay-v3-onrampofframp-implementation).
+
 **Date:** November 23, 2025  
 **Status:** ✅ Complete & Ready for Testing  
 **Phase:** 7 of 12 (Documentation Complete)

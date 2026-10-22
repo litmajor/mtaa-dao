@@ -1,0 +1,784 @@
+
+
+**Good news — KotaniPay v3 fully supports the user-owned wallet path you want.**
+
+The documentation clearly separates two different product surfaces:
+
+### 1. Classic Deposits / Withdrawals (what your current `kotanipayService.ts` uses)
+- Mobile money → credits **your** (integrator’s) fiat wallet
+- You then manage an internal ledger balance for the user
+- This is the custodial / provider-ledger model you already have
+
+### 2. Onramp & Offramp (the ones you actually need for self-custody)
+
+**Onramp (Fiat → Crypto)** — perfect for M-Pesa → user’s own cUSD wallet
+- Customer pays via STK Push / mobile money
+- KotaniPay converts and **sends the crypto directly to a wallet address you provide**
+- You get a webhook (`SUCCESS` when crypto is delivered) that includes the `transaction_hash`
+- Status flow: PENDING → CRYPTO_PENDING → PROCESSING → SUCCESS
+
+**Offramp (Crypto → Fiat)** — perfect for user’s own cUSD → M-Pesa
+- You create an offramp → KotaniPay gives you a `depositAddress`
+- User sends cUSD from their connected wallet to that address
+- Once confirmed on-chain, KotaniPay disburses to the user’s M-Pesa
+- Full refund handling if the fiat side fails
+
+Both flows are designed exactly for the “user-owned wallet” model.
+
+### Recommended architecture going forward
+
+Keep the two rails cleanly separated:
+
+| Path | User experience | Backend treatment | Balance shown |
+|------|------------------|-------------------|---------------|
+| **Ledger path** (existing) | “Deposit via M-Pesa (Platform balance)” | Current `initiateDeposit` / internal `user_balances` | Platform / available-for-M-Pesa balance |
+| **Self-custody path** (new) | “Deposit to my wallet” / “Withdraw from my wallet” | Use **Onramp** + **Offramp** APIs | Real on-chain cUSD balance of the connected address only |
+
+### Practical next steps
+
+1. **Do not mix the two in one balance number.**  
+   Always show:
+   - Platform balance (ledger)
+   - On-chain wallet balance (real Celo cUSD)
+
+2. For the self-custody deposit flow:
+   - Call the Onramp endpoint with the user’s connected wallet address as `receiverAddress`
+   - On the success webhook, **do not** credit any internal ledger — just record the event and let the user see the real on-chain balance increase
+
+3. For the self-custody withdrawal flow:
+   - Create an Offramp → show the user the `depositAddress` + exact amount
+   - User sends from their connected wallet (using the helpers you already cleaned up)
+   - Rely on KotaniPay’s webhook + refund logic
+
+4. Confirm in the KotaniPay dashboard / with support:
+   - Whether **Celo + cUSD** is enabled for your integrator account (the docs mention cUSD and Celo support elsewhere, but country/token enablement is per-integrator)
+   - Exact token symbol they expect (`cUSD` vs `CUSD` etc.)
+   - Sandbox behaviour for on-chain delivery
+
+### Bottom line
+
+You no longer need to “wait until provider settlement is confirmed.”  
+**Onramp + Offramp are the confirmed settlement paths** for real user-owned wallets.
+
+Your earlier decision to keep the connected-wallet receive/send panel clean and honest was correct. Now you can safely build the full M-Pesa ↔ user-wallet bridge on top of KotaniPay’s Onramp and Offramp endpoints instead of trying to force the classic deposit/withdrawal endpoints to do something they were not designed for.
+
+Would you like me to outline the exact API sequence + webhook handling for the Onramp (deposit) path next?Here’s a clean TypeScript sketch that matches the style of your existing `kotanipayService.ts`.
+
+You can add these methods to the same class (or create a companion `KotaniOnOffRampService` if you prefer separation).
+
+```ts
+// ============================================================
+// Types for self-custody Onramp / Offramp
+// ============================================================
+
+interface OnrampRequest {
+  userId: string;
+  phone: string;
+  amountKES: number;
+  receiverAddress: string;       // user's connected Celo wallet
+  accountName?: string;
+  reference?: string;
+  daoId?: string;
+}
+
+interface OnrampResponse {
+  success: boolean;
+  referenceId: string;
+  status: 'pending' | 'processing' | 'completed' | 'failed';
+  amountKES: number;
+  estimatedCUSD: number;
+  exchangeRate?: number;
+  message: string;
+}
+
+interface OfframpRequest {
+  userId: string;
+  phone: string;
+  amountCUSD: number;
+  senderAddress: string;         // user's connected Celo wallet
+  accountName?: string;
+  reference?: string;
+  daoId?: string;
+}
+
+interface OfframpResponse {
+  success: boolean;
+  referenceId: string;
+  escrowAddress: string;         // address the user must send cUSD to
+  status: 'pending' | 'processing' | 'completed' | 'failed';
+  amountCUSD: number;
+  estimatedKES: number;
+  exchangeRate?: number;
+  message: string;
+}
+
+// ============================================================
+// Methods (add inside KotanipayService class)
+// ============================================================
+
+/**
+ * Self-custody Onramp: M-Pesa → real cUSD delivered to user's wallet
+ * Does NOT credit any internal ledger balance.
+ */
+static async initiateOnramp(request: OnrampRequest): Promise<OnrampResponse> {
+  const referenceId = request.reference || `ONRAMP-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+
+  try {
+    if (!request.userId || !request.phone || !request.receiverAddress || request.amountKES <= 0) {
+      throw new Error('Invalid onramp request');
+    }
+
+    // 1. Optional: get rate quote
+    const rateRes = await this.kotaniRequest('POST', '/api/v3/rate/onramp', {
+      from: 'KES',
+      to: 'CUSD',
+      fiatAmount: request.amountKES,
+      source: 'fiat',
+    });
+
+    const rateId = rateRes?.data?.id;
+    const estimatedCUSD = Number(rateRes?.data?.cryptoAmount ?? 0);
+    const exchangeRate = rateRes?.data?.value ? Number(rateRes.data.value) : undefined;
+
+    // 2. Create onramp
+    const payload = {
+      fiatAmount: request.amountKES,
+      currency: 'KES',
+      chain: 'CELO',
+      token: 'CUSD',
+      receiverAddress: request.receiverAddress,
+      referenceId,
+      callbackUrl: `${process.env.API_BASE_URL}/api/webhooks/kotani/onramp`,
+      rateId,
+      mobileMoney: {
+        phoneNumber: request.phone,
+        accountName: request.accountName || 'MtaaDAO User',
+        providerNetwork: 'MPESA',
+      },
+    };
+
+    const createRes = await this.kotaniRequest('POST', '/api/v3/onramp', payload);
+
+    // 3. Persist local record (do NOT touch user_balances)
+    await (db as any).insert(mpesaTransactionsTable).values({
+      userId: request.userId,
+      phoneNumber: request.phone,
+      transactionType: 'onramp',
+      amount: request.amountKES.toString(),
+      checkoutRequestId: referenceId,
+      accountReference: `MtaaDAO-Onramp-${request.userId.substring(0, 8)}`,
+      transactionDesc: `Onramp to ${request.receiverAddress}`,
+      status: 'pending',
+      metadata: {
+        type: 'self_custody_onramp',
+        referenceId,
+        receiverAddress: request.receiverAddress,
+        estimatedCUSD,
+        exchangeRate,
+        daoId: request.daoId,
+        kotaniResponse: createRes?.data,
+      },
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    });
+
+    return {
+      success: true,
+      referenceId,
+      status: 'pending',
+      amountKES: request.amountKES,
+      estimatedCUSD,
+      exchangeRate,
+      message: 'STK Push sent. Enter your M-Pesa PIN. cUSD will be sent to your wallet.',
+    };
+  } catch (error: any) {
+    console.error('initiateOnramp error:', error);
+    throw error;
+  }
+}
+
+/**
+ * Self-custody Offramp: user sends cUSD from their wallet → M-Pesa
+ * Returns the escrow address the user must send to.
+ */
+static async initiateOfframp(request: OfframpRequest): Promise<OfframpResponse> {
+  const referenceId = request.reference || `OFFRAMP-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+
+  try {
+    if (!request.userId || !request.phone || !request.senderAddress || request.amountCUSD <= 0) {
+      throw new Error('Invalid offramp request');
+    }
+
+    // 1. Rate quote
+    const rateRes = await this.kotaniRequest('POST', '/api/v3/rate/offramp', {
+      from: 'CUSD',
+      to: 'KES',
+      cryptoAmount: request.amountCUSD,
+      source: 'crypto',
+    });
+
+    const rateId = rateRes?.data?.id;
+    const estimatedKES = Number(rateRes?.data?.fiatAmount ?? 0);
+    const exchangeRate = rateRes?.data?.value ? Number(rateRes.data.value) : undefined;
+
+    // 2. Create offramp
+    const payload = {
+      cryptoAmount: request.amountCUSD,
+      currency: 'KES',
+      chain: 'CELO',
+      token: 'CUSD',
+      referenceId,
+      callbackUrl: `${process.env.API_BASE_URL}/api/webhooks/kotani/offramp`,
+      rateId,
+      senderAddress: request.senderAddress,
+      mobileMoneyReceiver: {
+        phoneNumber: request.phone,
+        accountName: request.accountName || 'MtaaDAO User',
+        providerNetwork: 'MPESA',
+      },
+    };
+
+    const createRes = await this.kotaniRequest('POST', '/api/v3/offramp', payload);
+    const escrowAddress = createRes?.data?.escrowAddress;
+
+    if (!escrowAddress) {
+      throw new Error('No escrow address returned from KotaniPay');
+    }
+
+    // 3. Persist local record
+    await (db as any).insert(mpesaTransactionsTable).values({
+      userId: request.userId,
+      phoneNumber: request.phone,
+      transactionType: 'offramp',
+      amount: request.amountCUSD.toString(),
+      checkoutRequestId: referenceId,
+      accountReference: `MtaaDAO-Offramp-${request.userId.substring(0, 8)}`,
+      transactionDesc: `Offramp from ${request.senderAddress}`,
+      status: 'pending',
+      metadata: {
+        type: 'self_custody_offramp',
+        referenceId,
+        senderAddress: request.senderAddress,
+        escrowAddress,
+        estimatedKES,
+        exchangeRate,
+        daoId: request.daoId,
+        kotaniResponse: createRes?.data,
+      },
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    });
+
+    return {
+      success: true,
+      referenceId,
+      escrowAddress,
+      status: 'pending',
+      amountCUSD: request.amountCUSD,
+      estimatedKES,
+      exchangeRate,
+      message: 'Send the exact cUSD amount to the escrow address from your connected wallet.',
+    };
+  } catch (error: any) {
+    console.error('initiateOfframp error:', error);
+    throw error;
+  }
+}
+
+/**
+ * Shared helper – replace with whatever HTTP client you already use
+ */
+private static async kotaniRequest(method: string, path: string, body?: any) {
+  const url = `${KOTANI_BASE_URL}${path}`;
+  const res = await fetch(url, {
+    method,
+    headers: {
+      'Authorization': `Bearer ${KOTANI_API_KEY}`,
+      'Content-Type': 'application/json',
+    },
+    body: body ? JSON.stringify(body) : undefined,
+  });
+
+  const data = await res.json();
+  if (!res.ok) {
+    throw new Error(data?.message || `KotaniPay error ${res.status}`);
+  }
+  return data;
+}
+```
+
+### Webhook handlers (separate route file)
+
+```ts
+// server/routes/webhooks/kotani-onofframp.ts (sketch)
+
+export async function handleOnrampWebhook(req, res) {
+  if (!verifyKotaniSignature(req)) return res.status(401).send('Invalid signature');
+
+  const { event, data } = req.body;
+  if (event !== 'transaction.onramp.status.updated') return res.status(200).send('OK');
+
+  const record = await findByReferenceId(data.referenceId);
+  if (!record) return res.status(200).send('OK');
+
+  await updateTransaction(record.id, {
+    status: data.status,
+    depositStatus: data.depositStatus,
+    onchainStatus: data.onchainStatus,
+    transactionHash: data.transactionHash ?? null,
+    cryptoAmountReceived: data.cryptoAmountReceived,
+  });
+
+  // IMPORTANT: do NOT credit user_balances
+  if (data.status === 'SUCCESSFUL' && data.onchainStatus === 'SUCCESSFUL') {
+    // optional: send notification
+  }
+
+  return res.status(200).send('OK');
+}
+
+export async function handleOfframpWebhook(req, res) {
+  if (!verifyKotaniSignature(req)) return res.status(401).send('Invalid signature');
+
+  const { event, data } = req.body;
+  if (event !== 'transaction.offramp.status.updated') return res.status(200).send('OK');
+
+  const record = await findByReferenceId(data.referenceId);
+  if (!record) return res.status(200).send('OK');
+
+  await updateTransaction(record.id, {
+    status: data.status,
+    onchainStatus: data.onchainStatus,
+    transactionHash: data.transactionHash ?? null,
+  });
+
+  if (data.status === 'SUCCESSFUL') {
+    // optional: notify user that KES was sent
+  }
+
+  return res.status(200).send('OK');
+}
+```
+
+### Notes on integration
+
+- Reuse your existing `mpesaTransactionsTable` (or create a dedicated `onofframp_transactions` table if you prefer cleaner separation).
+- The `metadata` field is already used heavily in the current service — keep the same pattern.
+- `kotaniRequest` is a thin wrapper so you can later swap in retry / logging / signature headers if needed.
+- Never call the old `initiateDeposit` / balance-credit logic from these new methods.
+
+Would you like me to also sketch the corresponding frontend calls (how `DepositTab` / `WithdrawTab` should invoke these) or the database migration for a cleaner `onofframp_transactions` table?
+
+
+
+**Offramp sequence (User’s own cUSD wallet → M-Pesa)**
+
+This is the reverse of Onramp. The user sends real cUSD from their connected Celo wallet to a KotaniPay escrow address. Once the crypto is confirmed on-chain, KotaniPay pays out KES to the user’s M-Pesa.
+
+### High-level flow
+
+1. Get rate quote  
+2. Create Offramp → receive `escrowAddress` (deposit address)  
+3. User sends exact cUSD amount from their connected wallet to that address  
+4. KotaniPay detects the on-chain transfer  
+5. KotaniPay disburses KES via M-Pesa  
+6. Webhooks notify you of success / failure / refund
+
+---
+
+### 1. Get a rate quote (recommended)
+
+```http
+POST /api/v3/rate/offramp
+Authorization: Bearer <your_api_key>
+Content-Type: application/json
+
+{
+  "from": "CUSD",
+  "to": "KES",
+  "cryptoAmount": 50,          // how much cUSD the user wants to sell
+  "source": "crypto"
+}
+```
+
+Response gives you:
+- `id` → use as `rateId` if you want to lock the rate
+- `fiatAmount` → show the user “You will receive ≈ X KES”
+- fees
+
+---
+
+### 2. Create the Offramp
+
+```http
+POST /api/v3/offramp
+Authorization: Bearer <your_api_key>
+Content-Type: application/json
+
+{
+  "cryptoAmount": 50,
+  "currency": "KES",
+  "chain": "CELO",
+  "token": "CUSD",
+  "referenceId": "mtaa-offramp-uuid-or-your-id",
+  "callbackUrl": "https://your-api.mtaadao.com/webhooks/kotani/offramp",
+  "rateId": "optional-rate-id-from-step-1",
+  "senderAddress": "0xUserConnectedWalletAddress",   // optional but recommended
+  "mobileMoneyReceiver": {
+    "phoneNumber": "+2547XXXXXXXX",
+    "accountName": "John Doe",
+    "providerNetwork": "MPESA"
+  }
+  // optional but useful:
+  // "refund_config": { ... }   // only needed for Lightning; for Celo not required
+}
+```
+
+**Key response fields you care about:**
+
+```json
+{
+  "success": true,
+  "data": {
+    "referenceId": "mtaa-offramp-uuid-or-your-id",
+    "escrowAddress": "0xKotaniEscrowAddress...",   // ← THIS is the address the user must send to
+    "cryptoAmount": 50,
+    "fiatAmount": 6450,
+    "status": "PENDING",
+    "onchainStatus": "PENDING",
+    ...
+  }
+}
+```
+
+Store the `referenceId` + `escrowAddress` in your database linked to the user.
+
+---
+
+### 3. User sends the crypto (frontend)
+
+Show the user:
+
+- Exact amount of **cUSD** to send  
+- The `escrowAddress` (with copy button + QR)  
+- Clear warning: “Send **exactly** this amount from your connected wallet. Do not send from an exchange.”
+
+Then use your existing wallet helpers (`useWalletClient` / `useSendTransaction` or the helpers in `blockchain.ts`) to let the user send cUSD to that address.
+
+After the user submits the transaction:
+
+- Record the local tx hash  
+- Optionally poll the offramp status while waiting for Kotani to detect it
+
+---
+
+### 4. What happens next (Kotani side)
+
+1. Kotani monitors the `escrowAddress`
+2. Once the required confirmations arrive → `onchainStatus` becomes `SUCCESSFUL` / `CRYPTO_RECEIVED`
+3. Kotani initiates the M-Pesa B2C / disbursement
+4. Final status becomes `SUCCESSFUL` (or `FAILED` / `REVERSED` if something goes wrong)
+
+---
+
+### 5. Webhook handling
+
+Listen for:
+
+```
+event: transaction.offramp.status.updated
+```
+
+Typical successful payload (camelCase):
+
+```json
+{
+  "event": "transaction.offramp.status.updated",
+  "data": {
+    "referenceId": "mtaa-offramp-uuid-or-your-id",
+    "status": "SUCCESSFUL",
+    "onchainStatus": "SUCCESSFUL",
+    "cryptoAmount": 50,
+    "fiatAmount": 6450,
+    "fiatCurrency": "KES",
+    "senderAddress": "0xUser...",
+    "transactionHash": "0x...",          // the user’s on-chain tx
+    "escrowAddress": "0x...",
+    ...
+  },
+  "signature": "sha256=..."
+}
+```
+
+#### Recommended handling
+
+```ts
+// 1. Verify signature
+if (!verifyKotaniSignature(req)) return 401;
+
+// 2. Load your local record
+const record = await db.offrampTransactions.findByReferenceId(data.referenceId);
+
+// 3. Update status
+await db.offrampTransactions.update(record.id, {
+  status: data.status,
+  onchainStatus: data.onchainStatus,
+  transactionHash: data.transactionHash,
+  rawPayload: data
+});
+
+// 4. Terminal states
+if (data.status === "SUCCESSFUL") {
+  // Notify user: “KES has been sent to your M-Pesa”
+  // Do NOT touch any internal ledger balance
+}
+
+if (data.status === "FAILED" || data.status === "REVERSED") {
+  // Handle failure / refund notification
+}
+```
+
+Also listen for the dedicated refund events:
+
+- `refund.completed`
+- `refund.failed`
+
+For Celo (EVM) these are usually automatic — Kotani returns the cUSD to the `senderAddress` if the fiat leg fails.
+
+---
+
+### 6. Polling endpoints (fallback)
+
+```http
+GET /api/v3/offramp/{referenceId}
+GET /api/v3/offramp/refund-status/{referenceId}
+```
+
+Useful while the user is waiting or if webhooks are delayed.
+
+---
+
+### 7. Frontend UX recommendations
+
+In the Withdraw tab (self-custody section):
+
+1. User enters how much cUSD they want to cash out  
+2. Show live quote (“You will receive ≈ X KES”)  
+3. Create offramp → display the escrow address + exact amount  
+4. “Send from my connected wallet” button (uses your existing send helpers)  
+5. After the user signs the tx → show “Waiting for confirmation…”  
+6. On success webhook → “KES sent to your M-Pesa number”
+
+Keep the language crystal clear:
+
+- This path moves **real on-chain cUSD** from the user’s wallet.  
+- It is completely separate from the platform/ledger balance.
+
+---
+
+### Important safety notes
+
+- Always show the **exact** amount the user must send. Partial or extra amounts can cause problems.
+- Prefer letting the user send from the connected wallet rather than asking them to copy-paste the address into another wallet (reduces mistakes).
+- Store both the Kotani `referenceId` and the user’s on-chain `transactionHash`.
+- For Celo you generally do **not** need a `refund_config` (that is mainly for Lightning).
+
+---
+
+Would you like me to now sketch the TypeScript service methods (in the style of your existing `kotanipayService.ts`) for both Onramp and Offramp, or do you want to start implementing one of them first?
+Here’s the exact **Onramp (M-Pesa → user-owned cUSD wallet)** sequence using KotaniPay v3, tailored to MtaaDAO.
+
+### Goal
+User pays KES via M-Pesa STK Push → KotaniPay converts and sends real **cUSD on Celo** to the user’s connected wallet address.  
+No internal ledger credit. The user’s on-chain balance is the source of truth.
+
+---
+
+### 1. Prerequisites (one-time / per user)
+
+- User has a connected Celo wallet (you already have this via wagmi).
+- You have created a **Mobile Money Customer** for the user in KotaniPay (or reuse an existing one).
+- Your integrator account has **Celo + CUSD** enabled (confirm with Kotani support if unsure).
+- You have a public webhook endpoint that can receive POSTs.
+
+---
+
+### 2. Frontend / Backend sequence
+
+#### Step A — Get a rate quote (optional but recommended)
+
+```http
+POST /api/v3/rate/onramp
+Authorization: Bearer <your_api_key>
+Content-Type: application/json
+
+{
+  "from": "KES",
+  "to": "CUSD",
+  "fiatAmount": 5000,        // what the user wants to pay
+  "source": "fiat"
+}
+```
+
+Response gives you:
+- `id` → this is the `rateId` you can lock
+- `cryptoAmount` → show the user “You will receive ≈ X cUSD”
+- fees
+
+Store the `rateId` if you want to lock the rate.
+
+#### Step B — Create the Onramp
+
+```http
+POST /api/v3/onramp
+Authorization: Bearer <your_api_key>
+Content-Type: application/json
+
+{
+  "fiatAmount": 5000,
+  "currency": "KES",
+  "chain": "CELO",
+  "token": "CUSD",
+  "receiverAddress": "0xUserConnectedWalletAddress",   // from useAccount()
+  "referenceId": "mtaa-onramp-uuid-or-your-id",         // your unique ID
+  "callbackUrl": "https://your-api.mtaadao.com/webhooks/kotani/onramp",
+  "rateId": "optional-rate-id-from-step-A",
+  "mobileMoney": {
+    "phoneNumber": "+2547XXXXXXXX",
+    "accountName": "John Doe",          // optional but good
+    "providerNetwork": "MPESA"          // or whatever the customer record uses
+  }
+}
+```
+
+**Important fields:**
+- `receiverAddress` = the user’s real connected wallet (this is what makes it self-custody)
+- `referenceId` = your own ID (store this in your DB linked to `userId` + `walletAddress`)
+- `callbackUrl` = your webhook
+
+Response (approx):
+```json
+{
+  "success": true,
+  "data": {
+    "id": "kotani-internal-id",
+    "referenceId": "mtaa-onramp-uuid-or-your-id",
+    "referenceNumber": 12345,
+    "customerKey": "...",
+    "message": "..."
+  }
+}
+```
+
+At this point the STK Push is sent to the user’s phone.  
+Store the `referenceId` + status = `PENDING` in your DB.
+
+#### Step C — User confirms on phone
+User enters M-Pesa PIN. Nothing else for you to do.
+
+---
+
+### 3. Webhook handling (the critical part)
+
+Listen for:
+
+```
+event: transaction.onramp.status.updated
+```
+
+**Payload structure** (camelCase for onramp):
+
+```json
+{
+  "event": "transaction.onramp.status.updated",
+  "data": {
+    "referenceId": "mtaa-onramp-uuid-or-your-id",
+    "status": "SUCCESSFUL" | "FAILED" | ...,
+    "depositStatus": "SUCCESSFUL" | "FAILED" | ...,   // fiat leg
+    "onchainStatus": "SUCCESSFUL" | "FAILED" | "PENDING" | ...,
+    "chain": "CELO",
+    "token": "CUSD",
+    "cryptoAmount": 38.5,
+    "cryptoAmountReceived": 38.5,
+    "fiatAmount": 5000,
+    "fiatFee": 100,
+    "fiatAmountToSend": 5100,
+    "receiverAddress": "0xUser...",
+    "transactionHash": "0xabc123...",                 // only when on-chain succeeds
+    "rate": { ... },
+    "error": { "message": "...", "code": "..." }      // only on failure
+  },
+  "signature": "sha256=..."
+}
+```
+
+#### Recommended handling logic
+
+```ts
+// 1. Verify signature (use the official method from docs)
+if (!verifyKotaniSignature(req)) return 401;
+
+// 2. Find your local record by referenceId
+const record = await db.onrampTransactions.findByReferenceId(data.referenceId);
+if (!record) return 200; // still ack
+
+// 3. Update status
+await db.onrampTransactions.update(record.id, {
+  status: data.status,
+  depositStatus: data.depositStatus,
+  onchainStatus: data.onchainStatus,
+  transactionHash: data.transactionHash ?? null,
+  cryptoAmountReceived: data.cryptoAmountReceived,
+  rawPayload: data
+});
+
+// 4. Only when fully successful
+if (data.status === "SUCCESSFUL" && data.onchainStatus === "SUCCESSFUL") {
+  // Optional: notify user
+  // Optional: record analytics / activity feed
+  // DO NOT credit any internal user_balances table
+  // The user’s real on-chain cUSD balance is the source of truth
+}
+
+// 5. Always return 200 quickly
+return res.status(200).send("OK");
+```
+
+---
+
+### 4. Polling (fallback / UI status)
+
+You can also poll:
+
+```http
+GET /api/v3/onramp/{referenceId}
+GET /api/v3/onramp/crypto/{referenceId}   // crypto delivery status
+```
+
+Useful for the frontend while waiting for the webhook.
+
+---
+
+### 5. Frontend UX suggestions
+
+In the Deposit tab (self-custody section):
+
+1. User enters KES amount
+2. You show live quote (“≈ X.XX cUSD will be sent to your wallet”)
+3. User confirms → you call create onramp
+4. Show “Check your phone and enter M-Pesa PIN”
+5. Poll or wait for webhook → show “cUSD sent to your wallet” + explorer link using `transactionHash`
+6. Refresh the on-chain balance (the `StablecoinWalletPanel` you already cleaned up)
+
+---
+
+### Key rules to keep the design honest
+
+- Never credit an internal ledger from an Onramp success.
+- Only show the real `cUSD` balance of the connected address.
+- Clearly label this path: **“Deposit to my wallet (self-custody)”** vs the existing platform/ledger path.
+- Store the `transactionHash` so the user can verify on Celo explorer.
+
+---
+
+Would you like the matching **Offramp** (user wallet → M-Pesa) sequence next, or shall we start sketching the actual TypeScript service methods that fit your existing `kotanipayService.ts` style?

@@ -1,7 +1,7 @@
 /**
  * KotaniPay Integration Service
- * Handles deposits (M-Pesa → cUSD) and withdrawals (cUSD → M-Pesa)
- * Manages balance reconciliation, fee tracking, and transaction lifecycle
+ * Handles M-Pesa conversion requests against the provider's internal cUSD ledger.
+ * These ledger balances are not on-chain token transfers or ChamaTreasury funds.
  */
 
 import { db } from '../db';
@@ -11,8 +11,6 @@ import { and, eq, gt, isNull, sql } from 'drizzle-orm';
 import { notificationService } from '../notificationService';
 import { config } from '../../shared/config';
 import { exchangeRateService } from './exchangeRateService';
-import { stableInflowModule } from './stableInflowModule';
-import { stableAssetRegistryService } from './stableAssetRegistryService';
 import { paymentRecoverySAGA } from './PaymentRecoverySAGAOrchestrator';
 
 interface DepositRequest {
@@ -60,17 +58,10 @@ const KOTANI_SECRET_KEY = process.env.KOTANIPAY_SECRET_KEY;
 const DEPOSIT_FEE_PERCENTAGE = 0.015; // 1.5% for M-Pesa deposits
 const WITHDRAWAL_FEE_PERCENTAGE = 0.02; // 2% for M-Pesa withdrawals
 
-function decimalToRawAmount(amount: string, decimals: number): string {
-  const [wholeRaw, fractionRaw = ''] = amount.trim().split('.');
-  const whole = wholeRaw || '0';
-  const fraction = (fractionRaw + '0'.repeat(decimals)).slice(0, decimals);
-  return `${whole}${fraction}`.replace(/^0+(?=\d)/, '') || '0';
-}
-
 export class KotanipayService {
   /**
-   * Initiate a deposit: M-Pesa → cUSD
-   * User sends money via M-Pesa, receives cUSD in wallet
+   * Initiate a deposit: M-Pesa → provider-ledger cUSD balance.
+   * This flow does not itself transfer tokens to the user's or DAO's blockchain wallet.
    */
   static async initiateDeposit(request: DepositRequest): Promise<DepositResponse> {
     const transactionId = `DEP-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
@@ -186,7 +177,6 @@ export class KotanipayService {
 
       const metadataAmount = (transaction.metadata as any)?.amountCUSD;
       const amountCUSD = metadataAmount ? parseFloat(metadataAmount) : parseFloat(transaction.amount);
-      const amountCUSDString = metadataAmount ? String(metadataAmount) : amountCUSD.toString();
 
       // Update transaction status
       await (db as any)
@@ -208,41 +198,6 @@ export class KotanipayService {
         (transaction.metadata as any)?.daoId
       );
 
-      let stableInflowResult: Awaited<ReturnType<typeof stableInflowModule.processStableInflow>> | undefined;
-      const resolvedCusdAsset = await stableAssetRegistryService.resolveStableAsset({
-        chain: 'celo',
-        chainId: 42220,
-        symbol: 'cUSD',
-      });
-
-      if (stableInflowModule.isEnabled()) {
-        const tokenAddress =
-          resolvedCusdAsset?.tokenAddress ||
-          process.env.CUSD_CONTRACT_ADDRESS ||
-          '0x765DE816845861e75A25fCA122bb6898B8B1282a';
-
-        stableInflowResult = await stableInflowModule.processStableInflow({
-          source: 'kotanipay',
-          chain: 'celo',
-          chainId: 42220,
-          txHash: mpesaReceipt || transactionId,
-          logIndex: 0,
-          tokenAddress,
-          tokenSymbol: 'cUSD',
-          decimals: resolvedCusdAsset?.decimals ?? 18,
-          rawAmount: decimalToRawAmount(amountCUSDString, resolvedCusdAsset?.decimals ?? 18),
-          fromAddress: `mpesa:${transaction.phoneNumber || 'unknown'}`,
-          toAddress: `user:${transaction.userId}`,
-          blockTimestamp: Math.floor(Date.now() / 1000),
-          confirmations: resolvedCusdAsset?.minConfirmations ?? 3,
-          provider: 'kotanipay',
-          metadata: {
-            kotaniTransactionId: transactionId,
-            mpesaReceipt,
-          },
-        });
-      }
-
       // Record wallet transaction
       const walletTransactionId = `${transactionId}-cUSD`;
       await (db as any).insert(walletTransactions).values({
@@ -253,32 +208,15 @@ export class KotanipayService {
         currency: 'cUSD',
         type: 'deposit',
         walletAddress: `kotanipay:${transaction.userId}`,
-        transactionHash: mpesaReceipt,
-        stableInflowEventId: stableInflowResult?.stableInflowEventId,
-        stableUnitsMicroUsd: stableInflowResult?.stableUnitsMicroUsd,
-        chainId: 42220,
-        tokenAddress:
-          resolvedCusdAsset?.tokenAddress ||
-          process.env.CUSD_CONTRACT_ADDRESS ||
-          '0x765DE816845861e75A25fCA122bb6898B8B1282a',
+        transactionHash: null,
         status: 'completed',
         metadata: {
           mpesaReceipt,
           kotaniTransactionId: transactionId,
           exchangeRate,
-          normalizedAmountUsd: stableInflowResult?.normalizedAmountUsd,
-          stableUnitsMicroUsd: stableInflowResult?.stableUnitsMicroUsd,
-          riskFlags: stableInflowResult?.riskFlags,
-          confirmationState: stableInflowResult?.confirmationState,
+          settlementType: 'provider_ledger',
         },
       });
-
-      if (stableInflowResult?.stableInflowEventId) {
-        await stableInflowModule.markCredited(stableInflowResult.stableInflowEventId, {
-          walletTransactionId,
-          source: 'kotanipay.completeDeposit',
-        });
-      }
 
       // Send success notification
       await notificationService.sendPaymentNotification(transaction.phoneNumber, {
@@ -297,8 +235,8 @@ export class KotanipayService {
   }
 
   /**
-   * Initiate a withdrawal: cUSD → M-Pesa
-   * User sends cUSD from wallet, receives money on M-Pesa
+   * Initiate a withdrawal: provider-ledger cUSD balance → M-Pesa.
+   * This flow does not send stablecoins from a user's on-chain wallet.
    */
   static async initiateWithdrawal(request: WithdrawalRequest): Promise<WithdrawalResponse> {
     const transactionId = `WD-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;

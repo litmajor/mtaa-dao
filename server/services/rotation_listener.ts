@@ -6,7 +6,13 @@ import { daos, daoRotationCycles } from '../../shared/schema';
 import { and, eq, inArray, or } from 'drizzle-orm';
 import { resolveProviderUrls } from './providerBootstrap';
 import { ResilientRpcProvider } from './resilientRpcProvider';
-import { getRotationConfigOnChain, getStablecoinDecimals, getStablecoinSymbol } from './rotation_contract';
+import {
+  getRotationConfigOnChain,
+  getStablecoinDecimals,
+  getStablecoinSymbol,
+  verifyStablecoinTransfer,
+} from './rotation_contract';
+import { stableOutflowModule } from './stableOutflowModule';
 
 const providerUrls = resolveProviderUrls();
 const RPC_URL = providerUrls.rpcUrl;
@@ -57,10 +63,25 @@ export function startRotationEventListener() {
 
       const distributedAt = new Date();
       const transactionHash = event?.log?.transactionHash || event?.transactionHash;
+      let settledTransfer: Awaited<ReturnType<typeof verifyStablecoinTransfer>> | undefined;
+      if (transactionHash) {
+        try {
+          settledTransfer = await verifyStablecoinTransfer({
+            transactionHash,
+            stablecoin: String(rotationConfig.stablecoin),
+            sender: vaultAddress,
+            recipient,
+            notBeforeTimestamp: 0,
+          });
+        } catch (error) {
+          console.error(`Unable to verify the executed stablecoin transfer for rotation cycle ${cycle.id}:`, error);
+        }
+      }
+      const settledAmount = settledTransfer?.amount ?? BigInt(amount);
       await db.transaction(async (tx) => {
         await tx.update(daoRotationCycles).set({
           status: 'completed',
-          amountDistributed: ethers.formatUnits(amount, stablecoinDecimals),
+          amountDistributed: ethers.formatUnits(settledAmount, stablecoinDecimals),
           transactionHash,
           distributedAt,
           notes: `${cycle.notes || ''}\nTreasury proposal ${proposalId} executed to ${recipient} in ${stablecoinSymbol}.`.trim(),
@@ -73,6 +94,62 @@ export function startRotationEventListener() {
           updatedAt: distributedAt,
         }).where(eq(daos.id, dao.id));
       });
+
+      if (stableOutflowModule.isEnabled()) {
+        if (!transactionHash || !settledTransfer) {
+          console.error(`Rotation cycle ${cycle.id} has no verified stablecoin transfer; stable outflow was not recorded`);
+          return;
+        }
+        try {
+          const stablecoinAddress = String(rotationConfig.stablecoin);
+          const outflow = await stableOutflowModule.processStableOutflow({
+            source: 'dao_rotation_payout',
+            chain: 'celo',
+            chainId: settledTransfer.chainId,
+            txHash: transactionHash,
+            logIndex: settledTransfer.logIndex,
+            tokenAddress: stablecoinAddress,
+            tokenSymbol: stablecoinSymbol,
+            decimals: stablecoinDecimals,
+            rawAmount: settledTransfer.amount.toString(),
+            fromAddress: vaultAddress,
+            toAddress: recipient,
+            blockTimestamp: settledTransfer.blockTimestamp,
+            confirmations: settledTransfer.confirmations,
+            provider: 'rotation_module',
+            internalReference: cycle.id,
+            metadata: {
+              daoId: dao.id,
+              cycleNumber: Number(cycleNumber),
+              proposalId: String(proposalId),
+            },
+          });
+          if (!outflow.success || !outflow.stableOutflowEventId) {
+            console.error(`Unable to record stable outflow for rotation cycle ${cycle.id}: ${outflow.error || 'no event id returned'}`);
+          } else {
+            const riskFlags = outflow.riskFlags;
+            const hasRiskFlags = Boolean(
+              riskFlags?.depegDetected ||
+              riskFlags?.delayedConfirmation ||
+              riskFlags?.lowLiquidity ||
+              riskFlags?.highRiskScore
+            );
+            if (outflow.confirmationState === 'confirmed' && !hasRiskFlags) {
+              await stableOutflowModule.markConfirmed(
+                outflow.stableOutflowEventId,
+                settledTransfer.confirmations,
+                transactionHash
+              );
+            }
+            await db.update(daoRotationCycles).set({
+              notes: `${cycle.notes || ''}\nTreasury proposal ${proposalId} executed to ${recipient} in ${stablecoinSymbol}.\nStable outflow event ${outflow.stableOutflowEventId} recorded.`.trim(),
+              updatedAt: new Date(),
+            }).where(eq(daoRotationCycles.id, cycle.id));
+          }
+        } catch (error) {
+          console.error(`Unable to reconcile stable outflow for rotation cycle ${cycle.id}:`, error);
+        }
+      }
       console.info(`Reconciled on-chain rotation confirmation for DAO ${dao.id}, cycle ${cycleNumber}`);
     } catch (err) {
       console.error('Error handling CycleDistributionConfirmed event', err);

@@ -1,5 +1,44 @@
 # KotaniPay Implementation - Quick Reference
 
+> **Settlement boundary:** KotaniPay callbacks currently credit an internal `user_balances` cUSD ledger. They do not prove an on-chain cUSD transfer into a user's wallet or a ChamaTreasury. `stableInflowModule` and `stableOutflowModule` record verified token transfers; rotation now links them to direct member-to-treasury contributions and executed treasury payouts. A KES pool above the app's KES 150,000 B2C request ceiling uses direct stablecoin contributions, not automatic KES conversion. A provider-backed KES-to-treasury conversion still requires an actual provider settlement transaction and transfer capability.
+
+## User-owned wallet flow
+
+- In the wallet Deposit tab, connect a Celo-compatible wallet and share the displayed wallet address to receive cUSD directly.
+- In the Withdraw tab, enter a recipient Celo address and amount to send cUSD from the connected wallet. The wallet asks the user to authorize the on-chain transfer; keep CELO available for gas.
+- The client defaults to Alfajores testnet. Its test cUSD is not redeemable for KES. To build for Celo mainnet, set `VITE_CELO_NETWORK=mainnet`; otherwise it remains on Alfajores. Never deploy a mainnet build until the provider and chain configuration have been verified.
+- These wallet transfers do not initiate an M-Pesa deposit or cash-out. Those require a provider flow that settles real on-chain cUSD to/from the user's wallet; provider-ledger balances remain separate.
+
+### KotaniPay v3 onramp/offramp implementation
+
+The separate self-custody ramp API is mounted under `/api/v1/wallets/self-custody-ramps`. Its current KotaniPay route supports **Celo cUSD only**; registry entries for USDC/USDT or other networks do not imply ramp support:
+
+- `POST /onramp/quote` and `POST /offramp/quote` request live provider rates and bind a short-lived quote to the signed-in user and their active, registered wallet.
+- `POST /:referenceId/initiate` starts the provider transaction using the saved quote; it cannot change the phone, address, token, or amount supplied in that quote.
+- `POST /:referenceId/transaction` records the user's submitted Celo transaction hash for an offramp.
+- `GET /:referenceId` and `GET /history` return self-custody ramp status only.
+- `GET /admin/open` (admin-only) lists up to 100 open, unresolved, and refund-failed ramps without exposing phone numbers or wallet addresses.
+- `GET /admin/webhook-inbox` (admin-only) lists up to 100 pending, failed, or processing webhook events without exposing stored settlement payloads.
+- `POST /webhook` records provider events; no onramp/offramp operation credits `user_balances`.
+
+Configure KotaniPay to send ramp events to the public `POST /api/v1/wallets/self-custody-ramps/webhook`. Only that webhook is public; quote, status, transaction, history, and admin APIs remain authenticated. The raw request bytes are preserved for signature verification, and an embedded `signature` property is excluded from the signed payload when present.
+
+Apply migration `052-self-custody-ramp-webhook-inbox` before enabling the ramp. The migration is part of the application migration runner; it creates the durable inbox and its retry index.
+
+The feature stays disabled unless `KOTANIPAY_ONOFFRAMP_ENABLED=true`, `KOTANIPAY_API_KEY`, `KOTANIPAY_WEBHOOK_SECRET`, `KOTANIPAY_V3_API_URL`, the public `KOTANIPAY_ONOFFRAMP_WEBHOOK_URL`, and an explicitly confirmed webhook signature mode are configured. The only accepted v3 roots are `https://sandbox-api.kotanipay.io/v3` and `https://api.kotanipay.io/api/v3`; production mode rejects the sandbox host. The v3 API base URL is separate from the legacy `KOTANI_API_URL` used by the provider-ledger integration. Set `KOTANIPAY_ONOFFRAMP_SIGNATURE_MODE` only after matching KotaniPay's documented signing contract: `raw-body-header` verifies HMAC-SHA256 using `x-kotani-signature` and the raw body (excluding an embedded `signature` property if present); `canonical-envelope` verifies HMAC-SHA256 of `JSON.stringify({ event, data })` from the envelope's `signature`. Do not enable the feature until the selected format is confirmed against the provider's current docs or sandbox.
+
+Only event name, reference ID, selected signature mode, and resulting status are written to the application log. A durable webhook inbox stores a digest plus the limited settlement fields needed for retry/reconciliation; it excludes signatures and phone numbers and does not store the full incoming provider payload. Use sandbox deliveries to verify the configured signature mode before enabling real settlement.
+
+The persisted transaction state acts as the ramp's saga record: quote → initiation → provider/on-chain/fiat reconciliation, with `refund_pending`/`refunded`/`refund_failed` representing the offramp compensation path. An ambiguous provider initiation is `initiation_unknown`; do not retry it blindly. Admins can inspect stuck records at `GET /api/v1/wallets/self-custody-ramps/admin/open`.
+
+Completed status requires a signed event or status response matching the saved Celo/cUSD asset, wallet (and offramp escrow), transaction hash, and quote amounts. Onramp settlement requires at least the quoted cUSD amount and the exact quoted KES amount; offramp settlement requires the exact quoted cUSD amount and at least the quoted KES amount. No fee tolerance is applied without provider evidence, so a short settlement is held for reconciliation rather than declared complete. Signed webhook events are durably deduplicated and retried locally, and a worker polls KotaniPay's documented onramp/offramp status-by-reference endpoints as a fallback. Malformed payloads and invalid signatures are rejected; a reconciliation failure returns HTTP 500 so the provider can retry, subject to its retry policy. A real KotaniPay Celo mainnet integration must still be provider-configured and tested before production.
+
+**Stablecoin wallet scope:** Direct wallet balance/send support is allowlisted by exact chain ID and token contract: cUSD/USDC/USDT on Celo mainnet, USDC/USDT on Ethereum, USDC on Base, and test cUSD on Alfajores. Unknown and bridged token contracts are not accepted. There is no verified in-app swap/bridge route that converts USDC/USDT into Celo cUSD before M-Pesa cash-out or converts onramp cUSD into other assets. The M-Pesa ramp remains Celo cUSD only; do not advertise a three-stablecoin M-Pesa ramp until provider support, conversion routes, fees, liquidity, and end-to-end settlement are verified.
+
+### Legacy provider-ledger callback
+
+The ledger callback remains separate from self-custody ramps: `POST /api/payments/kotanipay/callback` (legacy alias: `POST /api/kotanipay-status/callback`). It accepts both the v3 `{ event, data }` envelope and legacy flat payload fields. Invalid, unknown, or unprocessable callbacks are logged and acknowledged with HTTP 200 so provider retries do not mask reconciliation issues; inspect the application logs and transaction status when a callback is not reconciled. The legacy retry endpoint does not resend a failed STK push or change its state until KotaniPay's same-transaction idempotency behavior is confirmed.
+
 ## What's Implemented
 
 ### ✅ Completed

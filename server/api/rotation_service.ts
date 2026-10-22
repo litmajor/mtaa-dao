@@ -17,6 +17,7 @@ import { Logger } from '../utils/logger';
 import { evaluateRotationRules, formatRuleRejectionMessage, logRuleEvaluation } from '../services/rules-integration';
 import {
   distributeToRecipientOnChain,
+  getCurrentRotationCycleOnChain,
   getRotationConfigOnChain,
   getRotationMemberAddress,
   getStablecoinDecimals,
@@ -26,7 +27,11 @@ import {
   recordContributionOnChain,
   verifyStablecoinTransfer,
 } from '../services/rotation_contract';
-import { getB2cCallbackToken, initiateDarajaB2cPayout } from '../services/mpesaB2cPayoutService';
+import {
+  getB2cCallbackToken,
+  initiateDarajaB2cPayout,
+  MAX_B2C_AMOUNT_KES,
+} from '../services/mpesaB2cPayoutService';
 
 const logger = new Logger('rotation-service');
 
@@ -44,6 +49,220 @@ export interface RotationRecipient {
   cycleNumber: number;
   amountToReceive: string;
   distributedAt?: Date;
+}
+
+export function shouldUseOnChainRotationRail(expectedPoolKes: number): boolean {
+  return Number.isSafeInteger(expectedPoolKes) && expectedPoolKes > MAX_B2C_AMOUNT_KES;
+}
+
+async function processHighValueOnChainRotation(input: {
+  dao: typeof daos.$inferSelect;
+  daoId: string;
+  recipientUserId: string;
+  selectionMethod: RotationSelectionMethod;
+  eligibleMembers: Awaited<ReturnType<typeof getRotationEligibleMembers>>;
+  expectedPoolKes: number;
+}) {
+  const { dao, daoId, recipientUserId, selectionMethod, eligibleMembers, expectedPoolKes } = input;
+  if (!dao.chamaTreasuryAddress || !process.env.ROTATION_MODULE_ADDRESS) {
+    return {
+      status: 'configuration_required',
+      reason: 'This pool exceeds the M-Pesa B2C ceiling. Configure a ChamaTreasury and RotationModule for direct stablecoin contributions; KES is not converted automatically.',
+      amountKes: expectedPoolKes,
+    };
+  }
+  if (dao.rotationFrequency !== 'monthly') {
+    return {
+      status: 'configuration_required',
+      reason: 'On-chain rotations currently use a 30-day schedule. Set the high-value rotation frequency to monthly.',
+      amountKes: expectedPoolKes,
+    };
+  }
+  if (selectionMethod !== RotationSelectionMethod.SEQUENTIAL) {
+    return {
+      status: 'configuration_required',
+      reason: 'On-chain rotations currently support sequential recipient selection only.',
+      amountKes: expectedPoolKes,
+    };
+  }
+
+  const cycleNumber = (dao.currentRotationCycle || 0) + 1;
+  const [currentCycleKesContribution] = await db
+    .select({ id: daoContributions.id })
+    .from(daoContributions)
+    .where(and(
+      eq(daoContributions.daoId, daoId),
+      eq(daoContributions.currency, 'KES'),
+      inArray(daoContributions.status, ['pending', 'approved', 'completed', 'rotation_pending']),
+      sql`${daoContributions.metadata}->>'cycle' = ${String(cycleNumber)}`
+    ))
+    .limit(1);
+  if (currentCycleKesContribution) {
+    return {
+      status: 'rail_conflict',
+      reason: 'KES payments already exist for this cycle. Reconcile or refund them before starting a stablecoin cycle; the app will not convert or mix the two rails.',
+      amountKes: expectedPoolKes,
+    };
+  }
+
+  let config: Awaited<ReturnType<typeof getRotationConfigOnChain>>;
+  try {
+    config = await getRotationConfigOnChain(dao.chamaTreasuryAddress);
+  } catch (error) {
+    logger.error(`Unable to read high-value rotation configuration for DAO ${daoId}: ${error}`);
+    return {
+      status: 'configuration_required',
+      reason: 'Unable to verify the on-chain rotation configuration. Check the configured RPC and RotationModule before proceeding.',
+      amountKes: expectedPoolKes,
+    };
+  }
+  if (Number(config.totalMembers) === 0) {
+    return {
+      status: 'configuration_required',
+      reason: 'Initialize the on-chain rotation before collecting stablecoin contributions. Existing KES contributions are never converted automatically.',
+      amountKes: expectedPoolKes,
+    };
+  }
+  if (Number(config.totalMembers) !== eligibleMembers.length) {
+    return {
+      status: 'roster_mismatch',
+      reason: 'The initialized on-chain roster does not match the current approved member list. Resolve membership changes before this payout.',
+      amountKes: expectedPoolKes,
+    };
+  }
+  const currentBindings = await getRotationMemberBindings(daoId);
+  const currentAddresses = await Promise.all(currentBindings.map((binding) =>
+    getRotationMemberAddress(dao.chamaTreasuryAddress!, binding.memberId)
+  ));
+  if (currentBindings.some((binding, index) =>
+    currentAddresses[index].toLowerCase() !== binding.address.toLowerCase()
+  )) {
+    return {
+      status: 'roster_mismatch',
+      reason: 'An approved member wallet no longer matches the initialized on-chain roster. Resolve the roster before this payout.',
+      amountKes: expectedPoolKes,
+    };
+  }
+
+  const configuredStablecoin = process.env.STABLECOIN_ADDRESS;
+  if (!configuredStablecoin || !ethers.isAddress(configuredStablecoin) ||
+      String(config.stablecoin).toLowerCase() !== configuredStablecoin.toLowerCase()) {
+    return {
+      status: 'configuration_required',
+      reason: 'The configured stablecoin does not match the token used by the on-chain rotation.',
+      amountKes: expectedPoolKes,
+    };
+  }
+
+  const registeredRecipient = await getRotationMemberAddress(
+    dao.chamaTreasuryAddress,
+    getRotationMemberId(recipientUserId)
+  );
+  const [recipient] = await db.select({ walletAddress: users.walletAddress })
+    .from(users)
+    .where(eq(users.id, recipientUserId))
+    .limit(1);
+  if (!recipient?.walletAddress ||
+      registeredRecipient.toLowerCase() !== recipient.walletAddress.toLowerCase()) {
+    return {
+      status: 'roster_mismatch',
+      reason: 'The next recipient is not registered at their current wallet address in the on-chain rotation.',
+      amountKes: expectedPoolKes,
+    };
+  }
+
+  const contractCycle = await getCurrentRotationCycleOnChain(dao.chamaTreasuryAddress);
+  if (Number(contractCycle.cycleNumber) !== cycleNumber ||
+      String(contractCycle.currentRecipientId).toLowerCase() !== getRotationMemberId(recipientUserId).toLowerCase()) {
+    return {
+      status: 'cycle_mismatch',
+      reason: 'The database rotation order does not match the active on-chain cycle. No payout was submitted.',
+      amountKes: expectedPoolKes,
+    };
+  }
+
+  const paidContributions = await db
+    .select({
+      contributorId: daoContributions.contributorId,
+      metadata: daoContributions.metadata,
+    })
+    .from(daoContributions)
+    .where(and(
+      eq(daoContributions.daoId, daoId),
+      eq(daoContributions.currency, await getStablecoinSymbol(configuredStablecoin)),
+      inArray(daoContributions.status, ['approved', 'completed']),
+      sql`${daoContributions.metadata}->>'method' = 'on-chain stablecoin'`,
+      sql`${daoContributions.metadata}->>'chainStatus' = 'recorded'`,
+      sql`${daoContributions.metadata}->>'cycleNumber' = ${String(cycleNumber)}`
+    ));
+  const paidMemberIds = new Set(paidContributions.map((contribution) => contribution.contributorId));
+  if (paidContributions.length !== eligibleMembers.length ||
+      paidMemberIds.size !== eligibleMembers.length ||
+      eligibleMembers.some((member) => !paidMemberIds.has(member.userId))) {
+    return {
+      status: 'contributions_incomplete',
+      reason: `Waiting for all ${eligibleMembers.length} approved members to transfer the exact on-chain stablecoin contribution.`,
+      paidMembers: paidMemberIds.size,
+      totalMembers: eligibleMembers.length,
+      amountKes: expectedPoolKes,
+    };
+  }
+
+  const nextDistributionDate = Number(contractCycle.nextDistributionDate);
+  if (!Number.isSafeInteger(nextDistributionDate) || Date.now() < nextDistributionDate * 1000) {
+    return {
+      status: 'skipped',
+      reason: 'The on-chain rotation cycle is not yet due.',
+      nextRotationDate: Number.isSafeInteger(nextDistributionDate)
+        ? new Date(nextDistributionDate * 1000).toISOString()
+        : null,
+    };
+  }
+
+  const decimals = await getStablecoinDecimals(configuredStablecoin);
+  const symbol = await getStablecoinSymbol(configuredStablecoin);
+  const amountDistributed = ethers.formatUnits(
+    BigInt(config.monthlyContribution) * BigInt(eligibleMembers.length),
+    decimals
+  );
+  const [cycle] = await db.insert(daoRotationCycles).values({
+    daoId,
+    cycleNumber,
+    recipientUserId,
+    status: 'pending_on_chain_confirmation',
+    startDate: dao.nextRotationDate ?? new Date(),
+    endDate: new Date(),
+    amountDistributed,
+    notes: `Direct ${symbol} rotation payout proposal - ${selectionMethod} method; KES pool estimate ${expectedPoolKes} is not converted.`,
+  }).returning({ id: daoRotationCycles.id });
+  if (!cycle) throw new Error(`Failed to create high-value on-chain rotation cycle for DAO ${daoId}`);
+
+  try {
+    const onchainResult = await distributeToRecipientOnChain(dao.chamaTreasuryAddress);
+    await db.update(daoRotationCycles).set({
+      transactionHash: onchainResult.txHash,
+      notes: `Awaiting ChamaTreasury execution in ${symbol}; direct stablecoin rail. KES pool estimate ${expectedPoolKes} was not converted.`,
+      updatedAt: new Date(),
+    }).where(eq(daoRotationCycles.id, cycle.id));
+    return {
+      status: 'pending_on_chain_confirmation',
+      cycleId: cycle.id,
+      cycleNumber,
+      recipientUserId,
+      amountDistributed,
+      currency: symbol,
+      transactionHash: onchainResult.txHash,
+      message: 'Treasury payout proposal created. The cycle completes only after the ChamaTreasury executes it.',
+    };
+  } catch (error) {
+    logger.error(`Failed to dispatch high-value on-chain rotation for DAO ${daoId}: ${error}`);
+    await db.update(daoRotationCycles).set({
+      status: 'failed',
+      updatedAt: new Date(),
+      notes: `On-chain payout proposal failed: ${error instanceof Error ? error.message : String(error)}`,
+    }).where(eq(daoRotationCycles.id, cycle.id));
+    throw error;
+  }
 }
 
 function getPayoutConfirmerRole(role: string | null | undefined): 'treasurer' | 'elder' | null {
@@ -290,6 +509,7 @@ export async function processRotation(daoId: string) {
     const availableKesContributions = await db
       .select({
         id: daoContributions.id,
+        contributorId: daoContributions.contributorId,
         amount: daoContributions.amount,
         status: daoContributions.status,
         metadata: daoContributions.metadata,
@@ -311,76 +531,171 @@ export async function processRotation(daoId: string) {
         )`
       ));
 
-    if (availableKesContributions.length > 0) {
+    let merryGoRoundMembers: Awaited<ReturnType<typeof getRotationEligibleMembers>> | null = null;
+    if (dao.daoType === 'merryGoRound' && dao.rotationContributionAmountKes != null) {
+        const fixedContribution = Number(dao.rotationContributionAmountKes);
+        if (!Number.isSafeInteger(fixedContribution) || fixedContribution <= 0) {
+          return {
+            status: 'configuration_required',
+            reason: 'Set a positive whole-KES contribution amount in the merry-go-round configuration.',
+          };
+        }
+        merryGoRoundMembers = await getRotationEligibleMembers(daoId);
+        const expectedPoolKes = fixedContribution * merryGoRoundMembers.length;
+        if (!Number.isSafeInteger(expectedPoolKes)) {
+          return {
+            status: 'configuration_required',
+            reason: 'The expected rotation pool is outside the supported amount range.',
+          };
+        }
+        if (shouldUseOnChainRotationRail(expectedPoolKes)) {
+          return processHighValueOnChainRotation({
+            dao,
+            daoId,
+            recipientUserId,
+            selectionMethod,
+            eligibleMembers: merryGoRoundMembers,
+            expectedPoolKes,
+          });
+        }
+    }
+
+    let amountDistributed: string | null = null;
+    if (dao.daoType === 'merryGoRound' && dao.rotationContributionAmountKes != null) {
+      const fixedContribution = Number(dao.rotationContributionAmountKes);
+      if (!Number.isSafeInteger(fixedContribution) || fixedContribution <= 0) {
+        return {
+          status: 'configuration_required',
+          reason: 'Set a positive whole-KES contribution amount in the merry-go-round configuration.',
+        };
+      }
+
+      const rotationMembers = merryGoRoundMembers || await getRotationEligibleMembers(daoId);
+      if (rotationMembers.length < 2) {
+        return {
+          status: 'contributions_incomplete',
+          reason: 'At least two approved members are required for a rotation.',
+          paidMembers: 0,
+          totalMembers: rotationMembers.length,
+        };
+      }
+
+      const eligibleMemberIds = new Set(rotationMembers.map((member) => member.userId));
+      const memberContributions = new Map<string, number>();
+      for (const contribution of availableKesContributions) {
+        const contributorId = contribution.contributorId;
+        if (!contributorId || !eligibleMemberIds.has(contributorId)) {
+          return {
+            status: 'contributions_incomplete',
+            reason: 'An available contribution does not belong to an active rotation member.',
+          };
+        }
+        if (memberContributions.has(contributorId)) {
+          return {
+            status: 'contributions_incomplete',
+            reason: 'Each member must have exactly one approved contribution for the current cycle.',
+          };
+        }
+        const amount = Number(contribution.amount);
+        if (!Number.isSafeInteger(amount) || amount !== fixedContribution) {
+          return {
+            status: 'contributions_incomplete',
+            reason: `Each active member must contribute exactly ${fixedContribution} KES.`,
+          };
+        }
+        memberContributions.set(contributorId, amount);
+      }
+
+      if (memberContributions.size !== rotationMembers.length) {
+        return {
+          status: 'contributions_incomplete',
+          reason: `Waiting for all ${rotationMembers.length} active members to contribute ${fixedContribution} KES.`,
+          paidMembers: memberContributions.size,
+          totalMembers: rotationMembers.length,
+          requiredContributionKes: fixedContribution,
+        };
+      }
+
+      const payoutAmount = fixedContribution * rotationMembers.length;
+      if (!Number.isSafeInteger(payoutAmount) || payoutAmount < 10 || payoutAmount > MAX_B2C_AMOUNT_KES) {
+        return {
+          status: 'payout_amount_out_of_range',
+          reason: `The complete rotation pool must be between 10 and ${MAX_B2C_AMOUNT_KES.toLocaleString()} KES for M-Pesa B2C.`,
+          amountKes: payoutAmount,
+        };
+      }
+      amountDistributed = String(payoutAmount);
+    } else if (availableKesContributions.length > 0) {
       const { Decimal } = await import('decimal.js');
       const contributionTotal = availableKesContributions.reduce(
         (total, contribution) => total.plus(contribution.amount?.toString() || '0'),
         new Decimal(0)
       );
-      if (contributionTotal.gt(0)) {
-        const amountDistributed = contributionTotal.toFixed(2);
-        const manualCycle = await db.transaction(async (tx) => {
-          const [daoTx] = await tx
-            .select()
-            .from(daos)
-            .where(eq(daos.id, daoId))
-            .limit(1);
-          if (!daoTx) throw new Error(`DAO not found in transaction: ${daoId}`);
+      if (contributionTotal.gt(0)) amountDistributed = contributionTotal.toFixed(2);
+    }
 
-          const cycleNumber = (daoTx.currentRotationCycle || 0) + 1;
-          const [cycle] = await tx
-            .insert(daoRotationCycles)
-            .values({
-              daoId,
-              cycleNumber,
-              recipientUserId,
-              status: 'pending_manual_payout',
-              startDate: daoTx.nextRotationDate ?? new Date(),
-              endDate: new Date(),
-              amountDistributed,
-              notes: `Awaiting manual KES payout - ${selectionMethod} method`,
+    if (amountDistributed) {
+      const manualCycle = await db.transaction(async (tx) => {
+        const [daoTx] = await tx
+          .select()
+          .from(daos)
+          .where(eq(daos.id, daoId))
+          .limit(1);
+        if (!daoTx) throw new Error(`DAO not found in transaction: ${daoId}`);
+
+        const cycleNumber = (daoTx.currentRotationCycle || 0) + 1;
+        const [cycle] = await tx
+          .insert(daoRotationCycles)
+          .values({
+            daoId,
+            cycleNumber,
+            recipientUserId,
+            status: 'pending_manual_payout',
+            startDate: daoTx.nextRotationDate ?? new Date(),
+            endDate: new Date(),
+            amountDistributed,
+            notes: `Awaiting M-Pesa B2C payout - ${selectionMethod} method`,
+          })
+          .returning({ id: daoRotationCycles.id });
+        if (!cycle) throw new Error(`Failed to create rotation payout cycle for DAO ${daoId}`);
+
+        let assignedCount = 0;
+        for (const contribution of availableKesContributions) {
+          const assigned = await tx
+            .update(daoContributions)
+            .set({
+              status: 'rotation_pending',
+              metadata: {
+                ...((contribution.metadata || {}) as Record<string, unknown>),
+                rotationCycleId: cycle.id,
+                rotationPreviousStatus: contribution.status,
+              },
+              updatedAt: new Date(),
             })
-            .returning({ id: daoRotationCycles.id });
-          if (!cycle) throw new Error(`Failed to create manual payout cycle for DAO ${daoId}`);
+            .where(and(
+              eq(daoContributions.id, contribution.id),
+              inArray(daoContributions.status, ['approved', 'completed']),
+              sql`${daoContributions.metadata}->>'rotationCycleId' IS NULL`
+            ))
+            .returning({ id: daoContributions.id });
+          assignedCount += assigned.length;
+        }
+        if (assignedCount !== availableKesContributions.length) {
+          throw new Error('Contribution ledger changed while preparing the rotation payout');
+        }
 
-          let assignedCount = 0;
-          for (const contribution of availableKesContributions) {
-            const assigned = await tx
-              .update(daoContributions)
-              .set({
-                status: 'rotation_pending',
-                metadata: {
-                  ...((contribution.metadata || {}) as Record<string, unknown>),
-                  rotationCycleId: cycle.id,
-                  rotationPreviousStatus: contribution.status,
-                },
-                updatedAt: new Date(),
-              })
-              .where(and(
-                eq(daoContributions.id, contribution.id),
-                inArray(daoContributions.status, ['approved', 'completed']),
-                sql`${daoContributions.metadata}->>'rotationCycleId' IS NULL`
-              ))
-              .returning({ id: daoContributions.id });
-            assignedCount += assigned.length;
-          }
-          if (assignedCount !== availableKesContributions.length) {
-            throw new Error('Contribution ledger changed while preparing the manual rotation payout');
-          }
+        return { cycleId: cycle.id, cycleNumber };
+      });
 
-          return { cycleId: cycle.id, cycleNumber };
-        });
-
-        return {
-          status: 'pending_manual_payout',
-          cycleId: manualCycle.cycleId,
-          cycleNumber: manualCycle.cycleNumber,
-          recipientUserId,
-          amountDistributed,
-          currency: 'KES',
-          message: 'Send the payout through M-Pesa, then confirm it with the payment reference.',
-        };
-      }
+      return {
+        status: 'pending_manual_payout',
+        cycleId: manualCycle.cycleId,
+        cycleNumber: manualCycle.cycleNumber,
+        recipientUserId,
+        amountDistributed,
+        currency: 'KES',
+        message: 'Rotation payout is ready for the required treasurer and elder authorizations.',
+      };
     }
 
     // Validate treasury units
@@ -543,6 +858,38 @@ export async function getRotationStatus(daoId: string) {
       .orderBy(daoRotationCycles.cycleNumber);
 
     const members = await getRotationEligibleMembers(daoId);
+    const expectedPoolKes = dao.daoType === 'merryGoRound' && dao.rotationContributionAmountKes
+      ? Number(dao.rotationContributionAmountKes) * members.length
+      : null;
+    const highValueOnChain = expectedPoolKes !== null && shouldUseOnChainRotationRail(expectedPoolKes);
+    const nextCycleNumber = String((dao.currentRotationCycle || 0) + 1);
+    const currentCycleKesContributions = highValueOnChain
+      ? await db.select({ id: daoContributions.id })
+          .from(daoContributions)
+          .where(and(
+            eq(daoContributions.daoId, daoId),
+            eq(daoContributions.currency, 'KES'),
+            inArray(daoContributions.status, ['pending', 'approved', 'completed', 'rotation_pending']),
+            sql`${daoContributions.metadata}->>'cycle' = ${nextCycleNumber}`
+          ))
+      : [];
+    const currentCycleOnChainContributions = highValueOnChain
+      ? await db.select({
+          contributorId: daoContributions.contributorId,
+          metadata: daoContributions.metadata,
+        })
+          .from(daoContributions)
+          .where(and(
+            eq(daoContributions.daoId, daoId),
+            inArray(daoContributions.status, ['approved', 'completed']),
+            sql`${daoContributions.metadata}->>'method' = 'on-chain stablecoin'`,
+            sql`${daoContributions.metadata}->>'chainStatus' = 'recorded'`,
+            sql`${daoContributions.metadata}->>'cycleNumber' = ${nextCycleNumber}`
+          ))
+      : [];
+    const onChainPaidMembers = new Set(
+      currentCycleOnChainContributions.map((contribution) => contribution.contributorId)
+    ).size;
     const availableContributions = await db
       .select({ amount: daoContributions.amount })
       .from(daoContributions)
@@ -580,21 +927,27 @@ export async function getRotationStatus(daoId: string) {
     let onChainRotationStatus: 'not_configured' | 'not_initialized' | 'initialized' | 'unknown' =
       dao.chamaTreasuryAddress ? 'unknown' : 'not_configured';
     let onChainRotationDetails: { monthlyContribution: string; currency: string; totalMembers: number } | null = null;
+    let onChainNextRotationDate: string | null = null;
     if (dao.chamaTreasuryAddress && process.env.ROTATION_MODULE_ADDRESS) {
       try {
         const config = await getRotationConfigOnChain(dao.chamaTreasuryAddress);
         onChainRotationStatus = Number(config.totalMembers) > 0 ? 'initialized' : 'not_initialized';
         if (onChainRotationStatus === 'initialized') {
           const tokenAddress = String(config.stablecoin);
-          const [decimals, symbol] = await Promise.all([
+          const [decimals, symbol, currentCycle] = await Promise.all([
             getStablecoinDecimals(tokenAddress),
             getStablecoinSymbol(tokenAddress),
+            getCurrentRotationCycleOnChain(dao.chamaTreasuryAddress),
           ]);
           onChainRotationDetails = {
             monthlyContribution: ethers.formatUnits(BigInt(config.monthlyContribution), decimals),
             currency: symbol,
             totalMembers: Number(config.totalMembers),
           };
+          const nextDateSeconds = Number(currentCycle.nextDistributionDate);
+          if (Number.isSafeInteger(nextDateSeconds) && nextDateSeconds > 0) {
+            onChainNextRotationDate = new Date(nextDateSeconds * 1000).toISOString();
+          }
         }
       } catch (error) {
         logger.warn(`Unable to read on-chain rotation configuration for DAO ${daoId}: ${error}`);
@@ -606,10 +959,18 @@ export async function getRotationStatus(daoId: string) {
       daoType: dao.daoType,
       durationModel: dao.durationModel,
       rotationFrequency: dao.rotationFrequency,
+      rotationContributionAmountKes: dao.rotationContributionAmountKes,
+      expectedPoolKes,
+      recommendedPayoutRail: highValueOnChain || expectedPoolKes === null ? 'on_chain' : 'mpesa',
+      hasCurrentCycleKesContributions: currentCycleKesContributions.length > 0,
+      onChainPaidMembers,
+      stableInflowTrackingEnabled: process.env.STABLE_INFLOW_ENABLED === 'true',
+      stableOutflowTrackingEnabled: process.env.STABLE_OUTFLOW_ENABLED === 'true',
+      b2cEnabled: process.env.MPESA_B2C_ENABLED === 'true',
       selectionMethod: dao.rotationSelectionMethod,
       currentCycle: dao.currentRotationCycle || 0,
       totalCycles: dao.totalRotationCycles,
-      nextRotationDate: dao.nextRotationDate,
+      nextRotationDate: highValueOnChain ? onChainNextRotationDate || dao.nextRotationDate : dao.nextRotationDate,
       treasuryBalance: hasKesBalance ? availableKesBalance : dao.treasuryBalance,
       treasuryCurrency: hasKesBalance ? 'KES' : 'cUSD',
       onChainRotationStatus,
@@ -789,6 +1150,10 @@ export async function completeManualRotation(
   });
 
   if (result.status !== 'ready_to_initiate') return result;
+  if (!result.phone || !Number.isSafeInteger(result.amountKes) ||
+      !result.treasurerId || !result.elderId) {
+    throw new Error('Rotation payout authorization is incomplete; no B2C request was initiated');
+  }
 
   let payout = await db.transaction(async (tx) => {
     const [existingPayout] = await tx
@@ -1372,6 +1737,9 @@ export async function initializeRotationForDao(
 ) {
   const [dao] = await db.select().from(daos).where(eq(daos.id, daoId)).limit(1);
   if (!dao) throw new Error(`DAO not found: ${daoId}`);
+  if (dao.rotationFrequency !== 'monthly') {
+    throw new Error('On-chain rotation currently uses a 30-day schedule; monthly frequency is required');
+  }
   if (!dao.chamaTreasuryAddress) throw new Error('DAO has no deployed ChamaTreasury address');
   if (!ethers.isAddress(dao.chamaTreasuryAddress)) throw new Error('DAO ChamaTreasury address is invalid');
   if (dao.rotationSelectionMethod && dao.rotationSelectionMethod !== 'sequential') {
@@ -1384,6 +1752,24 @@ export async function initializeRotationForDao(
 
   const bindings = await getRotationMemberBindings(daoId);
   if (bindings.length < 2) throw new Error('At least two approved members with wallet addresses are required');
+  if (dao.daoType === 'merryGoRound' && dao.rotationContributionAmountKes) {
+    const expectedPoolKes = Number(dao.rotationContributionAmountKes) * bindings.length;
+    if (shouldUseOnChainRotationRail(expectedPoolKes)) {
+      const expectedCycle = String((dao.currentRotationCycle || 0) + 1);
+      const [existingKesContribution] = await db.select({ id: daoContributions.id })
+        .from(daoContributions)
+        .where(and(
+          eq(daoContributions.daoId, daoId),
+          eq(daoContributions.currency, 'KES'),
+          inArray(daoContributions.status, ['pending', 'approved', 'completed', 'rotation_pending']),
+          sql`${daoContributions.metadata}->>'cycle' = ${expectedCycle}`
+        ))
+        .limit(1);
+      if (existingKesContribution) {
+        throw new Error('KES payments already exist for this cycle. Reconcile or refund them before initializing the direct stablecoin rail.');
+      }
+    }
+  }
   const result = await initializeRotationOnChain({
     ...options,
     vaultAddress: dao.chamaTreasuryAddress,
@@ -1443,6 +1829,13 @@ export async function recordRotationContributionForUser(daoId: string, userId: s
   const [dao] = await db.select().from(daos).where(eq(daos.id, daoId)).limit(1);
   if (!dao) throw new Error(`DAO not found: ${daoId}`);
   if (!dao.chamaTreasuryAddress) throw new Error('DAO has no deployed ChamaTreasury address');
+  if (dao.daoType === 'merryGoRound' && dao.rotationContributionAmountKes) {
+    const members = await getRotationEligibleMembers(daoId);
+    const expectedPoolKes = Number(dao.rotationContributionAmountKes) * members.length;
+    if (!shouldUseOnChainRotationRail(expectedPoolKes)) {
+      throw new Error('Direct stablecoin contributions are reserved for merry-go-round pools above the M-Pesa B2C ceiling');
+    }
+  }
 
   const stablecoin = process.env.STABLECOIN_ADDRESS;
   if (!stablecoin || !ethers.isAddress(stablecoin)) throw new Error('A valid STABLECOIN_ADDRESS is required');
@@ -1478,6 +1871,49 @@ export async function recordRotationContributionForUser(daoId: string, userId: s
   });
   const decimals = await getStablecoinDecimals(stablecoin);
   const symbol = await getStablecoinSymbol(stablecoin);
+  const { stableInflowModule } = await import('../services/stableInflowModule');
+  let stableInflowResult: Awaited<ReturnType<typeof stableInflowModule.processStableInflow>> | undefined;
+  if (stableInflowModule.isEnabled()) {
+    stableInflowResult = await stableInflowModule.processStableInflow({
+      source: 'dao_rotation_contribution',
+      chain: 'celo',
+      chainId: transfer.chainId,
+      txHash: transactionHash,
+      logIndex: transfer.logIndex,
+      tokenAddress: stablecoin,
+      tokenSymbol: symbol,
+      decimals,
+      rawAmount: contributionState.monthlyContribution.toString(),
+      fromAddress: user.walletAddress,
+      toAddress: dao.chamaTreasuryAddress,
+      blockTimestamp: transfer.blockTimestamp,
+      confirmations: transfer.confirmations,
+      provider: 'rotation_module',
+      metadata: {
+        daoId,
+        userId,
+        rotationCycleNumber: contributionState.cycleNumber,
+      },
+    });
+    if (!stableInflowResult.success) {
+      throw new Error(
+        `Stable inflow tracking failed for this verified transfer: ${stableInflowResult.error}. The transfer is already in the ChamaTreasury; do not send it again.`
+      );
+    }
+    if (stableInflowResult.confirmationState !== 'confirmed') {
+      throw new Error(
+        `Stablecoin transfer has ${transfer.confirmations} confirmations and needs more before it can count. The transfer is already in the ChamaTreasury; do not send it again.`
+      );
+    }
+    if (stableInflowResult.riskFlags?.depegDetected ||
+        stableInflowResult.riskFlags?.delayedConfirmation ||
+        stableInflowResult.riskFlags?.lowLiquidity ||
+        stableInflowResult.riskFlags?.highRiskScore) {
+      logger.warn(
+        `Stable inflow risk flags were raised for rotation contribution ${transactionHash}: ${stableInflowResult.riskFlags.notes.join('; ')}`
+      );
+    }
+  }
   const contribution = await db.transaction(async (tx) => {
     await tx.select({ id: daos.id }).from(daos).where(eq(daos.id, daoId)).for('update');
     const [existingContribution] = await tx.select().from(daoContributions)
@@ -1528,13 +1964,24 @@ export async function recordRotationContributionForUser(daoId: string, userId: s
         cycleNumber: contributionState.cycleNumber,
         stablecoin,
         transferBlockNumber: transfer.blockNumber,
+        stableInflowEventId: stableInflowResult?.stableInflowEventId,
+        stableInflowError: stableInflowResult && !stableInflowResult.success
+          ? stableInflowResult.error
+          : undefined,
       },
     }).returning();
     return createdContribution;
   });
 
   if (['approved', 'completed', 'rotation_pending'].includes(contribution.status || '')) {
-    return { contributionId: contribution.id, status: 'already_recorded', cycleNumber: contribution.metadata?.cycleNumber };
+    if (stableInflowResult?.success && stableInflowResult.stableInflowEventId) {
+      await stableInflowModule.markCredited(stableInflowResult.stableInflowEventId, {
+        daoContributionId: contribution.id,
+        daoId,
+        rotationCycleNumber: contributionState.cycleNumber,
+      });
+    }
+    return { contributionId: contribution.id, status: 'already_recorded', cycleNumber: contributionState.cycleNumber };
   }
 
   const completion = await db.transaction(async (tx) => {
@@ -1592,7 +2039,22 @@ export async function recordRotationContributionForUser(daoId: string, userId: s
   });
 
   if (completion.alreadyRecorded) {
-    return { contributionId: contribution.id, status: 'already_recorded', cycleNumber: contribution.metadata?.cycleNumber };
+    if (stableInflowResult?.success && stableInflowResult.stableInflowEventId) {
+      await stableInflowModule.markCredited(stableInflowResult.stableInflowEventId, {
+        daoContributionId: contribution.id,
+        daoId,
+        rotationCycleNumber: contributionState.cycleNumber,
+      });
+    }
+    return { contributionId: contribution.id, status: 'already_recorded', cycleNumber: contributionState.cycleNumber };
+  }
+
+  if (stableInflowResult?.success && stableInflowResult.stableInflowEventId) {
+    await stableInflowModule.markCredited(stableInflowResult.stableInflowEventId, {
+      daoContributionId: contribution.id,
+      daoId,
+      rotationCycleNumber: contributionState.cycleNumber,
+    });
   }
 
   return {
@@ -1600,6 +2062,8 @@ export async function recordRotationContributionForUser(daoId: string, userId: s
     status: 'approved',
     cycleNumber: contributionState.cycleNumber,
     transactionHash,
+    stableInflowEventId: stableInflowResult?.stableInflowEventId,
+    stableInflowTrackingError: stableInflowResult?.success ? undefined : stableInflowResult?.error,
   };
 }
 

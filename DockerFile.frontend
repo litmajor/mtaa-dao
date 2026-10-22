@@ -1,13 +1,13 @@
 
 # ---- Build Stage ----
-FROM node:20-bullseye-slim AS builder
+FROM node:22-bullseye-slim AS builder
 WORKDIR /app
 
 # Use npm for installs (prefer locked installs, increase network timeouts)
 COPY package*.json ./
 COPY docs-site/package.json ./docs-site/package.json
 # prefer `npm ci` for reproducible installs; increase network timeout and retries
-RUN npm ci --prefer-offline --no-audit --progress=false --network-timeout=600000 --fetch-retries=5 || npm install --network-timeout=600000 --fetch-retries=5
+RUN npm ci --prefer-offline --no-audit --progress=false --network-timeout=600000 --fetch-retries=5
 
 COPY . .
 
@@ -16,8 +16,8 @@ RUN npm run build:frontend
 
 # ---- Serve with Nginx ----
 FROM nginx:alpine
-COPY --from=builder /app/dist /usr/share/nginx/html
-COPY ./nginx.conf /etc/nginx/nginx.conf
+COPY --from=builder /app/dist/public /usr/share/nginx/html
+COPY ./nginx.frontend.conf /etc/nginx/nginx.conf
 
 EXPOSE 80
 CMD ["nginx", "-g", "daemon off;"]

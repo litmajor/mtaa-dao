@@ -81,12 +81,22 @@ export class PaymentGatewayService {
       const secKey = process.env[`${upper}_SECRET_KEY`] || process.env[`${upper}_CONSUMER_SECRET`];
 
       if (pubKey && secKey) {
+        const configuredEnvironment =
+          provider === 'mpesa'
+            ? process.env.MPESA_ENVIRONMENT || process.env.MPESA_ENV
+            : process.env[`${upper}_ENV`];
+        const environment =
+          provider === 'mpesa'
+            ? configuredEnvironment === 'live' || configuredEnvironment === 'production'
+              ? 'production'
+              : 'test'
+            : configuredEnvironment || 'test';
         this.configs.set(provider, {
           provider,
           apiKey: pubKey,
           secretKey: secKey,
           webhookSecret: process.env[`${upper}_WEBHOOK_SECRET`],
-          environment: (process.env[`${upper}_ENV`] as any) || 'test'
+          environment: environment as PaymentGatewayConfig['environment']
         });
       }
     }
@@ -642,8 +652,16 @@ export class PaymentGatewayService {
     const reference = `MPE-${Date.now()}-${Math.random().toString(36).substring(2, 11).toUpperCase()}`;
 
     try {
+      if (request.currency.toUpperCase() !== 'KES') {
+        throw new Error('M-Pesa STK deposits must be denominated in KES.');
+      }
+      const amountKes = Number(request.amount);
+      if (!Number.isSafeInteger(amountKes) || amountKes <= 0 || amountKes > 150_000) {
+        throw new Error('M-Pesa STK deposits must be a whole-KES amount between 1 and 150,000.');
+      }
+
       const rawPhone = request.metadata?.phone?.replace(/\D/g, '');
-      if (!rawPhone || rawPhone.length < 9) {
+      if (!rawPhone || !/^(?:254[17]\d{8}|0[17]\d{8}|[17]\d{8})$/.test(rawPhone)) {
         throw new Error('STK push initialization requires a valid MSISDN.');
       }
       const formattedPhone = rawPhone.startsWith('254') ? rawPhone : `254${rawPhone.slice(-9)}`;
@@ -658,8 +676,8 @@ export class PaymentGatewayService {
         );
       }
 
-      const shortcode = process.env.MPESA_SHORTCODE;
-      const passkey = process.env.MPESA_PASSKEY;
+      const shortcode = process.env.MPESA_SHORTCODE || process.env.MPESA_BUSINESS_SHORTCODE;
+      const passkey = process.env.MPESA_PASSKEY || process.env.MPESA_PASSWORD;
       if (!shortcode || !passkey) {
         throw new Error('Critical backend failure: M-Pesa organizational parameters are unconfigured.');
       }
@@ -667,19 +685,31 @@ export class PaymentGatewayService {
       const authToken = await this.getMpesaToken(config);
       const timestamp = new Date().toISOString().replace(/[^0-9]/g, '').slice(0, 14);
       const password = Buffer.from(`${shortcode}${passkey}${timestamp}`).toString('base64');
+      const callbackToken = crypto.randomBytes(32).toString('hex');
+      const callbackUrl = new URL(
+        request.callbackUrl ||
+          process.env.MPESA_CALLBACK_URL ||
+          `${process.env.APP_URL || process.env.BACKEND_URL || 'http://localhost:5000'}/api/webhooks/mpesa`
+      );
+      if (
+        config.environment === 'production' &&
+        (callbackUrl.protocol !== 'https:' ||
+          ['localhost', '127.0.0.1', '::1'].includes(callbackUrl.hostname))
+      ) {
+        throw new Error('Live M-Pesa callback URL must be publicly reachable over HTTPS.');
+      }
+      callbackUrl.searchParams.set('token', callbackToken);
 
       const payload = {
         BusinessShortCode: shortcode,
         Password: password,
         Timestamp: timestamp,
         TransactionType: 'CustomerPayBillOnline',
-        Amount: Math.round(parseFloat(request.amount)),
+        Amount: amountKes,
         PartyA: formattedPhone,
         PartyB: shortcode,
         PhoneNumber: formattedPhone,
-        CallBackURL: request.callbackUrl ||
-          process.env.MPESA_CALLBACK_URL ||
-          `${process.env.APP_URL || process.env.BACKEND_URL || 'http://localhost:5000'}/api/webhooks/mpesa`,
+        CallBackURL: callbackUrl.toString(),
         AccountReference: `MTAA-${request.userId.slice(0, 8).toUpperCase()}`,
         TransactionDesc: request.metadata?.description || 'DAO System Wallet Deposit Load'
       };
@@ -699,7 +729,7 @@ export class PaymentGatewayService {
 
       const data = await response.json();
 
-      if (data.ResponseCode === '0') {
+      if (response.ok && data.ResponseCode === '0' && data.CheckoutRequestID && data.MerchantRequestID) {
         await this.recordTransaction(
           request.userId,
           reference,
@@ -710,6 +740,8 @@ export class PaymentGatewayService {
           'pending',
           {
             ...request.metadata,
+            phone: formattedPhone,
+            callbackToken,
             checkoutRequestID: data.CheckoutRequestID,
             merchantRequestID: data.MerchantRequestID
           }
@@ -724,7 +756,10 @@ export class PaymentGatewayService {
         };
       }
 
-      throw new Error(data.ResponseDescription || 'STK Push interface rejected the request.');
+      throw new Error(
+        data.ResponseDescription ||
+          `STK Push interface rejected the request (HTTP ${response.status}).`
+      );
     } catch (error: any) {
       try {
         await this.recordTransaction(request.userId, reference, 'deposit', request.amount, request.currency, 'mpesa', 'failed', { error: error.message });

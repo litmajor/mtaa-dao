@@ -216,7 +216,8 @@ const CreateDAOFlowContent: React.FC = () => {
     // Multisig defaults
     enableMultisig: false,
     multisigSigners: [],
-    multisigRequiredSignatures: 2
+    multisigRequiredSignatures: 2,
+    rotationContributionAmountKes: ''
   }), []);
 
   const { data: daoData, setData: setDaoData, lastSaved, clearDraft } = useFormPersistence(initialDaoData);
@@ -646,6 +647,7 @@ const CreateDAOFlowContent: React.FC = () => {
     enableMultisig?: boolean;
     multisigSigners?: string[];
     multisigRequiredSignatures?: number;
+    rotationContributionAmountKes?: string;
   }
 
   interface NewMember {
@@ -756,6 +758,17 @@ const CreateDAOFlowContent: React.FC = () => {
   const deployDAO = async () => {
     setIsDeploying(true);
     try {
+      if (
+        daoData.daoType === 'merryGoRound' &&
+        (!/^\d+$/.test(daoData.rotationContributionAmountKes || '') ||
+          !Number.isSafeInteger(Number(daoData.rotationContributionAmountKes)) ||
+          Number(daoData.rotationContributionAmountKes) <= 0)
+      ) {
+        alert('Enter a positive whole-KES contribution amount for each rotation cycle.');
+        setIsDeploying(false);
+        return;
+      }
+
       if (!walletAddress || !isConnected) {
         alert('Please connect your wallet before deploying.');
         setIsDeploying(false);
@@ -781,7 +794,7 @@ const CreateDAOFlowContent: React.FC = () => {
 
       const daoTypeConfig = DAO_TYPE_CONFIG[daoData.daoType as keyof typeof DAO_TYPE_CONFIG];
 
-      const result = await authClient.post('/api/dao-deploy', {
+      const result = await authClient.post('/api/dao/deploy', {
           daoData: {
             name: sanitizeInput(daoData.name, 100),
             description: sanitizeInput(daoData.description, 500),
@@ -792,7 +805,10 @@ const CreateDAOFlowContent: React.FC = () => {
             features: daoTypeConfig?.features ? { ...daoTypeConfig.features } : {},  // null-safe
             customTokenAddress: daoData.treasuryType === 'custom' ? daoData.customTokenAddress : undefined,
             durationDays: daoData.duration,
-            rotationFrequency: daoData.daoType === 'shortTerm' ? 'monthly' : undefined
+            rotationFrequency: daoData.daoType === 'merryGoRound' ? 'monthly' : undefined,
+            rotationContributionAmountKes: daoData.daoType === 'merryGoRound'
+              ? Number(daoData.rotationContributionAmountKes)
+              : undefined
           },
           founderWallet: walletAddress,
           invitedMembers: invitedMembers,
@@ -1679,6 +1695,30 @@ const CreateDAOFlowContent: React.FC = () => {
               ))}
             </div>
           </div>
+        )}
+
+        {daoData.daoType === 'merryGoRound' && (
+          <Card>
+            <CardHeader>
+              <CardTitle>Rotation Contributions</CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-2">
+              <Label htmlFor="rotation-contribution-amount">Fixed contribution per member (KES)</Label>
+              <Input
+                id="rotation-contribution-amount"
+                type="number"
+                min="1"
+                step="1"
+                inputMode="numeric"
+                value={daoData.rotationContributionAmountKes || ''}
+                onChange={(event) => updateDaoData('rotationContributionAmountKes', event.target.value)}
+                placeholder="e.g. 1000"
+              />
+              <p className="text-xs text-gray-500 dark:text-gray-400">
+                Every active member contributes this amount each cycle. The pooled amount is sent to one member in turn through M-Pesa after the treasurer and an elder authorize the payout.
+              </p>
+            </CardContent>
+          </Card>
         )}
 
         <div>

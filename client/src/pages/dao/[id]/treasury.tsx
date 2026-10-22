@@ -9,5 +9,5 @@ export default function DaoTreasuryPage() {
     return <div className="p-4">Invalid DAO ID</div>;
   }
 
-  return <TreasuryPage />;
+  return <TreasuryPage daoId={daoId} />;
 }

@@ -620,6 +620,7 @@ export const daos = pgTable("daos", {
   withdrawalMode: varchar("withdrawal_mode").default("multisig"), // direct, multisig, rotation
   durationModel: varchar("duration_model").default("time"), // time, rotation, ongoing
   rotationFrequency: varchar("rotation_frequency"), // weekly, monthly, quarterly
+  rotationContributionAmountKes: integer("rotation_contribution_amount_kes"),
   rotationSelectionMethod: varchar("rotation_selection_method").default("sequential"), // sequential, lottery, proportional
   nextRotationDate: timestamp("next_rotation_date"),
   currentRotationCycle: integer("current_rotation_cycle").default(0), // Track which cycle we're in

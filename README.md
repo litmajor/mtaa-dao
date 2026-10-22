@@ -621,12 +621,50 @@ docker run -e DATABASE_URL="..." -e REDIS_URL="..." mtaa-dao
 
 ### GitHub Actions
 
-Auto-deployment on push to `main`:
-1. Run tests and linting
-2. Build contracts
-3. Deploy to staging
-4. Smoke tests
-5. Deploy to production
+The `CI` workflow runs the database schema setup, lint, type checking, tests,
+build, and dependency audit for pushes to `main` and `develop` and pull
+requests targeting either branch. Render can deploy after this workflow passes.
+An optional VPS job uses SSH to deploy prebuilt Docker images to providers such
+as Hetzner or DigitalOcean; it runs after CI on `main` when enabled. The
+dependency audit is temporarily report-only while the current dependency
+findings are triaged; its output remains visible in Actions.
+
+To enable VPS deployment, add the repository variable `VPS_DEPLOY_ENABLED=true`
+and configure these repository secrets:
+
+- `VPS_HOST`: VPS hostname or IP address.
+- `VPS_USER`: SSH user with permission to run Docker Compose.
+- `VPS_SSH_KEY`: private key for that user.
+- `VPS_KNOWN_HOSTS`: trusted `known_hosts` entry for the VPS (do not generate
+  this trust entry dynamically in the workflow).
+
+Optional repository variables are `VPS_SSH_PORT` (defaults to `22`) and
+`VPS_DEPLOY_PATH` (defaults to `/srv/mtaadao`). Prepare that directory on the
+server with a production `.env.production`, Docker Engine and the Compose
+plugin, and the TLS certificates expected by `nginx.conf`. The workflow builds
+the API and frontend images on GitHub Actions, transfers them over SSH, loads
+them on the VPS, then runs Compose without building on the server and waits for
+the services to become healthy. It does not transfer or overwrite
+`.env.production`, certificates, or persistent database volumes. Configure
+Render separately if both hosting targets should deploy. The workflow applies
+the schema only to its disposable CI database; production schema changes remain
+a separate, reviewed operation and are not automatically pushed to the VPS.
+For a non-default SSH port, provide the matching `[host]:port` entry in
+`VPS_KNOWN_HOSTS`.
+
+For the Render web service, configure **Auto-Deploy** as **After CI Checks
+Pass**, the build command as `npm ci && npm run build:root`, and the start
+command as `npm run start:prod`. Set `NODE_ENV=production` and configure the
+health check path as `/api/health/live`. Do not use `npm run dev` as the Render
+start command: it launches the Vite client, a watched TypeScript backend, and
+the Next.js docs development server together. The production build serves the
+compiled client and starts only the compiled backend.
+
+Render's **After CI Checks Pass** setting only gates deployment when GitHub
+Actions checks can run and complete successfully. If GitHub blocks workflow
+jobs (for example, because of an account billing lock), no CI result is
+available and the deployment cannot be validated or released through this
+pipeline until the account issue is resolved.
 
 ---
 

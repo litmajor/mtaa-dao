@@ -6,13 +6,17 @@ const logger = new Logger('contribution-graph-proof-uniqueness-migration');
 export async function migrateContributionGraphProofUniqueness(): Promise<void> {
   logger.info('Applying contribution proof idempotency constraint');
   try {
+    const table = await pool.query<{ table_name: string | null }>(
+      "SELECT to_regclass('public.contribution_graph') AS table_name"
+    );
+    if (!table.rows[0]?.table_name) {
+      logger.warn('Skipping contribution proof idempotency constraint: contribution_graph table is not installed');
+      return;
+    }
+
     await pool.query(`
       DO $$
       BEGIN
-        IF to_regclass('public.contribution_graph') IS NULL THEN
-          RAISE EXCEPTION 'contribution_graph table does not exist';
-        END IF;
-
         IF EXISTS (
           SELECT 1
           FROM public.contribution_graph

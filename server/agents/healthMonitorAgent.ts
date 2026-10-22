@@ -230,7 +230,7 @@ export class HealthMonitorAgent {
     this._isRunning = true;
 
     if (this.useRegistryEvents) {
-      this.startRegistryListener();
+      void this.startRegistryListener();
     } else {
       this.pollLoop();
     }
@@ -305,10 +305,10 @@ export class HealthMonitorAgent {
   // Registry Event Mode (In-Process)
   // ═══════════════════════════════════════════════════════════════════════════
 
-  private startRegistryListener(): void {
+  private async startRegistryListener(): Promise<void> {
     try {
-      // Dynamic import to avoid hard dependency if not using registry mode
-      const { healthRegistry } = require('../core/consolidation/HealthRegistryConsolidation');
+      const { healthRegistry } = await import('../core/consolidation/HealthRegistryConsolidation');
+      if (!this._isRunning) return;
 
       const handler = (snapshot: any) => {
         if (!this._isRunning) return;

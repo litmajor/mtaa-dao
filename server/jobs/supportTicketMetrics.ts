@@ -19,8 +19,8 @@ export async function aggregateSupportTicketMetrics(): Promise<void> {
     `INSERT INTO support_ticket_metrics
       (date, total_tickets, open_tickets, in_progress_tickets, resolved_tickets, closed_tickets,
        avg_first_response_time, avg_resolution_time, resolution_rate, satisfaction_score)
-     VALUES (NOW(), $1, $2, $3, $4, $5, 0, 0,
-       CASE WHEN $1 > 0 THEN (($4 + $5)::numeric / $1) * 100 ELSE 0 END, 0)`,
+     VALUES (NOW(), $1::int, $2::int, $3::int, $4::int, $5::int, 0, 0,
+       CASE WHEN $1::int > 0 THEN (($4::int + $5::int)::numeric / $1::int) * 100 ELSE 0 END, 0)`,
     [metrics.total_tickets, metrics.open_tickets, metrics.in_progress_tickets, metrics.resolved_tickets, metrics.closed_tickets]
   );
 }

@@ -96,14 +96,25 @@ export interface CacheStats {
  * Returns true if the error looks like Redis being unavailable/closed,
  * as opposed to a real command error worth surfacing loudly.
  */
-function isRedisUnavailableError(error: any): boolean {
-  const msg = error?.message || '';
-  return (
-    msg.includes('closed') ||
-    msg.includes('ECONNREFUSED') ||
-    msg.includes('is not a function') || // catches lingering API-mismatch bugs defensively
-    msg.includes('The client is closed')
-  );
+function isRedisUnavailableError(error: unknown): boolean {
+  let current = error;
+  while (current && typeof current === 'object') {
+    const candidate = current as { message?: unknown; name?: unknown; code?: unknown; cause?: unknown };
+    const message = typeof candidate.message === 'string' ? candidate.message : '';
+    const name = typeof candidate.name === 'string' ? candidate.name : '';
+    const code = typeof candidate.code === 'string' ? candidate.code : '';
+
+    if (
+      /closed|ECONNREFUSED|ECONNRESET|ETIMEDOUT|EPIPE|EHOSTUNREACH|AbortSignal/i.test(`${message} ${code}`) ||
+      name === 'AbortError' ||
+      name === 'SocketClosedUnexpectedlyError' ||
+      name === 'ConnectionTimeoutError'
+    ) {
+      return true;
+    }
+    current = candidate.cause;
+  }
+  return false;
 }
 
 class UnifiedCacheService {
@@ -481,11 +492,21 @@ class UnifiedCacheService {
       // 2. Check stale cache
       let staleData: ExchangeMarket[] | null = null;
       if (this.isConnected && this.redis) {
-        const stale = await this.redis.get(staleKey);
-        if (stale) {
-          staleData = JSON.parse(stale);
+        try {
+          const stale = await this.redis.get(staleKey);
+          if (stale) {
+            staleData = JSON.parse(stale);
+          }
+        } catch (redisError: unknown) {
+          if (!isRedisUnavailableError(redisError)) {
+            throw redisError;
+          }
+          logger.debug(`[Cache] Redis unavailable while reading stale markets for ${key}; using memory cache`);
+          this.isConnected = false;
         }
-      } else {
+      }
+
+      if (!this.isConnected || !this.redis) {
         const memStale = this.fallbackMemory.get(staleKey);
         if (memStale && memStale.expiry > Date.now()) {
           staleData = memStale.data;

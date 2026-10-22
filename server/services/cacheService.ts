@@ -74,6 +74,10 @@ export class RedisCacheService {
         logger.info('[RedisCache] Initialized via unified redis service');
         this.fallbackMode = false;
         this.client = null; // never use direct client
+      } else {
+        logger.warn('[RedisCache] Redis unavailable; using in-memory fallback');
+        this.fallbackMode = true;
+        this.client = null;
       }
     } catch (error: any) {
       const msg = error?.message || String(error) || 'Unknown Redis error';
@@ -320,10 +324,9 @@ export class RedisCacheService {
   }
 
   async healthCheck(): Promise<boolean> {
-    if (this.fallbackMode || !this.client) return false;
+    if (this.fallbackMode) return false;
     try {
-      const pong = await this.client.ping();
-      return pong === 'PONG';
+      return await redisService.healthCheck();
     } catch { return false; }
   }
 

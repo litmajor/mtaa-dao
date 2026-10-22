@@ -17,6 +17,7 @@ import {
 import { PaymentErrorMonitoringService } from '../../../../services/paymentErrorMonitoringService';
 import { rateLimitMiddleware, withdrawalLimits, depositLimits } from '../../../../middleware/rateLimitConfig';
 import { getEventEmitter } from '../../../../middleware/websocket-event-emitter';
+import { reconcileMpesaCallback } from '../../../../payments';
 
 const router = express.Router();
 
@@ -536,51 +537,12 @@ router.post('/mpesa/callback', async (req: Request, res: Response) => {
       return res.status(400).json({ ResultCode: 1, ResultDesc: 'Invalid callback structure' });
     }
 
-    const { CheckoutRequestID, ResultCode, ResultDesc } = callbackData;
-    const status = ResultCode === 0 ? 'completed' : 'failed';
-
-    // Find transaction by CheckoutRequestID
-    const [record] = await db
-      .select()
-      .from(paymentTransactions)
-      .where(sql`metadata->>'CheckoutRequestID' = ${CheckoutRequestID}`)
-      .limit(1);
-
-    if (!record) {
-      logger.warn('M-Pesa callback: transaction not found', { CheckoutRequestID });
-      return res.json({ ResultCode: 0, ResultDesc: 'Accepted' }); // Accept to stop retries
-    }
-
-    const metadata: Record<string, any> = {
-      mpesaResultCode: ResultCode,
-      mpesaResultDesc: ResultDesc,
-      mpesaCallback: callbackData,
-      webhookReceivedAt: new Date().toISOString()
-    };
-
-    if (ResultCode === 0) {
-      const callbackMetadata = callbackData.CallbackMetadata?.Item || [];
-      metadata.mpesaReceiptNumber = callbackMetadata.find((item: any) => item.Name === 'MpesaReceiptNumber')?.Value;
-      metadata.mpesaAmount = callbackMetadata.find((item: any) => item.Name === 'Amount')?.Value;
-      metadata.mpesaPhone = callbackMetadata.find((item: any) => item.Name === 'PhoneNumber')?.Value;
-    }
-
-    const shouldDispatch = await processWebhook('mpesa', record.reference, status, metadata);
-
-    if (shouldDispatch) {
-      await dispatchPaymentSAGA(record.reference, record.userId, Number(record.amount), record.currency, {
-        provider: 'mpesa',
-        mpesaCheckoutRequestId: CheckoutRequestID,
-        mpesaReceiptNumber: metadata.mpesaReceiptNumber
-      });
-    }
-
-    res.json({ ResultCode: 0, ResultDesc: 'Accepted' });
+    const result = await reconcileMpesaCallback(callbackData, req.query.token as string | undefined);
+    res.json({ ResultCode: 0, ResultDesc: result.status === 'completed' ? 'Accepted' : 'Payment failed' });
 
   } catch (error: any) {
     logger.error('M-Pesa callback error', { message: error.message });
-    // Always return 0/Accepted to M-Pesa to stop retries, log error for reconciliation
-    res.json({ ResultCode: 0, ResultDesc: 'Accepted' });
+    res.status(500).json({ ResultCode: 1, ResultDesc: 'Callback processing failed' });
   }
 });
 

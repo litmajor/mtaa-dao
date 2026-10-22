@@ -35,6 +35,7 @@ import paymentLinksRouter from './payment-links';
 import invoicesRouter from './invoices';
 import escrowRouter from './escrow';
 import transactionsRouter from './transactions';
+import selfCustodyRampsRouter from './self-custody-ramps';
 
 const router = express.Router();
 
@@ -157,5 +158,10 @@ router.use('/escrows', escrowRouter);
  * Get comprehensive wallet transaction history
  */
 router.use('/transactions', transactionsRouter);
+
+/**
+ * Separate user-owned stablecoin onramp/offramp. Does not credit platform ledger balances.
+ */
+router.use('/self-custody-ramps', selfCustodyRampsRouter);
 
 export default router;

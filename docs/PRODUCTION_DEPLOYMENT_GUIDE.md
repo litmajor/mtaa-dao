@@ -16,7 +16,7 @@
 mtaa-dao/
 ├── .github/workflows/           # CI/CD workflows
 │   ├── ci.yml                   # Build, lint, test workflow
-│   └── deploy.yml               # Production deployment workflow
+│   └── ci.yml                   # CI checks and optional VPS deployment
 │
 ├── .gitignore
 ├── .env.production.example      # Template for production env vars
@@ -170,69 +170,56 @@ ssh user@prod-server.com
 mkdir -p /srv/mtaadao
 cd /srv/mtaadao
 
-# Install Docker & Docker Compose
+# Install Docker Engine and its Compose plugin using the official instructions
+# for the server's Linux distribution. Give the deployment user permission to
+# run Docker commands.
 curl -fsSL https://get.docker.com -o get-docker.sh
 sudo sh get-docker.sh
 sudo usermod -aG docker $USER
-
-# Install Docker Compose
-sudo curl -L "https://github.com/docker/compose/releases/latest/download/docker-compose-$(uname -s)-$(uname -m)" -o /usr/local/bin/docker-compose
-sudo chmod +x /usr/local/bin/docker-compose
 ```
 
-### 2. Clone Repository
+### 2. Configure Server Environment and TLS
 
 ```bash
-# Clone repo
-git clone https://github.com/litmajor/mtaa-dao.git .
-
-# Create production environment
-cp .env.production.example .env.production
-# Edit .env.production with actual values
+# Create this file on the server; keep it out of Git and set restrictive permissions.
+touch /srv/mtaadao/.env.production
+chmod 600 /srv/mtaadao/.env.production
+# Add the production environment variables required by docker-compose.yml.
 nano .env.production
+
+mkdir -p /srv/mtaadao/certs
+# Place cert.pem and key.pem in that directory for nginx.conf.
 ```
 
-### 3. Setup SSL Certificates
+### 3. Configure GitHub Actions
+
+Enable the optional `Deploy to VPS over SSH` job by adding repository variable
+`VPS_DEPLOY_ENABLED=true`. Configure secrets `VPS_HOST`, `VPS_USER`,
+`VPS_SSH_KEY`, and `VPS_KNOWN_HOSTS`; optional variables are `VPS_SSH_PORT`
+and `VPS_DEPLOY_PATH`. See the root README's GitHub Actions section for details.
+
+### 4. Deploy and Verify
+
+After CI succeeds on `main`, GitHub Actions builds and transfers the API and
+frontend images, then starts the stack on the server without building there.
+The deployment waits for Compose health checks before it succeeds. To inspect
+the deployment on the server:
 
 ```bash
-# Copy certificates (if using existing ones)
-scp -r /path/to/certs user@prod-server.com:/srv/mtaadao/certs/
-```
-
-### 4. Build and Start Containers
-
-```bash
-# Build Docker images
-docker compose build
-
-# Start services
-docker compose up -d
-
-# Verify services are running
-docker compose ps
-
-# Check logs
+cd /srv/mtaadao
+docker compose --env-file .env.production ps
 docker compose logs -f api
 ```
 
-### 5. Run Database Migrations
+CI applies the schema only to its disposable test database. Apply production
+schema changes separately after review; the deployment does not run
+`npm run migrate` against live data.
+
+### 5. Verify Public Health
 
 ```bash
-# Run migrations
-docker compose exec api pnpm db:migrate
-
-# Seed initial data (if needed)
-docker compose exec api pnpm db:seed
-
-# Verify database
-docker compose exec db psql -U mtaa_prod_user -d mtaadao_prod -c "SELECT COUNT(*) FROM information_schema.tables WHERE table_schema = 'public';"
-```
-
-### 6. Verify Services
-
-```bash
-# Check API health
-curl -s http://localhost:4000/health | jq
+# Check the reverse proxy health endpoint
+curl -fsS http://localhost/health
 
 # Check Prometheus
 curl -s http://localhost:9090/api/v1/targets | jq

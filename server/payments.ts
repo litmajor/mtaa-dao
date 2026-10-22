@@ -18,7 +18,7 @@ import express, { type Request, type Response } from 'express';
 import crypto from 'crypto';
 import { db } from './db';
 import { paymentTransactions, accounts, users, daoContributions } from '../shared/schema';
-import { eq, sql, and } from 'drizzle-orm';
+import { eq, sql, and, gte, ne } from 'drizzle-orm';
 import { paymentGatewayService } from './services/paymentGatewayService';
 import { paymentRecoveryWorkflowService } from './services/paymentRecoveryWorkflowService';
 import { paymentRecoverySAGA } from './services/PaymentRecoverySAGAOrchestrator';
@@ -37,6 +37,7 @@ import { logger } from './utils/logger';
 import { rateLimitMiddleware, withdrawalLimits, depositLimits } from './middleware/rateLimitConfig';
 import { getEventEmitter } from './middleware/websocket-event-emitter';
 import { validatePaystackSignature, constructStripeEventFromRaw } from './middleware/webhookValidators';
+import { evaluateMpesaSettlementPolicy } from './services/mpesaSettlementPolicy';
 
 const router = express.Router();
 
@@ -210,14 +211,13 @@ export async function reconcileMpesaCallback(callbackData: Record<string, any>, 
     const metadata = (record.metadata || {}) as Record<string, any>;
     const isContribution = metadata.purpose === 'dao_contribution';
     const isSuccess = resultCode === 0;
-    if (isContribution) {
-      const expectedToken = metadata.callbackToken;
-      const supplied = typeof callbackToken === 'string' ? callbackToken : '';
-      if (typeof expectedToken !== 'string' || !expectedToken ||
-          supplied.length !== expectedToken.length ||
-          !crypto.timingSafeEqual(Buffer.from(supplied), Buffer.from(expectedToken))) {
-        throw new Error('Invalid callback authorization token for DAO contribution');
-      }
+    let settlementStatus: string | undefined;
+    const expectedToken = metadata.callbackToken;
+    const supplied = typeof callbackToken === 'string' ? callbackToken : '';
+    if (typeof expectedToken !== 'string' || !expectedToken ||
+        supplied.length !== expectedToken.length ||
+        !crypto.timingSafeEqual(Buffer.from(supplied), Buffer.from(expectedToken))) {
+      throw new Error('Invalid M-Pesa callback authorization token');
     }
     if (record.status === 'completed' && !isSuccess) {
       return { record, isContribution, isSuccess: true };
@@ -225,14 +225,82 @@ export async function reconcileMpesaCallback(callbackData: Record<string, any>, 
 
     if (record.status !== 'completed' && isSuccess) {
       const paidAmount = amountItem ? Number(amountItem.Value) : NaN;
-      if (!Number.isFinite(paidAmount) || paidAmount !== Math.round(Number(record.amount))) {
-        throw new Error(`M-Pesa amount mismatch for checkout request ${checkoutRequestId}`);
-      }
-
       const expectedPhone = String(metadata.phone || '').replace(/\D/g, '').slice(-9);
       const callbackPhone = phoneItem ? String(phoneItem.Value).replace(/\D/g, '').slice(-9) : '';
-      if (expectedPhone && callbackPhone && expectedPhone !== callbackPhone) {
+      const amountMatches = Number.isFinite(paidAmount) &&
+        paidAmount === Math.round(Number(record.amount));
+      let userPhoneVerified = false;
+      if (isContribution && !amountMatches) {
+        throw new Error(`M-Pesa amount mismatch for checkout request ${checkoutRequestId}`);
+      }
+      if (!isContribution) {
+        const [user] = await tx
+          .select({
+            id: users.id,
+            phone: users.phone,
+            phoneVerified: users.phoneVerified,
+          })
+          .from(users)
+          .where(eq(users.id, record.userId))
+          .for('update')
+          .limit(1);
+        userPhoneVerified = Boolean(
+          user?.phoneVerified &&
+          String(user.phone || '').replace(/\D/g, '').slice(-9) === expectedPhone
+        );
+      }
+      const phoneVerified = expectedPhone.length === 9 &&
+        callbackPhone.length === 9 &&
+        expectedPhone === callbackPhone &&
+        (isContribution || userPhoneVerified);
+      if (isContribution && !phoneVerified) {
         throw new Error(`M-Pesa phone mismatch for checkout request ${checkoutRequestId}`);
+      }
+      if (!isContribution) {
+        const receipt = receiptItem ? String(receiptItem.Value).trim() : '';
+        const [priorPayment] = await tx
+          .select({ id: paymentTransactions.id })
+          .from(paymentTransactions)
+          .where(and(
+            eq(paymentTransactions.userId, record.userId),
+            eq(paymentTransactions.provider, 'mpesa'),
+            eq(paymentTransactions.status, 'completed'),
+            ne(paymentTransactions.id, record.id),
+          ))
+          .limit(1);
+        const recentPayments = await tx
+          .select({ id: paymentTransactions.id })
+          .from(paymentTransactions)
+          .where(and(
+            eq(paymentTransactions.userId, record.userId),
+            eq(paymentTransactions.provider, 'mpesa'),
+            eq(paymentTransactions.status, 'completed'),
+            gte(paymentTransactions.createdAt, new Date(Date.now() - 24 * 60 * 60 * 1000)),
+          ))
+          .limit(1000);
+        const [duplicateReceipt] = receipt
+          ? await tx
+              .select({ id: paymentTransactions.id })
+              .from(paymentTransactions)
+              .where(sql`${paymentTransactions.id} <> ${record.id}
+                AND (
+                  metadata->>'mpesaReceipt' = ${receipt}
+                  OR metadata->>'mpesaReceiptNumber' = ${receipt}
+                )`)
+              .limit(1)
+          : [undefined];
+        const policy = evaluateMpesaSettlementPolicy({
+          amount: Number.isFinite(paidAmount) ? paidAmount : 0,
+          amountMatches,
+          phoneVerified,
+          isFirstPayment: !priorPayment,
+          paymentsInLast24Hours: recentPayments.length,
+          receiptUnique: Boolean(receipt) && !duplicateReceipt,
+          riskFlagged: metadata.riskFlag === true || metadata.manualReview === true,
+        });
+        settlementStatus = policy.status;
+        metadata.settlementStatus = policy.status;
+        metadata.settlementReviewReasons = policy.reasons;
       }
     }
 
@@ -296,10 +364,17 @@ export async function reconcileMpesaCallback(callbackData: Record<string, any>, 
         .where(eq(daoContributions.id, contributionId));
     }
 
-    return { record, isContribution, isSuccess };
+    return {
+      record,
+      isContribution,
+      isSuccess,
+      settlementStatus,
+    };
   });
 
-  if (result.isSuccess && !result.isContribution && result.record.status !== 'completed') {
+  if (result.isSuccess && !result.isContribution && result.record.status !== 'completed' &&
+      result.settlementStatus === 'auto_approved' &&
+      process.env.MPESA_AUTO_SETTLEMENT_ENABLED === 'true') {
     await dispatchPaymentSAGA(
       result.record.reference,
       result.record.userId,
@@ -314,6 +389,154 @@ export async function reconcileMpesaCallback(callbackData: Record<string, any>, 
     status: result.isSuccess ? 'completed' : 'failed',
     contributionCredited: result.isContribution && result.isSuccess,
     alreadyCompleted: result.record.status === 'completed',
+  };
+}
+
+export async function reconcileMpesaC2bCallback(callbackData: Record<string, any>) {
+  const reference = typeof callbackData?.BillRefNumber === 'string'
+    ? callbackData.BillRefNumber.trim()
+    : '';
+  const transactionId = typeof callbackData?.TransID === 'string'
+    ? callbackData.TransID.trim()
+    : '';
+  const paidAmount = Number(callbackData?.TransAmount);
+  const paidPhone = String(callbackData?.MSISDN ?? '').replace(/\D/g, '').slice(-9);
+  const shortcode = String(
+    process.env.MPESA_C2B_SHORTCODE ||
+      process.env.MPESA_BUSINESS_SHORTCODE ||
+      process.env.MPESA_SHORTCODE ||
+      ''
+  ).trim();
+
+  if (!reference || !transactionId || !Number.isSafeInteger(paidAmount) || paidAmount <= 0 || !paidPhone) {
+    throw new Error('M-Pesa C2B callback is missing a valid reference, transaction ID, amount, or phone');
+  }
+  if (callbackData.BusinessShortCode && shortcode &&
+      String(callbackData.BusinessShortCode).trim() !== shortcode) {
+    throw new Error('M-Pesa C2B shortcode mismatch');
+  }
+
+  const result = await db.transaction(async (tx) => {
+    const [record] = await tx
+      .select()
+      .from(paymentTransactions)
+      .where(and(
+        eq(paymentTransactions.reference, reference),
+        eq(paymentTransactions.provider, 'mpesa'),
+        eq(paymentTransactions.type, 'deposit')
+      ))
+      .for('update')
+      .limit(1);
+    if (!record) throw new Error('M-Pesa C2B payment reference not found');
+
+    const metadata = (record.metadata || {}) as Record<string, any>;
+    if (metadata.purpose !== 'mpesa_c2b') {
+      throw new Error('M-Pesa C2B reference is not a PayBill request');
+    }
+
+    const expectedPhone = String(metadata.phone || '').replace(/\D/g, '').slice(-9);
+    if (record.status === 'completed') {
+      if (metadata.mpesaReceipt !== transactionId) {
+        throw new Error('M-Pesa C2B reference was already completed with a different transaction');
+      }
+      return {
+        record,
+        alreadyProcessed: true,
+        settlementStatus: (metadata.settlementStatus as string | undefined) ?? 'pending_review',
+      };
+    }
+    if (record.status !== 'pending') {
+      throw new Error(`M-Pesa C2B payment cannot be completed from status ${record.status}`);
+    }
+
+    const [user] = await tx
+      .select({ id: users.id, phone: users.phone, phoneVerified: users.phoneVerified })
+      .from(users)
+      .where(eq(users.id, record.userId))
+      .for('update')
+      .limit(1);
+
+    const [duplicateReceipt] = await tx
+      .select({ id: paymentTransactions.id })
+      .from(paymentTransactions)
+      .where(sql`${paymentTransactions.id} <> ${record.id}
+        AND (
+          metadata->>'mpesaReceipt' = ${transactionId}
+          OR metadata->>'mpesaReceiptNumber' = ${transactionId}
+        )`)
+      .limit(1);
+    const [priorPayment] = await tx
+      .select({ id: paymentTransactions.id })
+      .from(paymentTransactions)
+      .where(and(
+        eq(paymentTransactions.userId, record.userId),
+        eq(paymentTransactions.provider, 'mpesa'),
+        eq(paymentTransactions.status, 'completed'),
+        ne(paymentTransactions.id, record.id),
+      ))
+      .limit(1);
+    const recentPayments = await tx
+      .select({ id: paymentTransactions.id })
+      .from(paymentTransactions)
+      .where(and(
+        eq(paymentTransactions.userId, record.userId),
+        eq(paymentTransactions.provider, 'mpesa'),
+        eq(paymentTransactions.status, 'completed'),
+        gte(paymentTransactions.createdAt, new Date(Date.now() - 24 * 60 * 60 * 1000)),
+      ))
+      .limit(1000);
+    const policy = evaluateMpesaSettlementPolicy({
+      amount: paidAmount,
+      amountMatches: Number(record.amount) === paidAmount,
+      phoneVerified: Boolean(
+        user?.phoneVerified &&
+        String(user.phone || '').replace(/\D/g, '').slice(-9) === paidPhone &&
+        expectedPhone.length === 9 &&
+        expectedPhone === paidPhone
+      ),
+      isFirstPayment: !priorPayment,
+      paymentsInLast24Hours: recentPayments.length,
+      receiptUnique: !duplicateReceipt,
+      riskFlagged: metadata.riskFlag === true || metadata.manualReview === true,
+    });
+
+    await tx
+      .update(paymentTransactions)
+      .set({
+        status: 'completed',
+        metadata: {
+          ...metadata,
+          settlementStatus: policy.status,
+          settlementReviewReasons: policy.reasons,
+          mpesaReceipt: transactionId,
+          mpesaPaidAmount: paidAmount,
+          mpesaPaidPhone: String(callbackData.MSISDN),
+          mpesaC2bCallback: callbackData,
+          confirmedAt: new Date().toISOString(),
+        },
+        updatedAt: new Date(),
+      })
+      .where(eq(paymentTransactions.id, record.id));
+
+    return { record, alreadyProcessed: false, settlementStatus: policy.status };
+  });
+
+  if (!result.alreadyProcessed && result.settlementStatus === 'auto_approved' &&
+      process.env.MPESA_AUTO_SETTLEMENT_ENABLED === 'true') {
+    await dispatchPaymentSAGA(
+      result.record.reference,
+      result.record.userId,
+      paidAmount,
+      result.record.currency,
+      { provider: 'mpesa', mpesaReceipt: transactionId, paymentRail: 'c2b' }
+    );
+  }
+
+  return {
+    reference,
+    transactionId,
+    alreadyProcessed: result.alreadyProcessed,
+    settlementStatus: result.settlementStatus,
   };
 }
 

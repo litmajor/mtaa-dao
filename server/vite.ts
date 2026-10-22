@@ -20,19 +20,20 @@ export function log(message: string, source = "express") {
 }
 
 export async function setupVite(app: Express, server: Server) {
-  // Dynamically import Vite and the config only when running in dev.
+  console.log('[STARTUP] setupVite: importing Vite');
   const { createServer: createViteServer, createLogger } = await import('vite');
-  const viteConfig = (await import('../vite.config.js'))?.default || (await import('../vite.config.js'));
+  console.log('[STARTUP] setupVite: importing Vite config');
+  const { default: viteConfig } = await import('../vite.config.js');
   const viteLogger = createLogger();
 
+  console.log('[STARTUP] setupVite: creating middleware server');
   const vite = await createViteServer({
     ...viteConfig,
     configFile: false,
     customLogger: {
       ...viteLogger,
-      error: (msg: any, options: any) => {
+      error: (msg, options) => {
         viteLogger.error(msg, options);
-        process.exit(1);
       },
     },
     server: {
@@ -44,6 +45,7 @@ export async function setupVite(app: Express, server: Server) {
     appType: 'custom',
   });
 
+  console.log('[STARTUP] setupVite: middleware server ready; mounting middleware');
   app.use(vite.middlewares);
 
   app.use('*', async (req, res, next) => {
@@ -66,6 +68,7 @@ export async function setupVite(app: Express, server: Server) {
       next(e);
     }
   });
+  console.log('[STARTUP] setupVite: complete');
 }
 
 export function serveStatic(app: Express) {

@@ -1,5 +1,7 @@
 import express from 'express';
 import gatewayRouter from './gateway';
+import mpesaC2bRouter from './mpesa-c2b';
+import mpesaSettlementsRouter from './mpesa-settlements';
 import webhooksRouter from './webhooks';
 
 const router = express.Router();
@@ -25,6 +27,8 @@ const router = express.Router();
  */
 
 router.use('/gateway', gatewayRouter);
+router.use('/c2b', mpesaC2bRouter);
+router.use('/mpesa', mpesaSettlementsRouter);
 router.use('/webhooks', webhooksRouter);
 
 export default router;

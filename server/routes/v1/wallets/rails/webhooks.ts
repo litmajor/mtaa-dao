@@ -8,10 +8,12 @@ import type { Request, Response } from 'express';
 import crypto from 'crypto';
 import { db } from '../../../../db';
 import { deposits, withdrawals } from '@shared/transactionFlowSchema';
-import { eq } from 'drizzle-orm';
+import { and, eq, gte, ne, sql } from 'drizzle-orm';
+import { paymentTransactions, users } from '@shared/schema';
 import { logger } from '../../../../utils/logger';
 import gatewayService from '../../../../services/gatewayService';
 import { userStorage } from '../../../../storage/storage-user';
+import { evaluateMpesaSettlementPolicy } from '../../../../services/mpesaSettlementPolicy';
 import {
   flutterwaveConfig,
   paystackConfig,
@@ -471,7 +473,7 @@ router.post('/mpesa', async (req: Request, res: Response) => {
       .where(eq(deposits.transactionHash, txId))
       .limit(1);
 
-    if (existing[0]) {
+    if (existing[0]?.externalReference === CheckoutRequestID) {
       logger.info('M-Pesa webhook - Duplicate transaction (idempotency)', {
         transactionHash: txId,
         checkoutRequestID: CheckoutRequestID,
@@ -499,13 +501,121 @@ router.post('/mpesa', async (req: Request, res: Response) => {
     }
 
     const status = ResultCode === 0 ? 'completed' : 'failed';
+    const metadata = depositQuery[0].metadata ? JSON.parse(depositQuery[0].metadata) : {};
+    const expectedToken = metadata.callbackToken;
+    const suppliedToken = typeof req.query.token === 'string' ? req.query.token : '';
+    if (
+      typeof expectedToken !== 'string' ||
+      !expectedToken ||
+      suppliedToken.length !== expectedToken.length ||
+      !crypto.timingSafeEqual(Buffer.from(suppliedToken), Buffer.from(expectedToken))
+    ) {
+      logger.warn('Rejected M-Pesa callback with invalid transaction token', {
+        checkoutRequestID: CheckoutRequestID,
+        depositId: depositQuery[0].id,
+      });
+      return res.status(401).json({ success: false, error: 'Invalid callback authorization' });
+    }
+
+    if (status === 'completed') {
+      const callbackItems = stkCallback.CallbackMetadata?.Item || [];
+      const callbackAmount = Number(callbackItems.find((item: any) => item.Name === 'Amount')?.Value);
+      const receipt = String(callbackItems.find((item: any) => item.Name === 'MpesaReceiptNumber')?.Value || '').trim();
+      const callbackPhone = String(callbackItems.find((item: any) => item.Name === 'PhoneNumber')?.Value || '').replace(/\D/g, '').slice(-9);
+      const expectedPhone = String(metadata.phone || '').replace(/\D/g, '').slice(-9);
+      const [user] = await db
+        .select({ phone: users.phone, phoneVerified: users.phoneVerified })
+        .from(users)
+        .where(eq(users.id, depositQuery[0].userId))
+        .limit(1);
+      const [priorDeposit] = await db
+        .select({ id: deposits.id })
+        .from(deposits)
+        .where(and(
+          eq(deposits.userId, depositQuery[0].userId),
+          eq(deposits.status, 'completed'),
+          sql`LOWER(${deposits.source}) LIKE '%mpesa%'`,
+          ne(deposits.id, depositQuery[0].id),
+        ))
+        .limit(1);
+      const recentDeposits = await db
+        .select({ id: deposits.id })
+        .from(deposits)
+        .where(and(
+          eq(deposits.userId, depositQuery[0].userId),
+          eq(deposits.status, 'completed'),
+          sql`LOWER(${deposits.source}) LIKE '%mpesa%'`,
+          gte(deposits.createdAt, new Date(Date.now() - 24 * 60 * 60 * 1000)),
+        ))
+        .limit(1000);
+      const [priorPayment] = await db
+        .select({ id: paymentTransactions.id })
+        .from(paymentTransactions)
+        .where(and(
+          eq(paymentTransactions.userId, depositQuery[0].userId),
+          eq(paymentTransactions.provider, 'mpesa'),
+          eq(paymentTransactions.status, 'completed'),
+        ))
+        .limit(1);
+      const recentPayments = await db
+        .select({ id: paymentTransactions.id })
+        .from(paymentTransactions)
+        .where(and(
+          eq(paymentTransactions.userId, depositQuery[0].userId),
+          eq(paymentTransactions.provider, 'mpesa'),
+          eq(paymentTransactions.status, 'completed'),
+          gte(paymentTransactions.createdAt, new Date(Date.now() - 24 * 60 * 60 * 1000)),
+        ))
+        .limit(1000);
+      const [duplicateDepositReceipt] = receipt
+        ? await db
+            .select({ id: deposits.id })
+            .from(deposits)
+            .where(and(
+              sql`${deposits.id} <> ${depositQuery[0].id}`,
+              eq(deposits.status, 'completed'),
+              sql`(
+                ${deposits.metadata}::jsonb->>'mpesaReceiptNumber' = ${receipt}
+                OR ${deposits.metadata}::jsonb->'mpesaCallback'->'CallbackMetadata'->'Item'
+                  @> ${JSON.stringify([{ Name: 'MpesaReceiptNumber', Value: receipt }])}::jsonb
+              )`,
+            ))
+            .limit(1)
+        : [undefined];
+      const [duplicatePaymentReceipt] = receipt
+        ? await db
+            .select({ id: paymentTransactions.id })
+            .from(paymentTransactions)
+            .where(sql`${paymentTransactions.metadata}->>'mpesaReceipt' = ${receipt}
+              OR ${paymentTransactions.metadata}->>'mpesaReceiptNumber' = ${receipt}`)
+            .limit(1)
+        : [undefined];
+      const decision = evaluateMpesaSettlementPolicy({
+        amount: Number.isFinite(callbackAmount) ? callbackAmount : 0,
+        amountMatches: Number.isFinite(callbackAmount) &&
+          callbackAmount === Math.round(Number(depositQuery[0].amount)),
+        phoneVerified: Boolean(
+          user?.phoneVerified &&
+          String(user.phone || '').replace(/\D/g, '').slice(-9) === expectedPhone &&
+          expectedPhone.length === 9 &&
+          callbackPhone === expectedPhone
+        ),
+        isFirstPayment: !priorDeposit && !priorPayment,
+        paymentsInLast24Hours: recentDeposits.length + recentPayments.length,
+        receiptUnique: Boolean(receipt) && !duplicateDepositReceipt && !duplicatePaymentReceipt,
+        riskFlagged: metadata.riskFlag === true || metadata.manualReview === true,
+      });
+      metadata.settlementStatus = decision.status;
+      metadata.settlementReviewReasons = decision.reasons;
+      if (receipt) metadata.mpesaReceiptNumber = receipt;
+    }
 
     await db
       .update(deposits)
       .set({
         status,
         transactionHash: txId,
-        metadata: JSON.stringify(stkCallback),
+        metadata: JSON.stringify({ ...metadata, mpesaCallback: stkCallback }),
         completedAt: status === 'completed' ? new Date() : undefined,
       })
       .where(eq(deposits.id, depositQuery[0].id));
@@ -527,9 +637,12 @@ router.post('/mpesa', async (req: Request, res: Response) => {
     // activate the subscription. This is best-effort and does not block
     // the webhook response (fire-and-forget).
     try {
-      const metadata = depositQuery[0].metadata ? JSON.parse(depositQuery[0].metadata) : {};
       const agentId = metadata?.agentId || metadata?.agent_id || metadata?.agent;
-      if (agentId) {
+      if (
+        agentId &&
+        metadata.settlementStatus === 'auto_approved' &&
+        process.env.MPESA_AUTO_SETTLEMENT_ENABLED === 'true'
+      ) {
         // Prefer explicit amount from the STK callback metadata
         let kesAmount = Number(depositQuery[0].amount || 0);
         if (ResultCode === 0 && stkCallback?.CallbackMetadata?.Item) {

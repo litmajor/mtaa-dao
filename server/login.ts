@@ -33,7 +33,7 @@ export default async function handler(req: Request, res: Response) {
 
     // Create session
     const sessionId = uuidv4();
-    createSession(
+    await createSession(
       sessionId,
       user.id,
       {

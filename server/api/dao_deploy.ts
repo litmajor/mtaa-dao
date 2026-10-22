@@ -58,6 +58,7 @@ export interface DaoDeployRequest {
     customTokenAddress?: string;
     durationDays?: number;
     rotationFrequency?: string;
+    rotationContributionAmountKes?: number;
   };
   founderWallet: string;
   invitedMembers: string[];
@@ -318,17 +319,25 @@ export async function daoDeployHandler(req: Request, res: Response) {
 
     let durationModel: 'time' | 'rotation' | 'ongoing' = 'ongoing';
     let nextRotationDate: Date | null = null;
+    let rotationFrequency: 'weekly' | 'monthly' | 'quarterly' | undefined;
 
     if (daoType === 'harambee' || daoType === 'shortTerm') {
       durationModel = 'time';
     } else if (daoType === 'merryGoRound') {
       durationModel = 'rotation';
-      if (daoData.rotationFrequency) {
-        nextRotationDate = calculateNextRotation(
-          new Date(),
-          daoData.rotationFrequency as 'weekly' | 'monthly' | 'quarterly'
-        );
+      const requestedFrequency = daoData.rotationFrequency || 'monthly';
+      if (!['weekly', 'monthly', 'quarterly'].includes(requestedFrequency)) {
+        return res.status(400).json({ error: 'rotationFrequency must be weekly, monthly, or quarterly' });
       }
+      rotationFrequency = requestedFrequency as 'weekly' | 'monthly' | 'quarterly';
+      const contributionAmount = daoData.rotationContributionAmountKes;
+      if (!Number.isSafeInteger(contributionAmount) || Number(contributionAmount) <= 0) {
+        return res.status(400).json({ error: 'rotationContributionAmountKes must be a positive whole KES amount' });
+      }
+      nextRotationDate = calculateNextRotation(
+        new Date(),
+        rotationFrequency
+      );
     }
 
     // ── 4. Create DAO record ────────────────────────────────────────────────
@@ -375,7 +384,10 @@ export async function daoDeployHandler(req: Request, res: Response) {
           chamaTreasuryAddress: null,
           withdrawalMode: treasuryConfig.withdrawalMode,
           durationModel,
-          rotationFrequency: daoData.rotationFrequency,
+          rotationFrequency,
+          rotationContributionAmountKes: daoType === 'merryGoRound'
+            ? daoData.rotationContributionAmountKes
+            : null,
           nextRotationDate,
           minElders: 2,
           maxElders: 5,

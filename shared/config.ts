@@ -88,7 +88,7 @@ const envSchema = z.object({
   SMTP_PASS: z.string().optional(),
   SMTP_FROM: z.string().optional(),
   SMTP_FROM_NAME: z.string().optional(),
-  EMAIL_FROM: z.string().email().optional(),
+  EMAIL_FROM: z.string().optional(),
   EMAIL_FROM_NAME: z.string().optional(),
 
   // Payment Providers
@@ -102,6 +102,16 @@ const envSchema = z.object({
   MPESA_CONSUMER_SECRET: z.string().optional(),
   MPESA_PASSKEY: z.string().optional(),
   MPESA_SHORTCODE: z.string().optional(),
+  MPESA_ENVIRONMENT: z.string().optional(),
+  MPESA_BUSINESS_SHORTCODE: z.string().optional(),
+  MPESA_C2B_ENABLED: z.string().optional(),
+  MPESA_C2B_SHORTCODE: z.string().optional(),
+  MPESA_C2B_CALLBACK_TOKEN: z.string().optional(),
+  MPESA_C2B_VALIDATION_URL: z.string().url().optional(),
+  MPESA_C2B_CONFIRMATION_URL: z.string().url().optional(),
+  MPESA_AUTO_SETTLEMENT_ENABLED: z.string().optional(),
+  MPESA_AUTO_APPROVAL_MAX_KES: z.coerce.number().int().positive().max(1_000_000).optional(),
+  MPESA_AUTO_APPROVAL_MAX_PAYMENTS_24H: z.coerce.number().int().positive().max(1000).optional(),
 
   // Blockchain & RPC URLs
   CELO_RPC_URL: z.string().url().optional(),
