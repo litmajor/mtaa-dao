@@ -2294,6 +2294,7 @@ const CreateDAOFlowContent: React.FC = () => {
     </div>
   );
 };
+}
 
 // Wrapped component with orchestrator provider
 const CreateDAOFlow = () => {
@@ -2303,6 +2304,5 @@ const CreateDAOFlow = () => {
     </DAOOrchestratorProvider>
   );
 };
-}
 
-export default CreateDAOFlowContent;
+export default CreateDAOFlow;
