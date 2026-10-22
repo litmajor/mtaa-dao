@@ -78,6 +78,7 @@ export default function TradingPage() {
   const [showFilters, setShowFilters] = useState(false);
   const [exchanges, setExchanges] = useState<ExchangeData[]>([]);
   const [loading, setLoading] = useState(true);
+  const [usingFallbackData, setUsingFallbackData] = useState(false);
   const [dismissedSignals, setDismissedSignals] = useState<number[]>([]);
 
   // Sync state to URL
@@ -142,6 +143,7 @@ export default function TradingPage() {
         }));
 
         setExchanges(transformedData);
+        setUsingFallbackData(false);
       } catch (error) {
         console.error('Error fetching exchanges:', error);
         
@@ -222,6 +224,7 @@ export default function TradingPage() {
         ];
         
         setExchanges(fallbackData);
+        setUsingFallbackData(true);
       } finally {
         setLoading(false);
       }
@@ -362,7 +365,7 @@ export default function TradingPage() {
 
       <div className="min-h-screen bg-slate-900 text-white">
         {/* Header */}
-        <div className="border-b border-slate-700 bg-slate-900/50 backdrop-blur-sm sticky top-16 z-40">
+        <div className="border-b border-slate-700 bg-slate-900/50 backdrop-blur-sm lg:sticky lg:top-16 z-30">
           <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
             <div className="flex items-center justify-between mb-6">
               <div>
@@ -616,6 +619,11 @@ export default function TradingPage() {
               {/* Loading indicator */}
               {loading && (
                 <div className="mb-4 text-sm text-slate-300">Loading exchange data…</div>
+              )}
+              {!loading && usingFallbackData && (
+                <div className="mb-4 rounded-lg border border-amber-500/50 bg-amber-900/20 p-3 text-sm text-amber-200" data-testid="text-fallback-data">
+                  Live exchange data is unavailable. Showing reference prices, which may be out of date.
+                </div>
               )}
 
               {/* Stats - Hide in focus mode */}
