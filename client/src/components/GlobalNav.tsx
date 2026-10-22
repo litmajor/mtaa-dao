@@ -156,7 +156,7 @@ export default function GlobalNav() {
           </div>
 
           {/* Main Navigation (4 items - Desktop only, hidden on mobile) */}
-          <div className="hidden md:flex md:gap-1">
+          <div className="hidden lg:flex lg:gap-1">
             {mainNavItems.map((item) => {
               const IconComponent = item.icon;
               const active = isActive(item.href);
@@ -237,7 +237,7 @@ export default function GlobalNav() {
                       }
                     >
                       <span className="text-sm">{profile.icon}</span>
-                      <span className="hidden md:inline font-medium">{profile.name}</span>
+                      <span className="hidden xl:inline font-medium">{profile.name}</span>
                     </Button>
                   </TooltipTrigger>
                   <TooltipContent side="bottom" className="text-xs">
@@ -292,7 +292,7 @@ export default function GlobalNav() {
                       {((user as any)?.username || (user as any)?.firstName || "U").toString().substring(0, 2).toUpperCase()}
                     </AvatarFallback>
                   </Avatar>
-                  <span className="hidden sm:inline text-sm font-medium text-slate-200 max-w-[100px] truncate">
+                  <span className="hidden xl:inline text-sm font-medium text-slate-200 max-w-[100px] truncate">
                     {(user as any)?.username || `${(user as any)?.firstName || ''} ${(user as any)?.lastName || ''}`.trim() || (user as any)?.email || "User"}
                   </span>
                 </button>
@@ -334,7 +334,7 @@ export default function GlobalNav() {
         </div>
 
         {/* Mobile Navigation - Simplified bottom nav */}
-        <div className="md:hidden flex gap-1 pb-2 overflow-x-auto">
+        <div className="lg:hidden flex gap-1 pb-2 overflow-x-auto">
           {mainNavItems.map((item) => {
             const IconComponent = item.icon;
             const active = isActive(item.href);
