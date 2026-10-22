@@ -9,6 +9,15 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import { Lock, Unlock, Calendar, DollarSign, Target, TrendingUp } from 'lucide-react';
 
+// The savings API may return a bare array or an envelope ({ data: [...] } / { data: { savings: [...] } }).
+function toSavingsArray(payload: any): any[] {
+  if (Array.isArray(payload)) return payload;
+  const data = payload?.data ?? payload;
+  if (Array.isArray(data)) return data;
+  if (Array.isArray(data?.savings)) return data.savings;
+  return [];
+}
+
 interface LockedSaving {
   id: string;
   amount: string;
@@ -41,7 +50,7 @@ export function LockedSavingsSection({ userId }: { userId: string }) {
     queryKey: ['locked-savings', userId],
     queryFn: async () => {
       const res = await fetch(`/api/v1/wallets/savings?userId=${userId}&type=locked`);
-      return res.json();
+      return toSavingsArray(res.ok ? await res.json() : null);
     },
     enabled: !!userId,
   });
@@ -51,7 +60,7 @@ export function LockedSavingsSection({ userId }: { userId: string }) {
     queryKey: ['savings-goals', userId],
     queryFn: async () => {
       const res = await fetch(`/api/v1/wallets/savings?userId=${userId}&type=goal`);
-      return res.json();
+      return toSavingsArray(res.ok ? await res.json() : null);
     },
     enabled: !!userId,
   });

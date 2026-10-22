@@ -171,7 +171,7 @@ export default function ExchangeRateWidget({ onConvert }: ExchangeRateWidgetProp
         <CardContent className="space-y-4">
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4 items-end">
             <div className="space-y-2">
-              <label className="text-sm font-medium flex items-center gap-1">From <TooltipTrigger><Info className="h-3 w-3 text-gray-500" /></TooltipTrigger><TooltipContent>Wallet balance: {walletBalance} {fromCurrency}</TooltipContent></label>
+              <label className="text-sm font-medium flex items-center gap-1">From <Tooltip><TooltipTrigger><Info className="h-3 w-3 text-gray-500" /></TooltipTrigger><TooltipContent>Wallet balance: {walletBalance} {fromCurrency}</TooltipContent></Tooltip></label>
               <div className="space-y-2">
                 <Input
                   type="number"
@@ -250,7 +250,7 @@ export default function ExchangeRateWidget({ onConvert }: ExchangeRateWidgetProp
           )}
 
           <div className="text-xs text-gray-500 dark:text-gray-400 text-center flex items-center justify-center gap-1">
-            Rates last updated: {lastRefresh.toLocaleTimeString()} <TooltipTrigger><Info className="h-3 w-3" /></TooltipTrigger><TooltipContent>Auto-refreshes every 30s</TooltipContent>
+            Rates last updated: {lastRefresh.toLocaleTimeString()} <Tooltip><TooltipTrigger><Info className="h-3 w-3" /></TooltipTrigger><TooltipContent>Auto-refreshes every 30s</TooltipContent></Tooltip>
           </div>
         </CardContent>
       </Card>

@@ -6,7 +6,8 @@ import { type User } from '../../types/user';
 // Fetch user from API (replace with your actual endpoint and logic)
 const fetchCurrentUser = async (): Promise<User | null> => {
   try {
-    return await authClient.get<User>('/api/auth/user');
+    const payload = await authClient.get<User | { user: User }>('/api/auth/user');
+    return (payload as { user?: User })?.user ?? (payload as User) ?? null;
   } catch (error) {
     console.error('Failed to fetch current user:', error);
     return null;

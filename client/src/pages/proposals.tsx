@@ -12,7 +12,7 @@ import { useNavigate } from "react-router-dom";
 import VotingModal from "../components/voting-modal";
 import { ProposalLeaderboard } from "../components/proposal_leaderboard";
 import DaoChat from "../components/dao-chat";
-import { apiGet } from "@/lib/api";
+import { authFetchWrapper } from "@/utils/authClient";
 import { t } from '@/lib/uiLabels';
 
 export default function Proposals() {
@@ -23,10 +23,16 @@ export default function Proposals() {
   const navigate = useNavigate();
 
   // Fetch proposals (live data)
-  const { data: proposals, isLoading: proposalsLoading, error: proposalsError } = useQuery({
-    queryKey: ["/api/proposals"],
+  // There is no global /api/proposals route; /api/dashboard/proposals returns active
+  // proposals across the user's DAOs as a bare array.
+  const { data: proposals, isLoading: proposalsLoading, error: proposalsError, refetch: refetchProposals } = useQuery({
+    queryKey: ["/api/dashboard/proposals"],
     queryFn: async () => {
-      return await apiGet<any[]>("/api/proposals");
+      const res = await authFetchWrapper("/api/dashboard/proposals");
+      if (!res.ok) throw new Error(`Request failed (${res.status})`);
+      const payload = await res.json();
+      const list = Array.isArray(payload) ? payload : payload?.data;
+      return Array.isArray(list) ? list : [];
     },
   });
 
@@ -133,14 +139,19 @@ export default function Proposals() {
     return <div className="p-8 text-center text-lg">Loading {t('proposals').toLowerCase()}...</div>;
   }
   if (proposalsError) {
-    return <div className="p-8 text-center text-red-500">Failed to load {t('proposals').toLowerCase()}: {proposalsError.message}</div>;
+    return (
+      <div className="p-8 text-center">
+        <p className="text-red-500 mb-4">Failed to load {t('proposals').toLowerCase()}: {proposalsError.message}</p>
+        <Button variant="outline" onClick={() => refetchProposals()}>Retry</Button>
+      </div>
+    );
   }
   if (!proposals || proposals.length === 0) {
     return (
       <div className="max-w-2xl mx-auto py-10 px-4 text-center">
           <h2 className="text-2xl font-bold mb-4">No {t('proposals').toLowerCase()} yet</h2>
           <p className="text-gray-600 mb-6">Be the first to suggest what your group should do!</p>
-          <Button className="bg-gradient-mtaa text-white px-6 py-3 rounded-xl font-semibold hover:opacity-90">
+          <Button className="bg-gradient-mtaa text-white px-6 py-3 rounded-xl font-semibold hover:opacity-90" onClick={() => navigate('/daos')} title="Ideas are proposed inside a group — pick one first">
             <Plus className="mr-2 h-4 w-4" />
             Suggest an Idea
           </Button>
@@ -165,7 +176,7 @@ export default function Proposals() {
             <MessageSquare className="mr-2 h-4 w-4" />
             {showChat ? "Hide Chat" : "Group Chat"}
           </Button>
-          <Button className="bg-gradient-mtaa text-white px-6 py-3 rounded-xl font-semibold hover:opacity-90">
+          <Button className="bg-gradient-mtaa text-white px-6 py-3 rounded-xl font-semibold hover:opacity-90" onClick={() => navigate('/daos')} title="Ideas are proposed inside a group — pick one first">
             <Plus className="mr-2 h-4 w-4" />
             Suggest an Idea
           </Button>

@@ -290,8 +290,7 @@ export function VaultCreationWizard({
             <div className="space-y-6">
               <div className="space-y-4">
                 <div>
-                  <Label htmlFor="vaultName">Vault Name * <TooltipTrigger><Info className="w-4 h-4 inline" /></TooltipTrigger></Label>
-                  <TooltipContent>Name your vault clearly for users.</TooltipContent>
+                  <Label htmlFor="vaultName">Vault Name * <Tooltip><TooltipTrigger><Info className="w-4 h-4 inline" /></TooltipTrigger><TooltipContent>Name your vault clearly for users.</TooltipContent></Tooltip></Label>
                   <Input
                     id="vaultName"
                     placeholder="e.g., Community Growth Fund"
@@ -303,8 +302,7 @@ export function VaultCreationWizard({
                 </div>
 
                 <div>
-                  <Label htmlFor="description">Description * <TooltipTrigger><Info className="w-4 h-4 inline" /></TooltipTrigger></Label>
-                  <TooltipContent>Explain goals, benefits, and target users.</TooltipContent>
+                  <Label htmlFor="description">Description * <Tooltip><TooltipTrigger><Info className="w-4 h-4 inline" /></TooltipTrigger><TooltipContent>Explain goals, benefits, and target users.</TooltipContent></Tooltip></Label>
                   <Textarea
                     id="description"
                     placeholder="Describe the purpose and goals of this vault..."
@@ -317,8 +315,7 @@ export function VaultCreationWizard({
                 </div>
 
                 <div>
-                  <Label className="mb-3 block">Vault Type * <TooltipTrigger><Info className="w-4 h-4 inline" /></TooltipTrigger></Label>
-                  <TooltipContent>Select based on your investment style.</TooltipContent>
+                  <Label className="mb-3 block">Vault Type * <Tooltip><TooltipTrigger><Info className="w-4 h-4 inline" /></TooltipTrigger><TooltipContent>Select based on your investment style.</TooltipContent></Tooltip></Label>
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                     {VAULT_TYPES.map((type) => {
                       const Icon = type.icon;
@@ -361,8 +358,7 @@ export function VaultCreationWizard({
           {step === 2 && (
             <div className="space-y-6">
               <div>
-                <Label className="mb-3 block">Vault Architecture * <TooltipTrigger><Info className="w-4 h-4 inline" /></TooltipTrigger></Label>
-                <TooltipContent>Single token or multi-asset portfolio</TooltipContent>
+                <Label className="mb-3 block">Vault Architecture * <Tooltip><TooltipTrigger><Info className="w-4 h-4 inline" /></TooltipTrigger><TooltipContent>Single token or multi-asset portfolio</TooltipContent></Tooltip></Label>
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   <Card
                     className={`cursor-pointer transition-all ${!formData.isMultiAsset ? 'ring-2 ring-blue-600 bg-blue-50' : 'hover:shadow-md'}`}
@@ -392,8 +388,7 @@ export function VaultCreationWizard({
 
               {!formData.isMultiAsset ? (
                 <div>
-                  <Label htmlFor="currency">Primary Currency * <TooltipTrigger><Info className="w-4 h-4 inline" /></TooltipTrigger></Label>
-                  <TooltipContent>Choose a stablecoin for lower volatility.</TooltipContent>
+                  <Label htmlFor="currency">Primary Currency * <Tooltip><TooltipTrigger><Info className="w-4 h-4 inline" /></TooltipTrigger><TooltipContent>Choose a stablecoin for lower volatility.</TooltipContent></Tooltip></Label>
                   <Select 
                     value={formData.primaryCurrency} 
                     onValueChange={(value) => {
@@ -480,8 +475,7 @@ export function VaultCreationWizard({
 
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div>
-                  <Label htmlFor="minDeposit">Minimum Deposit * <TooltipTrigger><Info className="w-4 h-4 inline" /></TooltipTrigger></Label>
-                  <TooltipContent>Set a reasonable entry barrier.</TooltipContent>
+                  <Label htmlFor="minDeposit">Minimum Deposit * <Tooltip><TooltipTrigger><Info className="w-4 h-4 inline" /></TooltipTrigger><TooltipContent>Set a reasonable entry barrier.</TooltipContent></Tooltip></Label>
                   <Input
                     id="minDeposit"
                     type="number"
@@ -498,8 +492,7 @@ export function VaultCreationWizard({
                 </div>
 
                 <div>
-                  <Label htmlFor="maxDeposit">Maximum Deposit <TooltipTrigger><Info className="w-4 h-4 inline" /></TooltipTrigger></Label>
-                  <TooltipContent>Set to prevent over-concentration.</TooltipContent>
+                  <Label htmlFor="maxDeposit">Maximum Deposit <Tooltip><TooltipTrigger><Info className="w-4 h-4 inline" /></TooltipTrigger><TooltipContent>Set to prevent over-concentration.</TooltipContent></Tooltip></Label>
                   <Input
                     id="maxDeposit"
                     type="number"
@@ -517,8 +510,7 @@ export function VaultCreationWizard({
 
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div>
-                  <Label htmlFor="performanceFee">Performance Fee (%) <TooltipTrigger><Info className="w-4 h-4 inline" /></TooltipTrigger></Label>
-                  <TooltipContent>Charged on profits; max 20%.</TooltipContent>
+                  <Label htmlFor="performanceFee">Performance Fee (%) <Tooltip><TooltipTrigger><Info className="w-4 h-4 inline" /></TooltipTrigger><TooltipContent>Charged on profits; max 20%.</TooltipContent></Tooltip></Label>
                   <Input
                     id="performanceFee"
                     type="number"
@@ -532,8 +524,7 @@ export function VaultCreationWizard({
                 </div>
 
                 <div>
-                  <Label htmlFor="managementFee">Management Fee (%) <TooltipTrigger><Info className="w-4 h-4 inline" /></TooltipTrigger></Label>
-                  <TooltipContent>Annual; max 5%.</TooltipContent>
+                  <Label htmlFor="managementFee">Management Fee (%) <Tooltip><TooltipTrigger><Info className="w-4 h-4 inline" /></TooltipTrigger><TooltipContent>Annual; max 5%.</TooltipContent></Tooltip></Label>
                   <Input
                     id="managementFee"
                     type="number"
@@ -561,8 +552,7 @@ export function VaultCreationWizard({
             <div className="space-y-6">
               {formData.vaultType === 'dao_treasury' && (
                 <div>
-                  <Label htmlFor="daoId">DAO ID * <TooltipTrigger><Info className="w-4 h-4 inline" /></TooltipTrigger></Label>
-                  <TooltipContent>Link to your DAO for governance.</TooltipContent>
+                  <Label htmlFor="daoId">DAO ID * <Tooltip><TooltipTrigger><Info className="w-4 h-4 inline" /></TooltipTrigger><TooltipContent>Link to your DAO for governance.</TooltipContent></Tooltip></Label>
                   <Input
                     id="daoId"
                     placeholder="e.g., mtaa-dao-123"
@@ -576,8 +566,7 @@ export function VaultCreationWizard({
 
               {formData.vaultType === 'yield' && (
                 <div>
-                  <Label className="mb-3 block">Yield Strategy * <TooltipTrigger><Info className="w-4 h-4 inline" /></TooltipTrigger></Label>
-                  <TooltipContent>Choose based on risk/return; Est. APY: {estimatedAPY}</TooltipContent>
+                  <Label className="mb-3 block">Yield Strategy * <Tooltip><TooltipTrigger><Info className="w-4 h-4 inline" /></TooltipTrigger><TooltipContent>Choose based on risk/return; Est. APY: {estimatedAPY}</TooltipContent></Tooltip></Label>
                   <div className="space-y-3">
                     {YIELD_STRATEGIES.map((strategy) => (
                       <Card
@@ -612,8 +601,7 @@ export function VaultCreationWizard({
               )}
 
               <div>
-                <Label className="mb-3 block">Risk Level * <TooltipTrigger><Info className="w-4 h-4 inline" /></TooltipTrigger></Label>
-                <TooltipContent>Affects strategy allocation; cannot change later.</TooltipContent>
+                <Label className="mb-3 block">Risk Level * <Tooltip><TooltipTrigger><Info className="w-4 h-4 inline" /></TooltipTrigger><TooltipContent>Affects strategy allocation; cannot change later.</TooltipContent></Tooltip></Label>
                 <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
                   {(['low', 'medium', 'high'] as const).map((risk) => (
                     <Card

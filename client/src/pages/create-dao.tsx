@@ -2058,6 +2058,7 @@ const CreateDAOFlowContent: React.FC = () => {
       </div>
     </div>
   );
+  };
 
   // Step 8 - Success
   const renderSuccess = () => (
@@ -2303,6 +2304,5 @@ const CreateDAOFlow = () => {
     </DAOOrchestratorProvider>
   );
 };
-}
 
-export default CreateDAOFlowContent;
+export default CreateDAOFlow;

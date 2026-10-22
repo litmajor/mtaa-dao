@@ -11,7 +11,8 @@ import { authClient } from '@/utils/authClient';
  */
 
 const FALLBACK_BASE_URL = typeof window !== 'undefined' ? window.location.origin : '';
-const API_BASE_URL = import.meta.env.VITE_API_URL ?? FALLBACK_BASE_URL;
+// Endpoints below append `/api/...`, so tolerate VITE_API_URL values that already end in /api.
+const API_BASE_URL = (import.meta.env.VITE_API_URL ?? FALLBACK_BASE_URL).replace(/\/api\/?$/, '').replace(/\/$/, '');
 const WS_URL = import.meta.env.VITE_WS_URL ?? (FALLBACK_BASE_URL ? FALLBACK_BASE_URL.replace(/^http/, 'ws') : '');
 
 export const API_CONFIG = {
