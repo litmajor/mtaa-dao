@@ -4,6 +4,22 @@
 @import "tailwindcss";
 @config "../../tailwind.config.ts";
 
+/* max-w-* resolves --max-width-* before --spacing-*; pin standard sizes so the
+   design-system spacing keys (md, lg, ...) don't shrink max-w-md etc. */
+@theme {
+  --max-width-xs: 20rem;
+  --max-width-sm: 24rem;
+  --max-width-md: 28rem;
+  --max-width-lg: 32rem;
+  --max-width-xl: 36rem;
+  --max-width-2xl: 42rem;
+  --max-width-3xl: 48rem;
+  --max-width-4xl: 56rem;
+  --max-width-5xl: 64rem;
+  --max-width-6xl: 72rem;
+  --max-width-7xl: 80rem;
+}
+
 /* Tailwind v4 changed the default border color to currentColor; keep the v3 default. */
 @layer base {
   *,
