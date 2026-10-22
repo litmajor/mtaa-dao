@@ -35,7 +35,7 @@
  * ─────────────────────────────────────────────────────────────────────────────
  */
 
-import { getRedisInstance, getRedisInstanceAsync } from '../config/redisConnectionManager';
+import { getRedisInstance, getRedisInstanceAsync, REDIS_COMMAND_TIMEOUT_MS } from '../config/redisConnectionManager';
 import { Logger } from '../utils/logger';
 
 const logger = Logger.getLogger();
@@ -117,6 +117,35 @@ function isRedisUnavailableError(error: unknown): boolean {
   return false;
 }
 
+/**
+ * Wraps a node-redis client so every async command is bounded by
+ * REDIS_COMMAND_TIMEOUT_MS and can never hang a request on a stalled Redis.
+ */
+function withCommandTimeouts<T extends object>(client: T): T {
+  return new Proxy(client, {
+    get(target, prop, receiver) {
+      const value = Reflect.get(target, prop, receiver);
+      if (typeof value !== 'function') return value;
+      return (...args: unknown[]) => {
+        const result = value.apply(target, args);
+        if (!result || typeof (result as Promise<unknown>).then !== 'function') return result;
+        const pending = result as Promise<unknown>;
+        pending.catch(() => {});
+        let timer: NodeJS.Timeout | undefined;
+        return Promise.race([
+          pending,
+          new Promise((_, reject) => {
+            timer = setTimeout(
+              () => reject(new Error(`Redis command ${String(prop)} timed out after ${REDIS_COMMAND_TIMEOUT_MS}ms (ETIMEDOUT)`)),
+              REDIS_COMMAND_TIMEOUT_MS
+            );
+          }),
+        ]).finally(() => timer && clearTimeout(timer));
+      };
+    },
+  });
+}
+
 class UnifiedCacheService {
   private redis: any = null;
   private fallbackMemory: Map<string, { data: any; expiry: number }> = new Map();
@@ -141,7 +170,7 @@ class UnifiedCacheService {
   private initializeRedis(): void {
     try {
       // Use singleton Redis instance from connection manager
-      this.redis = getRedisInstance();
+      this.redis = withCommandTimeouts(getRedisInstance());
 
       // Connection events are now handled by the singleton manager
       this.isConnected = true;
@@ -163,11 +192,21 @@ class UnifiedCacheService {
    */
   private tryRecoverConnection(): void {
     try {
-      this.redis = getRedisInstance();
-      this.isConnected = true;
+      this.redis = withCommandTimeouts(getRedisInstance());
+      this.isConnected = this.redis.isReady === true;
     } catch (error) {
       this.isConnected = false;
     }
+  }
+
+  /**
+   * Redis is only used when the client is actually ready. While Redis is down
+   * every call goes straight to the in-memory fallback (fail fast).
+   */
+  private canUseRedis(): boolean {
+    if (!this.redis?.isReady) this.tryRecoverConnection();
+    this.isConnected = this.redis?.isReady === true;
+    return this.isConnected;
   }
 
   /**
@@ -183,7 +222,7 @@ class UnifiedCacheService {
     const staleKey = `${key}:stale`;
     try {
       // 1. Check fresh cache
-      if (this.isConnected && this.redis) {
+      if (this.canUseRedis()) {
         try {
           const cached = await this.redis.get(key);
           if (cached) {
@@ -207,7 +246,7 @@ class UnifiedCacheService {
 
       // 2. Check stale cache
       let staleData: CachedPrice | null = null;
-      if (this.isConnected && this.redis) {
+      if (this.canUseRedis()) {
         const stale = await this.redis.get(staleKey);
         if (stale) {
           staleData = JSON.parse(stale);
@@ -267,7 +306,7 @@ class UnifiedCacheService {
   private async setPrice(key: string, price: CachedPrice, immediate = true): Promise<void> {
     const staleKey = `${key}:stale`;
 
-    if (this.isConnected && this.redis) {
+    if (this.canUseRedis()) {
       try {
         const serialized = JSON.stringify(price);
         await Promise.all([
@@ -311,7 +350,7 @@ class UnifiedCacheService {
 
     try {
       // 1. Check fresh cache (with error handling for closed Redis clients)
-      if (this.isConnected && this.redis) {
+      if (this.canUseRedis()) {
         try {
           const cached = await this.redis.get(key);
           if (cached) {
@@ -340,7 +379,7 @@ class UnifiedCacheService {
 
       // 3. Check stale cache
       let staleData: OHLCVCandle[] | null = null;
-      if (this.isConnected && this.redis) {
+      if (this.canUseRedis()) {
         const stale = await this.redis.get(staleKey);
         if (stale) {
           staleData = JSON.parse(stale);
@@ -424,7 +463,7 @@ class UnifiedCacheService {
   ): Promise<void> {
     const staleKey = `${key}:stale`;
 
-    if (this.isConnected && this.redis) {
+    if (this.canUseRedis()) {
       try {
         const serialized = JSON.stringify(candles);
         await Promise.all([
@@ -467,7 +506,7 @@ class UnifiedCacheService {
 
     try {
       // 1. Check fresh cache
-      if (this.isConnected && this.redis) {
+      if (this.canUseRedis()) {
         try {
           const cached = await this.redis.get(key);
           if (cached) {
@@ -491,7 +530,7 @@ class UnifiedCacheService {
 
       // 2. Check stale cache
       let staleData: ExchangeMarket[] | null = null;
-      if (this.isConnected && this.redis) {
+      if (this.canUseRedis()) {
         try {
           const stale = await this.redis.get(staleKey);
           if (stale) {
@@ -506,7 +545,7 @@ class UnifiedCacheService {
         }
       }
 
-      if (!this.isConnected || !this.redis) {
+      if (!this.canUseRedis()) {
         const memStale = this.fallbackMemory.get(staleKey);
         if (memStale && memStale.expiry > Date.now()) {
           staleData = memStale.data;
@@ -529,7 +568,7 @@ class UnifiedCacheService {
       }
 
       // Store both fresh and stale
-      if (this.isConnected && this.redis) {
+      if (this.canUseRedis()) {
         try {
           const serialized = JSON.stringify(fresh);
           await Promise.all([
@@ -582,7 +621,7 @@ class UnifiedCacheService {
   async getCachedMarkets(exchange: string): Promise<ExchangeMarket[] | null> {
     const key = `markets:${exchange}`;
     try {
-      if (this.isConnected && this.redis) {
+      if (this.canUseRedis()) {
         const cached = await this.redis.get(key);
         if (cached) {
           return JSON.parse(cached);
@@ -615,7 +654,7 @@ class UnifiedCacheService {
       return;
     }
 
-    if (this.isConnected && this.redis) {
+    if (this.canUseRedis()) {
       try {
         const serialized = JSON.stringify(markets);
         await Promise.all([
@@ -652,7 +691,7 @@ class UnifiedCacheService {
     try {
       let deletedCount = 0;
 
-      if (this.isConnected && this.redis) {
+      if (this.canUseRedis()) {
         try {
           const keys = await this.redis.keys(pattern);
           if (keys.length > 0) {
@@ -703,7 +742,7 @@ class UnifiedCacheService {
    */
   async clear(): Promise<void> {
     try {
-      if (this.isConnected && this.redis) {
+      if (this.canUseRedis()) {
         await this.redis.flushDb();
         logger.info('✅ Unified cache cleared (Redis)');
       } else {
@@ -729,7 +768,7 @@ class UnifiedCacheService {
         other: 0,
       };
 
-      if (this.isConnected && this.redis) {
+      if (this.canUseRedis()) {
         const allKeys = await this.redis.keys('*');
         totalKeys = allKeys.length;
 
@@ -790,7 +829,7 @@ class UnifiedCacheService {
    */
   async healthCheck(): Promise<boolean> {
     try {
-      if (this.isConnected && this.redis) {
+      if (this.canUseRedis()) {
         await this.redis.ping();
         return true;
       }
