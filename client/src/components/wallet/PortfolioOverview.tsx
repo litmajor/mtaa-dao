@@ -224,6 +224,9 @@ export function PortfolioOverview() {
         <div>
           <h2 className="text-2xl font-bold text-gray-900 dark:text-white">Portfolio Overview</h2>
           <p className="text-sm text-gray-600 dark:text-gray-400 mt-1">All your assets in one place</p>
+          <p className="mt-2 inline-block rounded-md bg-amber-100 px-2 py-1 text-xs font-medium text-amber-800 dark:bg-amber-900/30 dark:text-amber-300" data-testid="text-sample-data">
+            Sample data — live portfolio balances are not connected yet
+          </p>
         </div>
         <Button
           variant="ghost"
@@ -265,7 +268,7 @@ export function PortfolioOverview() {
                   }
                 </p>
                 <p className="text-xs text-gray-500 dark:text-gray-500 mt-1">
-                  Real-time Conversion
+                  {Object.keys(exchangeRates).length > 0 ? 'Real-time Conversion' : 'Conversion rates unavailable'}
                 </p>
               </div>
 
