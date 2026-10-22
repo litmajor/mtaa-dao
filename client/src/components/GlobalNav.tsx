@@ -144,7 +144,7 @@ export default function GlobalNav() {
   ];
 
   return (
-    <nav className="sticky top-0 z-50 border-b border-slate-700 bg-slate-900/95 backdrop-blur-sm">
+    <nav className="sticky top-14 mt-14 lg:top-0 lg:mt-0 z-40 border-b border-slate-700 bg-slate-900/95 backdrop-blur-sm">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         <div className="flex items-center justify-between h-16">
           {/* Logo */}
@@ -168,7 +168,7 @@ export default function GlobalNav() {
                       <Button
                         variant={active ? "primary" : "ghost"}
                         size="sm"
-                        className="gap-2"
+                        className={active ? "gap-2" : "gap-2 text-slate-300 hover:text-white hover:bg-slate-800"}
                       >
                         <IconComponent className="h-4 w-4" />
                         <span>{item.label}</span>
@@ -344,6 +344,7 @@ export default function GlobalNav() {
                 <Button
                   variant={active ? "primary" : "ghost"}
                   size="sm"
+                  className={active ? undefined : "text-slate-300 hover:text-white hover:bg-slate-800"}
                 >
                   <IconComponent className="h-4 w-4" />
                   <span className="text-xs ml-1">{item.label}</span>

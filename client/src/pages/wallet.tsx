@@ -364,8 +364,8 @@ const EnhancedWalletPage = () => {
             <Wallet className="w-8 h-8 text-white" />
           </div>
           <div>
-            <h1 className="text-4xl font-bold bg-gradient-to-r from-gray-900 via-blue-900 to-purple-900 bg-clip-text text-transparent">Personal Wallet</h1>
-            <p className="text-gray-600 text-lg">Secure digital asset management</p>
+            <h1 className="text-2xl sm:text-4xl font-bold bg-gradient-to-r from-gray-900 via-blue-900 to-purple-900 bg-clip-text text-transparent">Personal Wallet</h1>
+            <p className="text-gray-600 text-base sm:text-lg">Secure digital asset management</p>
           </div>
         </div>
       }
@@ -510,14 +510,14 @@ const EnhancedWalletPage = () => {
         )}
 
         {/* Header with Settings Icon */}
-        <div className="flex items-center justify-between mb-12">
-          <div className="flex items-center space-x-4">
+        <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between mb-12">
+          <div className="flex items-center space-x-4 min-w-0">
             <div className="w-16 h-16 bg-gradient-to-br from-blue-500 via-purple-500 to-pink-500 rounded-2xl flex items-center justify-center shadow-lg">
               <Wallet className="w-8 h-8 text-white" />
             </div>
             <div>
-              <div className="flex items-center space-x-4 mb-2">
-                <h1 className="text-4xl font-bold bg-gradient-to-r from-gray-900 via-blue-900 to-purple-900 bg-clip-text text-transparent">
+              <div className="flex flex-wrap items-center gap-2 sm:gap-4 mb-2">
+                <h1 className="text-2xl sm:text-4xl font-bold bg-gradient-to-r from-gray-900 via-blue-900 to-purple-900 bg-clip-text text-transparent">
                   Personal Wallet
                 </h1>
                 <div className="flex items-center space-x-2">
