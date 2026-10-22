@@ -42,8 +42,18 @@ export class PaymentCompletedConsumerWorker {
   }
 
   static async initialize(): Promise<void> {
-    const redisClient = await getRedisInstanceAsync();
-    const worker = new PaymentCompletedConsumerWorker(redisClient);
+    // XREADGROUP BLOCK holds its connection for up to BLOCK_MS, so it must not
+    // run on the shared singleton: every other command (rate limits, cache)
+    // would queue behind it and hit the command timeout.
+    const shared = await getRedisInstanceAsync();
+    const blockingClient = shared.duplicate() as typeof shared;
+    blockingClient.on('error', (err: Error) => {
+      logger.debug('[PaymentCompletedConsumer] Blocking client error', { error: err.message });
+    });
+    await blockingClient.connect();
+    this.blockingClient = blockingClient;
+
+    const worker = new PaymentCompletedConsumerWorker(blockingClient);
     await worker.start();
     this.instance = worker;
   }
@@ -52,9 +62,14 @@ export class PaymentCompletedConsumerWorker {
     if (this.instance) {
       await this.instance.stop();
     }
+    if (this.blockingClient) {
+      await this.blockingClient.close().catch(() => undefined);
+      this.blockingClient = null;
+    }
   }
 
   private static instance: PaymentCompletedConsumerWorker | null = null;
+  private static blockingClient: Awaited<ReturnType<typeof getRedisInstanceAsync>> | null = null;
 
   async start(): Promise<void> {
     await this.consumer.ensureGroup(STREAM_NAME, CONSUMER_GROUP, '$');

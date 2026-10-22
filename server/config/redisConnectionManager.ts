@@ -18,7 +18,9 @@ function envInt(name: string, fallback: number): number {
 
 export const REDIS_CONNECT_TIMEOUT_MS = envInt('REDIS_CONNECT_TIMEOUT_MS', 1000);
 export const REDIS_COMMAND_TIMEOUT_MS = envInt('REDIS_COMMAND_TIMEOUT_MS', 750);
-const REDIS_MAX_RECONNECT_DELAY_MS = envInt('REDIS_MAX_RECONNECT_DELAY_MS', 30000);
+const REDIS_MAX_RECONNECT_DELAY_MS = envInt('REDIS_MAX_RECONNECT_DELAY_MS', 10000);
+// A client that has been not-ready this long is reset in place (see resetStalledConnection).
+const REDIS_STALL_RESET_MS = envInt('REDIS_STALL_RESET_MS', 10000);
 const REDIS_ERROR_LOG_INTERVAL_MS = envInt('REDIS_ERROR_LOG_INTERVAL_MS', 60000);
 
 class RedisConnectionManager {
@@ -29,6 +31,8 @@ class RedisConnectionManager {
   private static lastError: string | null = null;
   private static lastErrorAt: number | null = null;
   private static lastErrorLogAt = 0;
+  private static notReadySince: number | null = null;
+  private static resetting = false;
 
   /**
    * Get or create the SINGLE Redis instance for this process
@@ -113,6 +117,7 @@ class RedisConnectionManager {
     });
 
     client.on('error', (err: any) => {
+      this.notReadySince ??= Date.now();
       this.lastError = err?.message || String(err);
       this.lastErrorAt = Date.now();
       // Throttle: a dead Redis emits an error on every reconnect attempt.
@@ -123,15 +128,19 @@ class RedisConnectionManager {
     });
 
     client.on('reconnecting', () => {
+      this.notReadySince ??= Date.now();
       logger.debug(`[REDIS] 🔄 Reconnecting...`);
     });
 
     client.on('ready', () => {
+      this.notReadySince = null;
       this.lastErrorLogAt = 0;
       logger.info(`[REDIS] 🚀 Ready (instance #${this.instanceCount})`);
     });
 
     const cleanup = () => {
+      // Ignore our own in-place resets and events from a client that is no longer the singleton.
+      if (this.resetting || this.instance !== client) return;
       logger.warn(`[REDIS] Connection ended/closed (instance #${this.instanceCount}), clearing singleton`);
       this.clearInstance();
     };
@@ -239,6 +248,35 @@ class RedisConnectionManager {
   }
 
   /**
+   * node-redis can wedge (open but never ready again) if Redis goes away
+   * mid-handshake, e.g. a reconnect lands while Redis is shutting down. If the
+   * singleton has been not-ready for REDIS_STALL_RESET_MS, destroy and reconnect
+   * the SAME client object so every holder of the reference recovers too.
+   * Returns true if a reset was started.
+   */
+  static resetStalledConnection(): boolean {
+    const client = this.instance;
+    if (!client || client.isReady || this.notReadySince === null) return false;
+    if (Date.now() - this.notReadySince < REDIS_STALL_RESET_MS) return false;
+
+    logger.warn(`[REDIS] Client not ready for ${Date.now() - this.notReadySince}ms – resetting connection`);
+    this.notReadySince = Date.now();
+    this.initPromise = null;
+    this.resetting = true;
+    try {
+      if (client.isOpen) client.destroy();
+    } catch (err) {
+      logger.debug(`[REDIS] destroy() during reset failed: ${String(err)}`);
+    } finally {
+      this.resetting = false;
+    }
+    client.connect().catch((err: Error) => {
+      logger.debug(`[REDIS] Reconnect after reset failed: ${err.message}`);
+    });
+    return true;
+  }
+
+  /**
    * Get instance count (for diagnostics)
    */
   static getInstanceCount(): number {
@@ -283,6 +321,7 @@ class RedisConnectionManager {
 export const getRedisInstance = () => RedisConnectionManager.getInstance();
 export const getRedisInstanceAsync = () => RedisConnectionManager.getInitializedInstance();
 export const getRedisInstanceCount = () => RedisConnectionManager.getInstanceCount();
+export const resetStalledRedisConnection = () => RedisConnectionManager.resetStalledConnection();
 export const isRedisConnected = () => RedisConnectionManager.isConnected();
 export const getRedisLastError = () => RedisConnectionManager.getLastError();
 
