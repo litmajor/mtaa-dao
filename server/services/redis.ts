@@ -45,6 +45,7 @@
 import {
   getRedisInstance,
   getRedisInstanceAsync,
+  resetStalledRedisConnection,
   REDIS_COMMAND_TIMEOUT_MS,
   REDIS_CONNECT_TIMEOUT_MS,
 } from '../config/redisConnectionManager';
@@ -87,7 +88,7 @@ export interface RedisStatus {
 }
 
 const DEGRADED_WINDOW_MS = 30_000;
-const MAX_RECONNECT_DELAY_MS = 30_000;
+const MAX_RECONNECT_DELAY_MS = parseInt(process.env.REDIS_MAX_RECONNECT_DELAY_MS || '', 10) || 10_000;
 
 class RedisTimeoutError extends Error {
   constructor(op: string, ms: number) {
@@ -187,6 +188,7 @@ export class UnifiedRedisService {
         this.markAvailable();
         this.wireConcurrencyManagers(client);
       } catch (error) {
+        resetStalledRedisConnection();
         this.markUnavailable('connect', error);
       }
     })().finally(() => {
