@@ -42,9 +42,16 @@
  * ─────────────────────────────────────────────────────────────────────────────
  */
 
-import { getRedisInstanceAsync } from '../config/redisConnectionManager';
+import {
+  getRedisInstance,
+  getRedisInstanceAsync,
+  REDIS_COMMAND_TIMEOUT_MS,
+  REDIS_CONNECT_TIMEOUT_MS,
+} from '../config/redisConnectionManager';
 import type { RedisClientType } from 'redis';
 import { logger } from '../utils/logger';
+import { circuitBreakerRegistry } from '../core/consolidation/CircuitBreakerConsolidation';
+import type { CircuitBreakerState } from '../core/consolidation/CircuitBreakerConsolidation';
 
 export interface CacheEntry<T = any> {
   data: T;
@@ -63,20 +70,83 @@ export interface CacheStats {
   topKeys: Array<{ key: string; hits: number; size: number }>;
 }
 
+export type RedisHealthStatus = 'up' | 'down' | 'degraded';
+
+export interface RedisStatus {
+  status: RedisHealthStatus;
+  usingFallback: boolean;
+  connected: boolean;
+  circuitState: CircuitBreakerState;
+  lastError: string | null;
+  lastErrorAt: string | null;
+  lastConnectedAt: string | null;
+  reconnectAttempts: number;
+  fallbackKeys: number;
+  commandTimeoutMs: number;
+  connectTimeoutMs: number;
+}
+
+const DEGRADED_WINDOW_MS = 30_000;
+const MAX_RECONNECT_DELAY_MS = 30_000;
+
+class RedisTimeoutError extends Error {
+  constructor(op: string, ms: number) {
+    super(`[UnifiedRedis] ${op} timed out after ${ms}ms`);
+    this.name = 'RedisTimeoutError';
+  }
+}
+
+function withTimeout<T>(promise: Promise<T>, ms: number, op: string): Promise<T> {
+  let timer: NodeJS.Timeout | undefined;
+  // Swallow late rejections from the losing promise so they never surface as unhandled.
+  promise.catch(() => {});
+  return Promise.race([
+    promise,
+    new Promise<T>((_, reject) => {
+      timer = setTimeout(() => reject(new RedisTimeoutError(op, ms)), ms);
+    }),
+  ]).finally(() => {
+    if (timer) clearTimeout(timer);
+  });
+}
+
+function errorMessage(error: unknown): string {
+  const message = error instanceof Error ? error.message : String(error);
+  return message.replace(/(rediss?:\/\/)[^@\s]*@/gi, '$1***@');
+}
+
 /**
  * Unified Redis Service — singleton
+ *
+ * Every Redis command is bounded by REDIS_COMMAND_TIMEOUT_MS and routed through
+ * the `redis` circuit breaker. When Redis is unavailable (not ready, timed out,
+ * or circuit open) operations transparently use the in-memory fallback, except
+ * security-sensitive keys which fail closed. Reconnection happens in the
+ * background; normal operation resumes automatically once Redis is ready.
  */
 export class UnifiedRedisService {
   private client: RedisClientType | null = null;
   private subscriber: RedisClientType | null = null;
-  private fallbackMode = false;
   private memoryCache = new Map<string, CacheEntry>();
   private readonly securitySensitivePrefixes = ['token:blacklist', 'rate_limit', 'otp', 'idempotency'];
   private stats = { hits: 0, misses: 0, sets: 0, deletes: 0 };
-  private hasLoggedFallback = false;
   private reconnectTimer: NodeJS.Timeout | null = null;
   private reconnectAttempts = 0;
   private connectPromise: Promise<void> | null = null;
+  private available = false;
+  private loggedFallback = false;
+  private lastError: string | null = null;
+  private lastErrorAt: number | null = null;
+  private lastConnectedAt: number | null = null;
+  private readonly instrumentedClients = new WeakSet<object>();
+  private readonly concurrencyWiredClients = new WeakSet<object>();
+  private readonly breaker = circuitBreakerRegistry.getOrCreate('redis', 'infrastructure', {
+    failureThreshold: 5,
+    successThreshold: 1,
+    resetTimeout: 5000,
+    monitoringWindow: 30000,
+    maxResetTimeout: 60000,
+  });
 
   private static instance: UnifiedRedisService;
 
@@ -93,109 +163,172 @@ export class UnifiedRedisService {
   // CONNECTION
   // ═══════════════════════════════════════════════════════════════════════════════
 
+  /**
+   * Bounded connect: resolves within ~REDIS_CONNECT_TIMEOUT_MS and never throws.
+   * Check `getStatus().connected` to know whether Redis is actually usable.
+   */
   async connect(): Promise<void> {
-    if (this.client?.isOpen) return;
+    if (this.client?.isReady) return;
     if (this.connectPromise) return this.connectPromise;
 
     this.connectPromise = (async () => {
       try {
-        const instance = await getRedisInstanceAsync();
-      if (!instance) throw new Error('Redis instance not available from connection manager');
-      this.client = instance;
+        const pending = getRedisInstance();
+        this.instrument(pending);
+        this.client = pending;
 
-      const pong = await this.client.ping();
-      if (pong === 'PONG') {
-        logger.info('[UnifiedRedis] Connected');
-        this.fallbackMode = false;
-        this.reconnectAttempts = 0;
+        const client = await withTimeout(getRedisInstanceAsync(), REDIS_CONNECT_TIMEOUT_MS + 250, 'connect');
+        this.instrument(client);
+        this.client = client;
 
-        // Avoid stacking duplicate listeners across repeated connect() calls
-        // on what might be a client we've already wired up.
-        this.client.removeAllListeners('error');
-        this.client.removeAllListeners('end');
-        this.client.removeAllListeners('close');
+        const pong = await withTimeout(client.ping(), REDIS_COMMAND_TIMEOUT_MS, 'PING');
+        if (pong !== 'PONG') throw new Error(`Unexpected PING reply: ${String(pong)}`);
 
-        this.client.on('error', (err: Error) => {
-          logger.warn('[UnifiedRedis] client error', { message: err.message });
-          this.fallbackMode = true;
-          this.scheduleReconnect();
-        });
-        this.client.on('end', () => {
-          logger.warn('[UnifiedRedis] client connection ended');
-          this.fallbackMode = true;
-          this.scheduleReconnect();
-        });
-        this.client.on('close', () => {
-          logger.warn('[UnifiedRedis] client connection closed');
-          this.fallbackMode = true;
-          this.scheduleReconnect();
-        });
-
-        // Wire up concurrency managers if they exist
-        try {
-          const { initializeConcurrencyManagers } = require('./concurrencyControl');
-          initializeConcurrencyManagers(this.client);
-        } catch {
-          // concurrencyControl not available
-        }
+        this.markAvailable();
+        this.wireConcurrencyManagers(client);
+      } catch (error) {
+        this.markUnavailable('connect', error);
       }
-      } catch (error: any) {
-        logger.error('[UnifiedRedis] Connection failed:', error.message);
-        this.fallbackMode = true;
-        this.client = null;
-        this.scheduleReconnect();
-      }
-    })();
-
-    try {
-      await this.connectPromise;
-    } finally {
+    })().finally(() => {
       this.connectPromise = null;
-    }
+    });
+
+    return this.connectPromise;
   }
 
-  private waitForReady(client: RedisClientType): Promise<void> {
-    return new Promise((resolve, reject) => {
-      if (client.isOpen) {
-        resolve();
-        return;
-      }
-      const onReady = () => {
-        client.removeListener('error', onError);
-        resolve();
-      };
-      const onError = (err: Error) => {
-        client.removeListener('ready', onReady);
-        reject(err);
-      };
-      client.once('ready', onReady);
-      client.once('error', onError);
+  isUsingFallback(): boolean {
+    return !this.client?.isReady || this.breaker.isOpen();
+  }
 
-      setTimeout(() => {
-        client.removeListener('ready', onReady);
-        client.removeListener('error', onError);
-        reject(new Error('[UnifiedRedis] Timed out waiting for client ready'));
-      }, 5000);
+  getStatus(): RedisStatus {
+    const connected = this.client?.isReady === true;
+    const circuitState = this.breaker.getState();
+    const recentError = this.lastErrorAt !== null && Date.now() - this.lastErrorAt < DEGRADED_WINDOW_MS;
+    let status: RedisHealthStatus = 'up';
+    if (!connected) status = 'down';
+    else if (circuitState !== 'CLOSED' || recentError) status = 'degraded';
+
+    return {
+      status,
+      usingFallback: this.isUsingFallback(),
+      connected,
+      circuitState,
+      lastError: this.lastError,
+      lastErrorAt: this.lastErrorAt ? new Date(this.lastErrorAt).toISOString() : null,
+      lastConnectedAt: this.lastConnectedAt ? new Date(this.lastConnectedAt).toISOString() : null,
+      reconnectAttempts: this.reconnectAttempts,
+      fallbackKeys: this.memoryCache.size,
+      commandTimeoutMs: REDIS_COMMAND_TIMEOUT_MS,
+      connectTimeoutMs: REDIS_CONNECT_TIMEOUT_MS,
+    };
+  }
+
+  private instrument(client: RedisClientType): void {
+    if (this.instrumentedClients.has(client)) return;
+    this.instrumentedClients.add(client);
+
+    client.on('ready', () => {
+      this.client = client;
+      this.markAvailable();
+      this.wireConcurrencyManagers(client);
+    });
+    client.on('error', (err: Error) => {
+      if (this.client === client || !this.client) this.markUnavailable('client', err);
+    });
+    client.on('end', () => {
+      if (this.client === client) this.client = null;
+      this.markUnavailable('client', new Error('Redis connection ended'));
     });
   }
 
-  private async ensureConnected(): Promise<void> {
-    if (!this.client || this.fallbackMode || !this.client.isOpen) {
-      await this.connect();
+  private wireConcurrencyManagers(client: RedisClientType): void {
+    if (this.concurrencyWiredClients.has(client)) return;
+    this.concurrencyWiredClients.add(client);
+    import('./concurrencyControl')
+      .then((mod: any) => {
+        if (typeof mod?.initializeConcurrencyManagers === 'function') mod.initializeConcurrencyManagers(client);
+      })
+      .catch(() => {
+        // concurrencyControl not available
+      });
+  }
+
+  private markAvailable(): void {
+    this.lastConnectedAt = Date.now();
+    this.reconnectAttempts = 0;
+    if (this.reconnectTimer) {
+      clearTimeout(this.reconnectTimer);
+      this.reconnectTimer = null;
+    }
+    if (!this.available) {
+      this.available = true;
+      if (this.loggedFallback) {
+        logger.info('[UnifiedRedis] Redis connection restored – resuming normal operation');
+      } else {
+        logger.info('[UnifiedRedis] Connected');
+      }
+      this.loggedFallback = false;
     }
   }
 
+  private markUnavailable(op: string, error: unknown): void {
+    this.lastError = errorMessage(error);
+    this.lastErrorAt = Date.now();
+    const connectionLost = !this.client?.isReady;
+    if (connectionLost && (this.available || !this.loggedFallback)) {
+      this.available = false;
+      this.loggedFallback = true;
+      logger.warn(`[UnifiedRedis] Redis unavailable – switching to in-memory fallback (${op}: ${this.lastError})`);
+    } else {
+      logger.debug(`[UnifiedRedis] ${op} failed: ${this.lastError}`);
+    }
+    if (connectionLost) this.scheduleReconnect();
+  }
+
   private scheduleReconnect(): void {
-    if (this.reconnectTimer) clearTimeout(this.reconnectTimer);
-    // Exponential backoff with jitter, capped at 60s
-    const base = Math.min(60000, 1000 * Math.pow(2, this.reconnectAttempts));
-    const jitter = Math.floor(Math.random() * 1000);
-    const delay = Math.min(60000, base + jitter);
+    if (this.reconnectTimer) return;
+    const base = Math.min(MAX_RECONNECT_DELAY_MS, 1000 * Math.pow(2, this.reconnectAttempts));
+    const delay = Math.min(MAX_RECONNECT_DELAY_MS, base + Math.floor(Math.random() * 500));
     this.reconnectAttempts = Math.min(this.reconnectAttempts + 1, 10);
     this.reconnectTimer = setTimeout(() => {
-      logger.info('[UnifiedRedis] Reconnecting... attempt=' + this.reconnectAttempts);
-      this.connect();
+      this.reconnectTimer = null;
+      if (this.client?.isReady) return;
+      logger.debug('[UnifiedRedis] Reconnecting... attempt=' + this.reconnectAttempts);
+      void this.connect();
     }, delay);
+    this.reconnectTimer.unref?.();
+  }
+
+  /**
+   * Run a Redis command with timeout + circuit breaker. Falls back (never blocks)
+   * when Redis is not ready, the circuit is open, or the command fails.
+   */
+  private async run<T>(
+    op: string,
+    command: (client: RedisClientType) => Promise<T>,
+    fallback: () => T | Promise<T>,
+    timeoutMs: number = REDIS_COMMAND_TIMEOUT_MS
+  ): Promise<T> {
+    const client = this.client;
+    if (!client || !client.isReady) {
+      if (!this.connectPromise) this.scheduleReconnect();
+      return fallback();
+    }
+    try {
+      return await this.breaker.execute(() => withTimeout(command(client), timeoutMs, op), op);
+    } catch (error: any) {
+      if (error?.code !== 'CIRCUIT_BREAKER_OPEN') this.markUnavailable(op, error);
+      return fallback();
+    }
+  }
+
+  private failClosedOr<T>(key: string, fallback: () => T): () => T {
+    return () => {
+      if (this.isSecuritySensitiveKey(key)) {
+        throw new Error(`[UnifiedRedis] Redis unavailable for security-sensitive key ${key}`);
+      }
+      return fallback();
+    };
   }
 
   // ═══════════════════════════════════════════════════════════════════════════════
@@ -203,73 +336,47 @@ export class UnifiedRedisService {
   // ═══════════════════════════════════════════════════════════════════════════════
 
   async get<T = any>(key: string): Promise<T | null> {
-    await this.ensureConnected();
-    try {
-      if (this.fallbackMode || !this.client) {
-        if (this.isSecuritySensitiveKey(key)) {
-          throw new Error(`[UnifiedRedis] Redis unavailable for security-sensitive key ${key}`);
+    return this.run<T | null>(
+      'GET',
+      async (client) => {
+        const data = await client.get(key);
+        if (data) {
+          this.stats.hits++;
+          try { return JSON.parse(data); } catch { return data as any; }
         }
-        return this.getFromMemory<T>(key);
-      }
-
-      const data = await this.client.get(key);
-      if (data) {
-        this.stats.hits++;
-        try { return JSON.parse(data); } catch { return data as any; }
-      }
-      this.stats.misses++;
-      return null;
-    } catch (error: any) {
-      logger.warn(`[UnifiedRedis] GET error for ${key}:`, error.message);
-      this.fallbackMode = true;
-      if (this.isSecuritySensitiveKey(key)) {
-        throw error;
-      }
-      return this.getFromMemory<T>(key);
-    }
+        this.stats.misses++;
+        return null;
+      },
+      this.failClosedOr(key, () => this.getFromMemory<T>(key))
+    );
   }
 
-  async set<T = any>(key: string, value: T, ttlSeconds?: number, source?: string): Promise<void> {
-    await this.ensureConnected();
-    try {
-      if (this.fallbackMode || !this.client) {
-        if (this.isSecuritySensitiveKey(key)) {
-          throw new Error(`[UnifiedRedis] Redis unavailable for security-sensitive key ${key}`);
+  async set<T = any>(key: string, value: T, ttlSeconds?: number, _source?: string): Promise<void> {
+    return this.run<void>(
+      'SET',
+      async (client) => {
+        const serialized = JSON.stringify(value);
+        if (ttlSeconds) {
+          await client.set(key, serialized, { EX: ttlSeconds });
+        } else {
+          await client.set(key, serialized);
         }
-        this.setInMemory(key, value, ttlSeconds ?? 300);
-        return;
-      }
-      const serialized = JSON.stringify(value);
-      if (ttlSeconds) {
-        await this.client.set(key, serialized, { EX: ttlSeconds });
-      } else {
-        await this.client.set(key, serialized);
-      }
-      this.stats.sets++;
-    } catch (error: any) {
-      logger.warn(`[UnifiedRedis] SET error for ${key}:`, error.message);
-      this.fallbackMode = true;
-      if (this.isSecuritySensitiveKey(key)) {
-        throw error;
-      }
-      this.setInMemory(key, value, ttlSeconds ?? 300);
-    }
+        this.stats.sets++;
+      },
+      this.failClosedOr(key, () => this.setInMemory(key, value, ttlSeconds ?? 300))
+    );
   }
 
   async delete(key: string): Promise<void> {
-    await this.ensureConnected();
-    try {
-      if (this.fallbackMode || !this.client) {
-        this.memoryCache.delete(key);
-        return;
-      }
-      await this.client.del(key);
-      this.stats.deletes++;
-    } catch (error: any) {
-      logger.warn(`[UnifiedRedis] DEL error for ${key}:`, error.message);
-      this.fallbackMode = true;
-      this.memoryCache.delete(key);
-    }
+    this.memoryCache.delete(key);
+    return this.run<void>(
+      'DEL',
+      async (client) => {
+        await client.del(key);
+        this.stats.deletes++;
+      },
+      () => undefined
+    );
   }
 
   // Compatibility alias: some callers expect `del`
@@ -279,98 +386,75 @@ export class UnifiedRedisService {
 
   async delMany(keys: string[]): Promise<void> {
     if (!keys?.length) return;
-    await this.ensureConnected();
-    try {
-      if (this.fallbackMode || !this.client) {
-        for (const k of keys) this.memoryCache.delete(k);
-        return;
-      }
-      await this.client.del(keys);
-      this.stats.deletes += keys.length;
-    } catch (error: any) {
-      logger.warn('[UnifiedRedis] DEL many error:', error.message);
-      this.fallbackMode = true;
-      for (const k of keys) this.memoryCache.delete(k);
-    }
+    for (const k of keys) this.memoryCache.delete(k);
+    return this.run<void>(
+      'DEL',
+      async (client) => {
+        await client.del(keys);
+        this.stats.deletes += keys.length;
+      },
+      () => undefined
+    );
   }
 
   async deleteByPrefix(prefix: string): Promise<void> {
-    await this.ensureConnected();
-    try {
-      if (this.fallbackMode || !this.client) {
-        for (const key of this.memoryCache.keys()) {
-          if (key.startsWith(prefix)) this.memoryCache.delete(key);
-        }
-        return;
-      }
-
-      // node-redis v4's scanIterator yields ONE key per iteration, not
-      // arrays of keys (that's the ioredis scanStream behavior). Batch
-      // manually before flushing to delMany.
-      let batch: string[] = [];
-      for await (const key of this.client.scanIterator({ MATCH: `${prefix}*`, COUNT: 100 })) {
-        batch.push(key as unknown as string);
-        if (batch.length >= 100) {
-          await this.delMany(batch);
-          batch = [];
-        }
-      }
-      if (batch.length) await this.delMany(batch);
-
-      logger.info(`[UnifiedRedis] Deleted keys matching ${prefix}*`);
-    } catch (error: any) {
-      logger.warn(`[UnifiedRedis] deleteByPrefix error for ${prefix}:`, error.message);
-      for (const key of this.memoryCache.keys()) {
-        if (key.startsWith(prefix)) this.memoryCache.delete(key);
-      }
+    for (const key of [...this.memoryCache.keys()]) {
+      if (key.startsWith(prefix)) this.memoryCache.delete(key);
     }
+    return this.run<void>(
+      'SCAN+DEL',
+      async (client) => {
+        // node-redis scanIterator yields batches (v5+) or single keys (v4); handle both.
+        let batch: string[] = [];
+        for await (const chunk of client.scanIterator({ MATCH: `${prefix}*`, COUNT: 100 })) {
+          batch.push(...(Array.isArray(chunk) ? chunk : [chunk]).map(String));
+          if (batch.length >= 100) {
+            await client.del(batch);
+            this.stats.deletes += batch.length;
+            batch = [];
+          }
+        }
+        if (batch.length) {
+          await client.del(batch);
+          this.stats.deletes += batch.length;
+        }
+        logger.info(`[UnifiedRedis] Deleted keys matching ${prefix}*`);
+      },
+      () => undefined,
+      REDIS_COMMAND_TIMEOUT_MS * 10
+    );
   }
 
   async keys(pattern: string): Promise<string[]> {
-    await this.ensureConnected();
-    try {
-      if (this.fallbackMode || !this.client) {
+    return this.run<string[]>(
+      'SCAN',
+      async (client) => {
+        const results: string[] = [];
+        for await (const chunk of client.scanIterator({ MATCH: pattern, COUNT: 100 })) {
+          results.push(...(Array.isArray(chunk) ? chunk : [chunk]).map(String));
+        }
+        return results;
+      },
+      () => {
         const regex = this.globToRegex(pattern);
         return Array.from(this.memoryCache.keys()).filter(k => regex.test(k));
-      }
-
-      const results: string[] = [];
-      for await (const key of this.client.scanIterator({ MATCH: pattern, COUNT: 100 })) {
-        results.push(key as unknown as string);
-      }
-      return results;
-    } catch (error: any) {
-      logger.warn(`[UnifiedRedis] KEYS error for ${pattern}:`, error.message);
-      const regex = this.globToRegex(pattern);
-      return Array.from(this.memoryCache.keys()).filter(k => regex.test(k));
-    }
+      },
+      REDIS_COMMAND_TIMEOUT_MS * 10
+    );
   }
 
   async clear(pattern?: string): Promise<void> {
-    await this.ensureConnected();
-    try {
-      if (this.fallbackMode || !this.client) {
-        if (pattern) {
-          const regex = new RegExp(pattern);
-          for (const key of this.memoryCache.keys()) {
-            if (regex.test(key)) this.memoryCache.delete(key);
-          }
-        } else {
-          this.memoryCache.clear();
-        }
-        return;
+    if (pattern) {
+      const regex = new RegExp(pattern);
+      for (const key of [...this.memoryCache.keys()]) {
+        if (regex.test(key)) this.memoryCache.delete(key);
       }
-
-      if (pattern) {
-        const keys = await this.keys(pattern);
-        if (keys.length) await this.delMany(keys);
-      } else {
-        await this.client.flushDb();
-      }
-    } catch (error: any) {
-      logger.warn('[UnifiedRedis] CLEAR error:', error.message);
-      this.memoryCache.clear();
+      const keys = await this.keys(pattern);
+      if (keys.length) await this.delMany(keys);
+      return;
     }
+    this.memoryCache.clear();
+    return this.run<void>('FLUSHDB', async (client) => { await client.flushDb(); }, () => undefined);
   }
 
   // ═══════════════════════════════════════════════════════════════════════════════
@@ -378,23 +462,11 @@ export class UnifiedRedisService {
   // ═══════════════════════════════════════════════════════════════════════════════
 
   async incr(key: string): Promise<number> {
-    await this.ensureConnected();
-    try {
-      if (this.fallbackMode || !this.client) {
-        if (this.isSecuritySensitiveKey(key)) {
-          throw new Error(`[UnifiedRedis] Redis unavailable for security-sensitive key ${key}`);
-        }
-        return this.incrFallback(key);
-      }
-      return Number(await this.client.incr(key));
-    } catch (error: any) {
-      logger.warn('[UnifiedRedis] INCR error', { key, message: error.message });
-      this.fallbackMode = true;
-      if (this.isSecuritySensitiveKey(key)) {
-        throw error;
-      }
-      return this.incrFallback(key);
-    }
+    return this.run<number>(
+      'INCR',
+      async (client) => Number(await client.incr(key)),
+      this.failClosedOr(key, () => this.addFallback(key, 1))
+    );
   }
 
   // Backward-compatible alias for legacy callers using ioredis-style naming.
@@ -406,74 +478,36 @@ export class UnifiedRedisService {
   }
 
   async decrement(key: string): Promise<number> {
-    await this.ensureConnected();
-    try {
-      if (this.fallbackMode || !this.client) {
-        if (this.isSecuritySensitiveKey(key)) {
-          throw new Error(`[UnifiedRedis] Redis unavailable for security-sensitive key ${key}`);
-        }
-        const entry = this.memoryCache.get(key);
-        const num = entry ? parseInt(String(entry.data), 10) || 0 : 0;
-        const newVal = num - 1;
-        this.memoryCache.set(key, {
-          data: newVal as any,
-          timestamp: Date.now(),
-          ttl: entry?.ttl ?? Number.MAX_SAFE_INTEGER,
-          hits: 0,
-        });
-        return newVal;
-      }
-      return Number(await this.client.decr(key));
-    } catch (error: any) {
-      logger.warn('[UnifiedRedis] DECR error', { key, message: error.message });
-      this.fallbackMode = true;
-      if (this.isSecuritySensitiveKey(key)) {
-        throw error;
-      }
-      const entry = this.memoryCache.get(key);
-      const num = entry ? parseInt(String(entry.data), 10) || 0 : 0;
-      const newVal = num - 1;
-      this.memoryCache.set(key, {
-        data: newVal as any,
-        timestamp: Date.now(),
-        ttl: entry?.ttl ?? Number.MAX_SAFE_INTEGER,
-        hits: 0,
-      });
-      return newVal;
-    }
+    return this.run<number>(
+      'DECR',
+      async (client) => Number(await client.decr(key)),
+      this.failClosedOr(key, () => this.addFallback(key, -1))
+    );
   }
 
+  /** Atomic INCR + EXPIRE. Used for rate limiting, so it always fails closed. */
   async incrWithExpiry(key: string, seconds: number): Promise<number> {
-    await this.ensureConnected();
-    try {
-      if (this.fallbackMode || !this.client) {
+    return this.run<number>(
+      'INCR+EXPIRE',
+      async (client) => {
+        const result = await client.eval(
+          'local current = redis.call("incr", KEYS[1])\nif tonumber(current) == 1 then redis.call("expire", KEYS[1], ARGV[1]) end\nreturn current',
+          { keys: [key], arguments: [String(seconds)] }
+        );
+        return Number(result);
+      },
+      () => {
         throw new Error(`[UnifiedRedis] Redis unavailable for security-sensitive key ${key}`);
       }
-      const result = await this.client.eval(
-        'local current = redis.call("incr", KEYS[1])\nif tonumber(current) == 1 then redis.call("expire", KEYS[1], ARGV[1]) end\nreturn current',
-        { keys: [key], arguments: [String(seconds)] }
-      );
-      return Number(result);
-    } catch (error: any) {
-      logger.warn('[UnifiedRedis] INCR+EXPIRE error', { key, seconds, message: error.message });
-      this.fallbackMode = true;
-      throw error;
-    }
+    );
   }
 
   async expire(key: string, seconds: number): Promise<void> {
-    await this.ensureConnected();
-    try {
-      if (this.fallbackMode || !this.client) {
-        this.expireFallback(key, seconds);
-        return;
-      }
-      await this.client.expire(key, seconds);
-    } catch (error: any) {
-      logger.warn('[UnifiedRedis] EXPIRE error', { key, seconds, message: error.message });
-      this.fallbackMode = true;
-      this.expireFallback(key, seconds);
-    }
+    return this.run<void>(
+      'EXPIRE',
+      async (client) => { await client.expire(key, seconds); },
+      () => this.expireFallback(key, seconds)
+    );
   }
 
   async setex(key: string, seconds: number, value: string): Promise<void> {
@@ -481,35 +515,20 @@ export class UnifiedRedisService {
   }
 
   async setnx(key: string, value: string, expiresInSeconds?: number): Promise<boolean> {
-    await this.ensureConnected();
-    try {
-      if (this.fallbackMode || !this.client) {
-        if (this.isSecuritySensitiveKey(key)) {
-          throw new Error(`[UnifiedRedis] Redis unavailable for security-sensitive key ${key}`);
-        }
-        const existing = this.getFromFallback(key);
-        if (existing) return false;
+    return this.run<boolean>(
+      'SETNX',
+      async (client) => {
+        const res = expiresInSeconds
+          ? await client.set(key, value, { EX: expiresInSeconds, NX: true })
+          : await client.set(key, value, { NX: true });
+        return res === 'OK';
+      },
+      this.failClosedOr(key, () => {
+        if (this.getFromFallback(key)) return false;
         this.setInMemory(key, value, expiresInSeconds ?? Number.MAX_SAFE_INTEGER);
         return true;
-      }
-      if (expiresInSeconds) {
-        const res = await this.client.set(key, value, { EX: expiresInSeconds, NX: true });
-        return res === 'OK';
-      } else {
-        const res = await this.client.set(key, value, { NX: true });
-        return res === 'OK';
-      }
-    } catch (error: any) {
-      logger.warn(`[UnifiedRedis] SETNX error for ${key}:`, error.message);
-      this.fallbackMode = true;
-      if (this.isSecuritySensitiveKey(key)) {
-        throw error;
-      }
-      const existing = this.getFromFallback(key);
-      if (existing) return false;
-      this.setInMemory(key, value, expiresInSeconds ?? Number.MAX_SAFE_INTEGER);
-      return true;
-    }
+      })
+    );
   }
 
   // Compatibility: some callers reference getFromFallback
@@ -519,15 +538,7 @@ export class UnifiedRedisService {
 
   // Compatibility: expose exists() similar to redis.exists
   public async exists(key: string): Promise<number> {
-    await this.ensureConnected();
-    try {
-      if (this.fallbackMode || !this.client) return 0;
-      return await this.client.exists(key);
-    } catch (e) {
-      const message = e instanceof Error ? e.message : String(e);
-      logger.warn('[UnifiedRedis] EXISTS error', { key, message });
-      return 0;
-    }
+    return this.run<number>('EXISTS', async (client) => Number(await client.exists(key)), () => 0);
   }
 
   // ═══════════════════════════════════════════════════════════════════════════════
@@ -535,36 +546,32 @@ export class UnifiedRedisService {
   // ═══════════════════════════════════════════════════════════════════════════════
 
   async publish(channel: string, message: string): Promise<number> {
-    await this.ensureConnected();
-    try {
-      if (this.fallbackMode || !this.client) {
-        logger.debug('[UnifiedRedis] Publish skipped in fallback mode');
-        return 0;
-      }
-      return await this.client.publish(channel, message);
-    } catch (error: any) {
-      logger.warn(`[UnifiedRedis] PUBLISH error to ${channel}:`, error.message);
-      return 0;
-    }
+    return this.run<number>('PUBLISH', async (client) => Number(await client.publish(channel, message)), () => 0);
   }
 
   async getSubscriber(): Promise<RedisClientType> {
     if (this.subscriber) return this.subscriber;
 
-    await this.ensureConnected();
-    if (!this.client) {
+    const client = this.client;
+    if (!client?.isReady || this.breaker.isOpen()) {
+      if (!this.connectPromise) this.scheduleReconnect();
       throw new Error('[UnifiedRedis] Cannot create subscriber — Redis unavailable');
     }
 
-    this.subscriber = this.client.duplicate();
-    this.subscriber.on('error', (err: Error) => {
-      logger.warn('[UnifiedRedis][subscriber] Error', { message: err.message });
+    const subscriber = client.duplicate() as RedisClientType;
+    subscriber.on('error', (err: Error) => {
+      logger.debug('[UnifiedRedis][subscriber] Error', { message: err.message });
     });
-    this.subscriber.on('connect', () => logger.info('[UnifiedRedis][subscriber] Connected'));
-    this.subscriber.on('ready', () => logger.info('[UnifiedRedis][subscriber] Ready'));
+    subscriber.on('ready', () => logger.info('[UnifiedRedis][subscriber] Ready'));
 
-    await this.subscriber.connect();
-    return this.subscriber;
+    try {
+      await withTimeout(subscriber.connect(), REDIS_CONNECT_TIMEOUT_MS, 'subscriber connect');
+    } catch (error) {
+      try { subscriber.destroy(); } catch {}
+      throw error;
+    }
+    this.subscriber = subscriber;
+    return subscriber;
   }
 
   // ═══════════════════════════════════════════════════════════════════════════════
@@ -572,50 +579,45 @@ export class UnifiedRedisService {
   // ═══════════════════════════════════════════════════════════════════════════════
 
   async getStats(): Promise<CacheStats> {
-    await this.ensureConnected();
-    try {
-      let totalKeys = 0;
-      let keysByCategory: Record<string, number> = {};
-
-      if (this.fallbackMode || !this.client) {
-        totalKeys = this.memoryCache.size;
-        for (const key of this.memoryCache.keys()) {
-          const category = key.split(':')[0];
-          keysByCategory[category] = (keysByCategory[category] || 0) + 1;
-        }
-      } else {
-        totalKeys = await this.client.dbSize();
-        const patterns = ['ticker:*', 'ohlcv:*', 'orderbook:*', 'trades:*', 'markets:*'];
-        for (const pattern of patterns) {
-          const keys = await this.keys(pattern);
-          keysByCategory[pattern] = keys.length;
-        }
+    const memoryStats = () => {
+      const keysByCategory: Record<string, number> = {};
+      for (const key of this.memoryCache.keys()) {
+        const category = key.split(':')[0];
+        keysByCategory[category] = (keysByCategory[category] || 0) + 1;
       }
+      return { totalKeys: this.memoryCache.size, keysByCategory };
+    };
 
-      const hitRate = this.stats.hits + this.stats.misses > 0
-        ? (this.stats.hits / (this.stats.hits + this.stats.misses)) * 100
-        : 0;
+    const { totalKeys, keysByCategory } = await this.run(
+      'DBSIZE',
+      async (client) => {
+        const total = Number(await client.dbSize());
+        const byCategory: Record<string, number> = {};
+        for (const pattern of ['ticker:*', 'ohlcv:*', 'orderbook:*', 'trades:*', 'markets:*']) {
+          byCategory[pattern] = (await this.keys(pattern)).length;
+        }
+        return { totalKeys: total, keysByCategory: byCategory };
+      },
+      memoryStats,
+      REDIS_COMMAND_TIMEOUT_MS * 20
+    );
 
-      return {
-        totalKeys,
-        totalHits: this.stats.hits,
-        totalMisses: this.stats.misses,
-        hitRate: parseFloat(hitRate.toFixed(2)),
-        keysByCategory,
-        topKeys: [],
-      };
-    } catch (error: any) {
-      logger.error('[UnifiedRedis] Stats error:', error);
-      return { totalKeys: 0, totalHits: this.stats.hits, totalMisses: this.stats.misses, hitRate: 0, keysByCategory: {}, topKeys: [] };
-    }
+    const hitRate = this.stats.hits + this.stats.misses > 0
+      ? (this.stats.hits / (this.stats.hits + this.stats.misses)) * 100
+      : 0;
+
+    return {
+      totalKeys,
+      totalHits: this.stats.hits,
+      totalMisses: this.stats.misses,
+      hitRate: parseFloat(hitRate.toFixed(2)),
+      keysByCategory,
+      topKeys: [],
+    };
   }
 
   async healthCheck(): Promise<boolean> {
-    if (this.fallbackMode || !this.client) return false;
-    try {
-      const pong = await this.client.ping();
-      return pong === 'PONG';
-    } catch { return false; }
+    return this.run<boolean>('PING', async (client) => (await client.ping()) === 'PONG', () => false);
   }
 
   // ═══════════════════════════════════════════════════════════════════════════════
@@ -639,15 +641,24 @@ export class UnifiedRedisService {
       clearTimeout(this.reconnectTimer);
       this.reconnectTimer = null;
     }
+    const closeBounded = async (c: RedisClientType) => {
+      try {
+        if (c.isReady) await withTimeout(c.quit(), REDIS_COMMAND_TIMEOUT_MS, 'QUIT');
+        else c.destroy();
+      } catch {
+        try { c.destroy(); } catch {}
+      }
+    };
     if (this.subscriber) {
-      try { await this.subscriber.quit(); } catch {}
+      await closeBounded(this.subscriber);
       this.subscriber = null;
     }
     if (this.client) {
-      try { await this.client.quit(); } catch {}
+      const c = this.client;
       this.client = null;
-      this.fallbackMode = true;
+      await closeBounded(c);
     }
+    this.available = false;
     logger.info('[UnifiedRedis] Disconnected');
   }
 
@@ -686,13 +697,13 @@ export class UnifiedRedisService {
     }
   }
 
-  private incrFallback(key: string): number {
+  private addFallback(key: string, delta: number): number {
     const entry = this.memoryCache.get(key);
     const num = entry ? parseInt(String(entry.data), 10) || 0 : 0;
-    const newVal = num + 1;
+    const newVal = num + delta;
     this.memoryCache.set(key, {
       data: newVal as any,
-      timestamp: Date.now(),
+      timestamp: entry?.timestamp ?? Date.now(),
       ttl: entry?.ttl ?? Number.MAX_SAFE_INTEGER,
       hits: 0,
     });
@@ -731,15 +742,11 @@ export const redis = redisService;
 export const cacheService = redisService;
 
 // Auto-cleanup fallback store every 5 minutes
-setInterval(() => redisService.cleanupFallbackStore(), 300000);
+setInterval(() => redisService.cleanupFallbackStore(), 300000).unref();
 
-// Graceful shutdown
-process.on('unhandledRejection', async (reason) => {
-  logger.error('Unhandled rejection:', reason);
-  await redisService.disconnect();
-  process.exit(1);
-});
-
+// Graceful shutdown (bounded; never hangs on a dead Redis).
+// NOTE: unhandledRejection is owned by server/index.ts — do not exit the
+// process from here, or any stray rejection becomes a total outage.
 process.on('SIGTERM', async () => {
   await redisService.disconnect();
   process.exit(0);

@@ -487,11 +487,11 @@ app.locals.metricsCollectorMounted = true;
 // Expose requirePermission factory on app.locals for dynamic usages
 (app.locals as any).requirePermission = requirePermission;
 // Additional metrics middleware (instrumentation hooks)
-app.use(metricsMiddleware);
+app.use(metricsMiddleware());
 
 app.use(activityTracker());
 app.use(createRouteUsageLogger(path.join(__dirname, '../visibility/route-usage.csv')));
-app.use('/api', circuitBreakerMiddleware);
+app.use('/api', circuitBreakerMiddleware('api'));
 
 const systemVisibility = new SystemVisibility(app, path.join(__dirname, '../visibility'));
 
@@ -681,6 +681,26 @@ publicRouter.get('/signals/stream', signalsStreamHandler);
 publicRouter.get('/signals/poll', signalsPollHandler);
 publicRouter.post('/signals/publish', requireSuperAdminEnhanced, signalsPublishHandler);
 
+// Public health check (registered early so auth middleware added later can't shadow it)
+app.get('/health', asyncHandler(async (req: Request, res: Response) => {
+  const { redis: redisHealth } = await import('./services/redis');
+  const redisStatus = redisHealth.getStatus();
+  res.json({
+    status: redisStatus.status === 'up' ? 'ok' : 'degraded',
+    timestamp: new Date().toISOString(),
+    environment: env.NODE_ENV,
+    version: process.env.npm_package_version || '1.0.0',
+    uptime: process.uptime(),
+    redis: {
+      status: redisStatus.status,
+      usingFallback: redisStatus.usingFallback,
+      lastError: redisStatus.lastError,
+      lastErrorAt: redisStatus.lastErrorAt,
+      circuitState: redisStatus.circuitState,
+    },
+  });
+}));
+
 app.use('/api', publicRouter);
 app.use('/api/control-plane', controlPlaneRouter);
 
@@ -732,10 +752,13 @@ process.on('uncaughtException', (error) => {
     console.log('[STARTUP] Connecting to Redis...');
     const { redis } = await import('./services/redis');
     try {
-      await Promise.race([
-        redis.connect(),
-        new Promise((_, reject) => setTimeout(() => reject(new Error('Redis connect timeout')), 5000))
-      ]);
+      // redis.connect() is bounded by REDIS_CONNECT_TIMEOUT_MS and never throws;
+      // the outer timeout is a last-resort guard so Redis can never hang startup.
+      await withStartupStageTimeout('redis.connect', () => redis.connect(), 3000);
+      const redisStatus = redis.getStatus();
+      if (!redisStatus.connected) {
+        throw new Error(redisStatus.lastError || 'Redis not ready');
+      }
       console.log('[STARTUP] ✅ Redis connected successfully');
       try {
         const { loadFeatureOverrides } = await import('./services/featureService');
@@ -754,7 +777,7 @@ process.on('uncaughtException', (error) => {
         }
       }
     } catch (redisErr) {
-      console.warn('[STARTUP] Redis unavailable - falling back to internal in-memory system storage matrices.', redisErr instanceof Error ? redisErr.message : redisErr);
+      console.warn('[STARTUP] Redis unavailable - continuing with in-memory fallback; reconnecting in background.', redisErr instanceof Error ? redisErr.message : redisErr);
     }
 
     console.log('[STARTUP] Waiting for PostgreSQL to become available...');
@@ -1373,17 +1396,6 @@ process.on('uncaughtException', (error) => {
     app.use('/api-docs', swaggerMiddleware);
     console.log('[STARTUP] Swagger API documentation available at /api-docs');
 
-    // Health check endpoint
-    app.get('/health', asyncHandler(async (req: Request, res: Response) => {
-      res.json({
-        status: 'ok',
-        timestamp: new Date().toISOString(),
-        environment: env.NODE_ENV,
-        version: process.env.npm_package_version || '1.0.0',
-        uptime: process.uptime(),
-      });
-    }));
-
     app.get('/health/fees', (_req: Request, res: Response) => {
       res.json({
         stale: exchangeFeeService.getStaleSchedules(),
@@ -1792,17 +1804,23 @@ process.on('uncaughtException', (error) => {
       next();
     });
     if (env.NODE_ENV === "development") {
+      // Vite is mounted on a dedicated router registered here (before the 404
+      // handler), so if setup finishes after the timeout it still takes effect
+      // without blocking server.listen().
+      const viteRouter = express.Router();
+      app.use(viteRouter);
+      const viteSetupTimeoutMs = parseInt(process.env.VITE_SETUP_TIMEOUT_MS || '15000', 10) || 15000;
       try {
         await withStartupStageTimeout(
           'setupVite',
           async () => {
             const { setupVite } = await import('./vite');
-            await setupVite(app, server);
+            await setupVite(viteRouter, server);
           },
-          45000
+          viteSetupTimeoutMs
         );
       } catch (err) {
-        logger.warn('⚠️ Dev Vite setup failed or timed out; continuing with API startup:', metaFromUnknown(err));
+        logger.warn('⚠️ Dev Vite setup failed or timed out; continuing with API startup (Vite will attach if it finishes later):', metaFromUnknown(err));
       }
     } else {
       try {

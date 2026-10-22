@@ -21,7 +21,7 @@ import { EventEmitter } from 'events';
 import { Logger } from '../../utils/logger';
 
 export type CircuitBreakerState = 'CLOSED' | 'OPEN' | 'HALF_OPEN';
-export type CircuitBreakerDomain = 'payment' | 'trading' | 'vault' | 'governance' | 'agent' | 'media';
+export type CircuitBreakerDomain = 'payment' | 'trading' | 'vault' | 'governance' | 'agent' | 'media' | 'infrastructure';
 
 export interface CircuitBreakerConfig {
   // Identity
