@@ -2058,6 +2058,7 @@ const CreateDAOFlowContent: React.FC = () => {
       </div>
     </div>
   );
+  };
 
   // Step 8 - Success
   const renderSuccess = () => (
@@ -2294,7 +2295,6 @@ const CreateDAOFlowContent: React.FC = () => {
     </div>
   );
 };
-}
 
 // Wrapped component with orchestrator provider
 const CreateDAOFlow = () => {
