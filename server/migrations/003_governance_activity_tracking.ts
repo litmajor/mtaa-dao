@@ -147,7 +147,7 @@ export async function up(db: NodePgDatabase<any>) {
              AND EXTRACT(DAY FROM NOW() - dm.joined_at)::INTEGER >= grr.min_member_days THEN true
         ELSE false
       END as is_eligible
-    FROM dao_members dm
+    FROM dao_memberships dm
     LEFT JOIN governance_role_requirements grr ON dm.role = grr.role_id
     LEFT JOIN governance_activity_log gal ON dm.user_id = gal.user_id 
       AND dm.dao_id = gal.dao_id 
@@ -156,9 +156,9 @@ export async function up(db: NodePgDatabase<any>) {
     GROUP BY dm.user_id, dm.dao_id, dm.role, dm.joined_at, grr.next_role, grr.points_required, grr.min_member_days, grr.points_window_days;
   `);
 
-  // Add missing columns to dao_members if they don't exist
+  // Add missing columns to the canonical DAO membership table if needed.
   await db.execute(sql`
-    ALTER TABLE dao_members 
+    ALTER TABLE dao_memberships
     ADD COLUMN IF NOT EXISTS joined_at TIMESTAMP DEFAULT NOW(),
     ADD COLUMN IF NOT EXISTS activity_points INTEGER DEFAULT 0;
   `);
@@ -168,7 +168,7 @@ export async function up(db: NodePgDatabase<any>) {
     CREATE OR REPLACE FUNCTION update_user_activity_points()
     RETURNS TRIGGER AS $$
     BEGIN
-      UPDATE dao_members 
+      UPDATE dao_memberships
       SET activity_points = (
         SELECT COALESCE(SUM(points), 0)
         FROM governance_activity_log

@@ -136,8 +136,8 @@ export async function setupMorioDataHub(app: Express, port: number = 3000) {
  *   updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
  * );
  * 
- * -- DAO Members table
- * CREATE TABLE dao_members (
+ * -- DAO Memberships table
+ * CREATE TABLE dao_memberships (
  *   id VARCHAR(255) PRIMARY KEY,
  *   dao_id VARCHAR(255) NOT NULL,
  *   user_id VARCHAR(255) NOT NULL,
@@ -185,7 +185,7 @@ export const MorioQueries = {
   getDaoMembers: `
     SELECT COUNT(*) as member_count,
            SUM(CASE WHEN last_active > NOW() - INTERVAL 7 DAY THEN 1 ELSE 0 END) as active_count
-    FROM dao_members
+    FROM dao_memberships
     WHERE dao_id = $1
   `,
 

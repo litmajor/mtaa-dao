@@ -198,13 +198,18 @@ async function kotaniRequest(
   }
 
   const envelope = providerEnvelopeSchema.safeParse(parsedBody);
-  if (!response.ok || !envelope.success || envelope.data?.success === false) {
-    const message = typeof envelope.data?.message === 'string'
+  if (!response.ok) {
+    throw new Error(typeof envelope.success === 'boolean' && envelope.success && typeof envelope.data?.message === 'string'
       ? envelope.data.message
-      : typeof envelope.message === 'string'
-        ? envelope.message
-      : `KotaniPay request failed (${response.status}).`;
-    throw new Error(message);
+      : `KotaniPay request failed (${response.status}).`);
+  }
+  if (!envelope.success) {
+    throw new Error(`KotaniPay returned an invalid response (${envelope.error.issues.map((issue) => issue.message).join('; ')}).`);
+  }
+  if (envelope.data.success === false) {
+    throw new Error(typeof envelope.data.message === 'string'
+      ? envelope.data.message
+      : `KotaniPay request failed (${response.status}).`);
   }
   return getObject(envelope.data?.data ?? envelope.data);
 }

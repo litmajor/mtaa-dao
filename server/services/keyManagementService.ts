@@ -11,7 +11,7 @@
 
 import * as crypto from 'crypto';
 import { encrypt, decrypt } from '../utils/encryption';
-import type { EncryptedData } from '../utils/encryption';
+import type { EncryptedPayload } from '../utils/encryption';
 import { pool } from '../db';
 
 export interface KeyVersion {
@@ -229,10 +229,10 @@ export class KeyManagementService {
       for (const cred of credentials) {
         try {
           // Decrypt with old key (stored metadata)
-          const decrypted = decrypt(newMasterKey, cred.apiKeyEncrypted);
+          const decrypted = await decrypt(newMasterKey, cred.apiKeyEncrypted as EncryptedPayload);
 
           // Re-encrypt with new key
-          const newEncrypted = encrypt(newMasterKey, decrypted);
+          const newEncrypted = await encrypt(newMasterKey, decrypted);
 
           // Update in database
           await credentialRepository.updateEncryption(cred.id, newEncrypted);
@@ -348,8 +348,9 @@ export class KeyManagementService {
 
     try {
       const testData = 'health-check-' + Date.now();
-      const encrypted = encrypt(process.env.MASTER_ENCRYPTION_KEY || '', testData);
-      const decrypted = decrypt(process.env.MASTER_ENCRYPTION_KEY || '', encrypted);
+      const masterKey = process.env.MASTER_ENCRYPTION_KEY || '';
+      const encrypted = await encrypt(masterKey, testData);
+      const decrypted = await decrypt(masterKey, encrypted);
 
       const healthy = decrypted === testData;
       return {

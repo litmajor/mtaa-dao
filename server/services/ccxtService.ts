@@ -213,7 +213,10 @@ export class CCXTAggregator {
         const exchangeConfig: any = {
           enableRateLimit: true,
           rateLimit: this.calculateRateLimit(name),
-          timeout: parseInt(process.env.CCXT_TIMEOUT || '30000'),
+          timeout: Math.min(
+            3000,
+            Math.max(500, Number.parseInt(process.env.CCXT_TIMEOUT || '3000', 10) || 3000),
+          ),
           apiKey: config.apiKey,
           secret: config.apiSecret,
         };

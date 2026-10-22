@@ -1,4 +1,5 @@
 import ccxt from 'ccxt';
+import type { PoolClient } from 'pg';
 import { pool } from '../db';
 import { CEXCredentialRepository } from '../repositories/cexCredentialRepository';
 import { exchangeFeeService, parseTradingPair, type ExchangeFeeInfo, type FeeStructure } from './exchangeFeeService';
@@ -110,7 +111,7 @@ class ExchangeFeeApiSyncService {
   }
 
   async syncActiveCredentials(): Promise<void> {
-    let client: Awaited<ReturnType<typeof pool.connect>> | null = null;
+    let client: PoolClient | null = null;
     let lockAcquired = false;
     const runAt = new Date().toISOString();
     const run: ExchangeFeeApiSyncStatus = {
@@ -159,7 +160,7 @@ class ExchangeFeeApiSyncService {
             secret: credential.apiSecret,
             password: credential.passphrase,
             enableRateLimit: true,
-            timeout: 30_000,
+            timeout: 3000,
           });
           if (credential.isSandbox) exchange.setSandboxMode?.(true);
 

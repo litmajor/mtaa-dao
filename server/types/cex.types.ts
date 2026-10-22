@@ -40,9 +40,9 @@ export interface CEXCredential {
   id: string; // UUID
   userId: string; // UUID
   exchange: string;
-  apiKeyEncrypted: Buffer; // Encrypted with AES-256-GCM
-  apiSecretEncrypted: Buffer;
-  passphraseEncrypted?: Buffer; // For exchanges like Kraken
+  apiKeyEncrypted: EncryptedPayload;
+  apiSecretEncrypted: EncryptedPayload;
+  passphraseEncrypted?: EncryptedPayload;
   isSandbox: boolean;
   isActive: boolean;
   lastUsedAt?: Date;
@@ -203,3 +203,4 @@ export interface TransactionResult {
   transactionId: string;
   details?: Record<string, any>;
 }
+import type { EncryptedPayload } from '../utils/encryption';

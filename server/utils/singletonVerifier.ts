@@ -48,7 +48,7 @@ class SingletonVerifier {
   /**
    * Verify all services have exactly 1 instance
    */
-  verify(): { isValid: boolean; report: string } {
+  verify(): { isValid: boolean; report: string; violations: string[] } {
     const violations: string[] = [];
     const passing: string[] = [];
 
@@ -83,6 +83,7 @@ class SingletonVerifier {
     return {
       isValid: violations.length === 0,
       report,
+      violations,
     };
   }
 
@@ -135,8 +136,12 @@ export const singletonVerifier = new SingletonVerifier();
 /**
  * Quick verification function to call during startup
  */
-export function verifySingletonInstances(): void {
-  const { isValid, report } = singletonVerifier.verify();
+export function verifySingletonInstances(): {
+  success: boolean;
+  errors: string[];
+  report: string;
+} {
+  const { isValid, report, violations } = singletonVerifier.verify();
 
   if (isValid) {
     logger.info('✅ All singleton instances verified');
@@ -146,6 +151,11 @@ export function verifySingletonInstances(): void {
     );
     logger.error(singletonVerifier.getDetailedReport());
   }
+  return {
+    success: isValid,
+    errors: violations,
+    report,
+  };
 }
 
 /**

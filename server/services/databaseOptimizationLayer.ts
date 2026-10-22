@@ -117,6 +117,7 @@ export class DatabaseOptimizationLayer {
         currency: vaultData.currency || 'KES',
         balance: vaultData.balance || '0',
         totalValueLocked: vaultData.totalValueLocked || '0',
+        isActive: vaultData.isActive ?? true,
         createdAt: vaultData.createdAt || new Date(),
         updatedAt: vaultData.updatedAt || new Date(),
         holdings: holdings.map((h: any) => ({

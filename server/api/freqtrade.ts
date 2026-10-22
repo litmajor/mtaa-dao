@@ -248,12 +248,16 @@ export const hyperoptStrategy = async (req: Request, res: Response, next: NextFu
     const rows = await db.select().from(strategiesTable).where(eq(strategiesTable.id, strategyId)).limit(1);
     if (!rows.length) return res.status(404).json({ error: 'Strategy not found' });
 
-    const jobId = await strategyFreqtradeIntegration.optimizeStrategyParameters(strategyId, {
-      timeframe: input.timeframe,
-      timerange: input.timerange,
-      trials: input.trials,
-      spaces: input.spaces,
-    });
+    const jobId = await strategyFreqtradeIntegration.optimizeStrategyParameters(
+      strategyId,
+      getUserId(req),
+      {
+        timeframe: input.timeframe,
+        timerange: input.timerange,
+        trials: input.trials,
+        spaces: input.spaces,
+      },
+    );
 
     res.json({
       status: 'queued',
@@ -286,7 +290,8 @@ export const hyperoptStrategySync = async (req: Request, res: Response, next: Ne
     if (!rows.length) return res.status(404).json({ error: 'Strategy not found' });
 
     const result = await strategyFreqtradeIntegration.runOptimization(
-      { strategyId },
+      strategyId,
+      getUserId(req),
       {
         trials: input.trials,
         spaces: input.spaces,

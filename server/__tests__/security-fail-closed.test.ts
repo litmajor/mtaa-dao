@@ -25,7 +25,7 @@ vi.mock('../db', () => ({
   },
 }));
 
-import { rateLimiter } from '../middleware/rateLimiter';
+import { loginRateLimiter, rateLimiter } from '../middleware/rateLimiter';
 import { isTokenBlacklisted } from '../services/tokenBlacklist';
 
 describe('fail-closed security guards', () => {
@@ -41,10 +41,32 @@ describe('fail-closed security guards', () => {
     mockUpdate.mockReset();
   });
 
-  it('returns 503 and blocks the request when rate-limit state cannot be updated', async () => {
+  it('uses a bounded local fallback for login rate limits when Redis is unavailable', async () => {
     redisStore.incrWithExpiry.mockRejectedValue(new Error('redis down'));
 
-    const req = { ip: '1.2.3.4', body: {} } as unknown as Request;
+    const middleware = loginRateLimiter;
+    const responses: Response[] = [];
+    const next = vi.fn() as NextFunction;
+
+    for (let attempt = 0; attempt < 11; attempt += 1) {
+      const req = { ip: '10.99.0.1', headers: {}, body: {} } as unknown as Request;
+      const res = {
+        setHeader: vi.fn(),
+        status: vi.fn().mockReturnThis(),
+        json: vi.fn().mockReturnThis(),
+      } as unknown as Response;
+      responses.push(res);
+      await middleware(req, res, next);
+    }
+
+    expect(next).toHaveBeenCalledTimes(10);
+    expect(responses[10].status).toHaveBeenCalledWith(429);
+  });
+
+  it('keeps non-fallback rate limiters fail-closed when Redis is unavailable', async () => {
+    redisStore.incrWithExpiry.mockRejectedValue(new Error('redis down'));
+
+    const req = { ip: '10.99.0.2', headers: {}, body: {} } as unknown as Request;
     const res = {
       setHeader: vi.fn(),
       status: vi.fn().mockReturnThis(),

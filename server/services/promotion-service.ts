@@ -104,7 +104,7 @@ export class PromotionService {
     try {
       // Get user's current role
       const userResult = await db.execute(sql`
-        SELECT role FROM dao_members
+        SELECT role FROM dao_memberships
         WHERE user_id = ${userId} AND dao_id = ${daoId}
         LIMIT 1
       `);
@@ -122,7 +122,7 @@ export class PromotionService {
 
       // Get member since date
       const memberResult = await db.execute(sql`
-        SELECT created_at FROM dao_members
+        SELECT created_at FROM dao_memberships
         WHERE user_id = ${userId} AND dao_id = ${daoId}
         LIMIT 1
       `);
@@ -200,7 +200,7 @@ export class PromotionService {
     try {
       // Get current role
       const userResult = await db.execute(sql`
-        SELECT role FROM dao_members
+        SELECT role FROM dao_memberships
         WHERE user_id = ${userId} AND dao_id = ${daoId}
       `);
 
@@ -209,7 +209,7 @@ export class PromotionService {
 
       // Update user role
       await db.execute(sql`
-        UPDATE dao_members
+        UPDATE dao_memberships
         SET role = ${toRole}, updated_at = ${new Date()}
         WHERE user_id = ${userId} AND dao_id = ${daoId}
       `);
@@ -271,7 +271,7 @@ export class PromotionService {
     try {
       // Get current role and stats
       const userResult = await db.execute(sql`
-        SELECT role FROM dao_members
+        SELECT role FROM dao_memberships
         WHERE user_id = ${userId} AND dao_id = ${daoId}
       `);
 
@@ -292,7 +292,7 @@ export class PromotionService {
 
       // Get member since date
       const memberResult = await db.execute(sql`
-        SELECT created_at FROM dao_members
+        SELECT created_at FROM dao_memberships
         WHERE user_id = ${userId} AND dao_id = ${daoId}
       `);
 

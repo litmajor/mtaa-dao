@@ -103,7 +103,7 @@ function emitUserActivityEvent(emitter: WebSocketEventEmitter, event: AuditEvent
     event.resource.type,
     event.resource.id,
     userId,
-    event.action,
+    String(event.action),
     {
       auditEventId: event.id,
       correlationId: event.correlationId,
@@ -313,7 +313,7 @@ function emitCustomEvent(emitter: WebSocketEventEmitter, event: AuditEvent, user
   // For custom events, emit as activity/system event based on context
   if (event.context?.asAlert) {
     emitter.emitAlert(
-      event.context?.alertType || 'custom_event',
+      typeof event.context.alertType === 'string' ? event.context.alertType : 'custom_event',
       mapAuditSeverityToAlertSeverity(event.severity),
       event.action,
       userId,
@@ -322,7 +322,7 @@ function emitCustomEvent(emitter: WebSocketEventEmitter, event: AuditEvent, user
   } else {
     emitter.emitSystemEvent(
       event.resource.type,
-      event.action,
+      String(event.action),
       userId,
       event.context || {}
     );

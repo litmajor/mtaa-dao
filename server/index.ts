@@ -876,13 +876,16 @@ process.on('uncaughtException', (error) => {
     if (paymentRecoverySAGA) logger.info('[STARTUP] ✅ Payment Recovery SAGA Orchestrator initialized', {});
 
     console.log('[STARTUP] Running Phase 7.1 System Singleton Verification...');
-    const verification: any = await withStartupStageTimeout(
+    const verification = await withStartupStageTimeout(
       'verifySingletonInstances',
       () => Promise.resolve(verifySingletonInstances()),
       10000
     );
     if (!verification?.success) {
-      logger.error('❌ Critical Singleton Conflict Matrix found during startup phase verification:', verification?.errors);
+      logger.error('❌ Duplicate singleton instances found during startup verification:', {
+        services: verification?.errors ?? [],
+        report: verification?.report ?? 'Singleton verification timed out before a report was available.',
+      });
     } else {
       logger.info('✅ Singleton instances verification check passed.');
     }

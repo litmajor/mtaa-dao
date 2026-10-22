@@ -130,13 +130,22 @@ export class StrategyJobWorker {
       if (!strategyConfig) {
         throw new Error(`Strategy ${strategyId} not found`);
       }
+      if (typeof userId !== 'string' || !userId) {
+        throw new Error('Strategy optimization requires the requesting user ID');
+      }
 
       await job.progress(25);
 
       // Run optimization via Freqtrade
       const optimizationResults = await strategyFreqtradeIntegration.runOptimization(
-        strategyConfig,
-        optimizationParams
+        strategyId,
+        userId,
+        {
+          trials: optimizationParams.trials,
+          spaces: optimizationParams.spaces,
+          timeframe: optimizationParams.timeframe,
+          timerange: optimizationParams.timerange,
+        },
       );
 
       await job.progress(98);
@@ -197,4 +206,3 @@ export class StrategyJobWorker {
     }
   }
 }
-

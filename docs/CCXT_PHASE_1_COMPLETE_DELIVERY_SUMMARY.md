@@ -500,7 +500,7 @@ Utilities (100%):
 
 2. **Configure Environment** (10 min)
    - Create .env or .env.local
-   - Set CCXT_TIMEOUT=30000
+   - Set CCXT_TIMEOUT=3000 (the service caps exchange requests at 3 seconds)
    - Verify other settings
 
 3. **Verify Endpoints** (15 min)
@@ -545,7 +545,7 @@ Utilities (100%):
 | Type errors | Run `npx tsc --noEmit` |
 | API returning null | Check internet, exchange status |
 | Rate limit (429) | Already handled, just wait 60s |
-| Timeout errors | Increase `CCXT_TIMEOUT` in .env |
+| Timeout errors | Check provider/network health; prices use cached or stale data where available. The service caps requests at 3000ms. |
 
 ### Quick Troubleshooting
 See: `CCXT_PHASE_1_INTEGRATION_CHECKLIST.md` (Troubleshooting section)

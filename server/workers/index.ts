@@ -34,8 +34,12 @@ export async function initializeWorkers(): Promise<void> {
     logger.info('[Workers] Pool/Vault worker initialized');
 
     // Initialize PaymentCompleted domain event consumer
-    await PaymentCompletedConsumerWorker.initialize();
-    logger.info('[Workers] PaymentCompleted consumer initialized');
+    const paymentConsumerStarted = await PaymentCompletedConsumerWorker.initialize();
+    if (paymentConsumerStarted) {
+      logger.info('[Workers] PaymentCompleted consumer initialized');
+    } else {
+      logger.warn('[Workers] PaymentCompleted consumer initialization deferred; Redis retry is scheduled');
+    }
 
     const treasuryListenerEnabled = process.env.TREASURY_EVENT_LISTENER_ENABLED === 'true'
       || (

@@ -91,7 +91,12 @@ class JobQueueService {
           redis: {
             host: process.env.REDIS_HOST || 'localhost',
             port: parseInt(process.env.REDIS_PORT || '6379'),
-            password: process.env.REDIS_PASSWORD
+            password: process.env.REDIS_PASSWORD,
+            maxRetriesPerRequest: null,
+            retryStrategy: (attempt: number) => {
+              const baseDelayMs = Math.min(60_000, 250 * (2 ** Math.min(attempt, 8)));
+              return baseDelayMs + Math.floor(Math.random() * 250);
+            },
           },
           defaultJobOptions: {
             attempts: 3,
@@ -112,6 +117,11 @@ class JobQueueService {
         });
 
         this.queues.set(jobType, queue);
+        queue.on('error', (error) => {
+          logger.warn(`[JobQueue] Redis connection error for ${jobType}; retrying`, {
+            error: error.message,
+          });
+        });
         logger.info(`[JobQueue] Initialized queue for ${jobType}`);
       } catch (error) {
         logger.error(`[JobQueue] Failed to initialize queue ${jobType}:`, error);

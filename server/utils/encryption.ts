@@ -52,6 +52,8 @@ export interface EncryptedPayload {
   aad?: string;
 }
 
+export type EncryptedData = EncryptedPayload;
+
 export type EncryptOptions = {
   /** Additional Authenticated Data – bound to the ciphertext */
   aad?: string | Buffer;

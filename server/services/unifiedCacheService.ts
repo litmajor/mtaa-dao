@@ -48,6 +48,7 @@ export interface CachedPrice {
   last: number;
   volume: number;
   timestamp: number;
+  stale?: boolean;
 }
 
 export interface OHLCVCandle {
@@ -227,7 +228,7 @@ class UnifiedCacheService {
           const cached = await this.redis.get(key);
           if (cached) {
             return {
-              data: JSON.parse(cached),
+              data: { ...JSON.parse(cached), stale: false },
               source: 'cache',
               quality: 'fresh',
               timestamp: Date.now(),
@@ -273,7 +274,7 @@ class UnifiedCacheService {
         });
 
         return {
-          data: staleData,
+          data: { ...staleData, stale: true },
           source: 'cache',
           quality: 'stale',
           timestamp: Date.now(),
@@ -289,7 +290,7 @@ class UnifiedCacheService {
       await this.setPrice(key, fresh, false);
 
       return {
-        data: fresh,
+        data: { ...fresh, stale: false },
         source: 'fresh',
         quality: 'fresh',
         timestamp: Date.now(),

@@ -253,10 +253,30 @@ router.post(
         },
       });
 
-      if (!('success' in payment) || !payment.success || payment.status !== 'pending') {
-        const message = 'message' in payment && payment.message
-          ? String(payment.message)
+      if (!('status' in payment)) {
+        const message = 'error' in payment
+          ? String(payment.error.message)
           : 'M-Pesa payment could not be initiated';
+        await db.update(daoContributions).set({
+          status: 'rejected',
+          rejectionReason: message.slice(0, 500),
+          metadata: { ...(contribution.metadata as Record<string, unknown>), paymentStatus: 'failed', paymentError: message },
+          updatedAt: new Date(),
+        }).where(eq(daoContributions.id, contribution.id));
+        return res.status(502).json({ error: message, contributionId: contribution.id });
+      }
+      if (!payment.success) {
+        const message = payment.message || 'M-Pesa payment could not be initiated';
+        await db.update(daoContributions).set({
+          status: 'rejected',
+          rejectionReason: message.slice(0, 500),
+          metadata: { ...(contribution.metadata as Record<string, unknown>), paymentStatus: 'failed', paymentError: message },
+          updatedAt: new Date(),
+        }).where(eq(daoContributions.id, contribution.id));
+        return res.status(502).json({ error: message, contributionId: contribution.id });
+      }
+      if (payment.status !== 'pending') {
+        const message = payment.message || `M-Pesa request returned unexpected status: ${payment.status}`;
         await db.update(daoContributions).set({
           status: 'rejected',
           rejectionReason: message.slice(0, 500),
@@ -545,7 +565,11 @@ router.post(
       const contributorId = typeof memberId === 'string' && memberId ? memberId : userId;
       if (contributorId !== userId) {
         const [actorMembership] = await db
-          .select({ role: daoMemberships.role })
+          .select({
+            role: daoMemberships.role,
+            status: daoMemberships.status,
+            isBanned: daoMemberships.isBanned,
+          })
           .from(daoMemberships)
           .where(and(eq(daoMemberships.daoId, daoId), eq(daoMemberships.userId, userId)))
           .limit(1);

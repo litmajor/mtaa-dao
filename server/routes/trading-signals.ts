@@ -81,8 +81,8 @@ router.get('/stats', async (req: Request, res: Response) => {
     res.json(
       ApiResponse.success({
         connectedClients: stats.totalClients,
-        activeSubscriptions: stats.totalSubscriptions,
-        details: stats.subscriptions,
+        activeSubscriptions: stats.activeStreams,
+        details: stats.streams,
         timestamp: Date.now()
       })
     );

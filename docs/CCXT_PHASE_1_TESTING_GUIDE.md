@@ -306,7 +306,7 @@ npm run test:watch
 
 \`\`\`bash
 # CCXT Service Test Configuration
-CCXT_TIMEOUT=30000
+CCXT_TIMEOUT=3000
 CCXT_RATE_LIMIT_ENABLED=true
 
 # Optional: API keys for authenticated endpoints

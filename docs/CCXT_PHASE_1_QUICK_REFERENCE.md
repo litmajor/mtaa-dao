@@ -171,7 +171,7 @@ curl "http://localhost:3000/api/exchanges/status"
 
 ```bash
 # Optional but recommended
-CCXT_TIMEOUT=30000              # Request timeout in ms
+CCXT_TIMEOUT=3000               # Request timeout in ms (service caps at 3000)
 CCXT_CACHE_TTL_PRICES=30000    # Price cache duration
 CCXT_CACHE_TTL_OHLCV=300000    # OHLCV cache duration  
 CCXT_CACHE_TTL_MARKETS=3600000 # Markets cache (1 hour)
@@ -323,7 +323,7 @@ function PriceDisplay() {
 | Routes not found (404) | Restart server after adding routes |
 | Type errors | Run `npx tsc --noEmit` |
 | Prices returning null | Check internet connection, exchange API status |
-| Timeout errors | Increase `CCXT_TIMEOUT` in .env |
+| Timeout errors | Check provider/network health; prices use cached or stale data where available. The service caps requests at 3000ms. |
 | Rate limit (429) | Already handled by p-limit, just wait 60s |
 
 ## 📚 Documentation Links

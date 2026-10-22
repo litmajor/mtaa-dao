@@ -99,7 +99,7 @@ OKX_PASSPHRASE=your_passphrase_here
 CEX_PRICE_CACHE_TTL=30000
 CEX_OHLCV_CACHE_TTL=300000
 CEX_API_RATE_LIMIT_DELAY=100
-CCXT_TIMEOUT=30000
+CCXT_TIMEOUT=3000
 
 # Database
 DATABASE_URL=postgresql://...
@@ -142,7 +142,7 @@ export class CCXTAggregator {
           apiKey: process.env[`${name.toUpperCase()}_API_KEY`],
           secret: process.env[`${name.toUpperCase()}_API_SECRET`],
           password: process.env[`${name.toUpperCase()}_PASSPHRASE`],
-          timeout: parseInt(process.env.CCXT_TIMEOUT || '30000'),
+          timeout: Math.min(3000, parseInt(process.env.CCXT_TIMEOUT || '3000', 10)),
           enableRateLimit: true,
           rateLimit: parseInt(process.env.CEX_API_RATE_LIMIT_DELAY || '100')
         });

@@ -1117,11 +1117,15 @@ router.put('/strategies/:id', [authenticateToken], async (req: Request, res: Res
     const updated = await strategyDashboardService.updateStrategy(id, {
       name,
       description,
-      targetAllocation: Array.isArray(allocations) ? Object.fromEntries(allocations.map((a: any) => [a.asset, a.weight])) : strategy.targetAllocation,
-      rebalanceFrequency: strategy.rebalanceFrequency,
+      allocations: Array.isArray(allocations)
+        ? allocations
+        : Object.entries(strategy.targetAllocation || {}).map(([asset, weight]) => ({
+          asset,
+          weight: Number(weight),
+        })),
+      rebalanceFrequencyDays: strategy.rebalanceFrequencyDays,
       riskLevel: riskLevel || strategy.riskLevel,
       tags: tags || strategy.tags,
-      nextRebalance: strategy.nextRebalance,
     });
 
     res.json({

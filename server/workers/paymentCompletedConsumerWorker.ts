@@ -31,6 +31,10 @@ export class PaymentCompletedConsumerWorker {
   private guard: IdempotencyGuard;
   private timer: ReturnType<typeof setInterval> | null = null;
   private running = false;
+  private static retryTimer: ReturnType<typeof setTimeout> | null = null;
+  private static initializationInProgress = false;
+  private static shuttingDown = false;
+  private static retryAttempt = 0;
 
   constructor(redisClient: Awaited<ReturnType<typeof getRedisInstanceAsync>>) {
     this.consumer = new RedisStreamConsumer(redisClient);
@@ -41,31 +45,72 @@ export class PaymentCompletedConsumerWorker {
     );
   }
 
-  static async initialize(): Promise<void> {
-    // XREADGROUP BLOCK holds its connection for up to BLOCK_MS, so it must not
-    // run on the shared singleton: every other command (rate limits, cache)
-    // would queue behind it and hit the command timeout.
-    const shared = await getRedisInstanceAsync();
-    const blockingClient = shared.duplicate() as typeof shared;
-    blockingClient.on('error', (err: Error) => {
-      logger.debug('[PaymentCompletedConsumer] Blocking client error', { error: err.message });
-    });
-    await blockingClient.connect();
-    this.blockingClient = blockingClient;
+  static async initialize(): Promise<boolean> {
+    if (this.instance) return true;
+    if (this.initializationInProgress || this.shuttingDown) return false;
+    this.initializationInProgress = true;
+    let blockingClient: Awaited<ReturnType<typeof getRedisInstanceAsync>> | null = null;
 
-    const worker = new PaymentCompletedConsumerWorker(blockingClient);
-    await worker.start();
-    this.instance = worker;
+    try {
+      // XREADGROUP BLOCK holds its connection for up to BLOCK_MS, so it must not
+      // run on the shared singleton: every other command (rate limits, cache)
+      // would queue behind it and hit the command timeout.
+      const shared = await getRedisInstanceAsync();
+      blockingClient = shared.duplicate() as typeof shared;
+      blockingClient.on('error', (err: Error) => {
+        logger.debug('[PaymentCompletedConsumer] Blocking client error', { error: err.message });
+      });
+      await blockingClient.connect();
+
+      const worker = new PaymentCompletedConsumerWorker(blockingClient);
+      await worker.start();
+      this.blockingClient = blockingClient;
+      this.instance = worker;
+      this.retryAttempt = 0;
+      if (this.retryTimer) {
+        clearTimeout(this.retryTimer);
+        this.retryTimer = null;
+      }
+      return true;
+    } catch (error) {
+      await blockingClient?.close().catch(() => undefined);
+      const baseDelayMs = Math.min(60_000, 1_000 * (2 ** Math.min(this.retryAttempt, 6)));
+      const delayMs = Math.min(
+        60_000,
+        baseDelayMs + Math.floor(Math.random() * Math.min(10_000, baseDelayMs * 0.2)),
+      );
+      this.retryAttempt += 1;
+      logger.warn('[PaymentCompletedConsumer] Redis unavailable; retrying worker initialization', {
+        error: error instanceof Error ? error.message : String(error),
+        retryInMs: delayMs,
+        attempt: this.retryAttempt,
+      });
+      this.retryTimer = setTimeout(() => {
+        this.retryTimer = null;
+        void this.initialize();
+      }, delayMs);
+      this.retryTimer.unref?.();
+      return false;
+    } finally {
+      this.initializationInProgress = false;
+    }
   }
 
   static async shutdown(): Promise<void> {
+    this.shuttingDown = true;
+    if (this.retryTimer) {
+      clearTimeout(this.retryTimer);
+      this.retryTimer = null;
+    }
     if (this.instance) {
       await this.instance.stop();
+      this.instance = null;
     }
     if (this.blockingClient) {
       await this.blockingClient.close().catch(() => undefined);
       this.blockingClient = null;
     }
+    this.retryAttempt = 0;
   }
 
   private static instance: PaymentCompletedConsumerWorker | null = null;

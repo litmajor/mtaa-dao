@@ -7,7 +7,15 @@ interface RateLimitOptions {
   message?: string;
   keyGenerator?: (req: Request) => string;
   failClosed?: boolean;
+  localFallback?: boolean;
 }
+
+interface LocalRateLimitEntry {
+  count: number;
+  expiresAt: number;
+}
+
+const LOCAL_RATE_LIMIT_MAX_ENTRIES = 10_000;
 
 function sanitizeRateLimitKey(value: unknown, fallback = 'unknown'): string {
   if (typeof value !== 'string') {
@@ -23,23 +31,6 @@ function sanitizeRateLimitKey(value: unknown, fallback = 'unknown'): string {
 }
 
 function resolveClientIp(req: Request): string {
-  const forwardedFor = req.headers['x-forwarded-for'];
-  if (typeof forwardedFor === 'string' && forwardedFor.trim().length > 0) {
-    return sanitizeRateLimitKey(forwardedFor.split(',')[0].trim(), 'unknown-ip');
-  }
-
-  if (Array.isArray(forwardedFor) && forwardedFor.length > 0) {
-    const first = forwardedFor[0]?.split(',')[0]?.trim();
-    if (first) {
-      return sanitizeRateLimitKey(first, 'unknown-ip');
-    }
-  }
-
-  const realIp = req.headers['x-real-ip'];
-  if (typeof realIp === 'string' && realIp.trim().length > 0) {
-    return sanitizeRateLimitKey(realIp.trim(), 'unknown-ip');
-  }
-
   const sourceIp = req.ip || req.socket?.remoteAddress || req.connection?.remoteAddress || 'unknown-ip';
   return sanitizeRateLimitKey(sourceIp, 'unknown-ip').replace(/^::ffff:/, '');
 }
@@ -50,52 +41,92 @@ function getRetryAfterSeconds(windowMs: number): number {
   return Math.ceil(remainingMs / 1000);
 }
 
+function incrementLocalRateLimit(
+  entries: Map<string, LocalRateLimitEntry>,
+  key: string,
+  windowMs: number,
+  max: number,
+): number {
+  const now = Date.now();
+  const existing = entries.get(key);
+  if (existing && existing.expiresAt > now) {
+    existing.count += 1;
+    return existing.count;
+  }
+
+  if (entries.size >= LOCAL_RATE_LIMIT_MAX_ENTRIES) {
+    for (const [entryKey, entry] of entries) {
+      if (entry.expiresAt <= now) {
+        entries.delete(entryKey);
+      }
+    }
+
+    if (entries.size >= LOCAL_RATE_LIMIT_MAX_ENTRIES) {
+      return max + 1;
+    }
+  }
+
+  entries.set(key, { count: 1, expiresAt: now + windowMs });
+  return 1;
+}
+
 export function rateLimiter(options: RateLimitOptions) {
   const {
     windowMs,
     max,
     message = 'Too many requests, please try again later.',
     failClosed = true,
+    localFallback = false,
     keyGenerator = (req: Request) => {
       return `ip:${resolveClientIp(req)}`;
     },
   } = options;
+  const localEntries = new Map<string, LocalRateLimitEntry>();
+  let hasLoggedLocalFallback = false;
 
   return async (req: Request, res: Response, next: NextFunction) => {
+    const key = `rate_limit:${keyGenerator(req)}`;
+    const windowSeconds = Math.max(1, Math.floor(windowMs / 1000));
+    let count: number;
+
     try {
-      const key = `rate_limit:${keyGenerator(req)}`;
-      const windowSeconds = Math.max(1, Math.floor(windowMs / 1000));
-
-      const count = await redis.incrWithExpiry(key, windowSeconds);
-
-      res.setHeader('X-RateLimit-Limit', max.toString());
-
-      if (count > max) {
-        const remaining = Math.max(0, max - count);
-        const retryAfter = getRetryAfterSeconds(windowMs);
-        res.setHeader('X-RateLimit-Remaining', remaining.toString());
-        res.setHeader('Retry-After', retryAfter.toString());
-
-        return res.status(429).json({
-          success: false,
-          error: message,
-          retryAfter,
-        });
-      }
-
-      res.setHeader('X-RateLimit-Remaining', Math.max(0, max - count).toString());
-      next();
+      count = await redis.incrWithExpiry(key, windowSeconds);
+      hasLoggedLocalFallback = false;
     } catch (error) {
       console.error('Rate limiter error:', error);
-      if (failClosed) {
+      if (localFallback) {
+        if (!hasLoggedLocalFallback) {
+          console.warn('Redis unavailable; using bounded per-process rate limiting for this endpoint.');
+          hasLoggedLocalFallback = true;
+        }
+        count = incrementLocalRateLimit(localEntries, key, windowMs, max);
+      } else if (failClosed) {
         return res.status(503).json({
           success: false,
           error: 'Service temporarily unavailable. Please try again later.',
         });
+      } else {
+        return next();
       }
-
-      return next();
     }
+
+    res.setHeader('X-RateLimit-Limit', max.toString());
+
+    if (count > max) {
+      const remaining = Math.max(0, max - count);
+      const retryAfter = getRetryAfterSeconds(windowMs);
+      res.setHeader('X-RateLimit-Remaining', remaining.toString());
+      res.setHeader('Retry-After', retryAfter.toString());
+
+      return res.status(429).json({
+        success: false,
+        error: message,
+        retryAfter,
+      });
+    }
+
+    res.setHeader('X-RateLimit-Remaining', Math.max(0, max - count).toString());
+    next();
   };
 }
 
@@ -135,6 +166,8 @@ export const loginRateLimiter = rateLimiter({
   max: 10, // 10 login attempts per 15 minutes per IP
   message: 'Too many login attempts. Please try again in 15 minutes.',
   failClosed: true,
+  // Per-process fallback is intentionally limited to login; use a WAF/shared store across replicas.
+  localFallback: true,
   keyGenerator: (req) => `login:${resolveClientIp(req)}`,
 });
 
@@ -313,4 +346,3 @@ export const agentLimiter = rateLimiter({
     return `agent:${sanitizeRateLimitKey(userId, 'unknown-user')}`;
   },
 });
-

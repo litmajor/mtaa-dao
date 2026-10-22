@@ -59,7 +59,7 @@ async function detectUserPersona(userId: string): Promise<PersonaType> {
   try {
     // Get DAO membership and role information
     const membershipsRes = await pool.query(
-      `SELECT role, COUNT(*) as count FROM dao_members WHERE user_id = $1 GROUP BY role`,
+      `SELECT role, COUNT(*) as count FROM dao_memberships WHERE user_id = $1 GROUP BY role`,
       [userId]
     );
     const memberships = membershipsRes.rows;
@@ -138,7 +138,7 @@ export async function getUserPersonaDataHandler(req: Request, res: Response) {
         SELECT
           COUNT(DISTINCT dao_id) AS "daoCount",
           BOOL_OR(role = 'treasurer') AS "hasTreasurerRole"
-        FROM dao_members
+        FROM dao_memberships
         WHERE user_id = $1
       ),
       created_summary AS (
@@ -292,10 +292,10 @@ export async function getUserDAOsHandler(req: Request, res: Response) {
         SELECT
           dao_id,
           role,
-          user_status AS "userStatus",
+          status AS "userStatus",
           joined_at AS "joinedAt",
-          is_primary AS "isPrimary"
-        FROM dao_members
+          false AS "isPrimary"
+        FROM dao_memberships
         WHERE user_id = $1
       )
       SELECT
@@ -308,7 +308,7 @@ export async function getUserDAOsHandler(req: Request, res: Response) {
         udm."userStatus",
         udm."joinedAt",
         udm."isPrimary",
-        COALESCE((SELECT COUNT(*) FROM dao_members dm2 WHERE dm2.dao_id = d.id), 0) AS "memberCount",
+        COALESCE((SELECT COUNT(*) FROM dao_memberships dm2 WHERE dm2.dao_id = d.id), 0) AS "memberCount",
         COALESCE((SELECT dt.balance_usd FROM dao_treasury dt WHERE dt.dao_id = d.id), 0) AS "treasuryUSD"
       FROM daos d
       JOIN user_dao_memberships udm ON udm.dao_id = d.id
@@ -320,7 +320,7 @@ export async function getUserDAOsHandler(req: Request, res: Response) {
     const daos = daosRes.rows;
 
     const countRes = await pool.query(
-      `SELECT COUNT(DISTINCT dao_id) AS total FROM dao_members WHERE user_id = $1`,
+      `SELECT COUNT(DISTINCT dao_id) AS total FROM dao_memberships WHERE user_id = $1`,
       [userId]
     );
     const total = Number(countRes.rows[0]?.total || 0);
@@ -439,7 +439,7 @@ async function getDaoMemberDashboard(userId: string) {
   try {
     // Get active memberships
     const activeMembershipsRes = await pool.query(
-      `SELECT COUNT(*) as count FROM dao_members WHERE user_id = $1 AND user_status = 'active'`,
+      `SELECT COUNT(*) as count FROM dao_memberships WHERE user_id = $1 AND status IN ('approved', 'active')`,
       [userId]
     );
     const activeMemberships = activeMembershipsRes.rows;
@@ -547,7 +547,7 @@ async function getDaoMemberDashboard(userId: string) {
 async function getDaoTreasurerDashboard(userId: string) {
   try {
     // Get DAOs managed by user as treasurer
-    const managedRes = await pool.query(`SELECT dao_id FROM dao_members WHERE user_id = $1 AND role = 'treasurer'`, [userId]);
+    const managedRes = await pool.query(`SELECT dao_id FROM dao_memberships WHERE user_id = $1 AND role = 'treasurer'`, [userId]);
     const managedDAOs = managedRes.rows;
     const daoIds = managedDAOs.map((d: any) => d.dao_id);
 
@@ -572,7 +572,7 @@ async function getDaoTreasurerDashboard(userId: string) {
         COALESCE(SUM(CASE WHEN t.transaction_type = 'outflow' AND t.created_at >= NOW() - INTERVAL '1 month' THEN t.amount_usd ELSE 0 END), 0) as monthlyOutflow
       FROM daos d
       JOIN dao_treasury dt ON d.id = dt.dao_id
-      LEFT JOIN dao_members dm ON d.id = dm.dao_id
+      LEFT JOIN dao_memberships dm ON d.id = dm.dao_id
       LEFT JOIN treasury_transactions t ON d.id = t.dao_id
       WHERE d.id = ANY($1)
       GROUP BY d.id, d.name, dt.balance_usd`;
@@ -667,7 +667,7 @@ async function getDaoCreatorDashboard(userId: string) {
         COUNT(DISTINCT p.id) AS "proposalsCount",
         COUNT(DISTINCT t.id) AS "tasksCount"
       FROM daos d
-      LEFT JOIN dao_members dm ON d.id = dm.dao_id
+      LEFT JOIN dao_memberships dm ON d.id = dm.dao_id
       LEFT JOIN proposals p ON d.id = p.dao_id
       LEFT JOIN tasks t ON d.id = t.dao_id
       WHERE d.creator_id = $1
@@ -681,10 +681,10 @@ async function getDaoCreatorDashboard(userId: string) {
         d.id,
         COALESCE(AVG(EXTRACT(EPOCH FROM (p.ended_at - p.created_at)) / 86400), 0) AS "avgProposalDuration",
         COALESCE(SUM(CASE WHEN p.status = 'approved' THEN 1 ELSE 0 END)::float / NULLIF(COUNT(p.id), 0), 0) AS "proposalApprovalRate",
-        COALESCE(SUM(CASE WHEN dm.last_activity_at > NOW() - INTERVAL '30 days' THEN 1 ELSE 0 END)::float / NULLIF(COUNT(DISTINCT dm.user_id), 0), 0) AS "memberEngagementRate"
+        COALESCE(SUM(CASE WHEN dm.last_active > NOW() - INTERVAL '30 days' THEN 1 ELSE 0 END)::float / NULLIF(COUNT(DISTINCT dm.user_id), 0), 0) AS "memberEngagementRate"
       FROM daos d
       LEFT JOIN proposals p ON d.id = p.dao_id
-      LEFT JOIN dao_members dm ON d.id = dm.dao_id
+      LEFT JOIN dao_memberships dm ON d.id = dm.dao_id
       WHERE d.creator_id = $1
       GROUP BY d.id`,
       [userId]
@@ -699,7 +699,7 @@ async function getDaoCreatorDashboard(userId: string) {
           0
         ) AS "growthRate"
       FROM daos d
-      LEFT JOIN dao_members dm ON d.id = dm.dao_id
+      LEFT JOIN dao_memberships dm ON d.id = dm.dao_id
       WHERE d.creator_id = $1`,
       [userId]
     );

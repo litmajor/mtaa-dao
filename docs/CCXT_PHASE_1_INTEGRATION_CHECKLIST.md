@@ -109,7 +109,7 @@ Create or update `.env` file in project root:
 ```bash
 # CCXT Service Configuration
 CCXT_ENABLED=true
-CCXT_TIMEOUT=30000
+CCXT_TIMEOUT=3000
 CCXT_CACHE_TTL_PRICES=30000
 CCXT_CACHE_TTL_OHLCV=300000
 CCXT_CACHE_TTL_MARKETS=3600000
@@ -443,7 +443,7 @@ Error: getaddrinfo ENOTFOUND api.binance.com
 1. Check internet connection
 2. Verify API endpoints accessible: `ping api.binance.com`
 3. Check firewall settings
-4. Increase timeout in `.env`: `CCXT_TIMEOUT=60000`
+4. Keep the exchange timeout at or below `3000` ms; diagnose connectivity or use the cached/stale price path rather than allowing a request to block for tens of seconds.
 
 ### Issue: Type Errors
 

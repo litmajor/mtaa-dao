@@ -194,7 +194,10 @@ export class ExchangeDataCacheService {
       for (const exchangeName of exchanges) {
         try {
           const ExchangeClass = ccxt[exchangeName];
-          const exchange = new ExchangeClass();
+          const exchange = new ExchangeClass({
+            enableRateLimit: true,
+            timeout: 3000,
+          });
           await exchange.loadMarkets();
 
           const ticker = await exchange.fetchTicker(pair);

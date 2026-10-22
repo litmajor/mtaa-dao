@@ -75,7 +75,10 @@ export class CEXCredentialManager {
     const exchangeConfig: any = {
       enableRateLimit: true,
       rateLimit: this.calculateRateLimit(credential.exchange),
-      timeout: parseInt(process.env.CCXT_TIMEOUT || '30000'),
+      timeout: Math.min(
+        3000,
+        Math.max(500, Number.parseInt(process.env.CCXT_TIMEOUT || '3000', 10) || 3000),
+      ),
       apiKey: credential.apiKey,
       secret: credential.apiSecret,
       sandbox: credential.isSandbox,

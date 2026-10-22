@@ -565,6 +565,27 @@ class StrategyFreqtradeIntegration {
     });
   }
 
+  async runOptimization(
+    strategyId: string,
+    userId: string,
+    options: {
+      trials?: number;
+      spaces?: string[];
+      timeframe?: string;
+      timerange?: string;
+    },
+    timeoutMs = this.optimizeTimeoutMs,
+  ): Promise<{ metrics: BacktestMetrics; bestParameters: Record<string, unknown> }> {
+    const jobId = await this.optimizeStrategyParameters(strategyId, userId, options);
+    const metrics = await this.pollForCompletion(jobId, timeoutMs);
+    const job = await this.getJobStatus(jobId);
+    if (!job) throw new Error(`Optimization job ${jobId} not found after completion`);
+    return {
+      metrics,
+      bestParameters: job.bestParameters ?? {},
+    };
+  }
+
   /** Worker entry: run a pending job by id (for external queue consumers) */
   async runJobById(jobId: string): Promise<void> {
     const job = await this.getJobStatus(jobId);

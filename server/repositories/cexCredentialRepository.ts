@@ -7,7 +7,7 @@
 
 import { pool } from '../db';
 import { type CEXCredential } from '../types/cex.types';
-import { encrypt, decrypt, type EncryptedData, obfuscate } from '../utils/encryption';
+import { encrypt, decrypt, type EncryptedPayload, obfuscate } from '../utils/encryption';
 import { KeyManagementService } from '../services/keyManagementService';
 
 export class CEXCredentialRepository {
@@ -31,9 +31,9 @@ export class CEXCredentialRepository {
       }
 
       // Encrypt sensitive data
-      const apiKeyEncrypted = encrypt(masterKey, apiKey);
-      const apiSecretEncrypted = encrypt(masterKey, apiSecret);
-      const passphraseEncrypted = passphrase ? encrypt(masterKey, passphrase) : null;
+      const apiKeyEncrypted = await encrypt(masterKey, apiKey);
+      const apiSecretEncrypted = await encrypt(masterKey, apiSecret);
+      const passphraseEncrypted = passphrase ? await encrypt(masterKey, passphrase) : null;
 
       const result = await pool.query(
         `INSERT INTO cex_credentials (
@@ -88,15 +88,15 @@ export class CEXCredentialRepository {
       }
 
       // Decrypt sensitive fields
-      const apiKeyEncrypted = JSON.parse(row.api_key_encrypted) as EncryptedData;
-      const apiSecretEncrypted = JSON.parse(row.api_secret_encrypted) as EncryptedData;
-      const apiKey = decrypt(masterKey, apiKeyEncrypted);
-      const apiSecret = decrypt(masterKey, apiSecretEncrypted);
+      const apiKeyEncrypted = JSON.parse(row.api_key_encrypted) as EncryptedPayload;
+      const apiSecretEncrypted = JSON.parse(row.api_secret_encrypted) as EncryptedPayload;
+      const apiKey = await decrypt(masterKey, apiKeyEncrypted);
+      const apiSecret = await decrypt(masterKey, apiSecretEncrypted);
 
       let passphrase: string | undefined;
       if (row.passphrase_encrypted) {
-        const passphraseEncrypted = JSON.parse(row.passphrase_encrypted) as EncryptedData;
-        passphrase = decrypt(masterKey, passphraseEncrypted);
+        const passphraseEncrypted = JSON.parse(row.passphrase_encrypted) as EncryptedPayload;
+        passphrase = await decrypt(masterKey, passphraseEncrypted);
       }
 
       await this.keyManagement.logAudit('decrypt', 'api_credentials', true, undefined, userId);
@@ -137,15 +137,15 @@ export class CEXCredentialRepository {
       }
 
       // Decrypt
-      const apiKeyEncrypted = JSON.parse(row.api_key_encrypted) as EncryptedData;
-      const apiSecretEncrypted = JSON.parse(row.api_secret_encrypted) as EncryptedData;
-      const apiKey = decrypt(masterKey, apiKeyEncrypted);
-      const apiSecret = decrypt(masterKey, apiSecretEncrypted);
+      const apiKeyEncrypted = JSON.parse(row.api_key_encrypted) as EncryptedPayload;
+      const apiSecretEncrypted = JSON.parse(row.api_secret_encrypted) as EncryptedPayload;
+      const apiKey = await decrypt(masterKey, apiKeyEncrypted);
+      const apiSecret = await decrypt(masterKey, apiSecretEncrypted);
 
       let passphrase: string | undefined;
       if (row.passphrase_encrypted) {
-        const passphraseEncrypted = JSON.parse(row.passphrase_encrypted) as EncryptedData;
-        passphrase = decrypt(masterKey, passphraseEncrypted);
+        const passphraseEncrypted = JSON.parse(row.passphrase_encrypted) as EncryptedPayload;
+        passphrase = await decrypt(masterKey, passphraseEncrypted);
       }
 
       const credential = this.mapToCamelCase(row);
@@ -298,9 +298,15 @@ export class CEXCredentialRepository {
       id: row.id,
       userId: row.user_id,
       exchange: row.exchange,
-      apiKeyEncrypted: row.api_key_encrypted,
-      apiSecretEncrypted: row.api_secret_encrypted,
-      passphraseEncrypted: row.passphrase_encrypted,
+      apiKeyEncrypted: typeof row.api_key_encrypted === 'string'
+        ? JSON.parse(row.api_key_encrypted) as EncryptedPayload
+        : row.api_key_encrypted,
+      apiSecretEncrypted: typeof row.api_secret_encrypted === 'string'
+        ? JSON.parse(row.api_secret_encrypted) as EncryptedPayload
+        : row.api_secret_encrypted,
+      passphraseEncrypted: typeof row.passphrase_encrypted === 'string'
+        ? JSON.parse(row.passphrase_encrypted) as EncryptedPayload
+        : row.passphrase_encrypted,
       isSandbox: row.is_sandbox,
       isActive: row.is_active,
       lastUsedAt: row.last_used_at ? new Date(row.last_used_at) : undefined,
