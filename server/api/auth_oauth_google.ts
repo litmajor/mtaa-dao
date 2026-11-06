@@ -37,7 +37,8 @@ function generateOAuthState(): string {
 
 export async function authOauthGoogleHandler(req: Request, res: Response) {
   try {
-    const { mode = 'login' } = req.query;
+    const requestedMode = req.query.mode;
+    const mode = requestedMode === 'register' ? 'register' : 'login';
     
     if (!GOOGLE_CLIENT_ID) {
       return res.status(500).json({ error: 'Google OAuth not configured' });
@@ -51,24 +52,27 @@ export async function authOauthGoogleHandler(req: Request, res: Response) {
     res.cookie('oauth_state', oauthState, {
       httpOnly: true,
       secure: process.env.NODE_ENV === 'production',
-      sameSite: 'strict',
+      sameSite: 'lax',
       maxAge: 10 * 60 * 1000, // 10 minutes
+      path: '/',
     });
 
     // Store PKCE code_verifier in secure HTTP-only cookie
     res.cookie('oauth_code_verifier', codeVerifier, {
       httpOnly: true,
       secure: process.env.NODE_ENV === 'production',
-      sameSite: 'strict',
+      sameSite: 'lax',
       maxAge: 10 * 60 * 1000, // 10 minutes
+      path: '/',
     });
 
     // Store mode preference in secure cookie for callback to use
     res.cookie('oauth_mode', mode as string, {
       httpOnly: true,
       secure: process.env.NODE_ENV === 'production',
-      sameSite: 'strict',
+      sameSite: 'lax',
       maxAge: 10 * 60 * 1000, // 10 minutes
+      path: '/',
     });
 
     const params = new URLSearchParams({

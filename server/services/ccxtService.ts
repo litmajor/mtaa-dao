@@ -8,8 +8,9 @@
  * - Binance (highest volume)
  * - Coinbase (US regulated)
  * - Kraken (advanced features)
- * - Gate.io (global coverage)
- * - OKX (liquidity)
+ * - Bybit (global spot markets)
+ * - KuCoin (long-tail coverage)
+ * - OKX (global liquidity)
  *
  * FIXES APPLIED:
  * 1. getTickerFromExchange re-throws typed errors so CEXPriceCollector
@@ -36,6 +37,7 @@ import { unifiedCache } from './unifiedCacheService';
 import { publishMarketObservation } from './marketObservationPublisher';
 import { cexCredentialManager } from './cexCredentialManager';
 import { OrderIdempotencyRepository, orderIdempotencyRepository } from '../repositories/orderIdempotencyRepository';
+import { SYMBOL_UNIVERSE_CONFIG } from '../config/symbolUniverseConfig';
 
 /**
  * Type Definitions
@@ -159,6 +161,8 @@ export class CCXTAggregator {
   private priceCache = new NodeCache({ stdTTL: 30 });
   private ohlcvCache = new NodeCache({ stdTTL: 300 });
   private marketsCache = new NodeCache({ stdTTL: 3600 });
+  private bulkTickerCache = new NodeCache({ stdTTL: 15 });
+  private bulkTickerRequests = new Map<string, Promise<CachedPrice[]>>();
 
   // FIX #5: Separate limiters — market loads are heavy and slow;
   // ticker fetches are lightweight and frequent.
@@ -170,7 +174,14 @@ export class CCXTAggregator {
   // Prevents order placement from starving price fetches
   private privateLimiter = pLimit(5);   // Lower than ticker — private ops need real spacing
 
-  private readonly EAGER_WARMUP_EXCHANGES = ['binance', 'kraken'];
+  private readonly EAGER_WARMUP_EXCHANGES = [
+    'binance',
+    'coinbase',
+    'kraken',
+    'bybit',
+    'kucoin',
+    'okx',
+  ];
   private readonly LOAD_MARKETS_TIMEOUTS: Record<string, number> = {
     binance: 25000,
     coinbase: 30000,
@@ -186,6 +197,7 @@ export class CCXTAggregator {
   // If multiple concurrent fetches hit the same exchange simultaneously,
   // they all await the same in-flight promise instead of firing duplicates.
   private marketsLoadingPromise: Map<string, Promise<void>> = new Map();
+  private unsupportedSymbols = new Map<string, number>();
 
   constructor() {
     this.initializeExchanges();
@@ -1739,38 +1751,80 @@ export class CCXTAggregator {
       const exchange = this.exchanges.get(exchangeName);
       if (!exchange) return null;
 
-      // Already in pair format — return as-is
-      if (symbol.includes('/')) return symbol;
-
-      // FIX #2: Use shared lock instead of inline check
       await this.ensureMarketsLoaded(exchangeName);
 
-      // FIX #3: Try all quote currencies including BTC and ETH
-      for (const quote of QUOTE_CURRENCIES) {
-        const pair = `${symbol}/${quote}`;
-        if (exchange.markets && exchange.markets[pair]) {
-          return pair;
+      const requestedSymbol = symbol.trim().toUpperCase();
+      const unsupportedKey = `${exchangeName}:${requestedSymbol}`;
+      const unsupportedUntil = this.unsupportedSymbols.get(unsupportedKey) ?? 0;
+      if (unsupportedUntil > Date.now()) return null;
+      this.unsupportedSymbols.delete(unsupportedKey);
+
+      const markets = exchange.markets as Record<string, any> | undefined;
+      if (!markets) return null;
+
+      const exchangeConfig = (SYMBOL_UNIVERSE_CONFIG.priceSources.cex as Record<
+        string,
+        { pairFallbacks?: Record<string, string> }
+      >)[exchangeName];
+      const candidates = requestedSymbol.includes('/')
+        ? [
+            requestedSymbol,
+            exchangeConfig?.pairFallbacks?.[requestedSymbol]?.toUpperCase(),
+          ].filter((candidate): candidate is string => Boolean(candidate))
+        : QUOTE_CURRENCIES.map((quote) => `${requestedSymbol}/${quote}`);
+
+      const marketEntries = Object.entries(markets);
+      for (const candidate of candidates) {
+        const exactMarket = markets[candidate];
+        const marketEntry =
+          exactMarket
+            ? ([candidate, exactMarket] as const)
+            : marketEntries.find(([key]) => key.toUpperCase() === candidate);
+        const market = marketEntry?.[1];
+        if (market && market.active !== false && market.spot !== false) {
+          return market.symbol || marketEntry?.[0] || candidate;
         }
       }
 
-      // Fallback: prefix scan (case-insensitive)
-      if (exchange.markets) {
-        const searchPrefix = symbol.toUpperCase() + '/';
-        for (const key of Object.keys(exchange.markets)) {
-          if (key.toUpperCase().startsWith(searchPrefix)) {
-            logger.debug(
-              `[CCXTAggregator] formatSymbol fallback: ${symbol} → ${key} on ${exchangeName}`
-            );
-            return key;
-          }
+      if (!requestedSymbol.includes('/')) {
+        const searchPrefix = `${requestedSymbol}/`;
+        const fallback = marketEntries.find(
+          ([key, market]) =>
+            key.toUpperCase().startsWith(searchPrefix) &&
+            market.active !== false &&
+            market.spot !== false
+        );
+        if (fallback) {
+          logger.debug(
+            `[CCXTAggregator] formatSymbol fallback: ${symbol} → ${fallback[0]} on ${exchangeName}`
+          );
+          return fallback[1].symbol || fallback[0];
         }
       }
 
+      this.unsupportedSymbols.set(unsupportedKey, Date.now() + 5 * 60 * 1000);
       return null;
     } catch (error: any) {
       logger.error(`Error formatting symbol ${symbol} on ${exchangeName}: ${error.message}`);
       return null;
     }
+  }
+
+  async getPairSupport(symbol: string): Promise<Record<string, string | null>> {
+    const support: Record<string, string | null> = {};
+    const exchangeNames = Array.from(this.exchanges.keys());
+    const resolved = await Promise.all(
+      exchangeNames.map(async (exchangeName) => [
+        exchangeName,
+        await this.formatSymbolForExchange(exchangeName, symbol),
+      ] as const)
+    );
+
+    for (const [exchangeName, marketSymbol] of resolved) {
+      support[exchangeName] = marketSymbol;
+    }
+
+    return support;
   }
 
   async getMarkets(exchangeName: string): Promise<ExchangeMarket[]> {
@@ -1813,6 +1867,64 @@ export class CCXTAggregator {
     return result.data;
   }
 
+  async getTickersFromExchange(exchangeName: string): Promise<CachedPrice[]> {
+    const exchange = this.exchanges.get(exchangeName);
+    if (!exchange) {
+      throw new Error(`Exchange ${exchangeName} not initialized`);
+    }
+
+    if (!exchange.has?.fetchTickers) {
+      throw new Error(`Bulk ticker fetching is not supported by ${exchangeName}`);
+    }
+
+    const cachedTickers = this.bulkTickerCache.get<CachedPrice[]>(exchangeName);
+    if (cachedTickers) return cachedTickers;
+
+    const pendingRequest = this.bulkTickerRequests.get(exchangeName);
+    if (pendingRequest) return pendingRequest;
+
+    const request = this.tickerLimiter(async () => {
+      const tickers = exchangeName === 'bybit'
+        ? await exchange.fetchTickers(undefined, { category: 'spot' })
+        : await exchange.fetchTickers();
+      return Object.entries(tickers).flatMap(([symbol, rawTicker]) => {
+        const market = exchange.markets?.[symbol];
+        if (market?.spot === false || market?.active === false) return [];
+        if (!rawTicker || typeof rawTicker !== 'object') return [];
+
+        const ticker = rawTicker as Record<string, unknown>;
+        const last = typeof ticker.last === 'number' ? ticker.last : 0;
+        if (!Number.isFinite(last) || last <= 0) return [];
+
+        const baseVolume = typeof ticker.baseVolume === 'number' ? ticker.baseVolume : 0;
+        const quoteVolume = typeof ticker.quoteVolume === 'number' ? ticker.quoteVolume : 0;
+        const volume = quoteVolume || (baseVolume > 0 ? baseVolume * last : 0);
+
+        return [{
+          symbol,
+          exchange: exchangeName,
+          bid: typeof ticker.bid === 'number' ? ticker.bid : 0,
+          ask: typeof ticker.ask === 'number' ? ticker.ask : 0,
+          last,
+          volume,
+          percentage: typeof ticker.percentage === 'number' ? ticker.percentage : undefined,
+          timestamp: typeof ticker.timestamp === 'number' ? ticker.timestamp : Date.now(),
+        }];
+      });
+    });
+
+    this.bulkTickerRequests.set(exchangeName, request);
+    try {
+      const tickers = await request;
+      if (tickers.length > 0) this.bulkTickerCache.set(exchangeName, tickers);
+      return tickers;
+    } finally {
+      if (this.bulkTickerRequests.get(exchangeName) === request) {
+        this.bulkTickerRequests.delete(exchangeName);
+      }
+    }
+  }
+
   getAvailableExchanges(): string[] {
     return Array.from(this.exchanges.keys());
   }
@@ -1847,6 +1959,7 @@ export class CCXTAggregator {
     this.priceCache.flushAll();
     this.ohlcvCache.flushAll();
     this.marketsCache.flushAll();
+    this.unsupportedSymbols.clear();
     logger.info('🧹 Cleared all CCXT caches');
   }
 

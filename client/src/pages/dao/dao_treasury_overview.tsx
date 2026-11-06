@@ -27,9 +27,11 @@ interface DaoStats {
   totalMembers: number;
   newMembersThisWeek: number;
   activeProposals: number;
-  treasuryBalance: string;
+  treasuryBalance: string | null;
+  treasuryBalanceCurrency: string | null;
   fundingGoal: string;
-  fundingProgress: number;
+  fundingGoalCurrency: string;
+  fundingProgress: number | null;
   planExpiresAt: string | null;
   daysLeft: number;
   status: 'active' | 'expiring' | 'expired';
@@ -143,13 +145,17 @@ export default function DaoDashboard() {
             <Target className="w-5 h-5 text-purple-500" />
           </CardHeader>
           <CardContent>
-            <div className="text-3xl font-bold">₭{stats.treasuryBalance}</div>
+            <div className="text-3xl font-bold">
+              {stats.treasuryBalance === null ? 'Valuation unavailable' : `$${stats.treasuryBalance} USD`}
+            </div>
             <div className="mt-2 space-y-2">
               <div className="flex justify-between text-sm">
-                <span className="text-gray-500">Goal: ₭{stats.fundingGoal}</span>
-                <span className="font-medium">{stats.fundingProgress}%</span>
+                <span className="text-gray-500">Goal: ${stats.fundingGoal} {stats.fundingGoalCurrency}</span>
+                <span className="font-medium">{stats.fundingProgress == null ? '—' : `${stats.fundingProgress}%`}</span>
               </div>
-              <Progress value={stats.fundingProgress} className="h-2" />
+              {stats.fundingProgress == null
+                ? <p className="text-xs text-gray-500">Progress unavailable until treasury valuation is complete.</p>
+                : <Progress value={stats.fundingProgress} className="h-2" />}
             </div>
           </CardContent>
         </Card>

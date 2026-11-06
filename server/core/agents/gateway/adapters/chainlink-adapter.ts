@@ -49,13 +49,13 @@ export class ChainlinkAdapter extends BaseAdapter {
     this.rpcUrl =
       config.rpcUrl || process.env.CHAINLINK_RPC_URL || process.env.CELO_RPC_URL || "https://forno.celo.org";
 
-    if (!this.rpcUrl) {
-      throw new Error("Chainlink adapter requires a valid RPC URL");
-    }
+    // This Gateway adapter currently reads Celo-mainnet feeds only.
+    this.provider = new ethers.JsonRpcProvider(this.rpcUrl, 42220, { staticNetwork: true });
 
-    this.provider = new ethers.JsonRpcProvider(this.rpcUrl);
-
-    this.feedMap = config.feedMap || this.loadFeedMapFromEnv();
+    const rawFeedMap = config.feedMap || this.loadFeedMapFromEnv();
+    this.feedMap = Object.fromEntries(
+      Object.entries(rawFeedMap).map(([symbol, feed]) => [symbol.trim().toUpperCase(), feed])
+    );
 
     if (Object.keys(this.feedMap).length === 0) {
       throw new Error(
@@ -67,6 +67,11 @@ export class ChainlinkAdapter extends BaseAdapter {
     for (const [symbol, feed] of Object.entries(this.feedMap)) {
       if (!ethers.isAddress(feed.address)) {
         throw new Error(`ChainlinkAdapter: invalid feed address for ${symbol}: ${feed.address}`);
+      }
+      if (!Number.isFinite(feed.heartbeatSeconds) || feed.heartbeatSeconds <= 0) {
+        throw new Error(
+          `ChainlinkAdapter: invalid heartbeatSeconds for ${symbol}: ${feed.heartbeatSeconds}`
+        );
       }
     }
   }
@@ -112,7 +117,27 @@ export class ChainlinkAdapter extends BaseAdapter {
 
   private async fetchPrices(params: any): Promise<AdapterResponse<NormalizedData[]>> {
     const startTime = Date.now();
-    const { symbols } = params;
+    const requested: unknown[] = Array.isArray(params?.symbols)
+      ? params.symbols
+      : params?.symbol
+        ? [params.symbol]
+        : [];
+    const symbols = Array.from(
+      new Set(
+        requested
+          .filter((symbol): symbol is string => typeof symbol === "string" && symbol.trim() !== "")
+          .map((symbol) => symbol.trim().toUpperCase())
+      )
+    );
+
+    if (symbols.length === 0) {
+      return {
+        success: false,
+        error: "Chainlink price request needs `symbol` or a non-empty `symbols` array",
+        timestamp: new Date(),
+        latencyMs: Date.now() - startTime,
+      };
+    }
 
     const cacheKey = `chainlink:prices:${symbols.join(",")}`;
     const cached = this.getCache(cacheKey);
@@ -180,7 +205,7 @@ export class ChainlinkAdapter extends BaseAdapter {
   }
 
   private async readFeed(symbol: string): Promise<NormalizedData> {
-    const feed = this.feedMap[symbol];
+    const feed = this.feedMap[symbol.toUpperCase()];
     if (!feed) {
       throw new Error(`No Chainlink feed configured for ${symbol}`);
     }

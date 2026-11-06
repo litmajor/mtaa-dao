@@ -18,12 +18,14 @@ import { AlertCircle, Lock, Eye, EyeOff, Loader } from 'lucide-react';
 
 interface OAuthConfirmationDialogProps {
   email: string;
+  provider: 'google' | 'telegram';
   onSuccess: () => void;
   onCancel: () => void;
 }
 
 export default function OAuthConfirmationDialog({
   email,
+  provider,
   onSuccess,
   onCancel,
 }: OAuthConfirmationDialogProps) {
@@ -44,8 +46,6 @@ export default function OAuthConfirmationDialog({
     }
 
     try {
-      // Get Google profile info from pending identity cookie
-      // The server stores this in the oauth_pending_identity cookie
       const response = await fetch('/api/auth/oauth/confirm-linking', {
         method: 'POST',
         headers: {
@@ -71,7 +71,7 @@ export default function OAuthConfirmationDialog({
             setError('Account not found.');
             break;
           case 409:
-            setError('This Google account is already linked to another user.');
+            setError(`This ${provider} account is already linked to another user.`);
             break;
           default:
             setError(data.error || 'Failed to confirm identity linking');
@@ -102,7 +102,7 @@ export default function OAuthConfirmationDialog({
             <h2 className="text-xl font-bold text-gray-900">Confirm Your Identity</h2>
           </div>
           <p className="text-sm text-gray-600">
-            You have an existing account. Please confirm with your password to link Google sign-in.
+            You have an existing account. Please confirm with your password to link {provider === 'google' ? 'Google' : 'Telegram'} sign-in.
           </p>
         </div>
 

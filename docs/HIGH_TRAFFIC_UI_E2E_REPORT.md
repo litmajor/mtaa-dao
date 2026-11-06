@@ -53,7 +53,7 @@ Breakpoints: D = 1280, T = 768/1024, M = 375/390/430. "Final" = re-checked after
 
 ## Remaining issues (not fixed), by severity
 **High**
-1. Live market data unverified — `/exchange-markets` upstream timeouts (~50 s before error); `/trading` live provider unavailable locally. Consider a shorter first-attempt timeout.
+1. `/exchange-markets` now aggregates live CCXT spot tickers, skips the per-market request and CoinGecko-enrichment fan-out, caches prices and per-exchange ticker status for 10 s, uses a 10 s request timeout, and does not retry failed requests. Live provider availability still needs browser verification; `/trading` live provider was unavailable locally.
 2. Forced token-refresh (CSRF fix #12) not yet re-verified in browser after the fix.
 
 **Medium**

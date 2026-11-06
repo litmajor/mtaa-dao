@@ -5,10 +5,7 @@ import type { UserRole } from './navigation-context';
 
 /**
  * Authentication Context
- * Manages user login/logout and session state with:
- * - localStorage for immediate availability
- * - Backend API for persistent Redis/database storage
- * - Automatic session sync across tabs/windows
+ * Manages cookie-based authentication state and syncs login/logout across tabs.
  */
 
 export interface AuthUser {
@@ -17,6 +14,9 @@ export interface AuthUser {
   email: string;
   role: UserRole;
   roles?: UserRole | string[];
+  firstName?: string;
+  lastName?: string;
+  phone?: string | null;
   avatar?: string;
   createdAt?: Date;
   lastLogin?: Date;
@@ -44,15 +44,18 @@ export const AuthContext = createContext<AuthContextType | undefined>(undefined)
 
 const AUTH_STORAGE_KEY = 'mtaa_dao_auth_session';
 const API_BASE_URL =
-  (import.meta as any).env?.VITE_API_URL ||
-  (typeof window !== 'undefined' ? `${window.location.origin}/api` : '/api');
+  (import.meta as any).env?.VITE_API_URL || (typeof window !== 'undefined' ? `${window.location.origin}/api` : '/api');
 
 /**
- * Backend API client for authentication with Redis/Database persistence
+ * Backend API client for cookie-based authentication.
  */
 const authApi = {
   async login(email: string, password: string): Promise<AuthSession> {
-    return authClient.post<AuthSession>(`${API_BASE_URL}/auth/login`, { email, password });
+    const response = await authClient.post<{ user: AuthUser }>(`${API_BASE_URL}/auth/login`, { email, password });
+    return {
+      user: normalizeAuthUser(response.user),
+      expiresAt: new Date(Date.now() + 15 * 60 * 1000).toISOString(),
+    };
   },
 
   async logout(): Promise<void> {
@@ -64,41 +67,29 @@ const authApi = {
   },
 
   async refreshSession(): Promise<AuthSession> {
-    return authClient.post<AuthSession>(`${API_BASE_URL}/auth/refresh`);
+    await authClient.post(`${API_BASE_URL}/auth/refresh-token`);
+    return {
+      user: await authApi.getCurrentUser(),
+      expiresAt: new Date(Date.now() + 15 * 60 * 1000).toISOString(),
+    };
   },
 
   async switchRole(role: UserRole): Promise<AuthUser> {
-    return authClient.post<AuthUser>(`${API_BASE_URL}/auth/switch-role`, { role });
+    return authClient.post<AuthUser>(`${API_BASE_URL}/auth/switch-role`, {
+      role,
+    });
   },
 
   async getCurrentUser(): Promise<AuthUser> {
-    return authClient.get<AuthUser>(`${API_BASE_URL}/auth/me`);
-  },
-
-  async persistSession(session: AuthSession): Promise<void> {
-    try {
-      await authClient.post<void>(`${API_BASE_URL}/auth/session/persist`, {
-        user: session.user,
-        expiresAt: session.expiresAt,
-      });
-    } catch (err) {
-      console.error('Session persistence error:', err);
-    }
-  },
-
-  async verifySessionExists(): Promise<boolean> {
-    try {
-      const res = await fetch(`${API_BASE_URL}/auth/session/verify`, {
-        method: 'GET',
-        credentials: 'include',
-      });
-      return res.ok;
-    } catch (err) {
-      console.error('Session verification error:', err);
-      return false;
-    }
+    const response = await authClient.get<AuthUser | { user: AuthUser }>(`${API_BASE_URL}/auth/user`);
+    return normalizeAuthUser('user' in response ? response.user : response);
   },
 };
+
+function normalizeAuthUser(user: AuthUser): AuthUser {
+  const name = user.name || [user.firstName, user.lastName].filter(Boolean).join(' ') || user.email || 'User';
+  return { ...user, name };
+}
 
 /**
  * Authentication Provider with Redis/Database persistence
@@ -114,31 +105,31 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   useEffect(() => {
     const initializeAuth = async () => {
       try {
-        const storedSession = localStorage.getItem(AUTH_STORAGE_KEY);
-
-        // Try to verify session with backend (will check Redis/Database via httpOnly cookie)
-        try {
-          const currentUser = await authApi.getCurrentUser();
-          setUser(currentUser);
-        } catch (err) {
-          // Cookie invalid or expired - try refresh before clearing
-          try {
-            const refreshed = await authApi.refreshSession();
-            // store refreshed session
-            localStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify(refreshed));
-            setUser(refreshed.user);
-          } catch (refreshErr) {
-            // Refresh failed - clear it
-            localStorage.removeItem(AUTH_STORAGE_KEY);
-            setUser(null);
-          }
-        }
+        const currentUser = await authApi.getCurrentUser();
+        setUser(currentUser);
       } catch (err) {
-        console.error('Auth initialization error:', err);
+        // authClient already attempts one refresh for an expired access cookie.
+        console.warn('[AUTH] Unable to restore session; treating the visitor as signed out.', err);
+        localStorage.removeItem(AUTH_STORAGE_KEY);
+        setUser(null);
       } finally {
         setIsLoading(false);
       }
     };
+
+    const clearSession = () => {
+      localStorage.removeItem(AUTH_STORAGE_KEY);
+      setUser(null);
+    };
+    const handleSessionInvalid = () => clearSession();
+    const unsubscribeAuthChannel = authChannel.onAuthMessage((event) => {
+      if (event.type === 'logout') {
+        clearSession();
+      } else if (event.type === 'login' && event.payload?.user) {
+        setUser(event.payload.user as AuthUser);
+      }
+    });
+    window.addEventListener('auth:session-invalid', handleSessionInvalid);
 
     initializeAuth();
 
@@ -158,29 +149,12 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     };
     window.addEventListener('storage', handleStorageChange);
 
-    return () => window.removeEventListener('storage', handleStorageChange);
+    return () => {
+      window.removeEventListener('storage', handleStorageChange);
+      window.removeEventListener('auth:session-invalid', handleSessionInvalid);
+      unsubscribeAuthChannel();
+    };
   }, []);
-
-  // Periodic session sync with backend (every 5 minutes)
-  // Separate effect so it starts/stops with user changes and avoids multiple intervals
-  useEffect(() => {
-    if (!user) return;
-
-    const syncInterval = setInterval(async () => {
-      try {
-        const session: AuthSession = {
-          user,
-          // do not include token when persisting from frontend; backend uses cookie
-          expiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(),
-        };
-        await authApi.persistSession(session);
-      } catch (err) {
-        console.error('Periodic session sync failed:', err);
-      }
-    }, 5 * 60 * 1000);
-
-    return () => clearInterval(syncInterval);
-  }, [user]);
 
   /**
    * Login with email and password (persist to backend via Redis + Database)
@@ -195,11 +169,11 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       // Don't persist raw tokens to localStorage; backend should set httpOnly refresh cookie
       setUser(session.user);
 
-      // Persist minimal session info to backend
-      await authApi.persistSession({ user: session.user, expiresAt: session.expiresAt });
-
       // Notify other tabs via BroadcastChannel/localStorage fallback
-      authChannel.postAuthMessage({ type: 'login', payload: { user: session.user } });
+      authChannel.postAuthMessage({
+        type: 'login',
+        payload: { user: session.user },
+      });
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : 'Login failed';
       setError(errorMessage);
@@ -238,10 +212,10 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       const updatedUser = await authApi.switchRole(role);
       setUser(updatedUser);
 
-      // Update persisted session (no token stored client-side)
+      // Persist only non-sensitive session metadata; authentication remains cookie-based.
       const session: AuthSession = {
         user: updatedUser,
-        expiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(),
+        expiresAt: new Date(Date.now() + 15 * 60 * 1000).toISOString(),
       };
       localStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify(session));
     } catch (err) {
@@ -257,11 +231,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const refreshSession = useCallback(async (): Promise<void> => {
     try {
       const session = await authApi.refreshSession();
-      // don't store raw token client-side; backend may set cookie
       setUser(session.user);
-
-      // Re-persist updated session to backend (minimal)
-      await authApi.persistSession({ user: session.user, expiresAt: session.expiresAt });
+      localStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify(session));
     } catch (err) {
       // If refresh fails, logout
       await logout();
@@ -304,11 +275,19 @@ export const useAuth = (): AuthContextType => {
       isAuthenticated: false,
       isLoading: true,
       error: null,
-      login: async () => { throw new Error('AuthProvider not available'); },
-      logout: async () => { throw new Error('AuthProvider not available'); },
-      switchRole: async () => { throw new Error('AuthProvider not available'); },
+      login: async () => {
+        throw new Error('AuthProvider not available');
+      },
+      logout: async () => {
+        throw new Error('AuthProvider not available');
+      },
+      switchRole: async () => {
+        throw new Error('AuthProvider not available');
+      },
       clearError: () => {},
-      refreshSession: async () => { throw new Error('AuthProvider not available'); },
+      refreshSession: async () => {
+        throw new Error('AuthProvider not available');
+      },
     };
   }
   return context;

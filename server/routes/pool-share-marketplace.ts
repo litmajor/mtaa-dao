@@ -16,6 +16,7 @@ import { Router, type Response } from 'express';
 import { and, asc, desc, eq, inArray, sql } from 'drizzle-orm';
 import { db } from '../db';
 import { logger } from '../utils/logger';
+import { postPlatformTransfer } from '../services/platformLedgerService';
 import { authenticateToken } from '../middleware/auth';
 import { rateLimitPerUser } from '../middleware/rateLimit';
 import {
@@ -186,6 +187,17 @@ async function settleMarketplacePayment(input: {
 
   const amount = settledAmount.toFixed(2);
   const now = new Date();
+  const reference = `POOL-MARKET-${tradeId}`;
+  await postPlatformTransfer(tx, {
+    reference,
+    fromAccountId: buyerAccount.id,
+    toAccountId: sellerAccount.id,
+    amount,
+    currency: 'USDC',
+    description: 'Pool share marketplace purchase',
+    metadata: { tradeId, poolId: input.poolId },
+  });
+
   const debit = await tx.execute(sql`
     UPDATE accounts
     SET balance = CAST(balance AS NUMERIC) - CAST(${amount} AS NUMERIC),
@@ -221,7 +233,6 @@ async function settleMarketplacePayment(input: {
     throw new Error('PAYMENT_CREDIT_FAILED');
   }
 
-  const reference = `POOL-MARKET-${tradeId}`;
   await tx.insert(accountTransactions).values([
     {
       accountId: buyerAccount.id,

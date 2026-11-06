@@ -1,7 +1,13 @@
 import { authClient } from '../authClient';
 import authChannel from '../authChannel';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-jest.mock('../authChannel');
+vi.mock('../authChannel', () => ({
+  default: {
+    postAuthMessage: vi.fn(),
+    onAuthMessage: vi.fn(() => () => {}),
+  },
+}));
 
 function makeResponse(status: number, body: any) {
   return {
@@ -13,27 +19,40 @@ function makeResponse(status: number, body: any) {
 
 describe('authClient refresh logic', () => {
   beforeEach(() => {
-    jest.resetAllMocks();
+    vi.resetAllMocks();
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+    vi.restoreAllMocks();
   });
 
   it('retries request after successful refresh', async () => {
-    const fetchMock = jest.spyOn(global, 'fetch' as any)
+    const fetchMock = vi
+      .spyOn(global, 'fetch')
       .mockImplementationOnce(async () => makeResponse(401, { success: false })) // initial 401
       .mockImplementationOnce(async () => makeResponse(200, { success: true })) // refresh ok
       .mockImplementationOnce(async () => makeResponse(200, { success: true, data: { hello: 'world' } })); // retried request
 
     const data = await authClient.get('/test/retry');
     expect(data).toEqual({ hello: 'world' });
-    fetchMock.mockRestore();
   });
 
-  it('invokes logout broadcast when refresh fails', async () => {
-    const fetchMock = jest.spyOn(global, 'fetch' as any)
+  it('limits retries and broadcasts logout when refresh fails', async () => {
+    vi.useFakeTimers();
+    const fetchMock = vi
+      .spyOn(global, 'fetch')
       .mockImplementationOnce(async () => makeResponse(401, { success: false })) // initial 401
-      .mockImplementationOnce(async () => makeResponse(401, { success: false })); // refresh fails
+      .mockImplementationOnce(async () => makeResponse(401, { success: false })) // refresh fails
+      .mockImplementation(async () => makeResponse(401, { success: false }));
 
     await expect(authClient.get('/test/fail')).rejects.toThrow();
-    expect((authChannel.postAuthMessage as jest.Mock).mock.calls.length).toBeGreaterThanOrEqual(1);
-    fetchMock.mockRestore();
+    await expect(authClient.get('/test/fail-again')).rejects.toThrow();
+    expect(authChannel.postAuthMessage).toHaveBeenCalledWith(expect.objectContaining({ type: 'logout' }));
+    expect(fetchMock).toHaveBeenCalledTimes(3);
+
+    await vi.advanceTimersByTimeAsync(1000);
+    await expect(authClient.get('/test/retry-after-backoff')).rejects.toThrow();
+    expect(fetchMock).toHaveBeenCalledTimes(5);
   });
 });

@@ -45,6 +45,7 @@ import { logger } from '../utils/logger';
 // ─────────────────────────────────────────────────────────────
 
 export type SupportedChain =
+  | 'celo'
   | 'ethereum'
   | 'polygon'
   | 'arbitrum'
@@ -57,6 +58,7 @@ export const CHAIN_CONFIG: Record<
   SupportedChain,
   { name: string; chainId: { mainnet: number; testnet: number } }
 > = {
+  celo: { name: 'Celo', chainId: { mainnet: 42220, testnet: 44787 } },
   ethereum: { name: 'Ethereum', chainId: { mainnet: 1, testnet: 11155111 } },
   polygon: { name: 'Polygon', chainId: { mainnet: 137, testnet: 80002 } },
   arbitrum: { name: 'Arbitrum One', chainId: { mainnet: 42161, testnet: 421614 } },
@@ -128,7 +130,12 @@ function resolveRpcUrls(
   const key = chain.toUpperCase();
   const primary =
     process.env[`RPC_URL_${key}`] ||
-    process.env[`RPC_URL_${key}_${network.toUpperCase()}`];
+    process.env[`RPC_URL_${key}_${network.toUpperCase()}`] ||
+    (chain === 'celo'
+      ? network === 'mainnet'
+        ? process.env.CELO_RPC_URL
+        : process.env.CELO_ALFAJORES_RPC_URL
+      : undefined);
 
   if (!primary) {
     throw new Error(
@@ -138,7 +145,8 @@ function resolveRpcUrls(
 
   const secondary =
     process.env[`RPC_URL_${key}_BACKUP`] ||
-    process.env[`RPC_URL_${key}_${network.toUpperCase()}_BACKUP`];
+    process.env[`RPC_URL_${key}_${network.toUpperCase()}_BACKUP`] ||
+    (chain === 'celo' ? process.env.CELO_RPC_FALLBACK_URL : undefined);
 
   return { primary, secondary: secondary || undefined };
 }

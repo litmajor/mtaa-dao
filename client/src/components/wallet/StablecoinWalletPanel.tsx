@@ -273,8 +273,13 @@ export default function StablecoinWalletPanel({ mode }: StablecoinWalletPanelPro
       }
       if (currentNetwork.id !== 42220) throw new Error('This app build is not configured for Celo Mainnet ramps.');
       if (!/^\+?[1-9]\d{7,14}$/.test(rampPhone)) throw new Error('Enter your M-Pesa phone number in international format.');
-      if (!/^(?:0|[1-9]\d*)(?:\.\d{1,18})?$/.test(rampAmount) || Number(rampAmount) <= 0) {
-        throw new Error('Enter a positive amount with up to 18 decimal places.');
+      const amountPattern = mode === 'receive'
+        ? /^(?:0|[1-9]\d*)(?:\.\d{1,2})?$/
+        : /^(?:0|[1-9]\d*)(?:\.\d{1,18})?$/;
+      if (!amountPattern.test(rampAmount) || Number(rampAmount) <= 0) {
+        throw new Error(mode === 'receive'
+          ? 'Enter a positive KES amount with up to 2 decimal places.'
+          : 'Enter a positive cUSD amount with up to 18 decimal places.');
       }
       const endpoint = mode === 'receive' ? 'onramp' : 'offramp';
       const payload = mode === 'receive'

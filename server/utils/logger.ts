@@ -118,11 +118,10 @@ export class Logger {
   private logToDatabase(level: string, message: string, metadata: Record<string, unknown> = {}): Promise<void> {
     const sanitizedMetadata = redactSensitiveData(metadata);
 
-    // During startup, skip INFO logs to DB to avoid pool saturation
-    // Console output is still visible - this only skips database writes
+    // Keep startup logging off the database pool; console/file transports remain active.
     const isStartup = (globalThis as typeof globalThis & { isServerStarting?: boolean }).isServerStarting === true;
-    if (isStartup && level === 'info') {
-      return Promise.resolve(); // Return resolved Promise, skip DB write
+    if (isStartup) {
+      return Promise.resolve();
     }
 
     return (async () => {
@@ -196,7 +195,7 @@ export class Logger {
     // Always log to console (user sees all boot messages)
     winstonLogger.log(level, message, logData);
 
-    // Also log to database for important messages, but skip INFO during startup
+    // Also log to database for important messages, except during startup.
     if (['error', 'warn', 'info'].includes(level)) {
       this.logToDatabase(level, message, logData).catch(() => {
         // Silently ignore DB logging errors

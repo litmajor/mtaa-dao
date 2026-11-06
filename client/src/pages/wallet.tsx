@@ -1,45 +1,28 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Plus, Send, ArrowUpRight, ArrowDownLeft, Wallet, TrendingUp, Shield, DollarSign, Users, Settings } from 'lucide-react';
+import { Plus, Send, ArrowUpRight, ArrowDownLeft, Wallet, TrendingUp, Shield, DollarSign, Users, Settings, Eye, EyeOff, Copy } from 'lucide-react';
 
 
-import { Line, Pie, Bar } from 'react-chartjs-2';
 import Decimal from 'decimal.js';
-import {
-  Chart as ChartJS,
-  CategoryScale,
-  LinearScale,
-  PointElement,
-  LineElement,
-  Title,
-  Tooltip,
-  Legend,
-  ArcElement,
-  BarElement
-} from 'chart.js';
-
-ChartJS.register(CategoryScale, LinearScale, PointElement, LineElement, Title, Tooltip, Legend, ArcElement, BarElement);
 
 // Import new components for wallet features
 const TransactionHistory = React.lazy(() => import('../components/wallet/TransactionHistory'));
 const AccountSelector = React.lazy(() => import('../components/wallet/AccountSelector'));
-import { apiGet, apiPost } from '@/lib/api';
-const RecurringPayments = React.lazy(() => import('../components/wallet/RecurringPayments'));
+import { apiGet } from '@/lib/api';
 const ExchangeRateWidget = React.lazy(() => import('../components/wallet/ExchangeRateWidget'));
 const RecurringPaymentsManager = React.lazy(() => import('@/components/wallet/RecurringPaymentsManager'));
 const GiftCardVoucher = React.lazy(() => import('@/components/wallet/GiftCardVoucher'));
 import { useWallet } from './hooks/useWallet';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../components/ui/card';
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import Shell from '../components/ui/shell';
-import { Grid } from '../components/ui/grid';
 import PaymentRequestModal from '@/components/wallet/PaymentRequestModal';
 import PhonePaymentModal from '@/components/wallet/PhonePaymentModal';
 import SplitBillModal from '@/components/wallet/SplitBillModal';
 import PaymentLinkModal from '@/components/wallet/PaymentLinkModal';
-import BatchTransfer from '../components/batch-transfer';
+import StablecoinWalletPanel from '@/components/wallet/StablecoinWalletPanel';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-const WalletConnectionManager = React.lazy(() => import('@/components/wallet/WalletConnectionManager'));
 const WalletBackupReminder = React.lazy(() => import('@/components/wallet/WalletBackupReminder'));
 const BackupWalletModal = React.lazy(() => import('@/components/wallet/BackupWalletModal'));
 const TokenSwapModal = React.lazy(() => import('@/components/wallet/TokenSwapModal'));
@@ -50,234 +33,163 @@ const EscrowInitiator = React.lazy(() => import('@/components/wallet/EscrowIniti
 const CapitalLayer = React.lazy(() => import('../components/wallet/CapitalLayer'));
 import { useWalletOperatingStore, parseDecimal } from '../stores/wallet-operating-store';
 import type { Transaction, SelectedAccount } from '../../../shared/types/wallet';
-import type { Vault } from '../stores/wallet-operating-store';
 import useWalletActions from '../hooks/useWalletActions';
-
 
 const EnhancedWalletPage = () => {
   const [activeTab, setActiveTab] = useState("overview");
   const store = useWalletOperatingStore();
   const actions = useWalletActions();
-  const { vaults, transactions, setVaults, setTransactions, selectedAccount, setSelectedAccount, selectedAccountId, setSelectedAccountId } = store
+  const { transactions, setVaults, setTransactions, selectedAccount, setSelectedAccount, selectedAccountId, setSelectedAccountId } = store
+  const storeSetters = useRef({ setVaults, setTransactions });
+  storeSetters.current = { setVaults, setTransactions };
   const [depositOpen, setDepositOpen] = useState(false);
-  const [paymentOpen, setPaymentOpen] = useState(false);
-  const [withdrawOpen, setWithdrawOpen] = useState(false);
+  const [rampOpen, setRampOpen] = useState(false);
+  const [rampMode, setRampMode] = useState<'deposit' | 'withdraw'>('deposit');
   const [paymentRequestOpen, setPaymentRequestOpen] = useState(false);
-  const [selectedVault, setSelectedVault] = useState<Vault | null>(null);
   const [balanceVisible, setBalanceVisible] = useState(true);
   // vaults and transactions are managed by the wallet operating store
   const [phonePaymentOpen, setPhonePaymentOpen] = useState(false);
   const [splitBillOpen, setSplitBillOpen] = useState(false);
   const [paymentLinkOpen, setPaymentLinkOpen] = useState(false);
-  const [recurringPaymentOpen, setRecurringPaymentOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
-  const [selectedCurrency, setSelectedCurrency] = useState('cUSD');
-  const [showRequestFunds, setShowRequestFunds] = useState(false);
-  const [requestFundsOpen, setRequestFundsOpen] = useState(false);
+  const [refreshTrigger, setRefreshTrigger] = useState(0);
+  const selectedCurrency = 'CELO';
   const [userKycStatus, setUserKycStatus] = useState<'verified' | 'pending' | 'not-started'>('not-started');
 
   // Use real wallet data instead of mock data
-  const { address, isConnected, balance, connectMetaMask, connectValora, connectMiniPay, isLoading, error, disconnect } = useWallet();
+  const { address, isConnected, balance, connectMetaMask, connectValora, connectMiniPay, isLoading, error, disconnect, refreshBalances } = useWallet();
   const user = { id: address || 'no-wallet' };
   const navigate = useNavigate();
 
-  // Analytics state
-  type Analytics = {
-    valueOverTime?: Record<string, number>
-    tokenBreakdown?: Record<string, number>
-    typeSummary?: Record<string, number>
-  }
-  const [analytics, setAnalytics] = useState<Analytics | null>(null);
-  const [analyticsLoading, setAnalyticsLoading] = useState(false);
-  const [analyticsError, setAnalyticsError] = useState('');
   const [fetchLoading, setFetchLoading] = useState(false);
-
-  // Sparkline data for subtle capital-flow visualization
-  const valueOverTime = analytics?.valueOverTime ?? {};
-  const tokenBreakdown = analytics?.tokenBreakdown ?? {};
-  const typeSummary = analytics?.typeSummary ?? {};
-
-  const sparklineData = Object.keys(valueOverTime).length > 0 ? {
-    labels: Object.keys(valueOverTime),
-    datasets: [{
-      data: Object.values(valueOverTime),
-      borderColor: '#94a3b8',
-      backgroundColor: 'transparent',
-      tension: 0.3,
-      pointRadius: 0,
-    }]
-  } : {
-    labels: ['-4','-3','-2','-1','now'],
-    datasets: [{ data: [0,0,0,0,0], borderColor: '#94a3b8', backgroundColor: 'transparent', tension: 0.3, pointRadius: 0 }]
-  };
-
-  const sparklineOptions = {
-    responsive: true,
-    plugins: { legend: { display: false } },
-    elements: { line: { borderWidth: 2 } },
-    scales: { x: { display: false }, y: { display: false } }
-  };
+  const [walletDataError, setWalletDataError] = useState('');
 
   useEffect(() => {
-    // Fetch wallet balance, portfolio, and transaction status from API
-    async function fetchWalletData() {
-      setFetchLoading(true);
-      try {
-        // Native balance
-        const balanceData = await apiGet('/api/v1/wallets/balance');
-        // Portfolio (tokens)
-        const portfolioData = await apiPost('/api/v1/wallets/balance/portfolio', { tokenAddresses: [] });
-        // Compose vaults array for UI
-        type Token = { address?: string; symbol?: string; balance?: string | number }
-        const vaultsArr = [
-          {
-            id: 'native',
-            currency: balanceData.symbol || 'ETH',
-            balance: balanceData.balance || '0',
-            type: 'personal',
-            monthlyGoal: '0',
-          },
-          ...(Array.isArray(portfolioData) ? portfolioData.map((token: Token, i: number) => ({
-            id: token.address || `token-${i}`,
-            currency: token.symbol || 'TOKEN',
-            balance: token.balance || '0',
-            type: 'token',
-            monthlyGoal: '0',
-          })) : [])
-        ];
-        setVaults(vaultsArr);
-        // Transactions: (for demo, fetch last 10 txs for native address)
-      } catch (error) {
-        console.error('Error fetching wallet data:', error);
-      } finally {
-        setFetchLoading(false);
-      }
-    }
-    
-    if (isConnected && address) {
-      fetchWalletData();
-    }
-  }, [isConnected, address]);
-  
-  // Fetch analytics when connected
+    storeSetters.current.setVaults(isConnected && address
+      ? [{ id: address, currency: 'CELO', balance: balance ?? '0', type: 'personal' }]
+      : []);
+  }, [isConnected, address, balance]);
+
   useEffect(() => {
     let mounted = true;
-    const fetchAnalytics = async () => {
-      setAnalyticsLoading(true);
-      try {
-        const data = await apiGet('/api/v1/wallets/analytics');
-        if (!mounted) return;
-        setAnalytics(data || null);
-        setAnalyticsError('');
-      } catch (e) {
-        console.error('Analytics fetch error', e);
-        setAnalyticsError('Failed to load analytics');
-      } finally {
-        setAnalyticsLoading(false);
+    async function fetchTransactions() {
+      if (!isConnected || !address) {
+        storeSetters.current.setTransactions([]);
+        return;
       }
-    };
-
-    if (isConnected) fetchAnalytics();
+      setFetchLoading(true);
+      setWalletDataError('');
+      try {
+        const txData = await apiGet<Transaction[]>('/api/v1/wallets/transactions');
+        if (mounted) storeSetters.current.setTransactions(txData);
+      } catch (error) {
+        console.error('Error fetching wallet transactions:', error);
+        if (mounted) {
+          storeSetters.current.setTransactions([]);
+          setWalletDataError(error instanceof Error ? error.message : 'Unable to load wallet transactions.');
+        }
+      } finally {
+        if (mounted) setFetchLoading(false);
+      }
+    }
+    void fetchTransactions();
+    return () => { mounted = false; };
+  }, [isConnected, address, refreshTrigger]);
+  
+  useEffect(() => {
+    let mounted = true;
+    if (!isConnected) {
+      setUserKycStatus('not-started');
+      return () => { mounted = false; };
+    }
+    apiGet<{ kyc?: { status?: string } }>('/api/kyc/status')
+      .then((result) => {
+        if (!mounted) return;
+        const status = result?.kyc?.status;
+        setUserKycStatus(status === 'approved' ? 'verified' : status === 'pending' || status === 'under_review' ? 'pending' : 'not-started');
+      })
+      .catch((error) => {
+        console.error('Failed to load KYC status:', error);
+        if (mounted) setUserKycStatus('not-started');
+      });
     return () => { mounted = false; };
   }, [isConnected]);
 
-  // Compute derived total balance from vaults
-  useEffect(() => {
-    const total = (vaults || []).reduce((s: number, v: any) => s + Number(v.balance || 0), 0);
-    setTotalBalance(total);
-  }, [vaults]);
-  
-  const [depositAmount, setDepositAmount] = useState('');
-  const [withdrawAmount, setWithdrawAmount] = useState('');
   const [sendTo, setSendTo] = useState('');
   const [sendAmount, setSendAmount] = useState('');
   const [actionLoading, setActionLoading] = useState(false);
   const [actionError, setActionError] = useState('');
-  const [showFeaturesMenu, setShowFeaturesMenu] = useState(false);
   const [showBackupModal, setShowBackupModal] = useState(false);
   const [showStakingModal, setShowStakingModal] = useState(false);
   const [showSwapModal, setShowSwapModal] = useState(false);
-  const [totalBalance, setTotalBalance] = useState(0);
 
-  // derive netFlow30d and recentTxs for CapitalLayer
-  const txsForCapital = transactions || [];
-  const parseAmtForCapital = (v: unknown) => parseDecimal(v);
-  const netFlow30dDec = (txsForCapital as Transaction[]).reduce((s: Decimal, t: Transaction) => s.plus(parseAmtForCapital(t.amount)), new Decimal(0));
-  type RecentTx = { id: string; type: 'in' | 'swap' | 'out'; label?: string; time?: string; amount: number };
-  const recentTxs: RecentTx[] = (txsForCapital as Transaction[]).slice(0, 4).map((tx: Transaction, i: number) => {
-    const txType = tx.type === 'received' ? 'in' : tx.type === 'swap' ? 'swap' : 'out';
-    const rawTime = tx.timeAgo ?? tx.time ?? '';
-    const isDate = (v: unknown): v is Date => v instanceof Date;
-    let timeStr: string | undefined = undefined;
-    if (typeof rawTime === 'number') timeStr = new Date(rawTime).toISOString();
-    else if (isDate(rawTime)) timeStr = rawTime.toISOString();
-    else if (typeof rawTime === 'string') timeStr = rawTime;
-
-    const label = tx.description ?? tx.memo ?? tx.type ?? '';
-
+  type ApiTransaction = Transaction & { currency?: string; createdAt?: string | Date };
+  const txsForCapital = transactions as ApiTransaction[];
+  const thirtyDaysAgo = Date.now() - 30 * 24 * 60 * 60 * 1000;
+  const netFlow30dDec = txsForCapital.reduce((sum, tx) => {
+    const date = tx.createdAt ? new Date(tx.createdAt).getTime() : Number.NaN;
+    const type = String(tx.type ?? '').toLowerCase();
+    if (!Number.isFinite(date) || date < thirtyDaysAgo || tx.currency?.toUpperCase() !== 'CELO') return sum;
+    if (type === 'deposit' || type === 'received' || type === 'contribution') return sum.plus(parseDecimal(tx.amount));
+    if (type === 'withdrawal' || type === 'sent') return sum.minus(parseDecimal(tx.amount));
+    return sum;
+  }, new Decimal(0));
+  const hasNetFlowData = txsForCapital.some((tx) => {
+    const date = tx.createdAt ? new Date(tx.createdAt).getTime() : Number.NaN;
+    const type = String(tx.type ?? '').toLowerCase();
+    return Number.isFinite(date)
+      && date >= thirtyDaysAgo
+      && tx.currency?.toUpperCase() === 'CELO'
+      && ['deposit', 'received', 'contribution', 'withdrawal', 'sent'].includes(type);
+  });
+  type RecentTx = { id: string; type: 'in' | 'swap' | 'out' | 'other'; label?: string; time?: string; amount: number; currency?: string };
+  const recentTxs: RecentTx[] = txsForCapital.slice(0, 4).map((tx, i) => {
+    const type = String(tx.type ?? '').toLowerCase();
+    const txType = type === 'deposit' || type === 'received' || type === 'contribution'
+      ? 'in' : type === 'withdrawal' || type === 'sent' ? 'out' : 'other';
     return {
-      id: String(tx.id ?? `${tx.type}-${i}-${tx.time ?? ''}`),
+      id: String(tx.id ?? `${type}-${i}-${tx.timestamp ?? ''}`),
       type: txType,
-      label,
-      time: timeStr,
-      amount: Number(parseAmtForCapital(tx.amount).toNumber())
+      label: tx.description ?? tx.memo ?? tx.type ?? 'Transfer',
+      time: tx.createdAt ? new Date(tx.createdAt).toISOString() : tx.timestamp ? new Date(tx.timestamp).toISOString() : undefined,
+      amount: Number(parseDecimal(tx.amount).toNumber()),
+      currency: tx.currency ?? 'Unknown',
     };
   });
 
   // Handle send native
   const handleSendNative = useCallback(async () => {
+    const normalizedAddress = sendTo.trim();
+    const normalizedAmount = Number(sendAmount);
+
+    if (!normalizedAddress || !/^0x[a-fA-F0-9]{40}$/i.test(normalizedAddress)) {
+      setActionError('Enter a valid 0x wallet address.');
+      return;
+    }
+
+    if (!Number.isFinite(normalizedAmount) || normalizedAmount <= 0) {
+      setActionError('Enter an amount greater than 0.');
+      return;
+    }
+    if (!window.confirm(`Send ${normalizedAmount} CELO to ${normalizedAddress}? This transfer cannot be reversed.`)) return;
+
     setActionLoading(true);
     setActionError('');
     try {
-      const res = await actions.send({ toAddress: sendTo, amount: sendAmount, currency: selectedCurrency });
+      const res = await actions.send({ toAddress: normalizedAddress, amount: normalizedAmount.toString(), currency: selectedCurrency });
       if (!res.success) throw new Error(res.error || 'Send failed');
+      await refreshBalances();
+      setRefreshTrigger((current) => current + 1);
       setSendAmount('');
       setSendTo('');
+      setDepositOpen(false);
     } catch (err: unknown) {
       const msg = (err instanceof Error ? err.message : String(err));
       setActionError(msg);
     } finally {
       setActionLoading(false);
     }
-  }, [sendTo, sendAmount]);
-
-  async function handleDeposit() {
-    if (!(Number(depositAmount) > 0)) {
-      setActionError('Enter an amount greater than 0.');
-      return;
-    }
-    setActionLoading(true);
-    setActionError('');
-    try {
-      // Prefer platform on-ramp / deposit flow if available
-      if (typeof (actions as any).depositOnRamp === 'function') {
-        const res = await (actions as any).depositOnRamp({ amount: depositAmount, currency: selectedCurrency });
-        if (!res.success) throw new Error(res.error || 'Deposit failed');
-      } else {
-        throw new Error('Card / mobile-money deposits are not available yet. Send funds to your wallet address instead.');
-      }
-      setDepositAmount('');
-    } catch (err: unknown) {
-      const msg = (err instanceof Error ? err.message : String(err));
-      setActionError(msg);
-    } finally { setActionLoading(false); }
-  }
-
-  async function handleWithdraw() {
-    if (!sendTo.trim() || !(Number(withdrawAmount) > 0)) {
-      setActionError('Enter a recipient address and an amount greater than 0.');
-      return;
-    }
-    setActionLoading(true); setActionError('');
-    try {
-      const res = await actions.withdraw({ to: sendTo, amount: withdrawAmount, currency: selectedCurrency });
-      if (!res.success) throw new Error(res.error || 'Withdraw failed');
-      setWithdrawAmount(''); setWithdrawOpen(false);
-    } catch (err: unknown) {
-      const msg = (err instanceof Error ? err.message : String(err));
-      setActionError(msg);
-    } finally { setActionLoading(false); }
-  }
+  }, [actions, sendTo, sendAmount, refreshBalances]);
 
   const getTransactionIcon = (type: string) => {
     switch (type) {
@@ -307,38 +219,6 @@ const EnhancedWalletPage = () => {
     }
   };
 
-  const CustomCard: React.FC<{ children: React.ReactNode; className?: string; hover?: boolean }> = ({ children, className = "", hover = false }) => (
-    <div className={`bg-gray-900/80 text-white rounded-2xl shadow-sm border border-gray-800 ${hover ? 'hover:shadow-md transition-all duration-150' : ''} ${className}`}>
-      {children}
-    </div>
-  );
-
-  type BadgeVariant = "default" | "emerald" | "gold" | "purple" | "orange" | "outline";
-  const Badge = ({
-    children,
-    className = "",
-    variant = "default"
-  }: {
-    children: React.ReactNode;
-    className?: string;
-    variant?: BadgeVariant;
-  }) => {
-    const variants: Record<BadgeVariant, string> = {
-      default: "bg-gray-800 text-white",
-      emerald: "bg-emerald-600 text-white",
-      gold: "bg-amber-600 text-white",
-      purple: "bg-purple-700 text-white",
-      orange: "bg-amber-500 text-white",
-      outline: "border-2 border-gray-700 text-gray-200 bg-gray-900/60"
-    };
-
-    return (
-      <span className={`${variants[variant]} text-white text-xs font-semibold px-3 py-1 rounded-full ${className}`}>
-        {children}
-      </span>
-    );
-  };
-
   // Use shared Button component (do not shadow import)
 
   // Loading state after connection
@@ -352,6 +232,50 @@ const EnhancedWalletPage = () => {
           <p className="text-sm text-gray-500 dark:text-gray-500 mt-2">Connected: {address?.slice(0, 6)}...{address?.slice(-4)}</p>
         </Card>
       </div>
+    );
+  }
+
+  if (!isConnected) {
+    return (
+      <React.Suspense fallback={<div className="p-8 text-center">Loading wallet...</div>}>
+        <Shell
+          brand={
+            <div className="flex items-center space-x-4">
+              <div className="w-16 h-16 bg-gradient-to-br from-blue-500 via-purple-500 to-pink-500 rounded-2xl flex items-center justify-center shadow-lg">
+                <Wallet className="w-8 h-8 text-white" />
+              </div>
+              <div>
+                <h1 className="text-2xl sm:text-4xl font-bold bg-gradient-to-r from-gray-900 via-blue-900 to-purple-900 bg-clip-text text-transparent">Personal Wallet</h1>
+                <p className="text-gray-600 text-base sm:text-lg">Secure digital asset management</p>
+              </div>
+            </div>
+          }
+        >
+          <div className="min-h-screen bg-gradient-to-br from-slate-50 via-blue-50 to-purple-50 dark:bg-gray-950 flex items-center justify-center px-4">
+            <Card className="w-full max-w-xl p-8 text-center">
+              <div className="mx-auto mb-6 h-16 w-16 rounded-2xl bg-gradient-to-br from-blue-500 to-purple-600 flex items-center justify-center shadow-lg">
+                <Wallet className="h-8 w-8 text-white" />
+              </div>
+              <h2 className="text-3xl font-bold mb-3">Connect your wallet</h2>
+              <p className="text-gray-600 dark:text-gray-300 mb-6">
+                Connect a wallet to view balances, send transfers, and access wallet features.
+              </p>
+              {error && <p className="mb-4 text-sm text-red-500">{error}</p>}
+              <div className="space-y-3">
+                <Button onClick={connectMetaMask} disabled={isLoading} className="w-full">
+                  {isLoading ? 'Connecting…' : 'Connect MetaMask'}
+                </Button>
+                <Button variant="outline" onClick={connectValora} disabled={isLoading} className="w-full">
+                  Connect Valora
+                </Button>
+                <Button variant="outline" onClick={connectMiniPay} disabled={isLoading} className="w-full">
+                  Connect MiniPay
+                </Button>
+              </div>
+            </Card>
+          </div>
+        </Shell>
+      </React.Suspense>
     );
   }
 
@@ -378,106 +302,6 @@ const EnhancedWalletPage = () => {
       }
     >
       <div className="min-h-screen bg-gradient-to-br from-slate-50 via-blue-50 to-purple-50 dark:bg-gray-950 relative overflow-hidden">
-      {/* Connected Wallet Header */}
-      {isConnected && address && (
-        <div className="bg-white/80 dark:bg-gray-800/80 backdrop-blur-sm border-b border-gray-200 dark:border-gray-700 sticky top-0 z-40">
-          <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-3 flex items-center justify-between">
-            <div className="flex items-center gap-3">
-              <div className="w-3 h-3 bg-green-500 rounded-full animate-pulse"></div>
-              <span className="text-sm font-medium text-gray-700 dark:text-gray-300">
-                Connected: {address.slice(0, 6)}...{address.slice(-4)}
-              </span>
-            </div>
-            <Button
-              onClick={disconnect}
-              variant="outline"
-              size="sm"
-              className="text-red-600 hover:text-red-700 hover:bg-red-50 dark:hover:bg-red-900/20"
-            >
-              Disconnect
-            </Button>
-          </div>
-        </div>
-      )}
-
-      {/* Analytics Section */}
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4">
-        <h2 className="text-2xl font-bold mb-4 bg-gradient-to-r from-blue-900 to-purple-900 dark:from-blue-400 dark:to-purple-400 bg-clip-text text-transparent">Wallet Analytics</h2>
-        {analyticsLoading ? (
-          <div className="text-gray-500">Loading analytics...</div>
-        ) : analyticsError ? (
-          <div className="text-red-500">{analyticsError}</div>
-        ) : analytics ? (
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-8 mb-8">
-            {/* Portfolio Value Over Time (Line Chart) */}
-            <div className="bg-white rounded-xl shadow p-4">
-              <h3 className="font-semibold mb-2">Portfolio Value Over Time</h3>
-              <Line
-                data={{
-                  labels: Object.keys(valueOverTime),
-                  datasets: [
-                    {
-                      label: 'Value',
-                      data: Object.values(valueOverTime),
-                      borderColor: '#6366f1',
-                      backgroundColor: 'rgba(99,102,241,0.1)',
-                      fill: true,
-                    },
-                  ],
-                }}
-                options={{
-                  responsive: true,
-                  plugins: { legend: { display: false } },
-                }}
-                height={200}
-              />
-            </div>
-            {/* Token Breakdown (Pie Chart) */}
-            <div className="bg-white rounded-xl shadow p-4">
-              <h3 className="font-semibold mb-2">Token Breakdown</h3>
-              <Pie
-                data={{
-                  labels: Object.keys(tokenBreakdown),
-                  datasets: [
-                    {
-                      data: Object.values(tokenBreakdown),
-                      backgroundColor: [
-                        '#6366f1', '#f59e42', '#10b981', '#f43f5e', '#a21caf', '#fbbf24', '#0ea5e9', '#14b8a6', '#eab308', '#f472b6'
-                      ],
-                    },
-                  ],
-                }}
-                options={{
-                  responsive: true,
-                  plugins: { legend: { position: 'bottom' } },
-                }}
-                height={200}
-              />
-            </div>
-            {/* Transaction Type Summary (Bar Chart) */}
-            <div className="bg-white rounded-xl shadow p-4">
-              <h3 className="font-semibold mb-2">Transaction Type Summary</h3>
-              <Bar
-                data={{
-                  labels: Object.keys(typeSummary),
-                  datasets: [
-                    {
-                      label: 'Total',
-                      data: Object.values(typeSummary),
-                      backgroundColor: '#6366f1',
-                    },
-                  ],
-                }}
-                options={{
-                  responsive: true,
-                  plugins: { legend: { display: false } },
-                }}
-                height={200}
-              />
-            </div>
-          </div>
-        ) : null}
-      </div>
       {/* Subtle background wash for calm surface */}
       <div className="absolute inset-0 bg-gradient-to-b from-transparent to-white/2 opacity-5" />
 
@@ -486,60 +310,40 @@ const EnhancedWalletPage = () => {
         {isConnected && address && (
           <WalletBackupReminder userId={user?.id} walletAddress={address} />
         )}
+        {walletDataError && (
+          <div role="alert" className="mb-4 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+            Could not load transaction data: {walletDataError}
+          </div>
+        )}
 
         {/* Capital overview layer (replaced multiple surfaces with a single focused component) */}
         {isConnected && address && (
           <CapitalLayer
             address={address}
             total={store.total}
+            currency="CELO"
             liquidity={store.liquidity}
             deployed={store.deployed}
             pending={store.pendingTotal || '0'}
             pendingCount={store.pendingCount}
-            walletHealth={store.walletHealth}
             availableVaults={store.availableVaults}
             deployedVaults={store.deployedVaults}
             recentTxs={recentTxs}
             netFlow30d={netFlow30dDec.toNumber()}
-            flowBars={undefined}
+            hasNetFlowData={hasNetFlowData}
             onSend={() => setDepositOpen(true)}
-            onAddFunds={() => setPaymentOpen(true)}
+            onAddFunds={() => { setRampMode('deposit'); setRampOpen(true); }}
             onSwap={() => setShowSwapModal(true)}
             onViewAll={() => setActiveTab('transactions')}
           />
         )}
 
         {/* Header with Settings Icon */}
-        <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between mb-12">
-          <div className="flex items-center space-x-4 min-w-0">
-            <div className="w-16 h-16 bg-gradient-to-br from-blue-500 via-purple-500 to-pink-500 rounded-2xl flex items-center justify-center shadow-lg">
-              <Wallet className="w-8 h-8 text-white" />
-            </div>
-            <div>
-              <div className="flex flex-wrap items-center gap-2 sm:gap-4 mb-2">
-                <h1 className="text-2xl sm:text-4xl font-bold bg-gradient-to-r from-gray-900 via-blue-900 to-purple-900 bg-clip-text text-transparent">
-                  Personal Wallet
-                </h1>
-                <div className="flex items-center space-x-2">
-                  <Button variant="outline" className="h-8 px-3 text-sm" onClick={() => navigate('/dashboard')}>
-                    <span className="w-4 h-4 mr-1">👥</span>
-                    Community
-                  </Button>
-                  <Button variant="outline" className="h-8 px-3 text-sm" onClick={() => navigate('/vault-dashboard')}>
-                    <TrendingUp className="w-4 h-4 mr-1" />
-                    DeFi Portfolio
-                  </Button>
-                </div>
-              </div>
-              <p className="text-gray-600 text-lg">Secure digital asset management</p>
-            </div>
+        <div className="flex items-center justify-between gap-3 mb-5">
+          <div className="min-w-0 text-sm text-gray-600 dark:text-gray-300">
+            Connected: {address?.slice(0, 6)}…{address?.slice(-4)}
           </div>
-          <div className="flex items-center space-x-3">
-            <Badge variant="orange" className="flex items-center space-x-1">
-              <Shield className="w-4 h-4" />
-              <span>Secured</span>
-            </Badge>
-            <div className="relative">
+          <div className="relative shrink-0">
               <Button 
                 variant="outline" 
                 size="sm"
@@ -550,7 +354,10 @@ const EnhancedWalletPage = () => {
               {settingsOpen && (
                 <div className="absolute right-0 mt-2 w-48 bg-white rounded-lg shadow-lg border z-50">
                   <div className="p-2 space-y-1">
-                    <button className="w-full text-left px-3 py-2 text-sm hover:bg-gray-100 rounded flex items-center space-x-2">
+                    <button
+                      onClick={() => { setRefreshTrigger((current) => current + 1); setSettingsOpen(false); }}
+                      className="w-full text-left px-3 py-2 text-sm hover:bg-gray-100 rounded flex items-center space-x-2"
+                    >
                       <Plus className="w-4 h-4" />
                       <span>Refresh</span>
                     </button>
@@ -558,27 +365,20 @@ const EnhancedWalletPage = () => {
                       <Plus className="w-4 h-4" />
                       <span>Backup Wallet</span>
                     </button>
-                    <button className="w-full text-left px-3 py-2 text-sm hover:bg-gray-100 rounded flex items-center space-x-2" onClick={() => setRecurringPaymentOpen(true)}>
+                    <button className="w-full text-left px-3 py-2 text-sm hover:bg-gray-100 rounded flex items-center space-x-2" onClick={() => { setActiveTab('recurring'); setSettingsOpen(false); }}>
                       <ArrowUpRight className="w-4 h-4" />
                       <span>Recurring Payments</span>
                     </button>
-                    {isConnected && (
-                      <button className="w-full text-left px-3 py-2 text-sm hover:bg-red-50 text-red-600 rounded flex items-center space-x-2" onClick={disconnect}>
-                        <ArrowUpRight className="w-4 h-4" />
-                        <span>Disconnect</span>
-                      </button>
-                    )}
                   </div>
                 </div>
               )}
-            </div>
           </div>
         </div>
 
         {/* Trust Wallet Style Balance & Actions */}
         <div className="mb-8">
           {/* Main Balance Card */}
-          <div className="bg-gradient-to-br from-blue-600 via-purple-600 to-pink-600 text-white p-8 rounded-3xl relative overflow-hidden mb-6">
+          <div className="bg-gradient-to-br from-blue-600 via-purple-600 to-pink-600 text-white p-4 sm:p-8 rounded-3xl relative overflow-hidden mb-6">
             <div className="absolute inset-0 bg-gradient-to-br from-white/10 to-transparent" />
             <div className="absolute top-0 right-0 w-32 h-32 bg-white/5 rounded-full blur-2xl" />
             <div className="absolute bottom-0 left-0 w-24 h-24 bg-white/5 rounded-full blur-2xl" />
@@ -586,52 +386,43 @@ const EnhancedWalletPage = () => {
             <div className="relative z-10">
               <div className="flex items-center justify-between mb-6">
                 <div className="flex items-center space-x-3">
-                  <p className="text-white/80 text-sm font-medium">Total Balance</p>
+                  <p className="text-white/80 text-sm font-medium">Wallet Balance</p>
                   <button
                     onClick={() => setBalanceVisible(!balanceVisible)}
                     className="text-white/60 hover:text-white/80 transition-colors"
+                    aria-label={balanceVisible ? 'Hide balance' : 'Show balance'}
                   >
-                    {balanceVisible ? <Shield className="w-4 h-4" /> : <Wallet className="w-4 h-4" />}
+                    {balanceVisible ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
                   </button>
                 </div>
-                <select 
-                  aria-label="Currency selection"
-                  value={selectedCurrency}
-                  onChange={(e) => setSelectedCurrency(e.target.value)}
-                  className="bg-white/20 text-white rounded px-3 py-1 text-sm border border-white/30 focus:outline-none"
-                >
-                  <option value="cUSD">USD</option>
-                  <option value="cEUR">EUR</option>
-                  <option value="CELO">CELO</option>
-                  <option value="cREAL">REAL</option>
-                </select>
+                <span className="text-sm text-white/80">CELO</span>
               </div>
               
               <div className="mb-8">
-                <h2 className="text-5xl font-bold text-white mb-1">
-                  {balanceVisible ? `$${totalBalance.toLocaleString()}` : '••••••'}
+                <h2 className="text-3xl sm:text-5xl font-bold text-white mb-1 break-all">
+                  {balanceVisible ? `${balance ?? '0'} CELO` : '••••••'}
                 </h2>
-                <p className="text-white/70 text-sm">Across all tokens</p>
+                <p className="text-white/70 text-sm">Native wallet balance · USD conversion not available</p>
               </div>
 
               <div className="grid grid-cols-3 gap-3">
                 <Button 
                   className="bg-white/20 hover:bg-white/30 text-white border border-white/30 py-3 flex flex-col items-center justify-center"
-                  onClick={() => setPaymentOpen(true)}
+                  onClick={() => { setRampMode('deposit'); setRampOpen(true); }}
                 >
                   <Plus className="w-5 h-5 mb-1" />
-                  <span className="text-xs">Add Funds</span>
+                  <span className="text-xs">Deposit</span>
                 </Button>
                 <Button 
                   className="bg-white/20 hover:bg-white/30 text-white border border-white/30 py-3 flex flex-col items-center justify-center"
-                  onClick={() => setWithdrawOpen(true)}
+                  onClick={() => { setRampMode('withdraw'); setRampOpen(true); }}
                 >
                   <ArrowUpRight className="w-5 h-5 mb-1" />
                   <span className="text-xs">Withdraw</span>
                 </Button>
                 <Button 
                   className="bg-white/20 hover:bg-white/30 text-white border border-white/30 py-3 flex flex-col items-center justify-center"
-                  onClick={() => setRequestFundsOpen(true)}
+                  onClick={() => setPaymentRequestOpen(true)}
                 >
                   <ArrowDownLeft className="w-5 h-5 mb-1" />
                   <span className="text-xs">Request</span>
@@ -640,28 +431,6 @@ const EnhancedWalletPage = () => {
             </div>
           </div>
 
-          {/* Surfaces: Capital sections delegated to feature surfaces */}
-          <div className="space-y-4">
-            <div className="flex items-center justify-between mb-2">
-              <h3 className="text-lg font-semibold text-gray-900">Capital Overview</h3>
-              <div className="flex items-center gap-4">
-                <div className="text-sm text-gray-500">Capital Flow</div>
-                <div className="w-48">
-                  <Line data={sparklineData} options={sparklineOptions} height={40} />
-                </div>
-              </div>
-            </div>
-
-              <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
-                <div className="lg:col-span-2 space-y-4">
-                  {/* Liquidity and Deployed panels are replaced by CapitalLayer above. */}
-                </div>
-
-                <div className="lg:col-span-1 space-y-4">
-                  {/* Health/summary handled by CapitalLayer */}
-                </div>
-              </div>
-          </div>
         </div>
 
         {/* DeFi & Advanced Features Section */}
@@ -716,7 +485,7 @@ const EnhancedWalletPage = () => {
         {/* Social Payments Section */}
         <div className="mb-8">
           <h2 className="text-2xl font-bold text-gray-900 mb-6">Pay Your Way</h2>
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
             {/* Pay by Phone */}
             <button
               onClick={() => setPhonePaymentOpen(true)}
@@ -751,6 +520,16 @@ const EnhancedWalletPage = () => {
               </div>
               <h3 className="font-semibold text-gray-900 mb-1">Request Payment</h3>
               <p className="text-sm text-gray-500">Ask others to send you money</p>
+            </button>
+            <button
+              onClick={() => setPaymentLinkOpen(true)}
+              className="bg-gray-50/80 dark:bg-gray-900/40 p-6 rounded-xl border border-gray-200 dark:border-gray-800 hover:shadow-md transition-colors text-left"
+            >
+              <div className="w-10 h-10 bg-amber-100 rounded-lg flex items-center justify-center mb-4">
+                <Copy className="w-5 h-5 text-amber-700" />
+              </div>
+              <h3 className="font-semibold text-gray-900 mb-1">Create Payment Link</h3>
+              <p className="text-sm text-gray-500">Generate a shareable payment link</p>
             </button>
           </div>
         </div>
@@ -798,11 +577,11 @@ const EnhancedWalletPage = () => {
         <div className="space-y-6">
 
           <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
-            <TabsList className="grid w-full grid-cols-4">
-              <TabsTrigger value="overview">Overview</TabsTrigger>
-              <TabsTrigger value="transactions">Transactions</TabsTrigger>
-              <TabsTrigger value="recurring">Recurring</TabsTrigger>
-              <TabsTrigger value="vouchers">Vouchers</TabsTrigger>
+            <TabsList className="grid h-auto w-full grid-cols-2 sm:grid-cols-4">
+              <TabsTrigger className="min-w-0 px-2 text-xs sm:text-sm" value="overview">Overview</TabsTrigger>
+              <TabsTrigger className="min-w-0 px-2 text-xs sm:text-sm" value="transactions">Transactions</TabsTrigger>
+              <TabsTrigger className="min-w-0 px-2 text-xs sm:text-sm" value="recurring">Recurring</TabsTrigger>
+              <TabsTrigger className="min-w-0 px-2 text-xs sm:text-sm" value="vouchers">Vouchers</TabsTrigger>
             </TabsList>
 
             <TabsContent value="overview">
@@ -842,85 +621,42 @@ const EnhancedWalletPage = () => {
         </div>
       </div>
 
-      {requestFundsOpen && (
-        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50">
-          <CustomCard className="p-8 max-w-md w-full mx-4">
-            <div className="flex items-center space-x-3 mb-6">
-              <div className="w-12 h-12 bg-gradient-to-br from-purple-500 to-pink-600 rounded-xl flex items-center justify-center">
-                <ArrowDownLeft className="w-6 h-6 text-white" />
-              </div>
-              <h3 className="text-xl font-bold">Request Funds</h3>
-            </div>
-            <p className="text-gray-600 text-sm mb-4">Create a payment request and share it with others</p>
-            <input type="text" placeholder="Requester Name" className="w-full mb-3 p-2 border rounded text-sm" />
-            <input type="number" placeholder="Amount Requested" className="w-full mb-3 p-2 border rounded text-sm" />
-            <select aria-label="Currency selection" className="w-full mb-3 p-2 border rounded text-sm">
-              <option>cUSD</option>
-              <option>CELO</option>
-              <option>cEUR</option>
-              <option>cREAL</option>
-            </select>
-            <textarea placeholder="Message (optional)" className="w-full mb-3 p-2 border rounded text-sm" rows={3}></textarea>
-            <Button className="w-full bg-purple-600 hover:bg-purple-700 text-white">Generate Request</Button>
-            <Button onClick={() => setRequestFundsOpen(false)} className="w-full mt-2" variant="outline">Close</Button>
-          </CustomCard>
-        </div>
-      )}
+      <Dialog open={depositOpen} onOpenChange={setDepositOpen}>
+        <DialogContent className="max-w-md">
+          <DialogHeader><DialogTitle>Send CELO</DialogTitle></DialogHeader>
+          <div className="space-y-3">
+            <label htmlFor="send-address" className="sr-only">Recipient wallet address</label>
+            <input id="send-address" type="text" placeholder="Recipient 0x address" className="w-full p-3 border rounded" value={sendTo} onChange={e => setSendTo(e.target.value)} />
+            <label htmlFor="send-amount" className="sr-only">Amount in CELO</label>
+            <input id="send-amount" type="number" min="0" step="any" placeholder="Amount (CELO)" className="w-full p-3 border rounded" value={sendAmount} onChange={e => setSendAmount(e.target.value)} />
+            {actionError && <p role="alert" className="text-red-500">{actionError}</p>}
+            <Button onClick={handleSendNative} className="w-full" disabled={actionLoading}>{actionLoading ? 'Sending...' : 'Review and send'}</Button>
+          </div>
+        </DialogContent>
+      </Dialog>
 
-      {/* Mock Modals */}
-      {depositOpen && (
-        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50">
-          <CustomCard className="p-8 max-w-md w-full mx-4">
-            <div className="flex items-center space-x-3 mb-6">
-              <div className="w-12 h-12 bg-gradient-to-br from-blue-500 to-purple-600 rounded-xl flex items-center justify-center">
-                <Plus className="w-6 h-6 text-white" />
-              </div>
-              <h3 className="text-xl font-bold">Send Money</h3>
-            </div>
-            <input type="text" placeholder="Recipient Address" className="w-full mb-3 p-2 border rounded" value={sendTo} onChange={e => setSendTo(e.target.value)} />
-            <input type="number" placeholder="Amount" className="w-full mb-3 p-2 border rounded" value={sendAmount} onChange={e => setSendAmount(e.target.value)} />
-            {actionError && <p className="text-red-500 mb-2">{actionError}</p>}
-            <Button onClick={handleSendNative} className="w-full" disabled={actionLoading}>{actionLoading ? 'Sending...' : 'Send'}</Button>
-            <Button onClick={() => setDepositOpen(false)} className="w-full mt-2" variant="outline">Close</Button>
-          </CustomCard>
-        </div>
-      )}
-
-      {paymentOpen && (
-        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50">
-          <CustomCard className="p-8 max-w-md w-full mx-4">
-            <div className="flex items-center space-x-3 mb-6">
-              <div className="w-12 h-12 bg-gradient-to-br from-emerald-500 to-teal-600 rounded-xl flex items-center justify-center">
-                <Wallet className="w-6 h-6 text-white" />
-              </div>
-              <h3 className="text-xl font-bold">Add Funds</h3>
-            </div>
-            <input type="text" placeholder="Recipient Address" className="w-full mb-3 p-2 border rounded" value={sendTo} onChange={e => setSendTo(e.target.value)} />
-            <input type="number" placeholder="Amount" className="w-full mb-3 p-2 border rounded" value={depositAmount} onChange={e => setDepositAmount(e.target.value)} />
-            {actionError && <p className="text-red-500 mb-2">{actionError}</p>}
-            <Button onClick={handleDeposit} className="w-full" disabled={actionLoading}>{actionLoading ? 'Depositing...' : 'Deposit'}</Button>
-            <Button onClick={() => setPaymentOpen(false)} className="w-full mt-2" variant="outline">Close</Button>
-          </CustomCard>
-        </div>
-      )}
-
-      {withdrawOpen && (
-        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50">
-          <CustomCard className="p-8 max-w-md w-full mx-4">
-            <div className="flex items-center space-x-3 mb-6">
-              <div className="w-12 h-12 bg-gray-800/20 rounded-xl flex items-center justify-center">
-                <ArrowUpRight className="w-6 h-6 text-gray-400" />
-              </div>
-              <h3 className="text-xl font-bold">Withdraw Funds</h3>
-            </div>
-            <input type="text" placeholder="Recipient Address" className="w-full mb-3 p-2 border rounded bg-transparent text-white" value={sendTo} onChange={e => setSendTo(e.target.value)} />
-            <input type="number" placeholder="Amount" className="w-full mb-3 p-2 border rounded bg-transparent text-white" value={withdrawAmount} onChange={e => setWithdrawAmount(e.target.value)} />
-            {actionError && <p className="text-amber-300 mb-2">{actionError}</p>}
-            <Button onClick={handleWithdraw} className="w-full" disabled={actionLoading}>{actionLoading ? 'Withdrawing...' : 'Withdraw'}</Button>
-            <Button onClick={() => setWithdrawOpen(false)} className="w-full mt-2" variant="outline">Close</Button>
-          </CustomCard>
-        </div>
-      )}
+      <Dialog open={rampOpen} onOpenChange={setRampOpen}>
+        <DialogContent className="max-h-[90vh] max-w-3xl overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>{rampMode === 'deposit' ? 'Deposit to your wallet' : 'Withdraw from your wallet'}</DialogTitle>
+            <DialogDescription>
+              Use the connected Celo wallet and KotaniPay M-Pesa flow. Review the live quote and settlement status before starting.
+            </DialogDescription>
+          </DialogHeader>
+          <Tabs value={rampMode} onValueChange={(value) => setRampMode(value as 'deposit' | 'withdraw')}>
+            <TabsList className="grid w-full grid-cols-2">
+              <TabsTrigger value="deposit">Deposit</TabsTrigger>
+              <TabsTrigger value="withdraw">Withdraw</TabsTrigger>
+            </TabsList>
+            <TabsContent value="deposit">
+              <StablecoinWalletPanel mode="receive" />
+            </TabsContent>
+            <TabsContent value="withdraw">
+              <StablecoinWalletPanel mode="send" />
+            </TabsContent>
+          </Tabs>
+        </DialogContent>
+      </Dialog>
 
       {address && (
         <>

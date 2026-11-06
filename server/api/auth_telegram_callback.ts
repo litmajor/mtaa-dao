@@ -4,9 +4,10 @@ import { db } from '../db';
 import { users, userIdentities } from '../../shared/schema';
 import { eq, and } from 'drizzle-orm';
 import { generateTokens } from '../auth';
+import { setAuthSessionCookies } from '../utils/authSessionCookies';
 
 const TELEGRAM_BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN;
-const APP_URL = process.env.APP_URL || 'http://localhost:5000';
+const APP_URL = process.env.FRONTEND_URL || process.env.APP_URL || 'http://localhost:5000';
 
 interface TelegramAuthData {
   id: number;
@@ -24,11 +25,12 @@ interface TelegramAuthData {
  * Reference: https://core.telegram.org/widgets/login#checking-authorization
  */
 function verifyTelegramAuth(data: TelegramAuthData): boolean {
-  if (!TELEGRAM_BOT_TOKEN) return false;
+  if (!TELEGRAM_BOT_TOKEN || !/^[a-f\d]{64}$/i.test(data.hash)) return false;
 
   // Create a data check string (must be in alphabetical order)
   const checkString = Object.keys(data)
     .filter(key => key !== 'hash')
+    .filter(key => data[key as keyof TelegramAuthData] !== undefined)
     .sort()
     .map(key => `${key}=${data[key as keyof TelegramAuthData]}`)
     .join('\n');
@@ -38,9 +40,10 @@ function verifyTelegramAuth(data: TelegramAuthData): boolean {
   const hash = crypto
     .createHmac('sha256', secretKey)
     .update(checkString)
-    .digest('hex');
+    .digest();
 
-  return hash === data.hash;
+  const receivedHash = Buffer.from(data.hash, 'hex');
+  return receivedHash.length === hash.length && crypto.timingSafeEqual(hash, receivedHash);
 }
 
 /**
@@ -48,19 +51,7 @@ function verifyTelegramAuth(data: TelegramAuthData): boolean {
  * (existing password-protected account)
  */
 function requiresConfirmation(existingUser: any): boolean {
-  return !!(existingUser && existingUser.passwordHash);
-}
-
-/**
- * Safe JSON parsing with fallback
- */
-function safeParseJSON<T>(json: string | null, fallback: T): T {
-  if (!json) return fallback;
-  try {
-    return JSON.parse(json) as T;
-  } catch {
-    return fallback;
-  }
+  return !!existingUser?.password;
 }
 
 /**
@@ -80,8 +71,30 @@ function safeParseJSON<T>(json: string | null, fallback: T): T {
  */
 export async function authTelegramCallbackHandler(req: Request, res: Response) {
   try {
-    // Parse telegram auth data from POST body
-    const telegramData = req.body as TelegramAuthData;
+    const input = req.method === 'GET' ? req.query : { ...req.query, ...req.body };
+    const value = (key: string): string | undefined => {
+      const candidate = input?.[key];
+      return typeof candidate === 'string' ? candidate : undefined;
+    };
+    const id = value('id');
+    const authDate = value('auth_date');
+    const hash = value('hash');
+    if (!id || !/^\d+$/.test(id) || !authDate || !/^\d+$/.test(authDate) || !hash) {
+      return res.redirect(`${APP_URL}/login?error=telegram_verification_failed`);
+    }
+
+    const telegramData: TelegramAuthData = {
+      id: Number(id),
+      first_name: value('first_name') || '',
+      last_name: value('last_name'),
+      username: value('username'),
+      photo_url: value('photo_url'),
+      auth_date: Number(authDate),
+      hash,
+    };
+    if (!Number.isSafeInteger(telegramData.id) || !Number.isSafeInteger(telegramData.auth_date)) {
+      return res.redirect(`${APP_URL}/login?error=telegram_verification_failed`);
+    }
 
     // Verify Telegram signature
     if (!verifyTelegramAuth(telegramData)) {
@@ -91,22 +104,31 @@ export async function authTelegramCallbackHandler(req: Request, res: Response) {
 
     // Verify auth_date is recent (within 10 minutes)
     const currentTime = Math.floor(Date.now() / 1000);
-    if (currentTime - telegramData.auth_date > 600) {
+    if (telegramData.auth_date > currentTime + 30 || currentTime - telegramData.auth_date > 600) {
       console.error('Telegram auth data expired');
       return res.redirect(`${APP_URL}/login?error=telegram_expired`);
     }
 
     // Retrieve and verify state from cookie
-    const stateFromCookie = req.cookies.telegram_auth_state;
-    const modeFromCookie = req.cookies.telegram_auth_mode || 'login';
+    const stateFromCookie = req.cookies?.telegram_auth_state;
+    const stateFromRequest = value('state');
+    const modeFromCookie = req.cookies?.telegram_auth_mode === 'register' ? 'register' : 'login';
 
-    if (!stateFromCookie) {
+    if (!stateFromCookie || !stateFromRequest) {
+      return res.redirect(`${APP_URL}/login?error=invalid_state`);
+    }
+    const cookieStateBytes = Buffer.from(stateFromCookie);
+    const requestStateBytes = Buffer.from(stateFromRequest);
+    if (
+      cookieStateBytes.length !== requestStateBytes.length ||
+      !crypto.timingSafeEqual(cookieStateBytes, requestStateBytes)
+    ) {
       return res.redirect(`${APP_URL}/login?error=invalid_state`);
     }
 
     // Clear auth cookies
-    res.clearCookie('telegram_auth_state');
-    res.clearCookie('telegram_auth_mode');
+    res.clearCookie('telegram_auth_state', { path: '/' });
+    res.clearCookie('telegram_auth_mode', { path: '/' });
 
     const telegramId = telegramData.id.toString();
     const telegramUsername = telegramData.username || null;
@@ -135,21 +157,7 @@ export async function authTelegramCallbackHandler(req: Request, res: Response) {
         role: existingUser.roles || 'user',
       });
 
-      // Store access token in secure cookie
-      res.cookie('access_token', tokens.accessToken, {
-        httpOnly: true,
-        secure: process.env.NODE_ENV === 'production',
-        sameSite: 'strict',
-        maxAge: 15 * 60 * 1000, // 15 minutes
-      });
-
-      // Store refresh token in secure cookie
-      res.cookie('refresh_token', tokens.refreshToken, {
-        httpOnly: true,
-        secure: process.env.NODE_ENV === 'production',
-        sameSite: 'strict',
-        maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days
-      });
+      setAuthSessionCookies(res, tokens);
 
       // Update telegram username if changed
       if (telegramUsername && telegramUsername !== existingUser.telegramUsername) {
@@ -172,20 +180,24 @@ export async function authTelegramCallbackHandler(req: Request, res: Response) {
       const pendingIdentity = {
         provider: 'telegram',
         providerUserId: telegramId,
+        email: existingEmailUser.email,
+        provider: 'telegram',
+        providerUserId: telegramId,
         username: telegramUsername,
         firstName: telegramData.first_name,
         lastName: telegramData.last_name,
       };
 
-      res.cookie('pending_identity', JSON.stringify(pendingIdentity), {
+      res.cookie('oauth_pending_identity', JSON.stringify(pendingIdentity), {
         httpOnly: true,
         secure: process.env.NODE_ENV === 'production',
-        sameSite: 'strict',
+        sameSite: 'lax',
         maxAge: 10 * 60 * 1000, // 10 minutes
+        path: '/',
       });
 
       return res.redirect(
-        `${APP_URL}/login?requireConfirmation=true&email=${encodeURIComponent(existingEmailUser.email || '')}`
+        `${APP_URL}/login?requireConfirmation=true&email=${encodeURIComponent(existingEmailUser.email || '')}&provider=telegram`
       );
     }
 
@@ -207,7 +219,7 @@ export async function authTelegramCallbackHandler(req: Request, res: Response) {
               telegramUsername: telegramUsername,
               telegramChatId: null,
               roles: 'user',
-              password: crypto.randomBytes(16).toString('hex'),
+              password: '',
             })
             .returning();
 
@@ -231,20 +243,7 @@ export async function authTelegramCallbackHandler(req: Request, res: Response) {
           role: result.roles || 'user',
         });
 
-        // Store tokens in secure cookies
-        res.cookie('access_token', tokens.accessToken, {
-          httpOnly: true,
-          secure: process.env.NODE_ENV === 'production',
-          sameSite: 'strict',
-          maxAge: 15 * 60 * 1000, // 15 minutes
-        });
-
-        res.cookie('refresh_token', tokens.refreshToken, {
-          httpOnly: true,
-          secure: process.env.NODE_ENV === 'production',
-          sameSite: 'strict',
-          maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days
-        });
+        setAuthSessionCookies(res, tokens);
 
         return res.redirect(`${APP_URL}/subprofile-selection`);
       } catch (error) {

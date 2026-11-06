@@ -792,6 +792,11 @@ process.on('uncaughtException', (error) => {
     const shouldRunMigrations = process.env.RUN_MIGRATIONS === 'true';
 
     if (shouldRunMigrations) {
+      if (process.env.NODE_ENV === 'production' || process.env.DEPLOYMENT_ENV === 'production') {
+        throw new Error(
+          'RUN_MIGRATIONS is not supported in production app processes. Run the one-off migration command before deploying the app.',
+        );
+      }
       logger.info('[STARTUP] RUN_MIGRATIONS=true -> running database migrations in this process');
       const migrationResult: any = await runAllMigrations();
       if (migrationResult?.success) {
@@ -1022,20 +1027,10 @@ process.on('uncaughtException', (error) => {
     // Initialize Token Discovery unified universe (resilient startup with local fallback)
     console.log('[STARTUP] Initializing Token Discovery unified universe (with local fallback)...');
     try {
-      await withStartupStageTimeout(
-        'tokenDiscoveryService.buildUnifiedUniverse',
-        () => tokenDiscoveryService.buildUnifiedUniverse(),
-        15000
-      );
-      logger.info('[STARTUP] ✅ Token universe built successfully');
+      const fallbackUniverse = await tokenDiscoveryService.loadFallbackUniverse();
+      logger.info(`[STARTUP] Token fallback universe loaded (${fallbackUniverse.size} tokens)`);
     } catch (error) {
-      logger.error('[STARTUP] Failed to build fresh universe, loading local fallback cache...', metaFromUnknown(error));
-      try {
-        await tokenDiscoveryService.loadFallbackUniverse();
-        logger.info('[STARTUP] ✅ Loaded fallback token universe cache');
-      } catch (fallbackErr) {
-        logger.error('[STARTUP] Failed to load fallback universe cache:', metaFromUnknown(fallbackErr));
-      }
+      logger.error('[STARTUP] Failed to load fallback token universe:', metaFromUnknown(error));
     }
 
     // Initialize Operational Framework
@@ -1316,26 +1311,16 @@ process.on('uncaughtException', (error) => {
       // Continue - agents are optional
     }
 
-    // Start isolated worker manager for performance/health agents
-    console.log('[STARTUP] Starting isolated worker manager...');
-    try {
-      const { PerformanceOptimizerAgent } = await import('./agents/performanceOptimizerAgent');
-      const { HealthMonitorAgent } = await import('./agents/healthMonitorAgent');
-      
-      // Use environment-based configuration
-      const agentPort = parseInt(process.env.AGENT_PORT || process.env.PORT || '5000');
-      const agentHost = process.env.AGENT_HOST || 'localhost';
-      const agentBaseUrl = process.env.AGENT_BASE_URL || `http://${agentHost}:${agentPort}`;
-      
-      const performanceOptimizer = new PerformanceOptimizerAgent(agentBaseUrl);
-      const healthMonitor = new HealthMonitorAgent(agentBaseUrl);
-      
-      await isolatedWorkerManager.start(performanceOptimizer, healthMonitor);
-      logger.info('[STARTUP] ✅ Isolated worker manager started (agents + metrics flusher)');
-    } catch (workerError) {
-      logger.warn('[STARTUP] Isolated worker manager setup warning:', metaFromUnknown(workerError));
-      // Continue - workers are optional but recommended
-    }
+    // Agent execution is owned by AgentWorkerManager below. Keep this manager
+    // focused on flushing the worker's buffered metrics, after the API is ready.
+    server.once('listening', () => {
+      try {
+        isolatedWorkerManager.startMetricsFlusher();
+        logger.info('[STARTUP] ✅ Worker metrics flusher started');
+      } catch (workerError) {
+        logger.warn('[STARTUP] Worker metrics flusher setup warning:', metaFromUnknown(workerError));
+      }
+    });
 
     // Initialize Asset Graph Service (portfolio tracking for Amara Dashboard)
     console.log('[STARTUP] Initializing Asset Graph Service...');
@@ -1978,19 +1963,27 @@ process.on('uncaughtException', (error) => {
       
       const agentWorkerManager = getAgentWorkerManager();
       
-      // Start agents in isolated worker (does NOT block startup)
-      agentWorkerManager
-        .start()
-        .then(() => {
-          logger.info('✅ [AGENTS] All monitoring agents running in isolated worker (PID: TBD)');
-          logger.info('🌐 Domain Aggregator Agent (5min poll)');
-          logger.info('📈 Capacity Planner Agent (10min poll)');
-          logger.info('⚡ Performance Optimizer Agent (2min poll)');
-        })
-        .catch((error) => {
-          logger.error('❌ [AGENTS] Failed to start isolated worker:', error);
-          logger.warn('[AGENTS] Continuing without agents (graceful degradation)');
-        });
+      // Start agents only after the HTTP server is listening so their first health
+      // and performance polls do not target a server that has not started yet.
+      const startAgentWorker = () => {
+        void agentWorkerManager
+          .start()
+          .then(() => {
+            logger.info('✅ [AGENTS] All monitoring agents running in isolated worker');
+            logger.info('🌐 Domain Aggregator Agent (5min poll)');
+            logger.info('📈 Capacity Planner Agent (10min poll)');
+            logger.info('⚡ Performance Optimizer Agent (2min poll)');
+          })
+          .catch((error) => {
+            logger.error('❌ [AGENTS] Failed to start isolated worker:', error);
+            logger.warn('[AGENTS] Continuing without agents (graceful degradation)');
+          });
+      };
+      if (server.listening) {
+        startAgentWorker();
+      } else {
+        server.once('listening', startAgentWorker);
+      }
       
       logger.info('Server configuration', {
         port: PORT,
@@ -2140,7 +2133,8 @@ process.on('uncaughtException', (error) => {
         undefined // Use default adapter config
       );
       logger.info('✅ Gateway Agent initialized');
-      logger.info('✅ Gateway adapters ready: Chainlink, Mento, Ubeswap, Curve, Uniswap, Sushi, CoinGecko, Moola, Beefyfi, Blockchain');
+      const adapterNames = gatewayService.getAdapterNames();
+      logger.info(`✅ Gateway adapters ready (${adapterNames.length}): ${adapterNames.join(', ') || 'none'}`);
 
       // Mount Gateway Agent routes now that service is initialized
       try {
@@ -2173,6 +2167,12 @@ process.on('uncaughtException', (error) => {
 
     // STARTUP COMPLETE: Clear flag to enable INFO logging now that services are running
     (globalThis as typeof globalThis & { isServerStarting?: boolean }).isServerStarting = false;
+
+    // Refresh external token markets after startup. Discovery performs cold CCXT
+    // market loads and rate-limited DEX scans, so it must not hold up server boot.
+    void tokenDiscoveryService.buildUnifiedUniverse(true)
+      .then(() => logger.info('[STARTUP] Token universe refresh attempt completed'))
+      .catch((error) => logger.error('[STARTUP] Token universe refresh failed:', metaFromUnknown(error)));
 
     // ═══════════════════════════════════════════════════════════════════════════════
     // PHASE 7.1: SINGLETON VERIFICATION (After all services initialized)

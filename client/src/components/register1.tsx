@@ -81,7 +81,7 @@ export default function ArchitectSetup({ adminMode: initialAdminMode = false }: 
           body: JSON.stringify({ email: emailOrPhone, password }),
         });
       } else {
-        resp = await fetch('/api/auth/register-phone', {
+        resp = await fetch('/api/auth/register', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ phone: emailOrPhone, password }),
@@ -126,7 +126,12 @@ export default function ArchitectSetup({ adminMode: initialAdminMode = false }: 
 
       // Auto sign in after registration - rely on httpOnly cookie; notify and redirect
       localStorage.setItem('superuser', 'true');
-      try { (await import('../utils/authChannel')).default.postAuthMessage({ type: 'login', payload: { user: data.user || {} } }); } catch (e) {}
+      try {
+        (await import('../utils/authChannel')).default.postAuthMessage({
+          type: 'login',
+          payload: { user: data.data?.user ?? data.user ?? {} },
+        });
+      } catch (e) {}
       window.location.href = '/superuser';
     } catch (err: any) {
       setError(

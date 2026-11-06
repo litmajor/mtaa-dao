@@ -119,14 +119,12 @@ router.get('/', isAuthenticated, async (req: Request, res: Response) => {
       const activeProposals = proposalCountMap.get(dao.id) || 0;
       
       // Get computed treasury balance
-      let treasuryBalance = 0;
+      let treasuryBalance: number | null = null;
       try {
         const computed = await TreasuryService.getComputedTreasuryBalance(String(dao.id));
-        treasuryBalance = parseFloat(String((computed as any).totalComputedBalance || '0'));
+        treasuryBalance = computed.totalComputedBalance === null ? null : Number(computed.totalComputedBalance);
       } catch (error) {
         logger.warn(`Could not compute treasury balance for DAO ${dao.id}:`, { error: String(error) });
-        // Fall back to stored value if computation fails
-        treasuryBalance = parseFloat(String(dao.treasuryBalance || '0'));
       }
       
       return {
@@ -135,6 +133,7 @@ router.get('/', isAuthenticated, async (req: Request, res: Response) => {
         description: dao.description,
         memberCount,
         treasuryBalance,
+        treasuryBalanceCurrency: treasuryBalance === null ? null : 'USD',
         role: membership?.role || null,
         isJoined: !!membership,
         joinedAt: membership?.joinedAt || null,
@@ -236,14 +235,12 @@ router.get('/featured', async (req: Request, res: Response) => {
     const activeProposals = proposalCountMap.get(featuredDao.id) || 0;
     
     // Get computed treasury balance
-    let treasuryBalance = 0;
+    let treasuryBalance: number | null = null;
     try {
       const computed = await TreasuryService.getComputedTreasuryBalance(featuredDao.id);
-      treasuryBalance = parseFloat(String(computed.totalComputedBalance || '0'));
+      treasuryBalance = computed.totalComputedBalance === null ? null : Number(computed.totalComputedBalance);
     } catch (error) {
       logger.warn(`Could not compute treasury balance for featured DAO ${featuredDao.id}:`, { error: String(error) });
-      // Fall back to stored value if computation fails
-      treasuryBalance = parseFloat(String(featuredDao.treasuryBalance || '0'));
     }
 
     const enrichedFeatured = {
@@ -252,6 +249,7 @@ router.get('/featured', async (req: Request, res: Response) => {
       description: featuredDao.description,
       memberCount,
       treasuryBalance,
+      treasuryBalanceCurrency: treasuryBalance === null ? null : 'USD',
       activeProposals,
       recentActivity: activeProposals > 0 ? `${activeProposals} active proposals` : 'No recent activity',
       causeTags: featuredDao.causeTags || [],
@@ -317,15 +315,15 @@ router.get('/:daoId', isAuthenticated, async (req: Request, res: Response) => {
       .limit(1);
 
     // Get computed treasury balance
-    let treasuryBalance = 0;
-      try {
-        const computed = await TreasuryService.getComputedTreasuryBalance(daoId);
-        treasuryBalance = parseFloat(String(computed.totalComputedBalance || '0'));
-      } catch (error) {
-        logger.warn(`Could not compute treasury balance for DAO ${daoId}:`, { error: String(error) });
-        // Fall back to stored value if computation fails
-        treasuryBalance = parseFloat(String(dao.treasuryBalance || '0'));
-      }
+    let treasuryBalance: number | null = null;
+    let treasuryBalanceCurrency: string | null = null;
+    try {
+      const computed = await TreasuryService.getComputedTreasuryBalance(daoId);
+      treasuryBalance = computed.totalComputedBalance === null ? null : Number(computed.totalComputedBalance);
+      treasuryBalanceCurrency = computed.totalComputedBalanceCurrency;
+    } catch (error) {
+      logger.warn(`Could not compute treasury balance for DAO ${daoId}:`, { error: String(error) });
+    }
 
     res.json({
       success: true,
@@ -336,6 +334,7 @@ router.get('/:daoId', isAuthenticated, async (req: Request, res: Response) => {
         isMember: !!membership,
         joinedAt: membership?.joinedAt || null,
         treasuryBalance,
+        treasuryBalanceCurrency,
       }
     });
   } catch (error: any) {
@@ -405,18 +404,18 @@ router.get('/:daoId/dashboard-stats', isAuthenticated, async (req: Request, res:
     }
 
     // Calculate funding progress
-    let treasuryBalance = 0;
-      try {
-        const computed = await TreasuryService.getComputedTreasuryBalance(daoId);
-        treasuryBalance = parseFloat(String(computed.totalComputedBalance || '0'));
-      } catch (error) {
-        logger.warn(`Could not compute treasury balance for DAO ${daoId}:`, { error: String(error) });
-        // Fall back to stored value if computation fails
-        treasuryBalance = parseFloat(String(dao.treasuryBalance || '0'));
-      }
+    let treasuryBalance: number | null = null;
+    try {
+      const computed = await TreasuryService.getComputedTreasuryBalance(daoId);
+      treasuryBalance = computed.totalComputedBalance === null ? null : Number(computed.totalComputedBalance);
+    } catch (error) {
+      logger.warn(`Could not compute treasury balance for DAO ${daoId}:`, { error: String(error) });
+    }
     
     const fundingGoal = 5000; // Default goal
-    const fundingProgress = Math.min((treasuryBalance / fundingGoal) * 100, 100);
+    const fundingProgress = treasuryBalance === null
+      ? null
+      : Math.min((treasuryBalance / fundingGoal) * 100, 100);
 
     res.json({
       success: true,
@@ -424,9 +423,11 @@ router.get('/:daoId/dashboard-stats', isAuthenticated, async (req: Request, res:
         totalMembers: members.length,
         newMembersThisWeek,
         activeProposals: activeProposals.length,
-        treasuryBalance: treasuryBalance.toFixed(2),
+        treasuryBalance: treasuryBalance?.toFixed(2) ?? null,
+        treasuryBalanceCurrency: treasuryBalance === null ? null : 'USD',
         fundingGoal: fundingGoal.toString(),
-        fundingProgress: Math.round(fundingProgress),
+        fundingGoalCurrency: 'USD',
+        fundingProgress: fundingProgress === null ? null : Math.round(fundingProgress),
         planExpiresAt: dao.planExpiresAt,
         daysLeft,
         status,

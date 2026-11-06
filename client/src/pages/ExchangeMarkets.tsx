@@ -72,10 +72,6 @@ import { PageLoading } from '@/components/ui/page-loading';
 /**
  * Type Definitions
  */
-interface ExchangeStatus {
-  [key: string]: { ok: boolean; error?: string };
-}
-
 interface Asset {
   symbol: string;
   displayName?: string;
@@ -117,27 +113,6 @@ interface EnhancedAsset extends Asset {
   category: 'cefi' | 'defi';
   exchanges: string[];
 }
-
-/**
- * Fetch exchange status
- */
-const useExchangeStatus = () => {
-  return useQuery({
-    queryKey: ['exchange-status'],
-    queryFn: async () => {
-      const response = await authClient.get<any>('/api/v1/yuki/exchanges/status');
-      const body = response.data || {};
-      const status = body.data || {};
-      const available = Object.keys(status.exchanges || {});
-      return {
-        available,
-        health: status,
-      };
-    },
-    staleTime: 30000, // 30 seconds
-    retry: 1,
-  } as any);
-};
 
 /**
  * Fetch available assets for an exchange
@@ -234,7 +209,14 @@ const useExchangeAssets = (exchangeName: string | null) => {
 const ExchangeMarkets: React.FC = () => {
   const [selectedExchange, setSelectedExchange] = useState<string | null>(null);
   const [selectedAsset, setSelectedAsset] = useState<string | null>(null);
-  const [selectedExchanges, setSelectedExchanges] = useState<string[]>(['binance', 'coinbase', 'kraken']);
+  const [selectedExchanges, setSelectedExchanges] = useState<string[]>([
+    'binance',
+    'coinbase',
+    'kraken',
+    'bybit',
+    'kucoin',
+    'okx',
+  ]);
   const [searchTerm, setSearchTerm] = useState('');
   const [sortBy, setSortBy] = useState<'rank' | 'price' | 'change24h' | 'volume' | 'marketCap'>('rank');
   const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('asc');
@@ -286,18 +268,17 @@ const ExchangeMarkets: React.FC = () => {
   const [exchangeAssetsPageSize, setExchangeAssetsPageSize] = useState(100);
   const [exchangeAssetsSearchTerm, setExchangeAssetsSearchTerm] = useState('');
 
-  const statusQuery = useExchangeStatus();
   const { data: assets, isLoading: assetsLoading } = useExchangeAssets(selectedExchange);
   const { data: prices, isLoading: pricesLoading } = usePrices(selectedAsset, selectedExchanges) as { data: any; isLoading: boolean };
   const { data: bestPrice, isLoading: bestPriceLoading } = useBestPrice(selectedAsset, selectedExchanges) as { data: any; isLoading: boolean };
   
   // Fetch real top assets from API - Now 500 tokens
   const topAssetsQuery = useTopAssets<EnhancedAsset>(500);
-  const topAssets = (topAssetsQuery.data ?? []) as EnhancedAsset[];
+  const topAssets = topAssetsQuery.data?.assets ?? [];
   const { isLoading: topAssetsLoading, error: topAssetsError } = topAssetsQuery;
   
-  const availableExchanges = (statusQuery.data as any)?.available || ['binance', 'coinbase', 'kraken', 'bybit', 'kucoin', 'okx'];
-  const healthyExchanges = (statusQuery.data as any)?.health?.exchanges || {};
+  const exchangeStatuses = topAssetsQuery.data?.exchanges ?? {};
+  const availableExchanges = Object.keys(exchangeStatuses);
 
   // Find symbol across exchanges when detail asset is selected
   const baseSymbolForCrossExchange = detailAsset ? detailAsset.symbol.split('/')[0] : null;
@@ -323,7 +304,7 @@ const ExchangeMarkets: React.FC = () => {
         return {
           ...asset,
           marketCap: coinGeckoData[baseSymbol]?.marketCap,
-          volume24h: coinGeckoData[baseSymbol]?.volume24h,
+          volume24h: asset.volume24h,
           circulatingSupply: coinGeckoData[baseSymbol]?.circulatingSupply ?? asset.circulatingSupply ?? '—'
         };
       })
@@ -432,12 +413,14 @@ const ExchangeMarkets: React.FC = () => {
               <div className="w-px h-10 bg-gray-200 dark:bg-slate-700" />
               <div>
                 <p className="text-xs text-gray-500 dark:text-gray-400">Exchanges</p>
-                <p className="text-lg font-bold text-gray-900 dark:text-white">{availableExchanges.length}</p>
+                <p className="text-lg font-bold text-gray-900 dark:text-white">
+                  {Object.values(exchangeStatuses).filter((exchange) => exchange.ok).length}/{availableExchanges.length}
+                </p>
               </div>
             </div>
             <div className="flex items-center gap-2">
-              <Button variant="outline" size="sm" onClick={() => (statusQuery as any).refetch?.()}>
-                <span className={`mr-2 ${statusQuery.isLoading ? 'animate-spin inline-block' : ''}`}>🔄</span>
+              <Button variant="outline" size="sm" onClick={() => topAssetsQuery.refetch()} disabled={topAssetsQuery.isFetching}>
+                <span className={`mr-2 ${topAssetsQuery.isFetching ? 'animate-spin inline-block' : ''}`}>🔄</span>
                 Refresh
               </Button>
             </div>
@@ -450,14 +433,34 @@ const ExchangeMarkets: React.FC = () => {
         <div className="max-w-[1800px] mx-auto px-4 py-3">
           <div className="flex items-center gap-4 flex-wrap">
             <div className="flex items-center gap-2">
-              <span className="w-2 h-2 rounded-full bg-green-500 animate-pulse"></span>
+              <span className={`w-2 h-2 rounded-full ${topAssetsError ? 'bg-red-500' : topAssetsLoading ? 'bg-amber-500 animate-pulse' : 'bg-green-500'}`}></span>
               <p className="text-sm font-medium text-indigo-900 dark:text-indigo-200">
-                📊 Market data from <span className="font-bold">CoinGecko</span> + Exchange APIs
+                📊 Live spot prices from configured exchanges + CoinGecko market statistics
               </p>
             </div>
             <div className="text-xs text-indigo-700 dark:text-indigo-300 border-l border-indigo-300 dark:border-indigo-700 pl-4">
-              ✓ {((topAssets as any) || [])?.length || 0} assets tracked • {availableExchanges.length} exchanges • Real-time pricing
+              {topAssets.length} assets • {Object.values(exchangeStatuses).filter((exchange) => exchange.ok).length} of {availableExchanges.length} exchanges returning spot tickers
             </div>
+            {availableExchanges.length > 0 && (
+              <div className="flex flex-wrap gap-2" aria-label="Live exchange status">
+                {availableExchanges.map((exchange) => {
+                  const status = exchangeStatuses[exchange];
+                  return (
+                    <span
+                      key={exchange}
+                      title={status.error || `${status.tickerCount} spot pairs returned`}
+                      className={`rounded-full border px-2 py-1 text-xs ${
+                        status.ok
+                          ? 'border-green-300 text-green-800 dark:border-green-700 dark:text-green-300'
+                          : 'border-red-300 text-red-800 dark:border-red-700 dark:text-red-300'
+                      }`}
+                    >
+                      {exchange}: {status.ok ? `${status.tickerCount} pairs` : 'unavailable'}
+                    </span>
+                  );
+                })}
+              </div>
+            )}
           </div>
         </div>
       </div>
@@ -575,12 +578,20 @@ const ExchangeMarkets: React.FC = () => {
               {topAssetsLoading ? (
                 <div className="p-8 text-center">
                   <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600 mx-auto mb-4"></div>
-                  <p className="text-gray-500 dark:text-gray-400">Loading market data...</p>
+                  <p className="text-gray-500 dark:text-gray-400">Loading live prices from exchanges...</p>
                 </div>
               ) : topAssetsError ? (
                 <div className="p-8 text-center">
-                  <p className="text-red-600 dark:text-red-400 mb-4">Failed to load market data</p>
-                  <Button onClick={() => (topAssetsQuery as any).refetch?.()}>Retry</Button>
+                  <p className="text-red-600 dark:text-red-400 mb-2">Failed to load live market data</p>
+                  <p className="text-sm text-gray-500 dark:text-gray-400 mb-4">
+                    {topAssetsError instanceof Error ? topAssetsError.message : 'The exchange data request failed.'}
+                  </p>
+                  <Button
+                    onClick={() => topAssetsQuery.refetch()}
+                    disabled={topAssetsQuery.isFetching}
+                  >
+                    {topAssetsQuery.isFetching ? 'Retrying…' : 'Retry'}
+                  </Button>
                 </div>
               ) : filteredAssets.length === 0 ? (
                 <div className="p-8 text-center">
@@ -858,12 +869,12 @@ const ExchangeMarkets: React.FC = () => {
                       <div className="font-semibold capitalize text-gray-900 dark:text-white">{exchange}</div>
                       <Badge
                         className={`mt-2 ${
-                          healthyExchanges[exchange]?.ok
+                          exchangeStatuses[exchange]?.ok
                             ? 'bg-green-600'
                             : 'bg-red-600'
                         }`}
                       >
-                        {healthyExchanges[exchange]?.ok ? 'Online' : 'Offline'}
+                        {exchangeStatuses[exchange]?.ok ? 'Spot data live' : 'No spot data'}
                       </Badge>
                     </div>
                   ))}
@@ -2068,4 +2079,3 @@ const MarketSentimentSection: React.FC = () => {
 
 
 export default ExchangeMarkets;
-

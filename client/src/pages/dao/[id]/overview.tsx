@@ -102,8 +102,12 @@ export default function DaoOverviewPage() {
                 </CardTitle>
               </CardHeader>
               <CardContent>
-                <div className="text-3xl font-bold">${(dao.treasuryBalance || 0).toFixed(2)}</div>
-                <p className="text-xs text-gray-500 mt-1">Total balance</p>
+                <div className="text-3xl font-bold">
+                  {dao.treasuryBalance === null || dao.treasuryBalance === undefined
+                    ? 'Valuation unavailable'
+                    : `$${Number(dao.treasuryBalance).toFixed(2)} USD`}
+                </div>
+                <p className="text-xs text-gray-500 mt-1">Indexed position valuation</p>
               </CardContent>
             </Card>
 

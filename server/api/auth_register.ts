@@ -5,6 +5,7 @@ import { users } from '../../shared/schema';
 import { eq } from 'drizzle-orm';
 import { generateTokens, hashPassword } from '../auth';
 import { otpService } from '../services/otpService';
+import { setAuthSessionCookies } from '../utils/authSessionCookies';
 
 /**
  * Helper to insert a new user with an automatically generated, unique slug.
@@ -51,7 +52,9 @@ async function createUserWithUniqueSlug(userValues: Omit<typeof users.$inferInse
 
 export async function authRegisterHandler(req: Request, res: Response) {
   try {
-    const { email, phone, password, preferredOtpChannel } = req.body;
+    const { password, preferredOtpChannel } = req.body;
+    const email = typeof req.body.email === 'string' ? req.body.email.trim().toLowerCase() : '';
+    const phone = typeof req.body.phone === 'string' ? req.body.phone.trim() : '';
 
     // Validate input - need either email or phone
     if ((!email && !phone) || !password) {
@@ -89,12 +92,19 @@ export async function authRegisterHandler(req: Request, res: Response) {
     }
 
     // Generate and store OTP in Redis
-    const identifier = email || phone!;
-    const otp = await otpService.storeOTP(identifier, password);
+    const identifier = email || phone;
+    const passwordHash = await hashPassword(password);
+    const otp = await otpService.storeOTP(identifier, passwordHash);
 
     // Send OTP via preferred channel when available, falling back to email/SMS
     try {
-      const channel = preferredOtpChannel === 'whatsapp' && phone ? 'whatsapp' : preferredOtpChannel === 'sms' && phone ? 'sms' : email ? 'email' : phone ? 'sms' : 'email';
+      const channel = preferredOtpChannel === 'whatsapp' && phone
+        ? 'whatsapp'
+        : preferredOtpChannel === 'sms' && phone
+          ? 'sms'
+          : email
+            ? 'email'
+            : 'sms';
 
       if (email) {
         await otpService.sendOTPByChannel(email, otp, 'email');
@@ -104,12 +114,11 @@ export async function authRegisterHandler(req: Request, res: Response) {
     } catch (sendError) {
       // Clean up OTP if sending fails
       await otpService.deleteOTP(identifier);
-      throw new Error('Failed to send verification code. Please try again.');
-    }
-
-    // Log for development
-    if (process.env.NODE_ENV === 'development') {
-      console.log(`🔐 OTP for ${identifier}: ${otp}`);
+      console.error('Registration OTP delivery failed:', sendError);
+      return res.status(503).json({
+        success: false,
+        error: 'Verification code delivery is temporarily unavailable. Please try again later.',
+      });
     }
 
     res.status(200).json({
@@ -128,7 +137,9 @@ export async function authRegisterHandler(req: Request, res: Response) {
 // Verify OTP handler
 export async function verifyOtpHandler(req: Request, res: Response) {
   try {
-    const { email, phone, otp } = req.body;
+    const { otp } = req.body;
+    const email = typeof req.body.email === 'string' ? req.body.email.trim().toLowerCase() : '';
+    const phone = typeof req.body.phone === 'string' ? req.body.phone.trim() : '';
     const identifier = email || phone;
 
     if (!identifier || !otp) {
@@ -149,13 +160,15 @@ export async function verifyOtpHandler(req: Request, res: Response) {
     }
 
     // OTP verified, create user with unique slug collision handling
-    const hashedPassword = await hashPassword(verification.password!);
+    if (!verification.password) {
+      return res.status(400).json({ success: false, error: 'Registration expired. Please start again.' });
+    }
 
     const newUser = await createUserWithUniqueSlug({
       id: crypto.randomUUID(),
       email: email || null,
       phone: phone || null,
-      password: hashedPassword,
+      password: verification.password,
       firstName: '',
       lastName: '',
       roles: 'user',
@@ -176,17 +189,14 @@ export async function verifyOtpHandler(req: Request, res: Response) {
       role: typeof newUser.roles === 'string' ? newUser.roles : 'user',
     });
 
-    // Set refresh token cookie
-    res.cookie('refreshToken', tokens.refreshToken, {
-      httpOnly: true,
-      secure: process.env.NODE_ENV === 'production',
-      sameSite: 'strict',
-      maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days
-    });
+    // Match login's cookie-only session contract so the authenticated app can
+    // use the newly verified session without exposing tokens to JavaScript.
+    const csrfToken = setAuthSessionCookies(res, tokens);
 
     res.status(201).json({
       success: true,
       data: {
+        csrfToken,
         user: {
           id: newUser.id,
           slug: newUser.slug,
@@ -200,7 +210,6 @@ export async function verifyOtpHandler(req: Request, res: Response) {
           isPhoneVerified: newUser.isPhoneVerified,
           profilePicture: newUser.profileImageUrl,
         },
-        accessToken: tokens.accessToken,
       },
     });
   } catch (error) {
@@ -215,7 +224,8 @@ export async function verifyOtpHandler(req: Request, res: Response) {
 // Resend OTP handler
 export async function resendOtpHandler(req: Request, res: Response) {
   try {
-    const { email, phone } = req.body;
+    const email = typeof req.body.email === 'string' ? req.body.email.trim().toLowerCase() : '';
+    const phone = typeof req.body.phone === 'string' ? req.body.phone.trim() : '';
     const identifier = email || phone;
 
     if (!identifier) {
@@ -226,8 +236,8 @@ export async function resendOtpHandler(req: Request, res: Response) {
     }
 
     // Verify OTP data exists (to get the password)
-    const existingData = await otpService.verifyOTP(identifier, '000000'); // Dummy verification to check existence
-    if (!existingData.password) {
+    const pendingPassword = await otpService.getPendingPassword(identifier);
+    if (!pendingPassword) {
       return res.status(400).json({
         success: false,
         error: 'No active registration found. Please start registration again.'
@@ -235,7 +245,7 @@ export async function resendOtpHandler(req: Request, res: Response) {
     }
 
     // Generate new OTP and store in Redis
-    const otp = await otpService.storeOTP(identifier, existingData.password);
+    const otp = await otpService.storeOTP(identifier, pendingPassword);
 
     // Send new OTP
     try {

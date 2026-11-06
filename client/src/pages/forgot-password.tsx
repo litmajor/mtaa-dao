@@ -1,16 +1,16 @@
 import { useState, useEffect } from "react";
 import { Button } from "../components/ui/button";
-import { ArrowLeft, Mail, Phone, LoaderCircle, CheckCircle, Loader2 } from "lucide-react";
+import { ArrowLeft, Mail, Phone, CheckCircle, Loader2 } from "lucide-react";
 import { Link } from "react-router-dom";
 import { useToast } from "@/hooks/use-toast";
-import { Input } from '../components/ui/input';
-import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/card';
-import { Alert, AlertDescription } from '../components/ui/alert';
 import { authClient } from '@/utils/authClient';
 
 const ForgotPassword = () => {
   const [emailOrPhone, setEmailOrPhone] = useState("");
   const [sent, setSent] = useState(false);
+  const [otp, setOtp] = useState("");
+  const [newPassword, setNewPassword] = useState("");
+  const [resetComplete, setResetComplete] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState("");
   const [type, setType] = useState<"email" | "phone">("email");
@@ -36,17 +36,47 @@ const ForgotPassword = () => {
         throw new Error("Please enter a valid phone number");
       }
 
-      // Call backend endpoint to send OTP or reset link
+      // Request a code without revealing whether the account exists.
       await authClient.post("/api/auth/send-otp", {
         [type]: emailOrPhone,
-        type
       });
 
-  setSent(true);
-  toast(`Reset code sent! Check your ${type} for the reset instructions.`);
+      setSent(true);
+      toast(`If an account matches those details, a reset code has been sent.`);
     } catch (err: any) {
-  setError(err.message || "Something went wrong");
-  toast(`Error: ${err.message || "Failed to send reset code"}`);
+      setError(err.message || "Something went wrong");
+      toast(`Error: ${err.message || "Failed to send reset code"}`);
+    }
+    finally {
+      setIsLoading(false);
+    }
+  };
+
+  const handleReset = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setIsLoading(true);
+    setError("");
+
+    try {
+      if (!/^\d{6}$/.test(otp)) {
+        throw new Error("Enter the six-digit reset code.");
+      }
+      if (newPassword.length < 8) {
+        throw new Error("Password must be at least 8 characters long.");
+      }
+
+      await authClient.post("/api/auth/reset-password", {
+        [type]: emailOrPhone,
+        otp,
+        newPassword,
+      });
+      setResetComplete(true);
+      toast("Your password has been reset.");
+    } catch (err: any) {
+      setError(err.message || "Could not reset your password.");
+      toast(`Error: ${err.message || "Could not reset your password"}`);
+    } finally {
+      setIsLoading(false);
     }
   };
 
@@ -69,20 +99,61 @@ const ForgotPassword = () => {
             Don't worry, we'll help you recover your account.
           </p>
 
-          {sent ? (
+          {resetComplete ? (
             <div className="text-center space-y-4">
               <div className="inline-flex items-center justify-center w-16 h-16 bg-green-500/20 rounded-full mb-4">
                 <CheckCircle className="w-8 h-8 text-green-500" />
               </div>
-              <h2 className="text-xl font-semibold text-white">Reset Code Sent!</h2>
+              <h2 className="text-xl font-semibold text-white">Password Reset</h2>
+              <p className="text-gray-400">Your password has been updated. You can now sign in.</p>
+              <Link to="/login">
+                <Button className="w-full bg-gradient-to-r from-purple-500 to-pink-500 text-white">
+                  Back to Login
+                </Button>
+              </Link>
+            </div>
+          ) : sent ? (
+            <div className="text-center space-y-4">
+              <div className="inline-flex items-center justify-center w-16 h-16 bg-green-500/20 rounded-full mb-4">
+                <CheckCircle className="w-8 h-8 text-green-500" />
+              </div>
+              <h2 className="text-xl font-semibold text-white">Enter Reset Code</h2>
               <p className="text-gray-400">
-                Please check your {type} for instructions to reset your password.
+                If an account matches those details, a six-digit code was sent to your {type}.
               </p>
-              <Button
-                className="w-full bg-gradient-to-r from-purple-500 to-pink-500 hover:from-purple-600 hover:to-pink-600 text-white py-3 rounded-xl font-semibold shadow-lg transition-all duration-200 hover:scale-105"
-                onClick={() => setSent(false)}
-              >
-                Send Again
+              <form onSubmit={handleReset} className="space-y-4 text-left">
+                <div>
+                  <label className="block mb-2 text-sm font-medium text-gray-300">Six-digit code</label>
+                  <input
+                    type="text"
+                    inputMode="numeric"
+                    autoComplete="one-time-code"
+                    maxLength={6}
+                    value={otp}
+                    onChange={(event) => setOtp(event.target.value.replace(/\D/g, "").slice(0, 6))}
+                    className="w-full px-4 py-3 rounded-xl bg-white/10 border border-white/20 text-white"
+                    required
+                  />
+                </div>
+                <div>
+                  <label className="block mb-2 text-sm font-medium text-gray-300">New password</label>
+                  <input
+                    type="password"
+                    autoComplete="new-password"
+                    minLength={8}
+                    value={newPassword}
+                    onChange={(event) => setNewPassword(event.target.value)}
+                    className="w-full px-4 py-3 rounded-xl bg-white/10 border border-white/20 text-white"
+                    required
+                  />
+                </div>
+                {error && <p className="text-red-400 text-sm text-center">{error}</p>}
+                <Button type="submit" className="w-full text-white" disabled={isLoading}>
+                  {isLoading ? "Resetting..." : "Reset Password"}
+                </Button>
+              </form>
+              <Button variant="ghost" className="w-full text-gray-300" onClick={() => setSent(false)} disabled={isLoading}>
+                Send another code
               </Button>
             </div>
           ) : (

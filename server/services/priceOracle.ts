@@ -27,6 +27,15 @@ import { ccxtService } from './ccxtService';
 import { dexscreenerClient } from './dexscreenerClient';
 import { tokenRegistry, type TokenMetadata } from './tokenRegistry';
 import { valuationAssets } from '../../shared/schema';
+import {
+  ChainlinkFeedReader,
+  parseChainlinkFeedConfig,
+  defaultChainlinkProvider,
+  type ChainlinkFeedConfig,
+  type ChainlinkFeedKind,
+  type ChainlinkMode,
+  type ChainlinkObservation,
+} from './chainlinkFeedReader';
 
 // ─────────────────────────────────────────────────────────────
 // Types
@@ -44,7 +53,16 @@ export interface PriceData {
   source?: PriceSource;
 }
 
-export type PriceSource = 'gateway' | 'coingecko' | 'ccxt' | 'dexscreener';
+export type PriceSource = 'gateway' | 'coingecko' | 'ccxt' | 'dexscreener' | 'chainlink';
+
+export interface ChainlinkValuationStatus {
+  mode: ChainlinkMode;
+  kind: ChainlinkFeedKind;
+  status: 'shadow' | 'quorum' | 'agreed' | 'unavailable';
+  priceUsd?: number;
+  deviationPct?: number;
+  feedUpdatedAt?: string;
+}
 
 export interface SourceQuote {
   source: PriceSource;
@@ -70,6 +88,8 @@ export interface ValuationPrice {
   /** Circuit breaker tripped */
   frozen?: boolean;
   haircutPriceUsd?: number; // price after optional risk haircut
+  /** Records whether a configured Chainlink feed was unavailable, agreed, or observed. */
+  chainlink?: ChainlinkValuationStatus;
 }
 
 export interface ValuationOptions {
@@ -103,6 +123,9 @@ const cfg = {
   valuationCexMinExchanges: Number(process.env.VALUATION_CEX_MIN_EXCHANGES ?? 2),
   valuationCexMaxQuoteAgeMs: Number(
     process.env.VALUATION_CEX_MAX_QUOTE_AGE_MS ?? 5_000
+  ),
+  valuationDexMinLiquidityUsd: Number(
+    process.env.VALUATION_DEX_MIN_LIQUIDITY_USD ?? 25_000
   ),
   /** Circuit: freeze if move exceeds this % vs last good within window */
   circuitMaxJumpPct: Number(process.env.VALUATION_CIRCUIT_JUMP_PCT ?? 8),
@@ -220,6 +243,7 @@ interface FailureCooldown {
   coingecko?: number;
   ccxt?: number;
   dexscreener?: number;
+  chainlink?: number;
 }
 
 interface DiscoveryState {
@@ -245,6 +269,12 @@ export class PriceOracleService {
   private frozenUntil = new Map<string, number>(); // circuit breaker
   private valuationCache = new TtlMap<ValuationPrice>();
   private valuationAllowlist = new Map<string, ValuationAssetConfig>();
+  private chainlinkReader = new ChainlinkFeedReader({ getProvider: defaultChainlinkProvider });
+  private chainlinkFeeds = new Map<string, ChainlinkFeedConfig>();
+  private chainlinkDisabled = new Set<string>();
+  private chainlinkInvalidSymbols = new Set<string>();
+  private chainlinkGlobalConfigInvalid = false;
+  private chainlinkReady: Promise<void> = Promise.resolve();
 
   private rateLimitState: RateLimitState = {
     requestCount: 0,
@@ -273,6 +303,7 @@ export class PriceOracleService {
 
   constructor() {
     this.subscribeToGatewayEvents();
+    this.chainlinkReady = this.initChainlinkFeeds();
     void this.reloadValuationAllowlist().catch((err) => {
       logger.error('[PriceOracle] Failed to load valuation allowlist', {
         error: err instanceof Error ? err.message : String(err),
@@ -342,7 +373,22 @@ export class PriceOracleService {
     const minSources = Math.max(cfg.valuationMinSources, options.minSources ?? 0);
     const maxDev = Math.min(allow.maxDeviationPct, options.maxDeviationPct ?? allow.maxDeviationPct);
 
-    const quotes = await this.collectValuationQuotes(upper, allow);
+    await this.chainlinkReady;
+    if (this.chainlinkGlobalConfigInvalid || this.chainlinkInvalidSymbols.has(upper)) {
+      logger.error('[PriceOracle:Valuation] Invalid Chainlink feed configuration — fail closed', {
+        symbol: upper,
+      });
+      return null;
+    }
+
+    const feed = this.chainlinkFeeds.get(upper);
+    const [quotes, chainlinkQuote] = await Promise.all([
+      this.collectValuationQuotes(upper, allow),
+      feed && feed.mode !== 'off'
+        ? this.quoteChainlink(feed)
+        : Promise.resolve(null),
+    ]);
+    if (feed?.mode === 'quorum' && chainlinkQuote) quotes.push(chainlinkQuote);
     const accepted: SourceQuote[] = [];
     const rejected: Array<SourceQuote & { reason: string }> = [];
 
@@ -396,6 +442,14 @@ export class PriceOracleService {
     const priceUsd = median(accepted.map((q) => q.priceUsd));
     if (!Number.isFinite(priceUsd) || priceUsd <= 0) return null;
 
+    const chainlinkEvaluation = this.evaluateChainlink(
+      upper,
+      feed,
+      chainlinkQuote,
+      priceUsd
+    );
+    if (chainlinkEvaluation.reject) return null;
+
     // Circuit breaker vs last good
     const last = this.lastGoodValuation.get(upper);
     if (last && Date.now() - last.at < cfg.circuitWindowMs) {
@@ -424,6 +478,7 @@ export class PriceOracleService {
       sourcesRejected: rejected,
       asOf: new Date(Math.min(...accepted.map((quote) => quote.asOf))),
       haircutPriceUsd: this.applyHaircut(priceUsd, allow, options),
+      ...(chainlinkEvaluation.status ? { chainlink: chainlinkEvaluation.status } : {}),
     };
     const cacheKey = `${upper}:${minSources}:${maxDev}:${options.applyHaircut !== false ? 'haircut' : 'raw'}`;
     this.valuationCache.set(cacheKey, result, Math.min(cfg.cacheTtlMs, 5_000));
@@ -542,58 +597,250 @@ export class PriceOracleService {
       this.quoteCoinGeckoValuation(symbol, allow.coingeckoId).then((q) => {
         if (q) quotes.push(q);
       }),
+      this.quoteDexScreenerValuation(allow).then((q) => {
+        if (q) quotes.push(q);
+      }),
     ];
 
     await Promise.allSettled(tasks);
     return quotes;
   }
 
+  private async initChainlinkFeeds(): Promise<void> {
+    const rawConfig = process.env.CHAINLINK_VALUATION_FEEDS;
+    const { feeds, errors, invalidSymbols } = parseChainlinkFeedConfig(rawConfig);
+    this.chainlinkInvalidSymbols = invalidSymbols;
+
+    if (rawConfig?.trim() && errors.length > 0 && invalidSymbols.size === 0) {
+      this.chainlinkGlobalConfigInvalid = true;
+    }
+    for (const error of errors) {
+      logger.error('[PriceOracle:Chainlink] Invalid feed configuration — skipped', { error });
+    }
+
+    const validations = await Promise.allSettled(
+      [...feeds.values()]
+        .filter((feed) => feed.mode !== 'off')
+        .map(async (feed) => {
+          try {
+            const result = await this.chainlinkReader.validate(feed);
+            logger.info('[PriceOracle:Chainlink] Feed validated', {
+              symbol: feed.symbol,
+              chainId: feed.chainId,
+              address: feed.address,
+              description: result.description,
+              decimals: result.decimals,
+              mode: feed.mode,
+            });
+          } catch (error) {
+            this.chainlinkDisabled.add(feed.symbol);
+            logger.error('[PriceOracle:Chainlink] Feed validation failed — disabled', {
+              symbol: feed.symbol,
+              mode: feed.mode,
+              onMissing: feed.onMissing,
+              error: error instanceof Error ? error.message : String(error),
+            });
+          }
+        })
+    );
+    for (const result of validations) {
+      if (result.status === 'rejected') {
+        logger.error('[PriceOracle:Chainlink] Unexpected feed validation failure', {
+          error: result.reason instanceof Error ? result.reason.message : String(result.reason),
+        });
+      }
+    }
+    this.chainlinkFeeds = feeds;
+  }
+
+  private async quoteChainlink(feed: ChainlinkFeedConfig): Promise<SourceQuote | null> {
+    if (this.chainlinkDisabled.has(feed.symbol)) return null;
+    try {
+      const observation = await this.chainlinkReader.read(feed);
+      return {
+        source: 'chainlink',
+        priceUsd: observation.priceUsd,
+        asOf: observation.observedAtMs,
+        raw: observation,
+      };
+    } catch (error) {
+      logger.warn('[PriceOracle:Valuation] Chainlink read failed', {
+        symbol: feed.symbol,
+        mode: feed.mode,
+        chainId: feed.chainId,
+        error: error instanceof Error ? error.message : String(error),
+      });
+      return null;
+    }
+  }
+
+  private evaluateChainlink(
+    symbol: string,
+    feed: ChainlinkFeedConfig | undefined,
+    quote: SourceQuote | null,
+    marketPriceUsd: number
+  ): { reject: boolean; status?: ChainlinkValuationStatus } {
+    if (!feed || feed.mode === 'off') return { reject: false };
+    const base = { mode: feed.mode, kind: feed.kind };
+
+    if (!quote) {
+      if (feed.mode === 'anchor' && feed.onMissing === 'fail') {
+        logger.error('[PriceOracle:Valuation] Chainlink anchor unavailable — fail closed', {
+          symbol,
+        });
+        return { reject: true };
+      }
+      return {
+        reject: false,
+        status: { ...base, status: 'unavailable' },
+      };
+    }
+
+    const observation = quote.raw as ChainlinkObservation;
+    const deviationPct = relDeviation(quote.priceUsd, marketPriceUsd);
+    const detail = {
+      priceUsd: quote.priceUsd,
+      deviationPct,
+      feedUpdatedAt: new Date(observation.updatedAtMs).toISOString(),
+    };
+
+    if (feed.mode === 'shadow') {
+      logger.info('[PriceOracle:Valuation:ChainlinkShadow]', {
+        symbol,
+        kind: feed.kind,
+        marketPriceUsd,
+        chainlinkAgeSeconds: observation.ageSeconds,
+        heartbeatSeconds: observation.heartbeatSeconds,
+        chainId: observation.chainId,
+        roundId: observation.roundId,
+        ...detail,
+      });
+      return {
+        reject: false,
+        status: { ...base, status: 'shadow', ...detail },
+      };
+    }
+
+    if (feed.mode === 'quorum') {
+      return {
+        reject: false,
+        status: { ...base, status: 'quorum', ...detail },
+      };
+    }
+
+    if (deviationPct > (feed.anchorMaxDeviationPct ?? 0)) {
+      logger.error('[PriceOracle:Valuation] Chainlink anchor deviation — fail closed', {
+        symbol,
+        marketPriceUsd,
+        limitPct: feed.anchorMaxDeviationPct,
+        ...detail,
+      });
+      return { reject: true };
+    }
+    return {
+      reject: false,
+      status: { ...base, status: 'agreed', ...detail },
+    };
+  }
+
   /** CEX: median mid across exchanges, stale/crossed rejected */
   private async quoteCex(symbol: string): Promise<SourceQuote | null> {
     try {
-      const exchanges = ['binance', 'coinbase', 'kraken'];
+      const exchanges = ['binance', 'coinbase', 'kraken', 'bybit', 'kucoin', 'okx'];
       // Only direct USD markets qualify; stable-quoted markets would assume a peg
       // and can conceal stablecoin depegs.
-      const pairCandidates = [`${symbol}/USD`];
-      const mids: number[] = [];
-      let newest = 0;
-
-      for (const ex of exchanges) {
-        for (const pair of pairCandidates) {
+      const pair = `${symbol}/USD`;
+      const exchangeQuotes = await Promise.all(
+        exchanges.map(async (exchange) => {
           try {
-            const t = await ccxtService.getTickerFromExchange(ex, pair);
-            if (!t) continue;
+            const t = await ccxtService.getTickerFromExchange(exchange, pair);
+            if (!t) return null;
             if (
               !Number.isFinite(t.timestamp) ||
               t.timestamp <= 0 ||
               t.timestamp > Date.now() + 1_000 ||
               Date.now() - t.timestamp > cfg.valuationCexMaxQuoteAgeMs
-            ) continue;
-            if (!(t.bid > 0 && t.ask > 0) || t.ask < t.bid) continue;
+            ) return null;
+            if (!(t.bid > 0 && t.ask > 0) || t.ask < t.bid) return null;
             const mid = (t.bid + t.ask) / 2;
-            if (mid > 0) {
-              mids.push(mid);
-              newest = Math.max(newest, t.timestamp);
-            }
-            break; // next exchange
+            return mid > 0 ? { mid, timestamp: t.timestamp } : null;
           } catch {
-            /* try next pair / exchange */
+            return null;
           }
-        }
-      }
+        })
+      );
+      const validQuotes = exchangeQuotes.filter(
+        (quote): quote is NonNullable<typeof quote> => quote !== null
+      );
 
-      if (mids.length < cfg.valuationCexMinExchanges) return null;
+      if (validQuotes.length < cfg.valuationCexMinExchanges) return null;
 
       return {
         source: 'ccxt',
-        priceUsd: median(mids),
-        exchangeCount: mids.length,
-        asOf: newest || Date.now(),
+        priceUsd: median(validQuotes.map((quote) => quote.mid)),
+        exchangeCount: validQuotes.length,
+        asOf: Math.max(...validQuotes.map((quote) => quote.timestamp)) || Date.now(),
       };
     } catch (err) {
       logger.debug('[PriceOracle:Valuation] CEX quote failed', {
         symbol,
         error: err instanceof Error ? err.message : String(err),
+      });
+      return null;
+    }
+  }
+
+  /** DEX quote for chain-specific assets; only liquid pools qualify. */
+  private async quoteDexScreenerValuation(
+    allow: ValuationAssetConfig
+  ): Promise<SourceQuote | null> {
+    if (!allow.chain || !allow.contractAddress) return null;
+    if (!Number.isFinite(cfg.valuationDexMinLiquidityUsd) || cfg.valuationDexMinLiquidityUsd < 0) {
+      logger.error('[PriceOracle:Valuation] Invalid DEX liquidity floor', {
+        floor: cfg.valuationDexMinLiquidityUsd,
+      });
+      return null;
+    }
+
+    try {
+      const tokenAddress = allow.contractAddress.toLowerCase();
+      const pairs = await dexscreenerClient.getTokenPairsOnChain(
+        allow.chain.toLowerCase(),
+        allow.contractAddress
+      );
+      const prices = pairs
+        .filter((pair) => pair.chainId.toLowerCase() === allow.chain!.toLowerCase())
+        .map((pair) => {
+          const liquidityUsd = Number(pair.liquidity?.usd);
+          if (!Number.isFinite(liquidityUsd) || liquidityUsd < cfg.valuationDexMinLiquidityUsd) {
+            return null;
+          }
+
+          if (pair.baseToken.address.toLowerCase() !== tokenAddress) return null;
+          const priceUsd = Number(pair.priceUsd);
+
+          return Number.isFinite(priceUsd) && priceUsd > 0
+            ? { priceUsd, liquidityUsd, pairAddress: pair.pairAddress, dexId: pair.dexId }
+            : null;
+        })
+        .filter((pair): pair is NonNullable<typeof pair> => pair !== null)
+        .sort((a, b) => b.liquidityUsd - a.liquidityUsd)
+        .slice(0, 5);
+
+      if (prices.length === 0) return null;
+
+      return {
+        source: 'dexscreener',
+        priceUsd: median(prices.map((pair) => pair.priceUsd)),
+        liquidityUsd: prices.reduce((total, pair) => total + pair.liquidityUsd, 0),
+        asOf: Date.now(),
+        raw: prices,
+      };
+    } catch (error) {
+      logger.debug('[PriceOracle:Valuation] DEX quote failed', {
+        chain: allow.chain,
+        contractAddress: allow.contractAddress,
+        error: error instanceof Error ? error.message : String(error),
       });
       return null;
     }

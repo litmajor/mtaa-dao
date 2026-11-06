@@ -1,15 +1,20 @@
 /**
  * Exchange Rate Service
- * Primary source: Celo Mento SortedOracles (on-chain, authoritative)
- * Secondary: exchangerate-api.com (off-chain fallback, API key-free)
+ * Sources: Celo Mento, Chainlink fallback, then exchangerate-api.com.
  * No hardcoded fallback — stale data is surfaced explicitly.
  */
 
 import { ethers } from 'ethers';
 import { logger as rootLogger } from '../utils/logger';
 import { resolveProviderUrls } from './providerBootstrap';
+import {
+  ChainlinkFeedReader,
+  defaultChainlinkProvider,
+  parseChainlinkFeedConfig,
+} from './chainlinkFeedReader';
 
 const logger = rootLogger;
+const chainlinkFeedReader = new ChainlinkFeedReader({ getProvider: defaultChainlinkProvider });
 
 // ── Mento SortedOracles ─────────────────────────────────────────────────────
 // Celo Mainnet: 0xefB84935239dAcdecF7c5bA76d8dE40b077B7b33
@@ -27,7 +32,7 @@ const CUSD_ADDRESS_ALFAJORES = '0x874069Fa1Eb16D44d622F2e0Ca25eeA172369bC1';
 interface CachedRate {
   rate: number;       // KES per 1 USD
   timestamp: number;
-  source: 'mento_oracle' | 'exchangerate_api';
+  source: 'mento_oracle' | 'chainlink_oracle' | 'exchangerate_api';
 }
 
 let cachedRate: CachedRate | null = null;
@@ -36,8 +41,8 @@ const CACHE_TTL_MS = 30 * 60 * 1000; // 30 minutes — oracle updates every few 
 export class ExchangeRateService {
   /**
    * Get current USD → KES exchange rate.
-   * Tries Celo Mento oracle first, falls back to exchangerate-api.com.
-   * Throws if both sources fail and no cached rate is available.
+   * Tries Celo Mento first, then Chainlink, then exchangerate-api.com.
+   * Throws if all live sources fail and no cached rate is available.
    */
   static async getUSDtoKESRate(): Promise<number> {
     // Serve from cache if still fresh
@@ -54,7 +59,15 @@ export class ExchangeRateService {
       return onChainRate;
     }
 
-    // 2. Try exchangerate-api.com
+    // 2. Chainlink's KES/USD quote is USD per KES; invert for KES per USD.
+    const chainlinkRate = await this.fetchChainlinkOracleRate();
+    if (chainlinkRate !== null) {
+      cachedRate = { rate: chainlinkRate, timestamp: Date.now(), source: 'chainlink_oracle' };
+      logger.info(`[ExchangeRate] Chainlink oracle rate: ${chainlinkRate} KES/USD`);
+      return chainlinkRate;
+    }
+
+    // 3. Try exchangerate-api.com
     const apiRate = await this.fetchFromExchangeRateAPI();
     if (apiRate !== null) {
       cachedRate = { rate: apiRate, timestamp: Date.now(), source: 'exchangerate_api' };
@@ -62,14 +75,14 @@ export class ExchangeRateService {
       return apiRate;
     }
 
-    // 3. Serve stale cache with a warning
+    // 4. Serve stale cache with a warning
     if (cachedRate) {
       const staleAgeMin = Math.round((Date.now() - cachedRate.timestamp) / 60000);
       logger.warn(`[ExchangeRate] All live sources failed — serving stale rate (${staleAgeMin}m old): ${cachedRate.rate} KES/USD`);
       return cachedRate.rate;
     }
 
-    // 4. No data at all — throw so callers can surface this to the user
+    // 5. No data at all — throw so callers can surface this to the user
     throw new Error(
       '[ExchangeRate] Cannot determine KES/USD rate: Mento oracle unreachable, exchangerate-api failed, and no cached rate available.'
     );
@@ -117,6 +130,43 @@ export class ExchangeRateService {
       return Math.round(rate * 100) / 100; // round to 2 dp
     } catch (err: any) {
       logger.warn('[ExchangeRate] Mento oracle fetch failed:', err.message);
+      return null;
+    }
+  }
+
+  /**
+   * Read the configured direct KES/USD feed as a fallback. The Chainlink
+   * directory quotes USD for one KES, while this service stores KES per USD.
+   */
+  private static async fetchChainlinkOracleRate(): Promise<number | null> {
+    const { feeds, errors, invalidSymbols } = parseChainlinkFeedConfig(
+      process.env.CHAINLINK_VALUATION_FEEDS
+    );
+    if (invalidSymbols.has('KES')) {
+      logger.error('[ExchangeRate] Invalid Chainlink KES feed configuration', {
+        errors: errors.filter((error) => error.startsWith('KES:')),
+      });
+      return null;
+    }
+
+    const feed = feeds.get('KES');
+    if (!feed || feed.mode === 'off') return null;
+
+    try {
+      await chainlinkFeedReader.validate(feed);
+      const observation = await chainlinkFeedReader.read(feed);
+      const rate = 1 / observation.priceUsd;
+      if (!Number.isFinite(rate) || rate <= 0 || rate > 10_000) {
+        logger.warn('[ExchangeRate] Chainlink returned an implausible KES/USD rate', {
+          rate,
+        });
+        return null;
+      }
+      return Math.round(rate * 100) / 100;
+    } catch (error) {
+      logger.warn('[ExchangeRate] Chainlink KES/USD fallback failed', {
+        error: error instanceof Error ? error.message : String(error),
+      });
       return null;
     }
   }

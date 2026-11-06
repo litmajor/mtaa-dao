@@ -9,16 +9,77 @@
  * In backend setup: exportRoutes(app) after all routes registered
  */
 
-import listEndpoints from 'express-list-endpoints';
 import fs from 'fs';
 import path from 'path';
+
+function getRouterStack(router) {
+  return router.stack || router._router?.stack;
+}
+
+function getMountedPath(layer) {
+  if (typeof layer.path === 'string') return layer.path;
+  if (!layer.regexp) return '';
+
+  let source = layer.regexp.source.replace(/^\^/, '');
+  const endMarker = '\\/?(?=\\/|$)';
+  if (source.endsWith(endMarker)) {
+    source = source.slice(0, -endMarker.length);
+  }
+
+  let paramIndex = 0;
+  source = source.replace(/\(\?:\\\/\(([^()]*)\)\)/g, () => {
+    const key = layer.keys?.[paramIndex++];
+    return `/:${key?.name || `param${paramIndex}`}`;
+  });
+
+  source = source.replace(/\\(.)/g, '$1');
+  return source === '/?' ? '' : source;
+}
+
+function collectEndpoints(app) {
+  const endpoints = [];
+
+  function visit(router, basePath = '') {
+    const stack = getRouterStack(router);
+    if (!stack) return;
+
+    for (const layer of stack) {
+      if (layer.route) {
+        const routePaths = Array.isArray(layer.route.path) ? layer.route.path : [layer.route.path];
+        const methods = Object.keys(layer.route.methods || {})
+          .filter(method => method !== '_all')
+          .map(method => method.toUpperCase());
+        const middlewares = (layer.route.stack || []).map(item => item.handle.name || 'anonymous');
+
+        for (const routePath of routePaths) {
+          const fullPath = `${basePath}${routePath === '/' ? '' : routePath}` || '/';
+          const existing = endpoints.find(endpoint => endpoint.path === fullPath);
+          if (existing) {
+            existing.methods = [...new Set([...existing.methods, ...methods])];
+            existing.middlewares = [...new Set([...existing.middlewares, ...middlewares])];
+          } else {
+            endpoints.push({ path: fullPath, methods, middlewares });
+          }
+        }
+        continue;
+      }
+
+      if (layer.name === 'router' || layer.name === 'mounted_app') {
+        visit(layer.handle, `${basePath}${getMountedPath(layer)}`);
+      }
+    }
+  }
+
+  visit(app);
+  return endpoints;
+}
 
 /**
  * Export routes to JSON and CSV files
  */
 function exportRoutes(app, outputDir = '.') {
   try {
-    const endpoints = listEndpoints(app);
+    const endpoints = collectEndpoints(app);
 
     if (!endpoints || endpoints.length === 0) {
       console.warn('⚠️  No endpoints found');
@@ -28,15 +89,21 @@ function exportRoutes(app, outputDir = '.') {
     // Normalize for table view
     const formatted = endpoints.map(e => {
       const pathParts = e.path.split('/').filter(Boolean);
-      const domain = pathParts[1] || pathParts[0] || 'root'; // /api/domain/path → domain
+      const isApiPath = pathParts[0] === 'api';
+      const hasVersionPrefix = isApiPath && /^v\d+$/i.test(pathParts[1] || '');
+      const domainIndex = isApiPath ? (hasVersionPrefix ? 2 : 1) : 0;
+      const domain = pathParts[domainIndex] || 'root';
+      const fullDomain = `/${pathParts.slice(0, domainIndex + 1).join('/')}`;
 
       return {
         path: e.path,
         methods: e.methods.join(', '),
         methodCount: e.methods.length,
         middlewareCount: e.middlewares ? e.middlewares.length : 0,
+        middlewares: e.middlewares || [],
+        middlewareScope: 'Direct route handlers only; router/application middleware is not included',
         domain: domain,
-        fullDomain: '/' + pathParts.slice(0, 2).join('/'),
+        fullDomain,
       };
     });
 
@@ -53,9 +120,9 @@ function exportRoutes(app, outputDir = '.') {
 
     // Export CSV
     const csvPath = path.join(outputDir, 'routes-map.csv');
-    const csvHeader = 'METHODS,PATH,DOMAIN,FULL_DOMAIN,METHOD_COUNT,MIDDLEWARE_COUNT\n';
+    const csvHeader = 'METHODS,PATH,DOMAIN,FULL_DOMAIN,METHOD_COUNT,MIDDLEWARE_COUNT,MIDDLEWARE_SCOPE\n';
     const csvRows = formatted
-      .map(r => `"${r.methods}","${r.path}","${r.domain}","${r.fullDomain}",${r.methodCount},${r.middlewareCount}`)
+      .map(r => `"${r.methods}","${r.path}","${r.domain}","${r.fullDomain}",${r.methodCount},${r.middlewareCount},"${r.middlewareScope}"`)
       .join('\n');
 
     fs.writeFileSync(csvPath, csvHeader + csvRows);
@@ -96,6 +163,7 @@ function exportRoutes(app, outputDir = '.') {
     console.log(`   Total Methods: ${stats.totalMethods}`);
     console.log(`   Unique Domains: ${stats.uniqueDomains}`);
     console.log(`   Total Middleware: ${stats.totalMiddleware}`);
+    console.log('   Middleware counts include direct route handlers only; inherited middleware is not represented.');
     console.log(`\n   By Domain:`);
     Object.entries(stats.byDomain).forEach(([domain, data]) => {
       console.log(`   - ${domain}: ${data.count} endpoints, methods: ${data.methods.join(', ')}`);

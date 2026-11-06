@@ -12,7 +12,7 @@ import {
   getMessageBus,
   getCoordinatorBridge,
 } from "./message-bus";
-import type { GatewayConfig, GatewayMessage } from "./types";
+import type { GatewayConfig, GatewayMessage, GatewayMessageType } from "./types";
 import { type BaseAdapter } from "./adapters/base-adapter";
 
 /**
@@ -24,6 +24,7 @@ export class GatewayAgentService {
   private messageBus: MessageBusAdapter;
   private coordinatorBridge: CoordinatorBridge;
   private adapters: Map<string, BaseAdapter> = new Map();
+  private unsubscribeMessageHandlers: Array<() => void> = [];
   private isInitialized = false;
 
   constructor() {
@@ -145,9 +146,10 @@ export class GatewayAgentService {
       }
     });
 
-    Array.from(handlers.entries()).forEach(([messageType, handler]) => {
-      this.messageBus.subscribe(messageType as any, handler);
-    });
+    this.unsubscribeMessageHandlers.forEach((unsubscribe) => unsubscribe());
+    this.unsubscribeMessageHandlers = Array.from(handlers.entries()).map(([messageType, handler]) =>
+      this.messageBus.subscribe(messageType as GatewayMessageType, handler)
+    );
 
     logger.info(`[${this.name}] Message handlers registered`);
   }
@@ -391,6 +393,10 @@ export class GatewayAgentService {
     };
   }
 
+  getAdapterNames(): string[] {
+    return Array.from(this.adapters.keys());
+  }
+
   /**
    * Shutdown service gracefully
    */
@@ -402,6 +408,8 @@ export class GatewayAgentService {
         await this.gatewayAgent.shutdown();
       }
 
+      this.unsubscribeMessageHandlers.forEach((unsubscribe) => unsubscribe());
+      this.unsubscribeMessageHandlers = [];
       this.messageBus.clearSubscriptions();
       this.isInitialized = false;
 

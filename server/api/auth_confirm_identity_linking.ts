@@ -13,6 +13,7 @@ import { eq, and } from 'drizzle-orm';
 import crypto from 'crypto';
 import { verifyPassword, generateTokens } from '../auth';
 import { Logger } from '../utils/logger';
+import { setAuthSessionCookies } from '../utils/authSessionCookies';
 
 const logger = new Logger('auth-confirm-identity-linking');
 
@@ -21,11 +22,6 @@ const FRONTEND_URL = process.env.FRONTEND_URL || 'http://localhost:5000';
 interface ConfirmLinkingRequest {
   email: string;
   password: string;
-  googleId: string;
-  googleProfile: {
-    name: string;
-    picture: string;
-  };
 }
 
 /**
@@ -33,18 +29,18 @@ interface ConfirmLinkingRequest {
  */
 export async function authConfirmIdentityLinkingHandler(req: Request, res: Response) {
   try {
-    const { email, password, googleId, googleProfile } = req.body as ConfirmLinkingRequest;
+    const { email, password } = req.body as ConfirmLinkingRequest;
 
     // Validate inputs
-    if (!email || !password || !googleId || !googleProfile) {
+    if (!email || !password) {
       return res.status(400).json({
         success: false,
-        error: 'Missing required fields: email, password, googleId, googleProfile',
+        error: 'Email and password are required.',
       });
     }
 
     // Retrieve pending identity from cookie as additional verification
-    const pendingIdentityCookie = req.cookies['oauth_pending_identity'];
+    const pendingIdentityCookie = req.cookies?.['oauth_pending_identity'];
     if (!pendingIdentityCookie) {
       logger.warn('No pending identity found in cookie', { email });
       return res.status(400).json({
@@ -73,14 +69,17 @@ export async function authConfirmIdentityLinkingHandler(req: Request, res: Respo
       });
     }
 
-    // Verify the googleId matches
-    if (pendingIdentity.googleId !== googleId) {
-      logger.warn('Google ID mismatch', { cookieGoogleId: pendingIdentity.googleId, requestGoogleId: googleId });
+    const provider = pendingIdentity.provider === 'telegram' ? 'telegram' : 'google';
+    const providerUserId = pendingIdentity.providerUserId || pendingIdentity.googleId;
+    if (typeof providerUserId !== 'string' || !providerUserId) {
       return res.status(400).json({
         success: false,
         error: 'Invalid OAuth identity',
       });
     }
+    const profile = pendingIdentity.profile || {};
+    const profileName = typeof profile.name === 'string' ? profile.name : '';
+    const profilePicture = typeof profile.picture === 'string' ? profile.picture : '';
 
     // Atomically verify password and link identity
     const result = await db.transaction(async (tx) => {
@@ -113,14 +112,14 @@ export async function authConfirmIdentityLinkingHandler(req: Request, res: Respo
         .select()
         .from(userIdentities)
         .where(and(
-          eq(userIdentities.provider, 'google'),
-          eq(userIdentities.providerUserId, googleId)
+          eq(userIdentities.provider, provider),
+          eq(userIdentities.providerUserId, providerUserId)
         ))
         .limit(1);
 
       if (existingIdentity.length > 0) {
         logger.warn('OAuth identity already linked to different account', { 
-          googleId, 
+          providerUserId,
           existingUserId: existingIdentity[0].userId,
           requestingUserId: user.id 
         });
@@ -131,11 +130,11 @@ export async function authConfirmIdentityLinkingHandler(req: Request, res: Respo
       await tx.insert(userIdentities).values({
         id: crypto.randomUUID(),
         userId: user.id,
-        provider: 'google',
-        providerUserId: googleId,
+        provider,
+        providerUserId,
         profile: {
-          name: googleProfile.name,
-          picture: googleProfile.picture,
+          name: profileName,
+          picture: profilePicture,
           raw: pendingIdentity.profile?.raw || {},
         },
         createdAt: new Date(),
@@ -146,8 +145,8 @@ export async function authConfirmIdentityLinkingHandler(req: Request, res: Respo
       await tx
         .update(users)
         .set({
-          profileImageUrl: googleProfile.picture || user.profileImageUrl,
-          isEmailVerified: true,
+          profileImageUrl: profilePicture || user.profileImageUrl,
+          ...(provider === 'google' ? { isEmailVerified: true } : {}),
           updatedAt: new Date(),
         })
         .where(eq(users.id, user.id));
@@ -165,22 +164,10 @@ export async function authConfirmIdentityLinkingHandler(req: Request, res: Respo
     });
 
     // Store tokens in secure HTTP-only cookies
-    res.cookie('access_token', tokens.accessToken, {
-      httpOnly: true,
-      secure: process.env.NODE_ENV === 'production',
-      sameSite: 'strict',
-      maxAge: 15 * 60 * 1000, // 15 minutes
-    });
-
-    res.cookie('refreshToken', tokens.refreshToken, {
-      httpOnly: true,
-      secure: process.env.NODE_ENV === 'production',
-      sameSite: 'strict',
-      maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days
-    });
+    setAuthSessionCookies(res, tokens);
 
     // Clear pending identity cookie
-    res.clearCookie('oauth_pending_identity');
+    res.clearCookie('oauth_pending_identity', { path: '/' });
 
     res.json({
       success: true,

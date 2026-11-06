@@ -80,11 +80,13 @@ export class MarketUniverseBuilder {
     // Load markets from all exchanges in parallel
     const exchangeResults = await Promise.allSettled(
       exchanges.map(async ex => {
+        const exchangeStartedAt = Date.now();
         try {
           const markets = await ccxtService.getMarkets(ex);
+          logger.info(`[MarketUniverse] ${ex}: loaded ${markets.length} markets in ${Date.now() - exchangeStartedAt}ms`);
           return { ex, markets, ok: true };
         } catch (err: any) {
-          logger.warn(`[MarketUniverse] Failed to load markets from ${ex}: ${err?.message || err}`);
+          logger.warn(`[MarketUniverse] Failed to load markets from ${ex} after ${Date.now() - exchangeStartedAt}ms: ${err?.message || err}`);
           return { ex, markets: [], ok: false };
         }
       })

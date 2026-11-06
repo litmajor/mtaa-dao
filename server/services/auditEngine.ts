@@ -1,8 +1,9 @@
 import { db } from '../db';
 import { users } from '../../shared/schema';
-import { userBalances } from '../../shared/financialEnhancedSchema';
+import { accounts } from '@shared/accountSchema';
 import { eq, sql, and } from 'drizzle-orm';
 import { logger } from '../utils/logger';
+import { Decimal } from 'decimal.js';
 
 export interface AuditReport {
   userId: string;
@@ -15,47 +16,52 @@ export interface AuditReport {
 export class WalletAuditEngine {
   /**
    * Performs a comprehensive balance reconciliation for a single user account.
-   * By default reconciles the `total_balance` entry for `currency` on `user_balances`.
+   * Audits the account balance projection against the canonical platform journal.
    */
   static async auditUserWallet(userId: string, currency = 'cUSD'): Promise<AuditReport> {
     return await db.transaction(async (tx) => {
-      // 1. Fetch current cached profile balance from user_balances
-      const [balanceRow] = await tx
-        .select({ id: userBalances.userId, total: userBalances.totalBalance })
-        .from(userBalances)
-        .where(
-          and(
-            eq(userBalances.userId, userId),
-            eq(userBalances.currency, currency)
-          )
-        )
-        .limit(1);
+      const accountRows = await tx
+        .select({ id: accounts.id, balance: accounts.balance })
+        .from(accounts)
+        .where(and(
+          eq(accounts.userId, userId),
+          eq(accounts.currency, currency),
+          eq(accounts.status, 'active'),
+        ));
 
-      if (!balanceRow) {
-        throw new Error(`Audit aborted: No balance row for user ${userId} and currency ${currency}`);
+      if (accountRows.length === 0) {
+        throw new Error(`Audit aborted: No account for user ${userId} and currency ${currency}`);
       }
 
-      // 2. Compute true balance by aggregating immutable ledger logs (wallet_ledger table)
+      // Only customer-owned account entries count; platform balancing accounts do not.
       const ledgerRes = await tx.execute(sql`
         SELECT COALESCE(
-          SUM(CASE WHEN type = 'credit' THEN amount::numeric ELSE 0 END) -
-          SUM(CASE WHEN type = 'debit' THEN amount::numeric ELSE 0 END),
+          SUM(CASE WHEN entry.side = 'credit' THEN entry.amount ELSE -entry.amount END),
           0
         ) AS true_balance
-        FROM wallet_ledger
-        WHERE user_id = ${userId}
+        FROM platform_ledger_accounts ledger_account
+        JOIN platform_ledger_entries entry
+          ON entry.ledger_account_id = ledger_account.id
+        JOIN accounts account
+          ON account.id = ledger_account.account_id
+        WHERE account.user_id = ${userId}
+          AND account.currency = ${currency}
+          AND account.status = 'active'
       `);
 
-      const calculatedBalanceNum = Number(ledgerRes.rows?.[0]?.true_balance || 0);
-      const cachedBalanceNum = Number(balanceRow.total || 0);
-
-      const drift = Number((cachedBalanceNum - calculatedBalanceNum).toFixed(8));
-      const isConsistent = Math.abs(drift) === 0;
+      const calculatedBalance = new Decimal(String(ledgerRes.rows?.[0]?.true_balance ?? 0));
+      const cachedBalance = accountRows.reduce(
+        (total, account) => total.plus(account.balance ?? 0),
+        new Decimal(0),
+      );
+      const driftDecimal = cachedBalance.minus(calculatedBalance);
+      const drift = driftDecimal.toNumber();
+      const isConsistent = driftDecimal.isZero();
 
       const report: AuditReport = {
         userId,
-        cachedBalance: String(balanceRow.total),
-        calculatedBalance: calculatedBalanceNum.toFixed(8),
+        cachedBalance: cachedBalance.toFixed(8),
+        calculatedBalance: calculatedBalance.toFixed(8),
         drift,
         isConsistent,
       };
@@ -78,7 +84,11 @@ export class WalletAuditEngine {
     logger.info('[AUDIT START] Initiating system-wide financial ledger verification...');
 
     // Get distinct user ids that have balances
-    const usersRes = await db.execute(sql`SELECT DISTINCT user_id FROM user_balances`);
+    const usersRes = await db.execute(sql`
+      SELECT DISTINCT user_id
+      FROM accounts
+      WHERE currency = 'cUSD' AND status = 'active'
+    `);
     const userIds: string[] = usersRes.rows?.map((r: any) => r.user_id) || [];
 
     const violations: string[] = [];

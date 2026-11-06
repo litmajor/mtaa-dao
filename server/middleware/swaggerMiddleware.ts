@@ -24,14 +24,14 @@ const swaggerUiOptions = {
     .swagger-ui .scheme-container { display: none; }
   `,
   customSiteTitle: 'MTAA DAO API Documentation',
-  swaggerUrl: '/api/openapi.json',
+  swaggerUrl: '/api-docs/openapi.json',
   // presets: [swaggerUi.presets.apis, swaggerUi.SwaggerUIBundle.presets.standalone],
   // plugins: [swaggerUi.SwaggerUIBundle.plugins.DownloadUrl]
 };
 
-// Mount Swagger UI at /api-docs and ensure middleware only handles /api-docs path
-router.use('/api-docs', swaggerUi.serve, (req, res, next) => next());
-router.get('/api-docs', swaggerUi.setup(swaggerSpec, swaggerUiOptions));
+// Mounted at /api-docs by server/index.ts.
+router.use('/', swaggerUi.serve);
+router.get('/', swaggerUi.setup(swaggerSpec, swaggerUiOptions));
 
 // Alternative: serve OpenAPI spec as JSON
 router.get('/openapi.json', (req: Request, res: Response) => {
@@ -43,8 +43,8 @@ router.get('/openapi.json', (req: Request, res: Response) => {
 router.get('/api-health', (req: Request, res: Response) => {
   res.json({
     status: 'ok',
-    documentation: '/api-docs',
-    openapi: '/api/openapi.json',
+    documentation: '/api-docs/',
+    openapi: '/api-docs/openapi.json',
     timestamp: new Date()
   });
 });

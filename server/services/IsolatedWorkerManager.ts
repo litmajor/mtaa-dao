@@ -1,19 +1,6 @@
 /**
- * Isolated Worker Manager
- * 
- * Runs heavy background agents in isolated worker threads/processes.
- * Prevents agent CPU/memory spikes from affecting API process.
- * 
- * Agents run in isolation:
- * - PerformanceOptimizerAgent (60s cycle)
- * - HealthMonitorAgent (30s cycle)
- * - CapacityPlannerAgent (5 min cycle)
- * - DomainAggregatorAgent (10 min cycle)
- * 
- * Main process handles:
- * - API requests
- * - WebSocket connections
- * - Periodic flush jobs (metrics to DB)
+ * Coordinates optional inline agents and flushes buffered worker metrics to the DB.
+ * Production agent execution is handled by AgentWorkerManager in a child process.
  */
 
 import { type Worker } from 'worker_threads';
@@ -89,13 +76,11 @@ export class IsolatedWorkerManager {
    * Runs every 5 minutes in main process
    * Aggregates 5 1-minute samples into 1 DB row
    */
-  private startMetricsFlusher(): void {
+  startMetricsFlusher(): void {
+    if (this.flushIntervals.has('metrics')) return;
+    this.isRunning = true;
     logger.info('[WorkerManager] Starting metrics flusher (every 5 minutes)...');
 
-    // Run immediately on first start
-    this.flushMetrics();
-
-    // Then run every 5 minutes
     const flushInterval = setInterval(
       () => this.flushMetrics(),
       5 * 60 * 1000 // 5 minutes

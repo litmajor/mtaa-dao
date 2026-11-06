@@ -1,12 +1,10 @@
 /**
- * Treasury Reconciliation Job - Continuous On-Chain Validation
+ * Treasury reconciliation job - continuous on-chain validation
  * 
  * Responsible for:
- * - Periodic validation of computed DAO treasury against on-chain state
- * - Periodic validation of computed vault balances against on-chain state
- * - Detecting discrepancies and drift issues
- * - Recording audits for compliance and debugging
- * - Alerting on critical state mismatches
+ * - Attempting configured DAO treasury and vault chain comparisons
+ * - Recording configured reconciliation results for compliance and debugging
+ * - Alerting on verified critical state mismatches
  */
 
 import { db } from '../storage';
@@ -14,14 +12,13 @@ import {
   daos,
   vaults,
   treasuryPositions,
+  vaultTokenHoldings,
   treasuryReconciliationAudits,
-  vaultPerformance,
 } from '@shared/schema';
 import { eq, and, gt, sql, desc } from 'drizzle-orm';
+import Decimal from 'decimal.js';
 import { logger } from '../utils/logger';
-import { Decimal } from 'decimal.js';
-import TreasuryService from './treasuryService';
-import * as vaultService from './vaultComputationService';
+import { chainBalanceReader } from './chainBalanceReader';
 
 export interface ReconciliationResult {
   type: 'dao_treasury' | 'vault_balance' | 'multisig_transactions';
@@ -30,7 +27,8 @@ export interface ReconciliationResult {
   onChainValue: string;
   discrepancy: string;
   discrepancyPercent: number;
-  status: 'matched' | 'warning' | 'critical';
+  status: 'matched' | 'warning' | 'critical' | 'unverified';
+  notes?: string;
   lastOnChainCheck: Date;
   recordedAt: Date;
 }
@@ -38,6 +36,8 @@ export interface ReconciliationResult {
 export interface ReconciliationJobStats {
   daosTreasuryReconciled: number;
   vaultsReconciled: number;
+  daosSkipped: number;
+  vaultsSkipped: number;
   criticalDiscrepancies: number;
   warningDiscrepancies: number;
   totalReconciliations: number;
@@ -48,8 +48,8 @@ const CRITICAL_DISCREPANCY_THRESHOLD = 0.05; // 5% drift = critical
 const WARNING_DISCREPANCY_THRESHOLD = 0.01; // 1% drift = warning
 
 /**
- * Run full treasury reconciliation job
- * Call this periodically (e.g., every hour) to validate state
+ * Run the reconciliation job. DAO and vault checks are skipped until independent
+ * chain readers are configured; database-derived values are not chain evidence.
  */
 export async function runTreasuryReconciliationJob(): Promise<ReconciliationJobStats> {
   const startTime = Date.now();
@@ -59,26 +59,24 @@ export async function runTreasuryReconciliationJob(): Promise<ReconciliationJobS
     logger.info('[TreasuryReconciliationJob] Starting full reconciliation job...');
 
     // Get all DAOs
-    const allDaos = await db.select({ id: daos.id, treasuryBalance: daos.treasuryBalance }).from(daos);
+    const allDaos = await db.select({ id: daos.id }).from(daos);
 
     // Reconcile each DAO
     for (const dao of allDaos) {
       try {
-        const daoResult = await reconcileDAOTreasury(dao.id, dao.treasuryBalance || '0');
-        results.push(daoResult);
+        results.push(...await reconcileDAOTreasury(dao.id));
       } catch (error) {
         logger.error(`[TreasuryReconciliationJob] Error reconciling DAO ${dao.id}:`, error);
       }
     }
 
     // Get all vaults
-    const allVaults = await db.select({ id: vaults.id, balance: vaults.balance }).from(vaults);
+    const allVaults = await db.select({ id: vaults.id }).from(vaults);
 
     // Reconcile each vault
     for (const vault of allVaults) {
       try {
-        const vaultResult = await reconcileVaultBalance(vault.id, vault.balance || '0');
-        results.push(vaultResult);
+        results.push(...await reconcileVaultBalance(vault.id));
       } catch (error) {
         logger.error(`[TreasuryReconciliationJob] Error reconciling vault ${vault.id}:`, error);
       }
@@ -102,8 +100,10 @@ export async function runTreasuryReconciliationJob(): Promise<ReconciliationJobS
         : 0;
 
     const stats: ReconciliationJobStats = {
-      daosTreasuryReconciled: allDaos.length,
-      vaultsReconciled: allVaults.length,
+      daosTreasuryReconciled: new Set(results.filter((result) => result.type === 'dao_treasury').map((r) => r.entityId)).size,
+      vaultsReconciled: new Set(results.filter((result) => result.type === 'vault_balance').map((r) => r.entityId)).size,
+      daosSkipped: allDaos.length - new Set(results.filter((result) => result.type === 'dao_treasury').map((r) => r.entityId)).size,
+      vaultsSkipped: allVaults.length - new Set(results.filter((result) => result.type === 'vault_balance').map((r) => r.entityId)).size,
       criticalDiscrepancies: criticalCount,
       warningDiscrepancies: warningCount,
       totalReconciliations: results.length,
@@ -114,7 +114,8 @@ export async function runTreasuryReconciliationJob(): Promise<ReconciliationJobS
 
     logger.info(
       `[TreasuryReconciliationJob] Completed in ${elapsed}ms. ` +
-      `DAOs: ${stats.daosTreasuryReconciled}, Vaults: ${stats.vaultsReconciled}, ` +
+      `DAOs reconciled/skipped: ${stats.daosTreasuryReconciled}/${stats.daosSkipped}, ` +
+      `Vaults reconciled/skipped: ${stats.vaultsReconciled}/${stats.vaultsSkipped}, ` +
       `Critical: ${stats.criticalDiscrepancies}, Warnings: ${stats.warningDiscrepancies}, ` +
       `Avg Discrepancy: ${stats.averageDiscrepancyPercent.toFixed(2)}%`
     );
@@ -139,105 +140,165 @@ export async function runTreasuryReconciliationJob(): Promise<ReconciliationJobS
 }
 
 /**
- * Reconcile single DAO treasury
+ * Compare each indexed DAO treasury asset against an independent chain read.
  */
-export async function reconcileDAOTreasury(daoId: string, storedValue: string): Promise<ReconciliationResult> {
-  try {
-    // Get computed balance from treasuryPositions + stableInflowEvents
-    const computed = await TreasuryService.getComputedTreasuryBalance(daoId);
+export async function reconcileDAOTreasury(daoId: string): Promise<ReconciliationResult[]> {
+  const [dao] = await db
+    .select({ holderAddress: daos.chamaTreasuryAddress })
+    .from(daos)
+    .where(eq(daos.id, daoId))
+    .limit(1);
 
-    // Get on-chain state (this would query actual blockchain for live verification)
-    const onChainValue = await getOnChainDAOTreasuryBalance(daoId);
+  const positions = await db
+    .select({
+      chain: treasuryPositions.chain,
+      chainId: treasuryPositions.chainId,
+      holderAddress: treasuryPositions.holderAddress,
+      tokenAddress: treasuryPositions.contractAddress,
+      symbol: treasuryPositions.symbol,
+      balance: treasuryPositions.balance,
+      updatedAt: treasuryPositions.updatedAt,
+    })
+    .from(treasuryPositions)
+    .where(eq(treasuryPositions.daoId, daoId));
 
-    // Compare computed vs on-chain
-    const computedDecimal = new Decimal(computed.totalComputedBalance || '0');
-    const onChainDecimal = new Decimal(onChainValue || '0');
-
-    const discrepancy = computedDecimal.minus(onChainDecimal).abs();
-    const discrepancyPercent =
-      onChainDecimal.isZero()
-        ? 0
-        : discrepancy.dividedBy(onChainDecimal).times(100).toNumber();
-
-    const status =
-      discrepancyPercent >= CRITICAL_DISCREPANCY_THRESHOLD * 100
-        ? 'critical'
-        : discrepancyPercent >= WARNING_DISCREPANCY_THRESHOLD * 100
-          ? 'warning'
-          : 'matched';
-
-    logger.info(
-      `[TreasuryReconciliation] DAO ${daoId}: computed=${computedDecimal.toString()}, ` +
-      `on_chain=${onChainDecimal.toString()}, discrepancy=${discrepancy.toString()} (${discrepancyPercent.toFixed(2)}%), ` +
-      `status=${status}`
-    );
-
-    return {
-      type: 'dao_treasury',
-      entityId: daoId,
-      computedValue: computedDecimal.toString(),
-      onChainValue: onChainDecimal.toString(),
-      discrepancy: discrepancy.toString(),
-      discrepancyPercent,
-      status,
-      lastOnChainCheck: new Date(),
-      recordedAt: new Date(),
-    };
-  } catch (error) {
-    logger.error(`[TreasuryReconciliation] Error reconciling DAO ${daoId}:`, error);
-    throw error;
-  }
+  return reconcileAssets(
+    'dao_treasury',
+    daoId,
+    positions.map((position) => ({
+      chain: position.chainId ?? position.chain,
+      holderAddress: position.holderAddress
+        ?? (dao?.holderAddress && isCeloChain(position.chainId ?? position.chain) ? dao.holderAddress : null),
+      tokenAddress: position.tokenAddress,
+      symbol: position.symbol,
+      balance: position.balance,
+      indexedAt: position.updatedAt,
+    })),
+  );
 }
 
 /**
- * Reconcile single vault balance
+ * Compare each fully identified indexed vault asset against an independent chain read.
  */
-export async function reconcileVaultBalance(vaultId: string, storedValue: string): Promise<ReconciliationResult> {
-  try {
-    // Get computed balance from vaultTokenHoldings
-    const computed = await vaultService.getComputedVaultBalance(vaultId);
+export async function reconcileVaultBalance(vaultId: string): Promise<ReconciliationResult[]> {
+  const holdings = await db
+    .select({
+      chain: vaultTokenHoldings.chain,
+      chainId: vaultTokenHoldings.chainId,
+      tokenAddress: vaultTokenHoldings.tokenAddress,
+      holderAddress: vaultTokenHoldings.holderAddress,
+      symbol: vaultTokenHoldings.tokenSymbol,
+      balance: vaultTokenHoldings.balance,
+      indexedAt: vaultTokenHoldings.updatedAt,
+    })
+    .from(vaultTokenHoldings)
+    .where(eq(vaultTokenHoldings.vaultId, vaultId));
 
-    // Get on-chain state
-    const onChainValue = await getOnChainVaultBalance(vaultId);
+  const identifiedHoldings = holdings.filter((holding) => holding.chainId || holding.chain);
+  if (identifiedHoldings.length !== holdings.length) {
+    logger.warn(
+      `[TreasuryReconciliationJob] ${holdings.length - identifiedHoldings.length} vault holding(s) skipped for ${vaultId}: chain identity is missing`
+    );
+  }
 
-    // Compare
-    const computedDecimal = new Decimal(computed.computedBalance || '0');
-    const onChainDecimal = new Decimal(onChainValue || '0');
+  return reconcileAssets(
+    'vault_balance',
+    vaultId,
+    identifiedHoldings.map((holding) => ({
+      chain: holding.chainId ?? holding.chain!,
+      holderAddress: holding.holderAddress,
+      tokenAddress: holding.tokenAddress,
+      symbol: holding.symbol,
+      balance: holding.balance,
+      indexedAt: holding.indexedAt,
+    })),
+  );
+}
 
-    const discrepancy = computedDecimal.minus(onChainDecimal).abs();
-    const discrepancyPercent =
-      onChainDecimal.isZero()
+async function reconcileAssets(
+  type: 'dao_treasury' | 'vault_balance',
+  entityId: string,
+  assets: Array<{
+    chain: string | number;
+    holderAddress: string | null;
+    tokenAddress: string | null;
+    symbol: string;
+    balance: string | null;
+    indexedAt: Date | null;
+  }>,
+): Promise<ReconciliationResult[]> {
+  const results: ReconciliationResult[] = [];
+
+  for (const asset of assets) {
+    if (!asset.holderAddress) {
+      logger.warn(`[TreasuryReconciliationJob] Skipping ${type} ${entityId}/${asset.symbol}: holder address is missing`);
+      continue;
+    }
+    if (type === 'vault_balance' && !asset.tokenAddress) {
+      logger.warn(`[TreasuryReconciliationJob] Skipping vault ${entityId}/${asset.symbol}: token address is missing`);
+      continue;
+    }
+
+    try {
+      const observed = await chainBalanceReader.readBalance({
+        chain: asset.chain,
+        holderAddress: asset.holderAddress,
+        assetAddress: asset.tokenAddress,
+        symbol: asset.symbol,
+      });
+      const computed = new Decimal(asset.balance ?? '0');
+      const onChain = new Decimal(observed.balance);
+      const discrepancy = computed.minus(onChain).abs();
+      const denominator = Decimal.max(computed.abs(), onChain.abs());
+      const discrepancyPercent = denominator.isZero()
         ? 0
-        : discrepancy.dividedBy(onChainDecimal).times(100).toNumber();
-
-    const status =
-      discrepancyPercent >= CRITICAL_DISCREPANCY_THRESHOLD * 100
+        : discrepancy.div(denominator).mul(100).toNumber();
+      const status = discrepancyPercent >= CRITICAL_DISCREPANCY_THRESHOLD * 100
         ? 'critical'
         : discrepancyPercent >= WARNING_DISCREPANCY_THRESHOLD * 100
           ? 'warning'
           : 'matched';
 
-    logger.info(
-      `[VaultReconciliation] Vault ${vaultId}: computed=${computedDecimal.toString()}, ` +
-      `on_chain=${onChainDecimal.toString()}, discrepancy=${discrepancy.toString()} (${discrepancyPercent.toFixed(2)}%), ` +
-      `status=${status}`
-    );
-
-    return {
-      type: 'vault_balance',
-      entityId: vaultId,
-      computedValue: computedDecimal.toString(),
-      onChainValue: onChainDecimal.toString(),
-      discrepancy: discrepancy.toString(),
-      discrepancyPercent,
-      status,
-      lastOnChainCheck: new Date(),
-      recordedAt: new Date(),
-    };
-  } catch (error) {
-    logger.error(`[VaultReconciliation] Error reconciling vault ${vaultId}:`, error);
-    throw error;
+      results.push({
+        type,
+        entityId,
+        computedValue: computed.toFixed(18),
+        onChainValue: onChain.toFixed(18),
+        discrepancy: discrepancy.toFixed(18),
+        discrepancyPercent,
+        status,
+        lastOnChainCheck: observed.observedAt,
+        recordedAt: new Date(),
+        notes: JSON.stringify({
+          chain: observed.chain,
+          chainId: observed.chainId,
+          tokenAddress: observed.assetAddress,
+          holderAddress: observed.holderAddress,
+          symbol: observed.symbol,
+          blockNumber: observed.blockNumber,
+          blockHash: observed.blockHash,
+          indexedAt: asset.indexedAt?.toISOString() ?? null,
+          source: 'independent_rpc_read',
+        }),
+      });
+    } catch (error) {
+      logger.error(
+        `[TreasuryReconciliationJob] Chain read failed for ${type}/${entityId}/${asset.symbol} on ${asset.chain}:`,
+        error,
+      );
+    }
   }
+
+  return results;
+}
+
+function isCeloChain(chain: string | number): boolean {
+  if (chain === 42220 || chain === 44787) return true;
+  if (typeof chain === 'string' && /^\d+$/.test(chain)) {
+    return isCeloChain(Number(chain));
+  }
+  return ['celo', 'celo-mainnet', 'celo-alfajores', 'alfajores']
+    .includes(String(chain).toLowerCase());
 }
 
 /**
@@ -254,6 +315,7 @@ export async function recordReconciliationAudit(result: ReconciliationResult): P
       discrepancyPercent: result.discrepancyPercent.toString(),
       reconciliationStatus: result.status,
       lastOnChainCheck: result.lastOnChainCheck,
+      notes: result.notes,
       createdAt: result.recordedAt,
     });
   } catch (error) {
@@ -284,9 +346,10 @@ export async function getRecentReconciliationResults(
       onChainValue: a.onChainValue.toString(),
       discrepancy: a.discrepancy.toString(),
       discrepancyPercent: parseFloat(a.discrepancyPercent.toString()),
-      status: a.reconciliationStatus as 'matched' | 'warning' | 'critical',
+      status: a.reconciliationStatus as ReconciliationResult['status'],
       lastOnChainCheck: a.lastOnChainCheck,
       recordedAt: a.createdAt,
+      notes: a.notes ?? undefined,
     }));
   } catch (error) {
     logger.error(`[TreasuryReconciliation] Error fetching audit results for ${entityId}:`, error);
@@ -306,7 +369,10 @@ export async function getCriticalDiscrepancies(limit: number = 50): Promise<Reco
       .select()
       .from(treasuryReconciliationAudits)
       .where(
-        sql`CAST(${treasuryReconciliationAudits.discrepancyPercent} AS FLOAT) > ${criticalThresholdPercent}`
+        and(
+          eq(treasuryReconciliationAudits.reconciliationStatus, 'critical'),
+          gt(sql`CAST(${treasuryReconciliationAudits.discrepancyPercent} AS FLOAT)`, criticalThresholdPercent),
+        )
       )
       .orderBy(desc(treasuryReconciliationAudits.createdAt))
       .limit(limit);
@@ -321,6 +387,7 @@ export async function getCriticalDiscrepancies(limit: number = 50): Promise<Reco
       status: 'critical' as const,
       lastOnChainCheck: a.lastOnChainCheck || new Date(),
       recordedAt: a.createdAt || new Date(),
+      notes: a.notes ?? undefined,
     }));
   } catch (error) {
     logger.error('[TreasuryReconciliation] Error fetching critical discrepancies:', error);
@@ -342,6 +409,7 @@ export async function getWarningDiscrepancies(limit: number = 50): Promise<Recon
       .from(treasuryReconciliationAudits)
       .where(
         and(
+          eq(treasuryReconciliationAudits.reconciliationStatus, 'warning'),
           gt(sql`CAST(${treasuryReconciliationAudits.discrepancyPercent} AS FLOAT)`, warningThresholdPercent),
           sql`CAST(${treasuryReconciliationAudits.discrepancyPercent} AS FLOAT) <= ${criticalThresholdPercent}`
         )
@@ -359,76 +427,10 @@ export async function getWarningDiscrepancies(limit: number = 50): Promise<Recon
       status: 'warning' as const,
       lastOnChainCheck: a.lastOnChainCheck || new Date(),
       recordedAt: a.createdAt || new Date(),
+      notes: a.notes ?? undefined,
     }));
   } catch (error) {
     logger.error('[TreasuryReconciliation] Error fetching warning discrepancies:', error);
-    throw error;
-  }
-}
-
-// ============================================================================
-// ON-CHAIN STATE QUERYING (PLACEHOLDERS)
-// ============================================================================
-
-/**
- * Query actual on-chain DAO treasury balance
- * Aggregates balances from all treasury positions and stable inflows
- */
-async function getOnChainDAOTreasuryBalance(daoId: string): Promise<string> {
-  try {
-    // Query all treasury positions for this DAO from indexed events
-    const positions = await db
-      .select()
-      .from(treasuryPositions)
-      .where(eq(treasuryPositions.daoId, daoId));
-
-    // Sum all position balances
-    const totalBalance = positions.reduce((sum, pos) => {
-      const posBalance = new Decimal(pos.balance || '0');
-      return sum.plus(posBalance);
-    }, new Decimal('0'));
-
-    logger.debug(
-      `[OnChainQueries] Computed on-chain DAO treasury balance for ${daoId}: ` +
-      `${totalBalance.toString()} from ${positions.length} positions`
-    );
-
-    return totalBalance.toString();
-  } catch (error) {
-    logger.error(`[OnChainQueries] Error querying on-chain DAO treasury:`, error);
-    throw error;
-  }
-}
-
-/**
- * Query actual on-chain vault balance
- * Aggregates token holdings from vault token holdings indexed from on-chain contracts
- */
-async function getOnChainVaultBalance(vaultId: string): Promise<string> {
-  try {
-    // Query the most recent vault performance record to get accurate balance
-    const [performance] = await db
-      .select()
-      .from(vaultPerformance)
-      .where(eq(vaultPerformance.vaultId, vaultId))
-      .orderBy(desc(vaultPerformance.createdAt))
-      .limit(1);
-
-    if (!performance) {
-      logger.warn(`[OnChainQueries] No performance record found for vault ${vaultId}`);
-      return '0';
-    }
-
-    const balance = new Decimal(performance.endingValue || '0');
-
-    logger.debug(
-      `[OnChainQueries] Computed on-chain vault balance for ${vaultId}: ` +
-      `${balance.toString()} as of ${performance.createdAt}`
-    );
-
-    return balance.toString();
-  } catch (error) {
-    logger.error(`[OnChainQueries] Error querying on-chain vault balance:`, error);
     throw error;
   }
 }

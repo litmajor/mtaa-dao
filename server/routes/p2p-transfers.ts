@@ -8,6 +8,7 @@ import { users } from '../../shared/schema';
 import { accounts, accountTransactions } from '../../shared/accountSchema';
 import { transactionLimitService } from '../services/transactionLimitService';
 import { exchangeRateService } from '../services/exchangeRateService';
+import { postPlatformTransfer } from '../services/platformLedgerService';
 import { eq, or, and, desc } from 'drizzle-orm';
 import crypto from 'crypto';
 
@@ -153,6 +154,14 @@ router.post('/send', isAuthenticated, requirePINVerification, checkAmountThresho
       });
     }
 
+    if (senderAccount.currency !== receiverAccount.currency) {
+      return res.status(400).json({
+        success: false,
+        error: 'Sender and receiver wallet currencies do not match',
+        code: 'CURRENCY_MISMATCH',
+      });
+    }
+
     // Verify sender has sufficient balance
     const senderBalance = parseFloat(senderAccount.balance);
     if (senderBalance < validated.amountUSD) {
@@ -174,6 +183,16 @@ router.post('/send', isAuthenticated, requirePINVerification, checkAmountThresho
 
     // Execute atomic transaction: debit sender, credit receiver, record transfer
     const [transfer] = await db.transaction(async (tx) => {
+      await postPlatformTransfer(tx, {
+        reference: transferId,
+        fromAccountId: senderAccount.id,
+        toAccountId: receiverAccount.id,
+        amount: validated.amountUSD.toFixed(8),
+        currency: senderAccount.currency,
+        description: `P2P transfer to ${receiver.username}`,
+        metadata: { p2pTransferId: transferId },
+      });
+
       // 1. Debit sender's wallet
       const newSenderBalance = (senderBalance - validated.amountUSD).toFixed(8);
       await tx
@@ -203,7 +222,7 @@ router.post('/send', isAuthenticated, requirePINVerification, checkAmountThresho
         accountId: senderAccount.id,
         transactionType: 'transfer',
         amount: validated.amountUSD.toString(),
-        currency: 'USDC',
+        currency: senderAccount.currency,
         description: `P2P transfer to ${receiver.username}`,
         reference: transferId,
         fromAccountId: senderAccount.id,
@@ -220,7 +239,7 @@ router.post('/send', isAuthenticated, requirePINVerification, checkAmountThresho
         accountId: receiverAccount.id,
         transactionType: 'transfer',
         amount: validated.amountUSD.toString(),
-        currency: 'USDC',
+        currency: senderAccount.currency,
         description: `P2P transfer from ${senderUsername}`,
         reference: transferId,
         fromAccountId: senderAccount.id,
@@ -407,5 +426,3 @@ router.get('/:transferId', async (req: Request, res) => {
 });
 
 export default router;
-
-

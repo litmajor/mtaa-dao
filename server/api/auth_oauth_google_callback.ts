@@ -6,6 +6,7 @@ import { eq, and } from 'drizzle-orm';
 import crypto from 'crypto';
 import { generateTokens } from '../auth';
 import { Logger } from '../utils/logger';
+import { setAuthSessionCookies } from '../utils/authSessionCookies';
 
 const logger = new Logger('auth-oauth-google-callback');
 
@@ -57,10 +58,10 @@ function verifyOAuthState(requestState: string | string[] | undefined, cookieSta
   const stateStr = Array.isArray(requestState) ? requestState[0] : requestState;
   
   // Constant-time comparison to prevent timing attacks
-  const matches = crypto.timingSafeEqual(
-    Buffer.from(stateStr),
-    Buffer.from(cookieState)
-  ).valueOf();
+  const requestBytes = Buffer.from(stateStr);
+  const cookieBytes = Buffer.from(cookieState);
+  const matches = requestBytes.length === cookieBytes.length &&
+    crypto.timingSafeEqual(requestBytes, cookieBytes);
   
   if (!matches) {
     logger.warn('OAuth state mismatch - potential CSRF attack', { 
@@ -87,7 +88,7 @@ export async function authOauthGoogleCallbackHandler(req: Request, res: Response
     const { code, state, error } = req.query;
 
     // FIX #1: Verify CSRF state immediately
-    const storedState = req.cookies['oauth_state'];
+    const storedState = req.cookies?.['oauth_state'];
     let stateParam: string | undefined;
     
     if (typeof state === 'string') {
@@ -102,7 +103,7 @@ export async function authOauthGoogleCallbackHandler(req: Request, res: Response
     }
 
     // Clear the state cookie after verification
-    res.clearCookie('oauth_state');
+    res.clearCookie('oauth_state', { path: '/' });
 
     if (error) {
       logger.warn('OAuth error received', { error });
@@ -120,16 +121,16 @@ export async function authOauthGoogleCallbackHandler(req: Request, res: Response
     }
 
     // FIX #6: Retrieve PKCE code_verifier from cookie
-    const codeVerifier = req.cookies['oauth_code_verifier'];
+    const codeVerifier = req.cookies?.['oauth_code_verifier'];
     if (!codeVerifier) {
       logger.warn('Missing PKCE code_verifier - possible session loss');
       return res.redirect(`${FRONTEND_URL}/login?error=pkce_error&message=Session+expired`);
     }
-    res.clearCookie('oauth_code_verifier');
+    res.clearCookie('oauth_code_verifier', { path: '/' });
 
     // Retrieve OAuth mode from cookie
-    const oauthMode = req.cookies['oauth_mode'] || 'login';
-    res.clearCookie('oauth_mode');
+    const oauthMode = req.cookies?.['oauth_mode'] === 'register' ? 'register' : 'login';
+    res.clearCookie('oauth_mode', { path: '/' });
 
     // Exchange authorization code for access token
     // FIX #6: Include PKCE code_verifier in token exchange
@@ -146,7 +147,11 @@ export async function authOauthGoogleCallbackHandler(req: Request, res: Response
 
     // Get user info from Google
     const userInfoResponse = await axios.get<GoogleUserInfo>(
-      `https://www.googleapis.com/oauth2/v2/userinfo?access_token=${access_token}`
+      'https://www.googleapis.com/oauth2/v2/userinfo',
+      {
+        headers: { Authorization: `Bearer ${access_token}` },
+        timeout: 10_000,
+      }
     );
 
     const googleUser = userInfoResponse.data;
@@ -214,6 +219,8 @@ export async function authOauthGoogleCallbackHandler(req: Request, res: Response
               user: null,
               requiresLinkingConfirmation: true,
               pendingIdentity: {
+                provider: 'google',
+                providerUserId: googleUser.id,
                 email: googleUser.email,
                 googleId: googleUser.id,
                 profile: {
@@ -301,8 +308,9 @@ export async function authOauthGoogleCallbackHandler(req: Request, res: Response
       res.cookie('oauth_pending_identity', JSON.stringify(result.pendingIdentity), {
         httpOnly: true,
         secure: process.env.NODE_ENV === 'production',
-        sameSite: 'strict',
+        sameSite: 'lax',
         maxAge: 15 * 60 * 1000, // 15 minutes
+        path: '/',
       });
 
       logger.info('Redirecting to identity confirmation flow');
@@ -320,21 +328,7 @@ export async function authOauthGoogleCallbackHandler(req: Request, res: Response
       role: result.user.roles ?? 'member',
     });
 
-    // Store access token in secure HTTP-only cookie
-    res.cookie('access_token', tokens.accessToken, {
-      httpOnly: true,
-      secure: process.env.NODE_ENV === 'production',
-      sameSite: 'strict',
-      maxAge: 15 * 60 * 1000, // 15 minutes (matches access token expiry)
-    });
-
-    // Store refresh token in secure HTTP-only cookie
-    res.cookie('refreshToken', tokens.refreshToken, {
-      httpOnly: true,
-      secure: process.env.NODE_ENV === 'production',
-      sameSite: 'strict',
-      maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days
-    });
+    setAuthSessionCookies(res, tokens);
 
     // FIX #2: Redirect to dashboard without exposing tokens in URL
     res.redirect(`${FRONTEND_URL}/dashboard`);

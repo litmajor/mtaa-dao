@@ -3,7 +3,7 @@
  * Multi-account system: Wallet, Trading, Vault, Escrow
  */
 
-import { pgTable, text, uuid, decimal, timestamp, index, uniqueIndex, varchar, integer, boolean } from 'drizzle-orm/pg-core';
+import { pgTable, text, uuid, decimal, timestamp, index, uniqueIndex, varchar, integer, boolean, jsonb } from 'drizzle-orm/pg-core';
 import { createInsertSchema, createSelectSchema } from 'drizzle-zod';
 import { z } from 'zod';
 import { users } from './schema';
@@ -144,8 +144,63 @@ export const accountTransactions = pgTable(
     fromAccountIdx: index('idx_account_tx_from').on(table.fromAccountId),
     toAccountIdx: index('idx_account_tx_to').on(table.toAccountId),
     createdAtIdx: index('idx_account_tx_created').on(table.createdAt),
-    referenceIdx: uniqueIndex('account_transactions_reference_idx').on(table.reference),
+    referenceIdx: uniqueIndex('account_transactions_reference_idx')
+      .on(table.reference, table.accountId),
   })
+);
+
+export const platformLedgerAccounts = pgTable(
+  'platform_ledger_accounts',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    accountId: uuid('account_id').references(() => accounts.id, { onDelete: 'cascade' }),
+    ownerType: varchar('owner_type', { length: 24 }).notNull(),
+    ownerId: varchar('owner_id', { length: 255 }).notNull(),
+    accountCode: varchar('account_code', { length: 48 }).notNull(),
+    currency: varchar('currency', { length: 16 }).notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => ({
+    accountUnique: uniqueIndex('platform_ledger_accounts_account_uq').on(table.accountId),
+    ownerScopeIdx: index('platform_ledger_accounts_owner_scope_idx')
+      .on(table.ownerType, table.ownerId, table.accountCode, table.currency),
+  }),
+);
+
+export const platformLedgerTransactions = pgTable(
+  'platform_ledger_transactions',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    reference: varchar('reference', { length: 255 }).notNull().unique(),
+    sourceType: varchar('source_type', { length: 48 }).notNull(),
+    sourceId: varchar('source_id', { length: 255 }),
+    description: text('description'),
+    metadata: jsonb('metadata'),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => ({
+    sourceIdx: index('platform_ledger_transactions_source_idx').on(table.sourceType, table.sourceId),
+  }),
+);
+
+export const platformLedgerEntries = pgTable(
+  'platform_ledger_entries',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    transactionId: uuid('transaction_id')
+      .notNull()
+      .references(() => platformLedgerTransactions.id, { onDelete: 'restrict' }),
+    ledgerAccountId: uuid('ledger_account_id')
+      .notNull()
+      .references(() => platformLedgerAccounts.id, { onDelete: 'restrict' }),
+    side: varchar('side', { length: 6 }).notNull().$type<'debit' | 'credit'>(),
+    amount: decimal('amount', { precision: 36, scale: 8 }).notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => ({
+    transactionIdx: index('platform_ledger_entries_transaction_idx').on(table.transactionId),
+    accountIdx: index('platform_ledger_entries_account_idx').on(table.ledgerAccountId),
+  }),
 );
 
 /**

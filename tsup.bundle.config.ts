@@ -1,7 +1,7 @@
 import { defineConfig } from 'tsup';
 
 export default defineConfig({
-  entry: ['server/index.ts', 'server/workers/agent-worker.ts'],
+  entry: ['server/index.ts', 'server/migrate.ts', 'server/workers/agent-worker.ts'],
   outDir: 'server/dist',
   format: ['esm'],
   platform: 'node',

@@ -308,7 +308,9 @@ export default function EnhancedDAOs() {
             <div className="flex items-center justify-center gap-1 mb-1">
               <Wallet className={`w-4 h-4 text-green-500 group-hover/stat:scale-110 transition-transform duration-300`} />
               <span className="font-bold text-gray-900 dark:text-white">
-                ${Number(dao.treasuryBalance || 0).toLocaleString()}
+                {dao.treasuryBalance == null
+                  ? '—'
+                  : `$${Number(dao.treasuryBalance).toLocaleString()}`}
               </span>
             </div>
             <p className="text-xs text-gray-500 dark:text-gray-400">Treasury</p>

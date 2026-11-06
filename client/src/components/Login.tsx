@@ -26,6 +26,7 @@ export default function MtaaDAOLogin() {
   const [isVisible, setIsVisible] = useState(false);
   const [showOAuthConfirmation, setShowOAuthConfirmation] = useState(false);
   const [oauthConfirmEmail, setOauthConfirmEmail] = useState('');
+  const [oauthConfirmProvider, setOauthConfirmProvider] = useState<'google' | 'telegram'>('google');
 
   useEffect(() => {
     setIsVisible(true);
@@ -42,7 +43,8 @@ export default function MtaaDAOLogin() {
     if (params.get('requireConfirmation') === 'true') {
       const email = params.get('email');
       if (email) {
-        setOauthConfirmEmail(decodeURIComponent(email));
+        setOauthConfirmEmail(email);
+        setOauthConfirmProvider(params.get('provider') === 'telegram' ? 'telegram' : 'google');
         setShowOAuthConfirmation(true);
         // Clean up URL without reloading
         window.history.replaceState({}, document.title, '/login');
@@ -393,6 +395,7 @@ export default function MtaaDAOLogin() {
       {showOAuthConfirmation && (
         <OAuthConfirmationDialog
           email={oauthConfirmEmail}
+          provider={oauthConfirmProvider}
           onSuccess={() => {
             // Dialog will redirect on success
           }}

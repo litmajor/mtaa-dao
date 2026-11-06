@@ -299,12 +299,11 @@ cp .env.example .env
 ### 3. Database Setup
 
 ```bash
-# Run migrations
-npm run db:push
-
-# Or use drizzle-kit directly
+# Run the explicit application migration runner
 npm run migrate
 ```
+
+`npm run db:push` is guarded and intended only for disposable development databases. It is not a production migration command. See [docs/DATABASE_DEPLOYMENT.md](docs/DATABASE_DEPLOYMENT.md) for the deployment sequence and safety notes.
 
 ### 4. Development
 

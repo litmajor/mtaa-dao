@@ -35,6 +35,16 @@ interface AuthResponse {
   };
 }
 
+interface RegistrationResponse {
+  success: boolean;
+  message?: string;
+  data?: {
+    user?: User;
+    csrfToken?: string;
+  };
+  error?: string | { message?: string };
+}
+
 export function useAuth() {
   // React Query's QueryClient typings in this repo are slightly different; narrow to any where we call imperative methods
   const queryClient = useQueryClient() as any;
@@ -135,12 +145,15 @@ export function useAuth() {
         body: JSON.stringify({ email, password, name, walletAddress }),
       });
 
+      const payload = await res.json() as RegistrationResponse;
       if (!res.ok) {
-        const error = await res.json();
-        throw new Error(error.error?.message || "Registration failed");
+        const message = typeof payload.error === 'string'
+          ? payload.error
+          : payload.error?.message;
+        throw new Error(message || "Registration failed");
       }
 
-      return res.json();
+      return payload;
     },
     onSuccess: (data) => {
       if (data.success && data.data?.user) {
@@ -153,8 +166,8 @@ export function useAuth() {
           },
         };
         queryClient.setQueryData(["/api/auth/user"], cacheData);
+        navigate("/dashboard");
       }
-      navigate("/dashboard");
     },
   });
 
@@ -171,5 +184,9 @@ export function useAuth() {
     isLoginLoading: loginMutation.isPending,
     isLogoutLoading: logoutMutation.isPending,
     isRegisterLoading: registerMutation.isPending,
+    registrationMessage: registerMutation.data?.message ?? null,
+    registrationError: registerMutation.error instanceof Error
+      ? registerMutation.error.message
+      : null,
   };
 }

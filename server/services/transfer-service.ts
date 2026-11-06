@@ -5,9 +5,11 @@
 
 import { db } from '../db';
 import { internalTransfers } from '@shared/transactionFlowSchema';
-import { accounts, users } from '@shared/schema';
-import { eq, and, desc, or } from 'drizzle-orm';
+import { accounts } from '@shared/accountSchema';
+import { eq, and, desc, or, inArray, asc } from 'drizzle-orm';
 import { v4 as uuidv4 } from 'uuid';
+import Decimal from 'decimal.js';
+import { postPlatformTransfer } from './platformLedgerService';
 
 /**
  * Transfer between user's own accounts
@@ -27,109 +29,103 @@ export async function transferBetweenAccounts(
   status: string;
   createdAt: Date;
 }> {
-  // Validate both accounts belong to user
-  const fromAccount = await db
-    .select()
-    .from(accounts)
-    .where(and(eq(accounts.id, fromAccountId), eq(accounts.userId, userId)))
-    .limit(1);
-
-  const toAccount = await db
-    .select()
-    .from(accounts)
-    .where(and(eq(accounts.id, toAccountId), eq(accounts.userId, userId)))
-    .limit(1);
-
-  if (!fromAccount[0]) {
-    throw new Error('From account not found or does not belong to user');
-  }
-
-  if (!toAccount[0]) {
-    throw new Error('To account not found or does not belong to user');
-  }
-
-  // Check sufficient balance in from account
-  const fromBalance = parseFloat(fromAccount[0].balance?.toString() || '0');
-  const transferAmount = parseFloat(amount);
-
-  if (fromBalance < transferAmount) {
-    throw new Error(
-      `Insufficient balance in ${fromAccount[0].accountType} account. Available: ${fromBalance}, Requested: ${transferAmount}`
-    );
-  }
-
-  // Validate transfer path
   if (fromAccountId === toAccountId) {
     throw new Error('Cannot transfer to the same account');
   }
 
-  // Validate account type compatibility
-  const validPaths = [
-    ['wallet', 'trading'],
-    ['trading', 'wallet'],
-    ['wallet', 'vault'],
-    ['vault', 'wallet'],
-    ['trading', 'vault'],
-    ['vault', 'trading'],
-    ['wallet', 'escrow'],
-    ['trading', 'escrow'],
-    ['vault', 'escrow'],
-    ['escrow', 'wallet'],
-  ];
-
-  const fromType = fromAccount[0].accountType;
-  const toType = toAccount[0].accountType;
-  const isValidPath = validPaths.some((path) => path[0] === fromType && path[1] === toType);
-
-  if (!isValidPath) {
-    throw new Error(
-      `Invalid transfer path from ${fromType} to ${toType}. Allowed transfers: Wallet ↔ Trading, Wallet ↔ Vault, Trading ↔ Vault, Any → Escrow, Escrow → Wallet`
-    );
+  const transferAmount = new Decimal(amount);
+  if (!transferAmount.isFinite() || transferAmount.lte(0) || transferAmount.decimalPlaces() > 8) {
+    throw new Error('Transfer amount must be positive and fit account precision');
   }
 
-  // Create transfer record
   const transferId = uuidv4();
 
-  await db.insert(internalTransfers).values({
-    id: transferId,
-    userId,
-    fromAccountId,
-    toAccountId,
-    amount: transferAmount.toString(),
-    currency: fromAccount[0].currency || 'USDC',
-    reason,
-    status: 'completed',
-    createdAt: new Date(),
+  return db.transaction(async (tx) => {
+    const lockedAccounts = await tx
+      .select()
+      .from(accounts)
+      .where(inArray(accounts.id, [fromAccountId, toAccountId]))
+      .orderBy(asc(accounts.id))
+      .for('update');
+    const fromAccount = lockedAccounts.find((account) => account.id === fromAccountId);
+    const toAccount = lockedAccounts.find((account) => account.id === toAccountId);
+    if (!fromAccount || fromAccount.userId !== userId) {
+      throw new Error('From account not found or does not belong to user');
+    }
+    if (!toAccount || toAccount.userId !== userId) {
+      throw new Error('To account not found or does not belong to user');
+    }
+    if (fromAccount.currency !== toAccount.currency) {
+      throw new Error('Cannot transfer between accounts with different currencies');
+    }
+
+    const validPaths = [
+      ['wallet', 'trading'], ['trading', 'wallet'], ['wallet', 'vault'],
+      ['vault', 'wallet'], ['trading', 'vault'], ['vault', 'trading'],
+      ['wallet', 'escrow'], ['trading', 'escrow'], ['vault', 'escrow'],
+      ['escrow', 'wallet'],
+    ];
+    if (!validPaths.some(([from, to]) => from === fromAccount.accountType && to === toAccount.accountType)) {
+      throw new Error(
+        `Invalid transfer path from ${fromAccount.accountType} to ${toAccount.accountType}. Allowed transfers: Wallet ↔ Trading, Wallet ↔ Vault, Trading ↔ Vault, Any → Escrow, Escrow → Wallet`
+      );
+    }
+
+    const fromBalance = new Decimal(fromAccount.balance ?? '0');
+    const available = fromBalance.minus(fromAccount.locked ?? '0');
+    if (available.lt(transferAmount)) {
+      throw new Error(
+        `Insufficient available balance in ${fromAccount.accountType} account. Available: ${available.toFixed(8)}, Requested: ${transferAmount.toFixed(8)}`
+      );
+    }
+    const toBalance = new Decimal(toAccount.balance ?? '0');
+    const now = new Date();
+
+    await postPlatformTransfer(tx, {
+      reference: transferId,
+      fromAccountId,
+      toAccountId,
+      amount: transferAmount.toFixed(8),
+      currency: fromAccount.currency,
+      description: `Internal ${reason} transfer`,
+      metadata: { userId, reason },
+    });
+
+    await tx.update(accounts).set({
+      balance: fromBalance.minus(transferAmount).toFixed(8),
+      totalWithdrawn: new Decimal(fromAccount.totalWithdrawn ?? '0').plus(transferAmount).toFixed(8),
+      totalTransactions: (fromAccount.totalTransactions ?? 0) + 1,
+      updatedAt: now,
+    }).where(eq(accounts.id, fromAccountId));
+    await tx.update(accounts).set({
+      balance: toBalance.plus(transferAmount).toFixed(8),
+      totalDeposited: new Decimal(toAccount.totalDeposited ?? '0').plus(transferAmount).toFixed(8),
+      totalTransactions: (toAccount.totalTransactions ?? 0) + 1,
+      updatedAt: now,
+    }).where(eq(accounts.id, toAccountId));
+
+    await tx.insert(internalTransfers).values({
+      id: transferId,
+      userId,
+      fromAccountId,
+      toAccountId,
+      amount: transferAmount.toFixed(8),
+      currency: fromAccount.currency || 'USDC',
+      reason,
+      status: 'completed',
+      createdAt: now,
+    });
+
+    return {
+      id: transferId,
+      fromAccountId,
+      toAccountId,
+      amount: transferAmount.toFixed(8),
+      reason,
+      status: 'completed',
+      createdAt: now,
+    };
   });
-
-  // Update balances atomically
-  // Deduct from source account
-  await db
-    .update(accounts)
-    .set({
-      balance: (parseFloat(fromAccount[0].balance?.toString() || '0') - transferAmount).toString(),
-      updatedAt: new Date(),
-    })
-    .where(eq(accounts.id, fromAccountId));
-
-  // Add to destination account
-  await db
-    .update(accounts)
-    .set({
-      balance: (parseFloat(toAccount[0].balance?.toString() || '0') + transferAmount).toString(),
-      updatedAt: new Date(),
-    })
-    .where(eq(accounts.id, toAccountId));
-
-  return {
-    id: transferId,
-    fromAccountId,
-    toAccountId,
-    amount,
-    reason,
-    status: 'completed',
-    createdAt: new Date(),
-  };
 }
 
 /**

@@ -20,7 +20,8 @@ import {
   type InsertAccountAccessLog,
 } from "@shared/accountSchema";
 import { users, daos } from "@shared/schema";
-import { eq, and, gte, lte, desc, sum, sql } from "drizzle-orm";
+import { eq, and, gte, lte, desc, sum, sql, isNull } from "drizzle-orm";
+import { Decimal } from "decimal.js";
 
 /**
  * Generate unique account number
@@ -149,47 +150,54 @@ export async function createAccountTransaction(
   data: InsertAccountTransaction
 ): Promise<any> {
   return await db.transaction(async (tx) => {
-    const accountResult = await tx.execute(sql`
-      SELECT * FROM accounts WHERE id = ${data.accountId} FOR UPDATE
-    `);
-
-    const account = accountResult.rows[0] as any;
+    const [account] = await tx.select().from(accounts)
+      .where(eq(accounts.id, data.accountId))
+      .limit(1)
+      .for("update");
     if (!account) {
       throw new Error("Account not found");
     }
+    if (data.currency && data.currency !== account.currency) {
+      throw new Error(`Transaction currency ${data.currency} does not match account currency ${account.currency}`);
+    }
 
-    const balance = account.balance ?? "0";
-    const totalDep = account.totalDeposited ?? "0";
-    const totalWith = account.totalWithdrawn ?? "0";
+    const balance = new Decimal(account.balance ?? "0");
+    const totalDep = new Decimal(account.totalDeposited ?? "0");
+    const totalWith = new Decimal(account.totalWithdrawn ?? "0");
     const totalTrans = account.totalTransactions ?? 0;
-
-    const balanceBeforeNum = Number(balance);
-    let balanceAfterNum = balanceBeforeNum;
-    const amount = Number(data.amount);
+    const amount = new Decimal(data.amount);
+    if (!amount.isFinite() || amount.lte(0) || amount.decimalPlaces() > 8) {
+      throw new Error("Transaction amount must be positive and fit the account precision");
+    }
+    const balanceBefore = balance;
+    let balanceAfter = balance;
 
     switch (data.transactionType) {
       case "deposit":
-        balanceAfterNum = balanceBeforeNum + amount;
+      case "vault_deposit":
+      case "interest":
+      case "compensation":
+        balanceAfter = balance.plus(amount);
         break;
       case "withdrawal":
-        balanceAfterNum = balanceBeforeNum - amount;
+      case "fee":
+      case "reserve":
+        balanceAfter = balance.minus(amount);
         break;
       case "transfer":
         if (data.fromAccountId === data.accountId) {
-          balanceAfterNum = balanceBeforeNum - amount;
+          balanceAfter = balance.minus(amount);
+        } else if (data.toAccountId === data.accountId) {
+          balanceAfter = balance.plus(amount);
         } else {
-          balanceAfterNum = balanceBeforeNum + amount;
+          throw new Error("Transfer must identify this account as the sender or receiver");
         }
         break;
-      case "fee":
-        balanceAfterNum = balanceBeforeNum - amount;
-        break;
-      case "interest":
-        balanceAfterNum = balanceBeforeNum + amount;
-        break;
+      default:
+        throw new Error(`Unsupported account transaction type: ${data.transactionType}`);
     }
 
-    if (balanceAfterNum < 0) {
+    if (balanceAfter.lt(0)) {
       throw new Error("Insufficient funds");
     }
 
@@ -207,8 +215,8 @@ export async function createAccountTransaction(
         fromUserId: data.fromUserId,
         toUserId: data.toUserId,
         status: data.status || "completed",
-        balanceBefore: balanceBeforeNum.toString(),
-        balanceAfter: balanceAfterNum.toString(),
+        balanceBefore: balanceBefore.toFixed(8),
+        balanceAfter: balanceAfter.toFixed(8),
         transactionHash: data.transactionHash,
         chainId: data.chainId,
         metadata: data.metadata,
@@ -225,21 +233,148 @@ export async function createAccountTransaction(
     await tx
       .update(accounts)
       .set({
-        balance: balanceAfterNum.toString(),
+        balance: balanceAfter.toFixed(8),
         lastActivityAt: new Date(),
         totalDeposited:
           data.transactionType === "deposit"
-            ? (Number(totalDep) + amount).toString()
-            : totalDep,
+            ? totalDep.plus(amount).toFixed(8)
+            : totalDep.toFixed(8),
         totalWithdrawn:
           data.transactionType === "withdrawal"
-            ? (Number(totalWith) + amount).toString()
-            : totalWith,
+            ? totalWith.plus(amount).toFixed(8)
+            : totalWith.toFixed(8),
         totalTransactions: totalTrans + 1,
       })
       .where(eq(accounts.id, data.accountId));
 
     return transaction[0];
+  });
+}
+
+export async function getUserAccountAvailableBalance(
+  userId: string,
+  currency: string,
+  daoId?: string,
+): Promise<string> {
+  const clauses = [
+    eq(accounts.userId, userId),
+    eq(accounts.currency, currency),
+    eq(accounts.accountType, "wallet"),
+    daoId ? eq(accounts.daoId, daoId) : isNull(accounts.daoId),
+    eq(accounts.status, "active"),
+  ];
+  const balances = await db.select({
+    balance: accounts.balance,
+    locked: accounts.locked,
+  }).from(accounts).where(and(...clauses));
+  const totalAvailable = balances.reduce(
+    (sum, row) => sum.plus(Decimal.max(new Decimal(row.balance ?? "0").minus(row.locked ?? "0"), 0)),
+    new Decimal(0),
+  );
+  return totalAvailable.toFixed(8);
+}
+
+export async function updateUserAccountBalance(
+  userId: string,
+  currency: string,
+  amountInput: string | number,
+  operation: "add" | "subtract",
+  daoId?: string,
+  reference?: string,
+  description = "Platform wallet balance adjustment",
+): Promise<Account> {
+  const amount = new Decimal(amountInput);
+  if (!amount.isFinite() || amount.lte(0) || amount.decimalPlaces() > 8) {
+    throw new Error("Balance adjustment must be positive and fit the account precision");
+  }
+
+  return db.transaction(async (tx) => {
+    const lockKey = `${userId}:${daoId ?? "personal"}:${currency}`;
+    await tx.execute(sql`SELECT pg_advisory_xact_lock(hashtextextended(${lockKey}, 0))`);
+    const scope = and(
+      eq(accounts.userId, userId),
+      eq(accounts.currency, currency),
+      eq(accounts.accountType, "wallet"),
+      daoId ? eq(accounts.daoId, daoId) : isNull(accounts.daoId),
+      eq(accounts.status, "active"),
+    );
+    const matchingAccounts = await tx.select().from(accounts).where(scope).for("update");
+    if (matchingAccounts.length > 1) {
+      throw new Error(`Multiple active wallet accounts exist for ${lockKey}; resolve the recorded migration conflict before posting`);
+    }
+    let account = matchingAccounts[0];
+
+    if (!account) {
+      const [created] = await tx.insert(accounts).values({
+        userId,
+        accountType: "wallet",
+        currency,
+        daoId,
+        balance: "0",
+        status: "active",
+      }).returning();
+      if (!created) throw new Error("Unable to create the platform wallet account");
+      account = created;
+    }
+
+    const transactionType = operation === "add" ? "deposit" : "withdrawal";
+    if (reference) {
+      const [existing] = await tx.select().from(accountTransactions)
+        .where(and(
+          eq(accountTransactions.reference, reference),
+          eq(accountTransactions.accountId, account.id),
+        ))
+        .limit(1);
+      if (existing) {
+        if (
+          existing.accountId !== account.id ||
+          existing.transactionType !== transactionType ||
+          new Decimal(existing.amount).comparedTo(amount) !== 0
+        ) {
+          throw new Error(`Balance adjustment reference ${reference} was already used for a different transaction`);
+        }
+        return account;
+      }
+    }
+
+    const balanceBefore = new Decimal(account.balance ?? "0");
+    const balanceAfter = operation === "add" ? balanceBefore.plus(amount) : balanceBefore.minus(amount);
+    if (balanceAfter.lt(0)) throw new Error("Insufficient funds");
+
+    if (operation === "subtract") {
+      const available = balanceBefore.minus(account.locked ?? "0");
+      if (available.lt(amount)) {
+        throw new Error("Insufficient available funds");
+      }
+    }
+
+    await tx.insert(accountTransactions).values({
+      accountId: account.id,
+      transactionType,
+      amount: amount.toFixed(8),
+      currency,
+      description,
+      reference,
+      status: "completed",
+      balanceBefore: balanceBefore.toFixed(8),
+      balanceAfter: balanceAfter.toFixed(8),
+    });
+
+    const [updated] = await tx.update(accounts).set({
+      balance: balanceAfter.toFixed(8),
+      totalDeposited: operation === "add"
+        ? new Decimal(account.totalDeposited ?? "0").plus(amount).toFixed(8)
+        : account.totalDeposited,
+      totalWithdrawn: operation === "subtract"
+        ? new Decimal(account.totalWithdrawn ?? "0").plus(amount).toFixed(8)
+        : account.totalWithdrawn,
+      totalTransactions: (account.totalTransactions ?? 0) + 1,
+      lastActivityAt: new Date(),
+      updatedAt: new Date(),
+    }).where(eq(accounts.id, account.id)).returning();
+    if (!updated) throw new Error("Failed to update the platform wallet account");
+
+    return updated;
   });
 }
 

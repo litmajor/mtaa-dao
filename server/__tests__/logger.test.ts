@@ -62,16 +62,18 @@ describe('logger infrastructure safeguards', () => {
     (vi as any).unstubAllEnvs?.();
   });
 
-  it('skips DB writes for info logs during startup', async () => {
+  it('skips DB writes for all log levels during startup', async () => {
     const { Logger } = await import('../utils/logger');
     const instance = new Logger('service-a');
 
     (globalThis as typeof globalThis & { isServerStarting?: boolean }).isServerStarting = true;
     instance.info('bootstrap');
+    instance.warn('startup warning');
+    instance.error('startup failure', new Error('test error'));
     await Promise.resolve();
 
     expect(createSystemLogMock).not.toHaveBeenCalled();
-    expect(winstonLogMock).toHaveBeenCalled();
+    expect(winstonLogMock).toHaveBeenCalledTimes(3);
   });
 
   it('opens the circuit and writes a fallback log on a critical DB failure', async () => {

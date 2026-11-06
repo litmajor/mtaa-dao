@@ -4,6 +4,20 @@
 ## Overview
 MtaaDAO implements multiple vault types, each serving different purposes with clear boundaries and responsibilities.
 
+## Balance and reconciliation semantics
+
+Keep three balance domains separate:
+
+- Connected-wallet balances are user-controlled chain state and must come from the wallet or an independent chain read.
+- DAO treasury transaction balances are derived from `wallet_transactions` and report cUSD transactions only. They are not yet unified with `account_transactions`, `wallet_ledger`, or `users.balance`.
+- DAO treasury positions and vault token holdings are indexed database records, not live chain balances. Their USD totals are available only when all included positions have recorded valuations; raw token quantities are not added across assets.
+
+`vault_token_holdings` is being extended with chain, token-contract, and holder identity. Existing rows remain unverified until that identity is populated. A raw computed vault balance is reported only when all rows are identified and describe one chain/token/holder asset; USD aggregation is unavailable when any row lacks an identity or valuation. Legacy reconciliation entries based on database proxies are marked `unverified`; critical/warning feeds include only explicit verified statuses.
+
+The platform-custody cutover uses `accounts.balance` as the balance source and an append-only, balanced `platform_ledger_*` journal as the audit trail. Account balance changes are journaled atomically by a database trigger. Internal account transfers in the P2P, payment execution, pool marketplace, and account-to-account flows now write one direct sender-debit/receiver-credit journal transaction, while suppressing the generic per-account adjustment entries for those same balance changes. Legacy opening entries are seeded from `accounts`; disagreeing `user_balances`, duplicate account scopes, unscoped `users.balance`, and legacy `wallet_ledger` entries are recorded as migration conflicts rather than summed or auto-credited. The legacy `user_balances` cache is not overwritten by this ledger because it may represent wallet-linked on-chain holdings. On-chain wallet holdings are not platform liabilities and remain outside this ledger.
+
+Independent reads currently support EVM native assets and ERC-20 balances across Celo, Ethereum, Polygon, Arbitrum, Optimism, Base, Avalanche, and BSC mainnet/testnets, when RPC endpoints are configured. Reconciliation requires a configured holder address and chain/token identity; incomplete legacy rows are skipped. Reads carry block number/hash and use a fixed block tag for the balance and token metadata calls.
+
 ## 1. Personal Vaults (Wallet System)
 **Location**: `client/src/components/wallet/PesonalVaultBalance.tsx`
 **Purpose**: Individual user wallet management and basic savings

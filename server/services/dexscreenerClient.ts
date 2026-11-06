@@ -135,6 +135,7 @@ type WsCallback = (message: DexWsMessage) => void;
 export class DexScreenerClient {
   private readonly BASE_URL = 'https://api.dexscreener.com';
   private readonly RATE_LIMIT_MS = 300;
+  private readonly REQUEST_TIMEOUT_MS = 8_000;
   private lastCall = 0;
 
   // WebSocket
@@ -160,16 +161,23 @@ export class DexScreenerClient {
     }
     this.lastCall = Date.now();
 
-    const response = await fetch(url, {
-      headers: { 'Accept': 'application/json' },
-    });
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), this.REQUEST_TIMEOUT_MS);
+    try {
+      const response = await fetch(url, {
+        headers: { 'Accept': 'application/json' },
+        signal: controller.signal,
+      });
 
-    if (!response.ok) {
-      const errorText = await response.text().catch(() => 'No error body');
-      throw new Error(`DexScreener ${response.status}: ${url} - ${errorText}`);
+      if (!response.ok) {
+        const errorText = await response.text().catch(() => 'No error body');
+        throw new Error(`DexScreener ${response.status}: ${url} - ${errorText}`);
+      }
+
+      return await response.json();
+    } finally {
+      clearTimeout(timeout);
     }
-
-    return response.json();
   }
 
   /**

@@ -1,12 +1,12 @@
 /**
  * Centralized Auth Client
- * 
+ *
  * Security Architecture:
  * - Prefer httpOnly cookies for tokens (no active storage usage)
  * - Tokens stored in httpOnly cookies (auto-included by fetch)
  * - Auto-refresh on 401 (token expiry)
  * - Single point of error handling
- * 
+ *
  * Usage:
  *   const res = await authClient.get('/api/v1/yuki/staking/my-stakes')
  *   const res = await authClient.post('/api/v1/yuki/staking/stake', { amount: 100 })
@@ -65,17 +65,43 @@ function getCsrfToken(): string | null {
 }
 
 let refreshPromise: Promise<void> | null = null;
+let refreshBlockedCsrfToken: string | undefined;
+let refreshBlockedUntil = 0;
+let refreshFailureCount = 0;
 
 const DEFAULT_REQUEST_TIMEOUT_MS = 15000;
+const REFRESH_BACKOFF_BASE_MS = 1000;
+const REFRESH_BACKOFF_MAX_MS = 30000;
+const AUTH_ENDPOINTS_WITHOUT_REFRESH = new Set([
+  '/api/auth/login',
+  '/api/auth/register',
+  '/api/auth/refresh-token',
+  '/api/auth/logout',
+]);
+
+type AuthRequestInit = RequestInit & { timeoutMs?: number };
 
 async function refreshToken(): Promise<void> {
   if (refreshPromise) {
     return refreshPromise;
   }
 
+  const csrfToken = getCsrfToken();
+  const csrfFingerprint = csrfToken ?? '';
+  if (
+    refreshBlockedCsrfToken === csrfFingerprint &&
+    Date.now() < refreshBlockedUntil
+  ) {
+    throw new Error('Session refresh is temporarily paused after a failed attempt');
+  }
+  if (refreshBlockedCsrfToken !== csrfFingerprint) {
+    refreshBlockedCsrfToken = undefined;
+    refreshBlockedUntil = 0;
+    refreshFailureCount = 0;
+  }
+
   refreshPromise = (async () => {
     try {
-      const csrfToken = getCsrfToken();
       const refreshHeaders: Record<string, string> = {
         'Content-Type': 'application/json',
       };
@@ -93,8 +119,19 @@ async function refreshToken(): Promise<void> {
         throw new Error('Refresh failed');
       }
 
+      refreshBlockedCsrfToken = undefined;
+      refreshBlockedUntil = 0;
+      refreshFailureCount = 0;
       console.log('[AUTH] Token refreshed successfully');
     } catch (error) {
+      refreshFailureCount += 1;
+      refreshBlockedCsrfToken = csrfFingerprint;
+      refreshBlockedUntil =
+        Date.now() +
+        Math.min(
+          REFRESH_BACKOFF_MAX_MS,
+          REFRESH_BACKOFF_BASE_MS * 2 ** (refreshFailureCount - 1),
+        );
       console.error('[AUTH] Token refresh failed', error);
       handleAuthFailure();
       throw error;
@@ -106,33 +143,33 @@ async function refreshToken(): Promise<void> {
   return refreshPromise;
 }
 
-
 /**
  * Core authFetch function - used by all auth methods
  * Automatically includes credentials and handles 401 refresh.
  */
 async function authFetch(
   url: string,
-  options: RequestInit = {},
+  options: AuthRequestInit = {},
   retry = true
 ): Promise<Response> {
   // Ensure full URL
   const fullUrl = resolveApiUrl(url);
+  const { timeoutMs = DEFAULT_REQUEST_TIMEOUT_MS, ...fetchOptions } = options;
 
   const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), DEFAULT_REQUEST_TIMEOUT_MS);
+  const timeout = setTimeout(() => controller.abort(), timeoutMs);
 
-  const method = (options.method || 'GET').toUpperCase();
+  const method = (fetchOptions.method || 'GET').toUpperCase();
   const csrfToken = getCsrfToken();
 
   // Respect explicit headers and avoid forcing Content-Type when sending FormData
-  const explicitHeaders = ((options.headers as Record<string, string>) || {});
+  const explicitHeaders = (fetchOptions.headers as Record<string, string>) || {};
   const headers: Record<string, string> = {
     ...explicitHeaders,
   };
 
   // Set JSON content-type only when body is not FormData and Content-Type not already provided
-  const bodyIsFormData = typeof FormData !== 'undefined' && options.body instanceof FormData;
+  const bodyIsFormData = typeof FormData !== 'undefined' && fetchOptions.body instanceof FormData;
   if (!bodyIsFormData && !headers['Content-Type'] && !headers['content-type']) {
     headers['Content-Type'] = 'application/json';
   }
@@ -146,7 +183,7 @@ async function authFetch(
   try {
     try {
       response = await fetch(fullUrl, {
-        ...options,
+        ...fetchOptions,
         credentials: 'include', // Auto-include httpOnly cookies
         signal: controller.signal,
         headers,
@@ -162,7 +199,8 @@ async function authFetch(
   }
 
   // If token expired or user is unauthorized
-  if (response.status === 401 && retry) {
+  const requestPath = new URL(fullUrl, 'http://localhost').pathname;
+  if (response.status === 401 && retry && !AUTH_ENDPOINTS_WITHOUT_REFRESH.has(requestPath)) {
     console.warn('[AUTH] Access token expired, attempting refresh...');
 
     try {
@@ -179,12 +217,13 @@ async function authFetch(
 
 /**
  * Handle authentication failure
- * - Notify app to show login page
+ * - Notify the app that the current session is no longer valid
  * - Clear any remaining client-side storage
  */
 function handleAuthFailure(): void {
   // Legacy cleanup for older auth systems (no active use of local/session storage)
   try {
+    localStorage.removeItem('mtaa_dao_auth_session');
     localStorage.removeItem('accessToken');
     localStorage.removeItem('token');
     localStorage.removeItem('authToken');
@@ -221,12 +260,10 @@ function handleAuthFailure(): void {
     // ignore
   }
 
-  // Redirect to login after short delay
-  setTimeout(() => {
-    if (window.location.pathname !== '/login') {
-      window.location.href = '/login';
-    }
-  }, 500);
+  // Let the auth provider and route guards decide where unauthenticated users go.
+  if (typeof window !== 'undefined') {
+    window.dispatchEvent(new Event('auth:session-invalid'));
+  }
 }
 
 /**
@@ -236,7 +273,7 @@ export const authClient = {
   /**
    * GET request
    */
-  async get<T = any>(url: string, options?: RequestInit): Promise<T> {
+  async get<T = any>(url: string, options?: AuthRequestInit): Promise<T> {
     const response = await authFetch(url, {
       ...options,
       method: 'GET',
@@ -254,11 +291,8 @@ export const authClient = {
    * POST request
    */
   async post<T = any>(url: string, body?: any, options?: RequestInit): Promise<T> {
-    const payload = (typeof FormData !== 'undefined' && body instanceof FormData)
-      ? body
-      : body
-        ? JSON.stringify(body)
-        : undefined;
+    const payload =
+      typeof FormData !== 'undefined' && body instanceof FormData ? body : body ? JSON.stringify(body) : undefined;
 
     const response = await authFetch(url, {
       ...options,
@@ -278,11 +312,8 @@ export const authClient = {
    * PUT request
    */
   async put<T = any>(url: string, body?: any, options?: RequestInit): Promise<T> {
-    const payload = (typeof FormData !== 'undefined' && body instanceof FormData)
-      ? body
-      : body
-        ? JSON.stringify(body)
-        : undefined;
+    const payload =
+      typeof FormData !== 'undefined' && body instanceof FormData ? body : body ? JSON.stringify(body) : undefined;
 
     const response = await authFetch(url, {
       ...options,
@@ -303,11 +334,8 @@ export const authClient = {
    * PATCH request
    */
   async patch<T = any>(url: string, body?: any, options?: RequestInit): Promise<T> {
-    const payload = (typeof FormData !== 'undefined' && body instanceof FormData)
-      ? body
-      : body
-        ? JSON.stringify(body)
-        : undefined;
+    const payload =
+      typeof FormData !== 'undefined' && body instanceof FormData ? body : body ? JSON.stringify(body) : undefined;
 
     const response = await authFetch(url, {
       ...options,
@@ -349,7 +377,7 @@ export const authClient = {
   async fetch(url: string, options?: RequestInit): Promise<Response> {
     return authFetch(url, options);
   },
-  
+
   /**
    * Return headers required for authenticated requests (CSRF token if present).
    * Synchronous by design so callers may use it with or without `await`.
@@ -366,10 +394,7 @@ export const authClient = {
  * Hook-friendly version for React components
  * Works like fetch but auto-includes auth
  */
-export async function authFetchWrapper(
-  url: string,
-  options?: RequestInit
-): Promise<Response> {
+export async function authFetchWrapper(url: string, options?: RequestInit): Promise<Response> {
   return authFetch(url, options);
 }
 

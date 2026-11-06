@@ -95,19 +95,24 @@ export async function migratePaymentIdempotencyConstraints(): Promise<void> {
           ON reference_column.attrelid = indexes.indrelid
          AND reference_column.attname = 'reference'
          AND NOT reference_column.attisdropped
+        JOIN pg_attribute AS account_column
+          ON account_column.attrelid = indexes.indrelid
+         AND account_column.attname = 'account_id'
+         AND NOT account_column.attisdropped
         WHERE indexes.indrelid = 'public.account_transactions'::REGCLASS
           AND index_class.relname = 'account_transactions_reference_idx'
           AND indexes.indisunique
           AND indexes.indisvalid
           AND indexes.indisready
           AND indexes.indpred IS NULL
-          AND indexes.indnkeyatts = 1
-          AND indexes.indnatts = 1
+          AND indexes.indnkeyatts = 2
+          AND indexes.indnatts = 2
           AND indexes.indkey[0] = reference_column.attnum
+          AND indexes.indkey[1] = account_column.attnum
       ) THEN
         DROP INDEX IF EXISTS public.account_transactions_reference_idx;
         CREATE UNIQUE INDEX account_transactions_reference_idx
-          ON public.account_transactions (reference);
+          ON public.account_transactions (reference, account_id);
       END IF;
     END
     $$;

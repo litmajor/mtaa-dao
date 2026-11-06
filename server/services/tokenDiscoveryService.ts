@@ -124,6 +124,7 @@ const CHAIN_CONFIGS: Record<string, ChainConfig> = {
 const CELO_SEARCH_QUERIES = ['celo', 'ubeswap', 'mento'];
 const CELO_STABLES = new Set(['CUSD','CEUR','CKES','CREAL','CGHS','CBRL']);
 const CELO_NATIVE = new Set(['CUSD','CEUR','CKES','CREAL','MTAA','UBE','PACT']);
+const MAX_CHAIN_ADDRESS_ENRICHMENT = 6;
 
 class TokenDiscoveryService {
   private unifiedUniverse: Map<string, UnifiedToken> = new Map();
@@ -135,36 +136,37 @@ class TokenDiscoveryService {
   private chainFailures: Map<string, number> = new Map();
   private buildPromise: Promise<void> | null = null;
 
-  async buildUnifiedUniverse(): Promise<Map<string, UnifiedToken>> {
-    if (this.buildPromise) {
-      logger.debug('[TokenDiscovery] build already in-flight; awaiting existing promise');
-      await this.buildPromise;
-      return this.unifiedUniverse;
-    }
-
+  async buildUnifiedUniverse(forceRefresh = false): Promise<Map<string, UnifiedToken>> {
     const now = Date.now();
-    if (this.unifiedUniverse.size > 0 && now - this.lastBuilt < this.REFRESH_MS) {
+    if (!forceRefresh && this.unifiedUniverse.size > 0 && now - this.lastBuilt < this.REFRESH_MS) {
       logger.debug('[TokenDiscovery] Using cached unified universe');
       return this.unifiedUniverse;
     }
 
-    // Start build with a guarded timeout so startup isn't blocked indefinitely.
-    // Increased from 3s to 15s so DEX scanning and Celo chain discovery have room to finish.
-    const buildOp: Promise<void> = this._build();
     const TIMEOUT_MS = parseInt(process.env.TOKEN_DISCOVERY_TIMEOUT_MS || '15000');
-    this.buildPromise = Promise.race([
-      buildOp,
-      new Promise<void>((_, reject) => setTimeout(() => reject(new Error(`TokenDiscovery build timeout after ${TIMEOUT_MS}ms`)), TIMEOUT_MS))
-    ])
-      .catch((err) => {
-        // Log and continue — we want startup to proceed even if discovery times out
-        logger.warn('[TokenDiscovery] buildUnifiedUniverse timed out or failed:', err?.message || err);
-      })
-      .finally(() => {
-        this.buildPromise = null;
+    let activeBuild = this.buildPromise;
+    if (!activeBuild) {
+      const buildOp: Promise<void> = this._build();
+      const trackedBuild = buildOp.finally(() => {
+        if (this.buildPromise === trackedBuild) this.buildPromise = null;
       });
+      this.buildPromise = trackedBuild;
+      activeBuild = trackedBuild;
+    }
 
-    await this.buildPromise;
+    try {
+      await this.timeoutPromise(
+        activeBuild,
+        TIMEOUT_MS,
+        `TokenDiscovery build timeout after ${TIMEOUT_MS}ms`
+      );
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      logger.warn('[TokenDiscovery] buildUnifiedUniverse timed out or failed', {
+        error: message,
+        timeoutMs: TIMEOUT_MS,
+      });
+    }
     return this.unifiedUniverse;
   }
 
@@ -175,16 +177,18 @@ class TokenDiscoveryService {
 
     // Run both discovery flows but with per-call logging so we can trace stalls
     const cexPromise = (async () => {
+      const startedAt = Date.now();
       logger.debug('[TokenDiscovery] discoverCEXAssets: starting');
       const res = await this.discoverCEXAssets();
-      logger.debug('[TokenDiscovery] discoverCEXAssets: completed');
+      logger.info(`[TokenDiscovery] discoverCEXAssets completed in ${Date.now() - startedAt}ms (${res.length} assets)`);
       return res;
     })();
 
     const dexPromise = (async () => {
+      const startedAt = Date.now();
       logger.debug('[TokenDiscovery] discoverMultiChainDEXAssets: starting');
       const res = await this.discoverMultiChainDEXAssets();
-      logger.debug('[TokenDiscovery] discoverMultiChainDEXAssets: completed');
+      logger.info(`[TokenDiscovery] discoverMultiChainDEXAssets completed in ${Date.now() - startedAt}ms (${res.length} pairs)`);
       return res;
     })();
 
@@ -379,10 +383,14 @@ class TokenDiscoveryService {
     try {
       // Save fallback asynchronously to avoid blocking final startup path
       this.saveFallbackUniverse().catch((err) => {
-        logger.warn('[TokenDiscovery] Async saveFallbackUniverse failed:', err?.message || err);
+        logger.warn('[TokenDiscovery] Async saveFallbackUniverse failed', {
+          error: err instanceof Error ? err.message : String(err),
+        });
       });
     } catch (err: any) {
-      logger.warn('[TokenDiscovery] Failed to persist fallback universe cache:', err?.message || err);
+      logger.warn('[TokenDiscovery] Failed to persist fallback universe cache', {
+        error: err instanceof Error ? err.message : String(err),
+      });
     }
   }
 
@@ -508,7 +516,16 @@ class TokenDiscoveryService {
     // Address-based enrichment from token registry (rate-limited)
     try {
       const tokensOnChain = tokenRegistry.getTokensByChain(chainKey);
-      const addresses = tokensOnChain.map(t => t.address).filter(Boolean);
+      const candidates = tokensOnChain
+        .filter((token) => !pairsBySymbol.has(token.symbol.toUpperCase()))
+        .map((token) => token.address)
+        .filter(Boolean);
+      const addresses = candidates.slice(0, MAX_CHAIN_ADDRESS_ENRICHMENT);
+      if (candidates.length > addresses.length) {
+        logger.debug(
+          `[TokenDiscovery] ${cfg.name}: limiting address enrichment to ${addresses.length} of ${candidates.length} uncovered tokens`
+        );
+      }
       if (addresses.length > 0) {
         const addrLimiter = pLimit(3);
         const addrResults = await Promise.allSettled(
@@ -543,24 +560,34 @@ class TokenDiscoveryService {
       return [];
     }
 
+    const startedAt = Date.now();
     try {
-      return await this.timeoutPromise(
+      const pairs = await this.timeoutPromise(
         this.discoverChainPairs(chainKey, cfg),
         chainKey === 'celo' ? this.CELO_SCAN_TIMEOUT_MS : this.CHAIN_SCAN_TIMEOUT_MS,
         `${cfg.name} DEX discovery timed out`
       );
+      logger.info(`[TokenDiscovery] ${cfg.name} chain scan completed in ${Date.now() - startedAt}ms (${pairs.length} pairs)`);
+      return pairs;
     } catch (err: any) {
-      logger.warn(`[TokenDiscovery] Chain discovery failed for ${cfg.name}: ${err.message || err}`);
+      logger.warn(`[TokenDiscovery] Chain discovery failed for ${cfg.name} after ${Date.now() - startedAt}ms: ${err.message || err}`);
       this.chainFailures.set(chainKey, Date.now() + this.CHAIN_CIRCUIT_BREAKER_MS);
       return [];
     }
   }
 
   private async timeoutPromise<T>(promise: Promise<T>, timeoutMs: number, reason: string): Promise<T> {
-    return Promise.race([
-      promise,
-      new Promise<T>((_, reject) => setTimeout(() => reject(new Error(reason)), timeoutMs)),
-    ]);
+    let timeout: NodeJS.Timeout | undefined;
+    try {
+      return await Promise.race([
+        promise,
+        new Promise<T>((_, reject) => {
+          timeout = setTimeout(() => reject(new Error(reason)), timeoutMs);
+        }),
+      ]);
+    } finally {
+      if (timeout) clearTimeout(timeout);
+    }
   }
 
   /**
@@ -736,7 +763,9 @@ class TokenDiscoveryService {
       await fs.writeFile(filePath, JSON.stringify(payload, null, 2), 'utf8');
       logger.info(`[TokenDiscovery] Saved fallback universe to ${filePath}`);
     } catch (err: any) {
-      logger.warn('[TokenDiscovery] Failed to save fallback universe cache:', err?.message || err);
+      logger.warn('[TokenDiscovery] Failed to save fallback universe cache', {
+        error: err instanceof Error ? err.message : String(err),
+      });
     }
   }
 }

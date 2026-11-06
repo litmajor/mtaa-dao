@@ -8,6 +8,42 @@
 import { useQuery } from '@tanstack/react-query';
 import { authClient } from '@/utils/authClient';
 
+interface LiveMarketTicker {
+  exchange: string;
+  symbol: string;
+  last: number;
+  bid: number;
+  ask: number;
+  volume24h: number;
+  change24h: number | null;
+  timestamp: number;
+}
+
+type LiveMarketAsset<T> = T & {
+  symbol: string;
+  markets: LiveMarketTicker[];
+};
+
+interface LiveMarketData<T> {
+  assets: LiveMarketAsset<T>[];
+  exchanges: Record<string, { ok: boolean; tickerCount: number; error?: string }>;
+  timestamp: string;
+}
+
+async function fetchLiveMarketData<T>(limit: number, exchanges: string[] = []): Promise<LiveMarketData<T>> {
+  const params = new URLSearchParams({ limit: String(limit) });
+  if (exchanges.length > 0) params.set('exchanges', exchanges.join(','));
+
+  const response = await authClient.get<LiveMarketData<T>>(
+    `/api/v1/yuki/market/top?${params.toString()}`,
+    { timeoutMs: 30000 }
+  );
+  if (!response || !Array.isArray(response.assets) || !response.exchanges) {
+    throw new Error('Market data response did not contain assets and exchange status');
+  }
+  return response;
+}
+
 /**
  * Fetch exchange status and available exchanges
  */
@@ -15,7 +51,7 @@ export const useExchangeStatus = () => {
   return useQuery({
     queryKey: ['exchange-status'],
     queryFn: async () => {
-      return authClient.get<any>('/api/v1/yuki/exchanges/status');
+      return authClient.get<string[]>('/api/v1/yuki/exchanges/exchanges/available');
     },
     staleTime: 30000, // 30 seconds
     retry: 1,
@@ -30,11 +66,24 @@ export const useExchangeAssets = (exchangeName: string | null) => {
     queryKey: ['exchange-assets', exchangeName],
     queryFn: async () => {
       if (!exchangeName) return [];
-      const data = await authClient.get<any>(`/api/v1/yuki/exchanges/markets?exchange=${exchangeName}`);
-      return data.assets || [];
+      const data = await fetchLiveMarketData<any>(500, [exchangeName]);
+      return data.assets.flatMap((asset) => asset.markets
+        .filter((market) => market.exchange === exchangeName)
+        .map((market) => ({
+          symbol: market.symbol,
+          base: asset.symbol,
+          quote: market.symbol.split('/')[1],
+          last: market.last,
+          bid: market.bid,
+          ask: market.ask,
+          volume24h: market.volume24h,
+          change24h: market.change24h,
+          timestamp: market.timestamp,
+        })));
     },
-    staleTime: 3600000, // 1 hour (assets don't change often)
-    retry: 1,
+    staleTime: 10000,
+    refetchInterval: 30000,
+    retry: 0,
     enabled: !!exchangeName,
   } as any);
 };
@@ -47,15 +96,27 @@ export const usePrices = (symbol: string | null, exchanges: string[]) => {
     queryKey: ['prices', symbol, exchanges.join(',')],
     queryFn: async () => {
       if (!symbol || exchanges.length === 0) return null;
-      const exchangesParam = exchanges.join(',');
-      // v1 aggregated endpoint - returns per-exchange price data for the pair
-      const pair = encodeURIComponent(symbol);
-      return authClient.get<any>(
-        `/api/v1/yuki/exchanges?pair=${pair}&exchanges=${encodeURIComponent(exchangesParam)}&limit=500`
-      );
+      const data = await fetchLiveMarketData<any>(500, exchanges);
+      const [baseSymbol, quoteSymbol] = symbol.split('/');
+      const normalizedPair = symbol.includes('/') ? symbol.toUpperCase() : null;
+      const asset = data.assets.find((item) => item.symbol.toUpperCase() === baseSymbol.toUpperCase());
+      const marketData = (asset?.markets ?? [])
+        .filter((market) => exchanges.includes(market.exchange))
+        .filter((market) => !normalizedPair || market.symbol.toUpperCase() === normalizedPair)
+        .sort((a, b) => b.volume24h - a.volume24h);
+      const prices = Object.fromEntries(exchanges.flatMap((exchange) => {
+        const market = marketData.find((item) => item.exchange === exchange);
+        if (!market) return [];
+        return [[exchange, {
+          ...market,
+          price: market.last,
+          volume: market.volume24h,
+          quote: quoteSymbol,
+        }]];
+      }));
+      return { prices, timestamp: data.timestamp };
     },
     staleTime: 30000, // 30 seconds (prices update frequently)
-    retry: 1,
     refetchInterval: 30000, // Auto-refresh prices
     enabled: !!symbol && exchanges.length > 0,
   } as any);
@@ -65,20 +126,28 @@ export const usePrices = (symbol: string | null, exchanges: string[]) => {
  * Fetch best price across exchanges
  */
 export const useBestPrice = (symbol: string | null, exchanges: string[]) => {
-  return useQuery({
-    queryKey: ['best-price', symbol, exchanges.join(',')],
-    queryFn: async () => {
-      if (!symbol || exchanges.length === 0) return null;
-      const pair = encodeURIComponent(symbol);
-      // Use ranked endpoint to find best price (limit=1)
-      const resp = await authClient.get<any>(`/api/v1/yuki/exchanges/ranked?pair=${pair}&sortBy=price&limit=1`);
-      return resp;
-    },
-    staleTime: 30000,
-    retry: 1,
-    refetchInterval: 30000, // Auto-refresh
-    enabled: !!symbol && exchanges.length > 0,
-  } as any);
+  const query = usePrices(symbol, exchanges);
+  const prices = (query.data as any)?.prices ?? {};
+  const candidates = Object.values(prices).filter((price: any) => price.bid > 0 && price.ask > 0) as any[];
+  const best = candidates
+    .map((price) => ({
+      ...price,
+      spread: price.ask - price.bid,
+      spreadPct: ((price.ask - price.bid) / price.bid) * 100,
+    }))
+    .sort((a, b) => a.spreadPct - b.spreadPct)[0];
+
+  return {
+    ...query,
+    data: best ? {
+      best,
+      all: prices,
+      analysis: {
+        tightest: best.exchange,
+        spread_pct: best.spreadPct,
+      },
+    } : null,
+  } as any;
 };
 
 /**
@@ -122,24 +191,19 @@ export const useExchangeBalance = (exchange: string | null) => {
 };
 
   /**
-   * Fetch top assets aggregated by the backend (server-side fan-out)
+   * Fetch top assets aggregated from live exchange tickers by the backend.
    */
   export const useTopAssets = <T = any>(limit: number = 100) => {
-    return useQuery<T[]>({
+    return useQuery<{
+      assets: LiveMarketAsset<T>[];
+      exchanges: LiveMarketData<T>['exchanges'];
+      timestamp: string;
+    }>({
       queryKey: ['top-assets', limit],
-      queryFn: async () => {
-        try {
-          const resp = await authClient.get<any>(`/api/v1/yuki/market/top?limit=${limit}`);
-          const body = resp.data || {};
-          const list = body.data || [];
-          return list.map((a: any, idx: number) => ({ ...a, rank: a.rank || idx + 1 })) as T[];
-        } catch (error) {
-          console.error('Failed to fetch top assets:', error);
-          throw error;
-        }
-      },
-      staleTime: 60000, // 1 minute
-      retry: 2,
+      queryFn: () => fetchLiveMarketData<T>(limit),
+      staleTime: 10000,
+      refetchInterval: 30000,
+      retry: 0,
     });
   };
 
@@ -153,19 +217,25 @@ export const useExchangeBalance = (exchange: string | null) => {
       queryFn: async () => {
         if (!baseSymbol) return { found: 0, exchanges: [] };
         try {
-          // Use pair with USDT as common quote
-          const pair = `${baseSymbol}/USDT`;
-          const resp = await authClient.get<any>(`/api/v1/yuki/exchanges?pair=${encodeURIComponent(pair)}&limit=500`);
-          const body = resp.data || {};
-          const data = body.data || { exchanges: [] };
-          const list = data.exchanges || [];
+          const data = await fetchLiveMarketData<any>(500, exchanges);
+          const asset = data.assets.find((item) => item.symbol.toUpperCase() === baseSymbol.toUpperCase());
+          const list = asset?.markets ?? [];
           return {
             found: list.length,
-            exchanges: list.map((e: any) => ({ exchange: e.exchange || e.name || e.id, symbol: e.symbol || pair, price: e.price || e.last || 0, bid: e.bid, ask: e.ask, volume: e.volume || e.quoteVolume || 0 }))
+            exchanges: list.map((market) => ({
+              exchange: market.exchange,
+              symbol: market.symbol,
+              price: market.last,
+              bid: market.bid,
+              ask: market.ask,
+              volume: market.volume24h,
+              change24h: market.change24h,
+              timestamp: market.timestamp,
+            }))
           };
         } catch (error) {
           console.error('Failed to find symbol across exchanges:', error);
-          return { found: 0, exchanges: [] };
+          throw error;
         }
       },
       staleTime: 30000,
@@ -209,7 +279,7 @@ export const useOrderRouting = (symbol: string | null, amount: number | null) =>
         symbol,
         amount,
         side: 'buy',
-        exchanges: ['binance', 'coinbase', 'kraken']
+        exchanges: ['binance', 'coinbase', 'kraken', 'bybit', 'kucoin', 'okx']
       });
     },
     staleTime: 30000, // 30 seconds
@@ -326,7 +396,7 @@ export const useLimitOrderAnalysis = (
         limitPrice,
         amount,
         side: 'buy',
-        exchanges: ['binance', 'coinbase', 'kraken', 'bybit', 'kucoin']
+        exchanges: ['binance', 'coinbase', 'kraken', 'bybit', 'kucoin', 'okx']
       });
       return analysisData.data;
     },

@@ -11,14 +11,16 @@
  * The critical handler is CompletePaymentHandler, which enforces the
  * ACID accounting contract:
  *   - paymentTransactions updated (OCC)
- *   - walletTransactions inserted (ledger entry)
- *   - users.balance updated (SELECT FOR UPDATE)
+ *   - walletTransactions history row inserted
+ *   - account_transactions and the canonical account balance updated (SELECT FOR UPDATE)
+ *   - the platform journal and user balance cache updated by database triggers
  *   - PaymentCompleted event returned (persisted by OutboxMiddleware)
  *   All inside one database transaction (context.tx from TransactionMiddleware).
  */
 
 import { v4 as uuid } from 'uuid';
 import { sql } from 'drizzle-orm';
+import { Decimal } from 'decimal.js';
 import type { CommandHandler, CommandResult, CommandContext } from '../commands/CommandBus';
 import type { Command } from '../commands/Command';
 import type { DomainEvent } from '../events/DomainEvent';
@@ -407,10 +409,11 @@ export class SettlePaymentHandler implements CommandHandler<Command<SettlePaymen
 //
 //   BEGIN TX (provided by TransactionMiddleware)
 //     1. Load + verify payment
-//     2. Insert walletTransactions row (ledger entry)
-//     3. Update users.balance (SELECT FOR UPDATE to prevent races)
-//     4. Update paymentTransactions to COMPLETED (OCC)
-//     5. Return PaymentCompleted event (OutboxMiddleware persists it)
+//     2. Insert walletTransactions history row
+//     3. Update the canonical accounts balance (SELECT FOR UPDATE to prevent races)
+//     4. Journal the account delta and refresh the user cache via database trigger
+//     5. Update paymentTransactions to COMPLETED (OCC)
+//     6. Return PaymentCompleted event (OutboxMiddleware persists it)
 //   COMMIT (TransactionMiddleware resolves)
 //
 // After commit, the Outbox Relay publishes the event.
@@ -495,26 +498,69 @@ export class CompletePaymentHandler implements CommandHandler<Command<CompletePa
         updatedAt: new Date(),
       });
 
-    // 3. Update user's cached balance (SELECT FOR UPDATE to prevent concurrent races)
-    const userRes = await tx.execute(sql`
-      SELECT id, balance
-      FROM users
-      WHERE id = ${payment.userId}::text
+    // 3. Update the canonical platform account and its append-only journal trigger.
+    const accountLockKey = `${payment.userId}:personal:${payment.currency}`;
+    await tx.execute(sql`SELECT pg_advisory_xact_lock(hashtextextended(${accountLockKey}, 0))`);
+    const accountRes = await tx.execute(sql`
+      SELECT id, balance, total_deposited, total_transactions
+      FROM accounts
+      WHERE user_id = ${payment.userId}
+        AND currency = ${payment.currency}
+        AND account_type = 'wallet'
+        AND dao_id IS NULL
+        AND status = 'active'
+      ORDER BY created_at
+      LIMIT 1
       FOR UPDATE
     `);
 
-    const user = userRes.rows?.[0] as { id: string; balance: string | number } | undefined;
-    if (user) {
-      const currentBalance = Number(user.balance || 0);
-      const depositAmount = Number(payment.amount || 0);
-      const newBalance = (currentBalance + depositAmount).toFixed(4);
+    let account = accountRes.rows?.[0] as {
+      id: string;
+      balance: string | number;
+      total_deposited: string | number;
+      total_transactions: number;
+    } | undefined;
 
-      await tx.execute(sql`
-        UPDATE users
-        SET balance = ${newBalance}::numeric, updated_at = now()
-        WHERE id = ${user.id}::text
+    if (!account) {
+      const created = await tx.execute(sql`
+        INSERT INTO accounts (user_id, account_type, currency, balance, status)
+        VALUES (${payment.userId}, 'wallet', ${payment.currency}, 0, 'active')
+        RETURNING id, balance, total_deposited, total_transactions
       `);
+      account = created.rows?.[0] as typeof account;
     }
+    if (!account) throw new Error(`Unable to create platform wallet account for user ${payment.userId}`);
+
+    const amount = new Decimal(String(payment.amount));
+    if (!amount.isFinite() || amount.lte(0) || amount.decimalPlaces() > 8) {
+      throw new Error(`Invalid platform ledger deposit amount for payment ${payment.id}`);
+    }
+    const balanceBefore = new Decimal(account.balance || 0);
+    const balanceAfter = balanceBefore.plus(amount);
+    const accountTransactionReference = `payment:${payment.id}`;
+
+    await tx.execute(sql`
+      INSERT INTO account_transactions (
+        account_id, transaction_type, amount, currency, description, reference, status,
+        balance_before, balance_after, from_user_id, to_user_id, created_at, updated_at
+      )
+      VALUES (
+        ${account.id}::uuid, 'deposit', ${amount.toFixed(8)}::numeric, ${payment.currency},
+        ${`Payment completed: ${payment.reference}`}, ${accountTransactionReference},
+        'completed', ${balanceBefore.toFixed(8)}::numeric, ${balanceAfter.toFixed(8)}::numeric,
+        NULL, ${payment.userId}, NOW(), NOW()
+      )
+    `);
+
+    await tx.execute(sql`
+      UPDATE accounts
+      SET balance = ${balanceAfter.toFixed(8)}::numeric,
+          total_deposited = COALESCE(total_deposited, 0) + ${amount.toFixed(8)}::numeric,
+          total_transactions = COALESCE(total_transactions, 0) + 1,
+          last_activity_at = NOW(),
+          updated_at = NOW()
+      WHERE id = ${account.id}::uuid
+    `);
 
     // 4. Update paymentTransactions to COMPLETED (OCC)
     const mergedMetadata = {

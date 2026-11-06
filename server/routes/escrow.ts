@@ -6,6 +6,7 @@ import { and, asc, desc, eq, or, sql } from 'drizzle-orm';
 import type { SQL } from 'drizzle-orm';
 import { escrowService } from '../services/escrowService';
 import { authenticate } from '../auth';
+import { requireApprovedKyc } from '../middleware/requireApprovedKyc';
 import { notificationService } from '../notificationService';
 import { nanoid } from 'nanoid';
 import {
@@ -38,7 +39,7 @@ async function verifyEscrowParty(escrowId: string, userId: string) {
 }
 
 // Initiate escrow with invite link (wallet-based, peer-to-peer)
-router.post('/initiate', authenticate, async (req, res) => {
+router.post('/initiate', authenticate, requireApprovedKyc, async (req, res) => {
   try {
     const { recipient, amount, currency, description, milestones } = req.body;
     const payerId = req.user!.id;
@@ -219,7 +220,7 @@ router.post('/accept/:inviteCode', authenticate, async (req, res) => {
 // ════════════════════════════════════════════════════════════════════════════════
 
 // POST /api/escrow - Create escrow
-router.post('/', authenticate, async (req, res) => {
+router.post('/', authenticate, requireApprovedKyc, async (req, res) => {
   try {
     const { taskId, payeeId, amount, currency, milestones } = req.body;
     const payerId = req.user!.id;
@@ -259,7 +260,7 @@ router.post('/', authenticate, async (req, res) => {
  * Sunset: 2026-09-01
  */
 // Create escrow (original - kept for backward compatibility)
-router.post('/create', authenticate, async (req, res) => {
+router.post('/create', authenticate, requireApprovedKyc, async (req, res) => {
   // Issue deprecation warning
   res.setHeader('Deprecation', 'true');
   res.setHeader('Sunset', 'Wed, 01 Sep 2026 00:00:00 GMT');

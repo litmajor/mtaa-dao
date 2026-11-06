@@ -18,6 +18,8 @@ export type Transaction = {
   to?: string
   amount?: string | number
   timestamp?: number
+  createdAt?: string | Date
+  currency?: string
   meta?: Record<string, unknown>
   // Additional fields used by client UI
   type?: 'received' | 'sent' | 'swap' | 'deposit' | 'withdrawal' | string

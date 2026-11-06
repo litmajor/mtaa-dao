@@ -11,6 +11,7 @@
 
 import { db } from '../storage';
 import { eq, desc, and, sql } from 'drizzle-orm';
+import { Decimal } from 'decimal.js';
 import { logConsolidatedAuditEvent } from './auditConsolidated';
 import treasuryConfig from '../config/treasury';
 import { logger } from '../utils/logger';
@@ -32,6 +33,9 @@ export interface TreasuryBalance {
   available: string;
   pending: string;
   currency: string;
+  deposits: string;
+  withdrawn: string;
+  transactionCount: number;
 }
 
 export interface TreasuryTransaction {
@@ -166,47 +170,48 @@ export class TreasuryService {
    */
   static async getBalance(daoId: string): Promise<TreasuryBalance> {
     try {
-      // Query all completed transactions for this DAO
+      // This endpoint is explicitly a cUSD balance, not a cross-asset total.
       const transactions = await db.select().from(walletTransactions)
         .where(and(
           eq(walletTransactions.daoId, daoId),
-          eq(walletTransactions.status, 'completed')
+          eq(walletTransactions.status, 'completed'),
+          sql`UPPER(${walletTransactions.currency}) = 'CUSD'`,
         ));
 
       // Also get pending transactions for pending balance
       const pendingTxs = await db.select().from(walletTransactions)
         .where(and(
           eq(walletTransactions.daoId, daoId),
-          eq(walletTransactions.status, 'pending')
+          eq(walletTransactions.status, 'pending'),
+          sql`UPPER(${walletTransactions.currency}) = 'CUSD'`,
         ));
 
-      // Calculate balances from transaction history
-      let totalDeposits = 0;
-      let totalWithdrawals = 0;
-      let pendingAmount = 0;
+      let totalDeposits = new Decimal(0);
+      let totalWithdrawals = new Decimal(0);
+      let pendingAmount = new Decimal(0);
 
       for (const tx of transactions) {
-        if (!tx.amount) continue; // Skip if amount is null/undefined
-        const amount = typeof tx.amount === 'string' ? parseFloat(tx.amount) : tx.amount;
-        if (tx.type === 'deposit' || tx.type === 'contribution') totalDeposits += amount;
-        if (tx.type === 'withdrawal') totalWithdrawals += amount;
+        const amount = new Decimal(tx.amount || '0');
+        if (tx.type === 'deposit' || tx.type === 'contribution') totalDeposits = totalDeposits.plus(amount);
+        if (tx.type === 'withdrawal') totalWithdrawals = totalWithdrawals.plus(amount);
       }
 
       for (const tx of pendingTxs) {
-        if (!tx.amount) continue; // Skip if amount is null/undefined
-        const amount = typeof tx.amount === 'string' ? parseFloat(tx.amount) : tx.amount;
-        if (tx.type === 'withdrawal') pendingAmount += amount;
+        if (tx.type === 'withdrawal') pendingAmount = pendingAmount.plus(tx.amount || '0');
       }
 
-      const balance = totalDeposits - totalWithdrawals;
-      const available = Math.max(balance - pendingAmount, 0);
+      const balance = totalDeposits.minus(totalWithdrawals);
+      const available = Decimal.max(balance.minus(pendingAmount), 0);
 
       return {
         daoId,
-        total: balance.toFixed(2),
-        available: available.toFixed(2),
-        pending: pendingAmount.toFixed(2),
+        total: balance.toFixed(8),
+        available: available.toFixed(8),
+        pending: pendingAmount.toFixed(8),
         currency: 'cUSD',
+        deposits: totalDeposits.toFixed(8),
+        withdrawn: totalWithdrawals.toFixed(8),
+        transactionCount: transactions.length,
       };
     } catch (error) {
       console.error('[Treasury] Balance query error:', error);
@@ -1174,67 +1179,96 @@ export class TreasuryService {
   }
 
   /**
-   * COMPUTED BALANCE: Get treasury balance from chain-indexed treasuryPositions
-   * This is the SOURCE OF TRUTH - never use daos.treasuryBalance field
-   * 
-   * Calculates total DAO treasury by summing:
-   * 1. treasuryPositions (chain-indexed, never stale)
-   * 2. stableInflowEvents (append-only ledger, immutable)
+   * Return asset-level indexed positions and a USD total only when every
+   * position has a recorded USD valuation. This is not a live chain read.
    */
   static async getComputedTreasuryBalance(daoId: string) {
     try {
-      // Query: Sum all treasuryPositions for this DAO
-      const positionsResult = await db
+      const positions = await db
         .select({
-          totalPositions: sql<string>`COALESCE(SUM(${treasuryPositions.balance}), '0')`.as(
-            'total_positions'
-          ),
-          maxUpdatedAt: sql<any>`MAX(${treasuryPositions.updatedAt})`.as('max_updated_at'),
-          positionCount: sql<number>`COUNT(DISTINCT ${treasuryPositions.id})`.as('position_count'),
+          symbol: treasuryPositions.symbol,
+          chainId: treasuryPositions.chainId,
+          chain: treasuryPositions.chain,
+          contractAddress: treasuryPositions.contractAddress,
+          holderAddress: treasuryPositions.holderAddress,
+          balance: treasuryPositions.balance,
+          balanceUsd: treasuryPositions.balanceUsd,
+          updatedAt: treasuryPositions.updatedAt,
         })
         .from(treasuryPositions)
         .where(eq(treasuryPositions.daoId, daoId as any));
 
-      const positionData = positionsResult[0] || {
-        totalPositions: '0',
-        maxUpdatedAt: null,
-        positionCount: 0,
-      };
+      const assetBalances = new Map<string, {
+        symbol: string;
+        chainId: number | null;
+        chain: string;
+        contractAddress: string;
+        holderAddress: string | null;
+        balance: Decimal;
+        balanceUsd: Decimal | null;
+        lastUpdatedAt: Date | null;
+      }>();
 
-      // Query: Sum balanceUsd from all treasuryPositions for this DAO as an alternative valuation
-      const balanceUsdResult = await db
-        .select({
-          totalBalanceUsd: sql<string>`COALESCE(SUM(${treasuryPositions.balanceUsd}), '0')`.as(
-            'total_balance_usd'
-          ),
-        })
-        .from(treasuryPositions)
-        .where(eq(treasuryPositions.daoId, daoId as any));
+      for (const position of positions) {
+        const contractAddress = position.contractAddress.toLowerCase();
+        const key = `${position.chainId ?? position.chain.toLowerCase()}:${contractAddress}:${position.holderAddress?.toLowerCase() ?? 'unknown-holder'}`;
+        const current = assetBalances.get(key);
+        if (!current) {
+          assetBalances.set(key, {
+            symbol: position.symbol,
+            chainId: position.chainId,
+            chain: position.chain,
+            contractAddress: position.contractAddress,
+            holderAddress: position.holderAddress,
+            balance: new Decimal(position.balance || '0'),
+            balanceUsd: position.balanceUsd === null ? null : new Decimal(position.balanceUsd),
+            lastUpdatedAt: position.updatedAt,
+          });
+          continue;
+        }
 
-      const balanceUsdData = balanceUsdResult[0] || { totalBalanceUsd: '0' };
+        current.balance = current.balance.plus(position.balance || '0');
+        current.balanceUsd = current.balanceUsd === null || position.balanceUsd === null
+          ? null
+          : current.balanceUsd.plus(position.balanceUsd);
+        if (position.updatedAt && (!current.lastUpdatedAt || position.updatedAt > current.lastUpdatedAt)) {
+          current.lastUpdatedAt = position.updatedAt;
+        }
+      }
 
-      // Sum both sources: positions
-      const { Decimal } = await import('decimal.js');
-      const positionsAmount = new Decimal(positionData.totalPositions || '0');
-      const balanceUsdAmount = new Decimal(balanceUsdData.totalBalanceUsd || '0');
-      const totalComputedBalance = positionsAmount;
-
-      const lastIndexedAt = positionData.maxUpdatedAt ? new Date(positionData.maxUpdatedAt) : new Date();
-
-      console.log(
-        `[TreasuryService] DAO ${daoId} computed treasuryBalance: ` +
-          `positions=${positionsAmount.toString()}, balance_usd=${balanceUsdAmount.toString()}, ` +
-          `total=${totalComputedBalance.toString()}, position_count=${positionData.positionCount}, ` +
-          `last_updated=${lastIndexedAt.toISOString()}`
+      const valuationComplete = positions.length > 0
+        && Array.from(assetBalances.values()).every((asset) => asset.balanceUsd !== null);
+      const totalBalanceUsd = valuationComplete
+        ? Array.from(assetBalances.values()).reduce(
+          (total, asset) => total.plus(asset.balanceUsd ?? 0),
+          new Decimal(0),
+        ).toString()
+        : null;
+      const lastIndexedAt = positions.reduce<Date | null>(
+        (latest, position) => position.updatedAt && (!latest || position.updatedAt > latest) ? position.updatedAt : latest,
+        null,
       );
 
       return {
         daoId,
-        totalComputedBalance: totalComputedBalance.toString(),
-        treasuryPositionsBalance: positionsAmount.toString(),
-        treasuryBalanceUsd: balanceUsdAmount.toString(),
+        totalComputedBalance: totalBalanceUsd,
+        totalComputedBalanceCurrency: totalBalanceUsd === null ? null : 'USD',
+        treasuryPositionsBalance: assetBalances.size === 1
+          ? Array.from(assetBalances.values())[0].balance.toString()
+          : null,
+        treasuryBalanceUsd: totalBalanceUsd,
+        assetBalances: Array.from(assetBalances.values()).map((asset) => ({
+          symbol: asset.symbol,
+          chainId: asset.chainId,
+          chain: asset.chain,
+          contractAddress: asset.contractAddress,
+          holderAddress: asset.holderAddress,
+          balance: asset.balance.toString(),
+          balanceUsd: asset.balanceUsd?.toString() ?? null,
+          lastUpdatedAt: asset.lastUpdatedAt,
+        })),
         lastIndexedAt,
-        positionCount: positionData.positionCount,
+        positionCount: positions.length,
       };
     } catch (error) {
       console.error(`[TreasuryService] Error computing treasury balance for DAO ${daoId}:`, error);

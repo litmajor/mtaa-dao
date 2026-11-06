@@ -5,6 +5,7 @@ import { users } from '../../../../shared/schema';
 import { eq, or, sql, and } from 'drizzle-orm';
 import { escrowService } from '../../../services/escrowService';
 import { isAuthenticated } from '../../../auth';
+import { requireApprovedKyc } from '../../../middleware/requireApprovedKyc';
 import { nanoid } from 'nanoid';
 import { z } from 'zod';
 import {
@@ -157,7 +158,7 @@ async function verifyEscrowParty(escrowId: string, userId: string) {
 }
 
 // Initiate escrow with invite link (wallet-based, peer-to-peer)
-router.post('/initiate', isAuthenticated, async (req, res) => {
+router.post('/initiate', isAuthenticated, requireApprovedKyc, async (req, res) => {
   try {
     // Validate request body
     const validation = createEscrowInitiateSchema.safeParse(req.body);
@@ -167,7 +168,6 @@ router.post('/initiate', isAuthenticated, async (req, res) => {
 
     const { recipient, amount, currency, description, milestones } = validation.data;
     const payerId = req.user!.id;
-
     // Security: Prevent self-escrow
     const recipientEmail = recipient.toLowerCase();
     const recipientUser = await db.select().from(users)
@@ -354,7 +354,7 @@ router.post('/accept/:inviteCode', isAuthenticated, async (req, res) => {
 // ════════════════════════════════════════════════════════════════════════════════
 
 // POST /api/v1/wallets/escrow - Create escrow
-router.post('/', isAuthenticated, async (req, res) => {
+router.post('/', isAuthenticated, requireApprovedKyc, async (req, res) => {
   try {
     // Validate request body
     const validation = createEscrowSchema.safeParse(req.body);
@@ -364,7 +364,6 @@ router.post('/', isAuthenticated, async (req, res) => {
 
     const { taskId, payeeId, amount, currency, milestones } = validation.data;
     const payerId = req.user!.id;
-
     // Security: Prevent self-escrow
     if (payeeId === payerId) {
       return res.status(400).json({ error: 'Cannot create escrow with yourself' });
@@ -433,7 +432,7 @@ router.post('/', isAuthenticated, async (req, res) => {
  * Sunset: 2026-09-01
  */
 // Create escrow (original - kept for backward compatibility)
-router.post('/create', isAuthenticated, async (req, res) => {
+router.post('/create', isAuthenticated, requireApprovedKyc, async (req, res) => {
   // Issue deprecation warning
   res.setHeader('Deprecation', 'true');
   res.setHeader('Sunset', 'Wed, 01 Sep 2026 00:00:00 GMT');
@@ -443,7 +442,6 @@ router.post('/create', isAuthenticated, async (req, res) => {
   try {
     const { taskId, payeeId, amount, currency, milestones } = req.body;
     const payerId = req.user!.id;
-
     // Validation
     if (!payeeId || !amount || !currency) {
       return res.status(400).json({ error: 'Missing required fields' });

@@ -91,6 +91,7 @@ import p2pTransfersRoutes from './routes/p2p-transfers';
 import paymentExecutionRoutes from './routes/paymentExecutionRoutes';
 import simulationPaymentRoutes from './routes/simulationPaymentRoutes';
 import { reconcileMpesaCallback } from './payments';
+import { deprecatedYukiRedirect } from './middleware/deprecatedYukiRedirect';
 
 // Import Exchange and Order Router routes
 import exchangeRoutes from './routes/exchanges';
@@ -117,6 +118,7 @@ import { authOauthGoogleCallbackHandler } from './api/auth_oauth_google_callback
 import { authConfirmIdentityLinkingHandler } from './api/auth_confirm_identity_linking';
 import { authTelegramInitHandler } from './api/auth_telegram_init';
 import { authTelegramCallbackHandler } from './api/auth_telegram_callback';
+import { requestPasswordResetOtp, resetPasswordWithOtp } from './passwordReset';
 import { accountDeleteHandler } from './api/account_delete';
 import { daoDeployHandler } from './api/dao_deploy';
 import { getSpawnFeeQuote, SPAWN_FEE_KES } from './services/daoSpawnService';
@@ -641,11 +643,28 @@ export async function registerRoutes(app: express.Application, server: HTTPServe
       next(err);
     }
   });
+  app.post('/api/auth/send-otp', otpResendRateLimiter, (req: express.Request, res: express.Response, next: express.NextFunction) => {
+    try {
+      req.body = sanitizeObject(req.body || {});
+      return requestPasswordResetOtp(req, res);
+    } catch (err) {
+      next(err);
+    }
+  });
+  app.post('/api/auth/reset-password', otpVerifyRateLimiter, (req: express.Request, res: express.Response, next: express.NextFunction) => {
+    try {
+      req.body = sanitizeObject(req.body || {});
+      return resetPasswordWithOtp(req, res);
+    } catch (err) {
+      next(err);
+    }
+  });
   app.post('/api/auth/telegram-link', isAuthenticated, otpResendRateLimiter, authTelegramLinkHandler);
   app.get('/api/auth/oauth/google', authOauthGoogleHandler);
   app.get('/api/auth/oauth/google/callback', authOauthGoogleCallbackHandler);
   app.post('/api/auth/oauth/confirm-linking', authConfirmIdentityLinkingHandler);
   app.get('/api/auth/telegram/init', authTelegramInitHandler);
+  app.get('/api/auth/telegram/callback', authTelegramCallbackHandler);
   app.post('/api/auth/telegram/callback', authTelegramCallbackHandler);
   app.post('/api/auth/refresh-token', loginRateLimiter, refreshTokenHandler);
   app.post('/api/auth/logout', logoutHandler);
@@ -677,20 +696,7 @@ export async function registerRoutes(app: express.Application, server: HTTPServe
 
   // Deprecation redirect: /api/yuki → /api/v1/yuki
   console.log('[ROUTES] Setting up Yuki versioning redirect...');
-  app.all('/api/yuki*', (req, res) => {
-    const newPath = `/api/v1/yuki${req.url.substring('/yuki'.length)}`;
-    res.status(307);
-    res.setHeader('Location', newPath);
-    res.setHeader('Deprecation', 'true');
-    res.setHeader('Sunset', new Date(Date.now() + 90 * 24 * 60 * 60 * 1000).toUTCString());
-    res.setHeader('X-Redirect-To', newPath);
-    res.json({
-      deprecated: true,
-      message: 'Yuki API has been moved to /api/v1/yuki',
-      newLocation: newPath,
-      sunsetDate: new Date(Date.now() + 90 * 24 * 60 * 60 * 1000).toISOString()
-    });
-  });
+  app.use('/api/yuki', deprecatedYukiRedirect);
 
   // Symbol Universe & CEX Price Integration
   console.log('[ROUTES] Mounting symbol universe routes...');

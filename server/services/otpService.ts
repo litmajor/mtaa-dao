@@ -127,7 +127,33 @@ class OTPServiceInternal {
     await redis.delete(`otp:${identifier}`);
   }
 
+  async getPendingPassword(identifier: string): Promise<string | null> {
+    const data = await redis.get(`otp:${identifier}`);
+    if (!data) return null;
+    const otpData = typeof data === 'string' ? JSON.parse(data) as OTPData : data as OTPData;
+    if (
+      typeof otpData.password !== 'string' ||
+      !otpData.password ||
+      typeof otpData.expiresAt !== 'number' ||
+      otpData.expiresAt <= Date.now() ||
+      otpData.attempts >= 5
+    ) {
+      return null;
+    }
+    return otpData.password;
+  }
+
   async sendEmailOTP(email: string, otp: string): Promise<void> {
+    const hasEmailProvider = Boolean(
+      process.env.SENDGRID_API_KEY ||
+      ((process.env.EMAIL_HOST || process.env.SMTP_HOST) &&
+        (process.env.EMAIL_USER || process.env.SMTP_USER))
+    );
+    if (process.env.NODE_ENV === 'development' && !hasEmailProvider) {
+      console.warn(`[OTP] No email provider configured; development OTP for ${email}: ${otp}`);
+      return;
+    }
+
     const result = await EmailService.send({
       to: email,
       subject: 'Your MtaaDAO Verification Code',
@@ -182,7 +208,7 @@ class OTPServiceInternal {
       }
 
       if (process.env.NODE_ENV !== 'development') {
-        console.warn('⚠️  No SMS provider configured in production. Add AFRICAS_TALKING or TWILIO credentials.');
+        throw new Error('No SMS provider configured. Configure Africa\'s Talking for Kenyan numbers or Twilio.');
       }
     } catch (error) {
       console.error('Failed to send OTP SMS:', error);
@@ -266,6 +292,19 @@ class OTPServiceInternal {
 
       if (!response.ok) {
         throw new Error(`Africa's Talking API error: ${response.status}`);
+      }
+
+      const result = await response.json() as {
+        SMSMessageData?: { Recipients?: Array<{ status?: string; statusCode?: number }> };
+      };
+      const recipients = result.SMSMessageData?.Recipients ?? [];
+      if (
+        recipients.length === 0 ||
+        recipients.some((recipient) =>
+          recipient.statusCode !== 101 && recipient.status !== 'Success'
+        )
+      ) {
+        throw new Error('Africa\'s Talking did not accept the OTP message');
       }
 
       console.log(`✅ OTP SMS sent to ${phone} via Africa's Talking`);
@@ -455,6 +494,8 @@ export const OTPService = {
     }
     return false;
   },
+  getPendingPassword: (identifier: string): Promise<string | null> =>
+    _otpInternal.getPendingPassword(identifier),
 
   _internal: _otpInternal,
 };

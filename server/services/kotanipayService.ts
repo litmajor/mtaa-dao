@@ -6,12 +6,14 @@
 
 import { db } from '../db';
 import { walletTransactions } from '../../shared/schema';
-import { userBalances as userBalancesTable, transactionFees as transactionFeesTable, mpesaTransactions as mpesaTransactionsTable } from '../../shared/financialEnhancedSchema';
-import { and, eq, gt, isNull, sql } from 'drizzle-orm';
+import { transactionFees as transactionFeesTable, mpesaTransactions as mpesaTransactionsTable } from '../../shared/financialEnhancedSchema';
+import { and, eq, gt, sql } from 'drizzle-orm';
 import { notificationService } from '../notificationService';
 import { config } from '../../shared/config';
 import { exchangeRateService } from './exchangeRateService';
 import { paymentRecoverySAGA } from './PaymentRecoverySAGAOrchestrator';
+import { getUserAccountAvailableBalance, updateUserAccountBalance } from './account-service';
+import { Decimal } from 'decimal.js';
 
 interface DepositRequest {
   userId: string;
@@ -195,7 +197,8 @@ export class KotanipayService {
         'cUSD',
         amountCUSD,
         'add',
-        (transaction.metadata as any)?.daoId
+        (transaction.metadata as any)?.daoId,
+        `${transactionId}-balance-credit`,
       );
 
       // Record wallet transaction
@@ -248,18 +251,8 @@ export class KotanipayService {
       }
 
       // Check user balance
-      const [balance] = await (db as any)
-        .select()
-        .from(userBalancesTable)
-        .where(
-          and(
-            eq(userBalancesTable.userId, request.userId),
-            eq(userBalancesTable.currency, 'cUSD')
-          )
-        );
-
-      const availableBalance = balance ? parseFloat(balance.availableBalance) : 0;
-      if (availableBalance < request.amountCUSD) {
+      const availableBalance = await getUserAccountAvailableBalance(request.userId, 'cUSD', request.daoId);
+      if (new Decimal(availableBalance).lt(request.amountCUSD)) {
         throw new Error(`Insufficient balance. Available: ${availableBalance} cUSD`);
       }
 
@@ -275,7 +268,8 @@ export class KotanipayService {
         'cUSD',
         request.amountCUSD,
         'subtract',
-        request.daoId
+        request.daoId,
+        `${transactionId}-balance-debit`,
       );
 
       // Record pending transaction
@@ -418,58 +412,19 @@ export class KotanipayService {
     currency: string,
     amount: number,
     operation: 'add' | 'subtract',
-    daoId?: string
+    daoId?: string,
+    reference?: string,
   ): Promise<void> {
     try {
-      // Atomic DB-side update using drizzle's update with SQL expressions
-      const formattedAmount = amount.toString();
-      const condition = and(
-        eq(userBalancesTable.userId, userId),
-        eq(userBalancesTable.currency, currency),
-        daoId ? eq(userBalancesTable.daoId as any, daoId) : isNull(userBalancesTable.daoId)
+      await updateUserAccountBalance(
+        userId,
+        currency,
+        amount,
+        operation,
+        daoId,
+        reference,
+        `KotaniPay ${operation}`,
       );
-
-      if (operation === 'add') {
-        const updated = await (db as any)
-          .update(userBalancesTable)
-          .set({
-            availableBalance: sql`CAST(${userBalancesTable.availableBalance} AS NUMERIC) + CAST(${formattedAmount} AS NUMERIC)`,
-            totalBalance: sql`CAST(${userBalancesTable.totalBalance} AS NUMERIC) + CAST(${formattedAmount} AS NUMERIC)`,
-            lastUpdated: new Date(),
-          })
-          .where(condition)
-          .returning();
-
-        if (!updated || updated.length === 0) {
-          // row not present: insert as new
-          await (db as any).insert(userBalancesTable).values({
-            userId,
-            currency,
-            availableBalance: formattedAmount,
-            totalBalance: formattedAmount,
-            daoId,
-            createdAt: new Date(),
-            lastUpdated: new Date(),
-          });
-        }
-      } else {
-        // Subtract: perform guarded update to prevent overdraft
-        const guardedWhere = and(condition, sql`CAST(${userBalancesTable.availableBalance} AS NUMERIC) >= CAST(${formattedAmount} AS NUMERIC)`);
-
-        const updated = await (db as any)
-          .update(userBalancesTable)
-          .set({
-            availableBalance: sql`CAST(${userBalancesTable.availableBalance} AS NUMERIC) - CAST(${formattedAmount} AS NUMERIC)`,
-            totalBalance: sql`CAST(${userBalancesTable.totalBalance} AS NUMERIC) - CAST(${formattedAmount} AS NUMERIC)`,
-            lastUpdated: new Date(),
-          })
-          .where(guardedWhere)
-          .returning();
-
-        if (!updated || updated.length === 0) {
-          throw new Error(`Insufficient balance or balance row not found for ${userId}`);
-        }
-      }
 
       console.log(`💰 Balance updated: ${userId} ${currency} ${operation} ${amount}`);
     } catch (error) {
@@ -573,7 +528,8 @@ export class KotanipayService {
         'cUSD',
         amountCUSD,
         'add',
-        daoId
+        daoId,
+        `${transactionId}-balance-refund`,
       );
 
       await (db as any)

@@ -18,20 +18,26 @@ export interface ComputedVaultBalance {
   vaultId: string;
   userId?: string | null;
   daoId?: string | null;
-  computedBalance: string; // Decimal as string
+  computedBalance: string | null; // Null when holdings contain multiple token symbols.
+  computedValueUsd: string | null; // Null when at least one holding has no recorded USD valuation.
   lastUpdatedAt: Date | null;
   tokenHoldingsCount: number;
+  tokenCount: number;
+  unverifiedHoldingCount: number;
   holdings: Array<{
     token: string;
     balance: string;
-    valueUsd: string;
+    valueUsd: string | null;
+    chain: string | null;
+    chainId: number | null;
+    tokenAddress: string | null;
+    holderAddress: string | null;
     lastUpdatedAt: Date | null;
   }>;
 }
 
 /**
- * Compute vault balance from vaultTokenHoldings (chain-indexed, source of truth)
- * This is the SOURCE OF TRUTH - never use vaults.balance field
+ * Compute indexed vault holdings. This is not a direct chain read.
  */
 export async function getComputedVaultBalance(vaultId: string): Promise<ComputedVaultBalance> {
   try {
@@ -50,6 +56,16 @@ export async function getComputedVaultBalance(vaultId: string): Promise<Computed
       .select({
         totalBalance: sql<string>`COALESCE(SUM(${vaultTokenHoldings.balance}), '0')`.as('total_balance'),
         totalValueUsd: sql<string>`COALESCE(SUM(${vaultTokenHoldings.valueUSD}), '0')`.as('total_value_usd'),
+        unpricedCount: sql<number>`COUNT(*) FILTER (
+          WHERE ${vaultTokenHoldings.valueUSD} IS NULL
+            OR (${vaultTokenHoldings.balance} <> 0 AND ${vaultTokenHoldings.valueUSD} = 0)
+        )`.as('unpriced_count'),
+        unverifiedCount: sql<number>`COUNT(*) FILTER (
+          WHERE (${vaultTokenHoldings.chainId} IS NULL AND ${vaultTokenHoldings.chain} IS NULL)
+            OR ${vaultTokenHoldings.holderAddress} IS NULL
+            OR ${vaultTokenHoldings.tokenAddress} IS NULL
+        )`.as('unverified_count'),
+        tokenCount: sql<number>`COUNT(DISTINCT ${vaultTokenHoldings.tokenSymbol})`.as('token_count'),
         maxUpdatedAt: sql<Date| null>`MAX(${vaultTokenHoldings.updatedAt})`.as('max_updated_at'),
         count: sql<number>`COUNT(DISTINCT ${vaultTokenHoldings.id})`.as('holding_count'),
       })
@@ -59,6 +75,9 @@ export async function getComputedVaultBalance(vaultId: string): Promise<Computed
     const holdingsData = holdingsResult[0] || {
       totalBalance: '0',
       totalValueUsd: '0',
+      unpricedCount: 0,
+      unverifiedCount: 0,
+      tokenCount: 0,
       maxUpdatedAt: null,
       count: 0,
     };
@@ -69,15 +88,43 @@ export async function getComputedVaultBalance(vaultId: string): Promise<Computed
         token: vaultTokenHoldings.tokenSymbol,
         balance: vaultTokenHoldings.balance,
         valueUsd: vaultTokenHoldings.valueUSD,
+        chain: vaultTokenHoldings.chain,
+        chainId: vaultTokenHoldings.chainId,
+        tokenAddress: vaultTokenHoldings.tokenAddress,
+        holderAddress: vaultTokenHoldings.holderAddress,
         lastUpdatedAt: vaultTokenHoldings.updatedAt,
       })
       .from(vaultTokenHoldings)
       .where(eq(vaultTokenHoldings.vaultId, vaultId));
 
-    const computedBalance = new Decimal(holdingsData.totalBalance || '0');
+    // The table has no chain/contract identity, so don't aggregate multiple rows
+    // into one raw token quantity, even when their display symbols match.
+    const assetIdentities = new Set(detailedHoldings.map((holding) => {
+      if (!holding.tokenAddress || !holding.holderAddress || (!holding.chainId && !holding.chain)) {
+        return null;
+      }
+      return [
+        holding.chainId ?? holding.chain?.toLowerCase(),
+        holding.tokenAddress.toLowerCase(),
+        holding.holderAddress.toLowerCase(),
+      ].join(':');
+    }));
+    const hasCompleteAssetIdentity = assetIdentities.size > 0
+      && !assetIdentities.has(null)
+      && holdingsData.unverifiedCount === 0;
+    const computedBalance = hasCompleteAssetIdentity && assetIdentities.size === 1
+      ? new Decimal(holdingsData.totalBalance || '0').toString()
+      : null;
+    const computedValueUsd = holdingsData.count > 0
+      && holdingsData.unpricedCount === 0
+      && hasCompleteAssetIdentity
+      ? new Decimal(holdingsData.totalValueUsd || '0').toString()
+      : null;
 
     logger.info(
-      `[VaultService] Vault ${vaultId}: computed=${computedBalance.toString()}, ` +
+      `[VaultService] Vault ${vaultId}: token_balance=${computedBalance ?? 'multiple assets'}, ` +
+      `value_usd=${computedValueUsd ?? 'incomplete'}, ` +
+      `unverified=${holdingsData.unverifiedCount}, ` +
       `tokens=${holdingsData.count}, last_updated=${holdingsData.maxUpdatedAt?.toISOString()}`
     );
 
@@ -85,15 +132,31 @@ export async function getComputedVaultBalance(vaultId: string): Promise<Computed
       vaultId,
       userId: vault.userId,
       daoId: vault.daoId,
-      computedBalance: computedBalance.toString(),
+      computedBalance,
+      computedValueUsd,
       lastUpdatedAt: holdingsData.maxUpdatedAt || null,
       tokenHoldingsCount: holdingsData.count,
-      holdings: detailedHoldings.map((h) => ({
-        token: h.token || 'unknown',
-        balance: h.balance || '0',
-        valueUsd: h.valueUsd || '0',
-        lastUpdatedAt: h.lastUpdatedAt,
-      })),
+      tokenCount: holdingsData.tokenCount,
+      unverifiedHoldingCount: holdingsData.unverifiedCount,
+      holdings: detailedHoldings.map((h) => {
+        const balance = h.balance || '0';
+        const balanceIsNonZero = !new Decimal(balance).isZero();
+        const valueUsd = h.valueUsd === null
+          || (balanceIsNonZero && new Decimal(h.valueUsd).isZero())
+          ? null
+          : h.valueUsd?.toString() ?? null;
+
+        return {
+          token: h.token || 'unknown',
+          balance,
+          valueUsd,
+          chain: h.chain,
+          chainId: h.chainId,
+          tokenAddress: h.tokenAddress,
+          holderAddress: h.holderAddress,
+          lastUpdatedAt: h.lastUpdatedAt,
+        };
+      }),
     };
   } catch (error) {
     logger.error(`[VaultService] Error computing balance for vault ${vaultId}:`, error);

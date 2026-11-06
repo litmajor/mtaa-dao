@@ -79,7 +79,7 @@ export default function ArchitectSetup() {
         });
       } else {
         // Phone registration
-        resp = await fetch('/api/auth/register-phone', {
+        resp = await fetch('/api/auth/register', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ phone: emailOrPhone, password }),
@@ -108,12 +108,21 @@ export default function ArchitectSetup() {
       const resp = await fetch('/api/auth/verify-otp', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ otp, emailOrPhone }),
+        body: JSON.stringify(
+          /\S+@\S+\.\S+/.test(emailOrPhone)
+            ? { email: emailOrPhone, otp }
+            : { phone: emailOrPhone, otp }
+        ),
       });
       const data = await resp.json();
       if (!resp.ok) throw new Error(data.message || 'OTP verification failed');
       // Auto sign in after registration - rely on httpOnly cookie; notify other tabs
-      try { (await import('../utils/authChannel')).default.postAuthMessage({ type: 'login', payload: { user: data.user || {} } }); } catch (e) {}
+      try {
+        (await import('../utils/authChannel')).default.postAuthMessage({
+          type: 'login',
+          payload: { user: data.data?.user ?? data.user ?? {} },
+        });
+      } catch (e) {}
       window.location.href = '/';
     } catch (err) {
       setError(

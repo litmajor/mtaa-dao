@@ -19,6 +19,7 @@ import { paymentTransactions, users } from '../../shared/schema';
 import { notificationService } from '../notificationService';
 import { logger } from '../utils/logger';
 import { sharedIdempotencyManager } from './sharedIdempotencyManager';
+import { postPlatformTransfer } from './platformLedgerService';
 import type { ReversibilityService } from './reversibilityService';
 import type { SimulationResult } from './simulationFramework';
 import {
@@ -410,6 +411,16 @@ export class PaymentExecutionService {
     const now = new Date();
 
     await db.transaction(async (tx) => {
+      await postPlatformTransfer(tx, {
+        reference: transferReference,
+        fromAccountId: senderAccount.id,
+        toAccountId: receiverAccount.id,
+        amount: amountStr,
+        currency,
+        description: `P2P transfer to ${recipientUsername}`,
+        metadata: { transferType: 'p2p', senderUserId },
+      });
+
       // Debit sender – atomic guard against overdraft
       const debit = await tx.execute(sql`
         UPDATE accounts

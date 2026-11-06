@@ -81,6 +81,12 @@ import {
   migrateSelfCustodyRampWebhookInbox,
   rollbackSelfCustodyRampWebhookInbox,
 } from './052-self-custody-ramp-webhook-inbox';
+import { migrateProxyReconciliationAudits } from './053-mark-proxy-reconciliations-unverified';
+import { migrateChainIdentityToHoldings } from './054-add-chain-identity-to-holdings';
+import { migrateUnifiedPlatformLedger } from './055-unified-platform-ledger';
+import { migrateAccountTransactionReferenceScope } from './057-account-transaction-reference-scope';
+import { migrateCeloStablecoinValuationCoverage } from './058-celo-stablecoin-valuation-coverage';
+import { migrateReconciliationPrecision } from './056-increase-reconciliation-precision';
 
 export interface MigrationResult {
   success: boolean;
@@ -381,6 +387,48 @@ export async function runAllMigrations(): Promise<MigrationResult> {
       await migrateSelfCustodyRampWebhookInbox();
     } catch (err: any) {
       errors.push(`Self-custody ramp webhook inbox migration failed: ${err.message}`);
+      throw err;
+    }
+
+    try {
+      await migrateProxyReconciliationAudits();
+    } catch (err: any) {
+      errors.push(`Proxy reconciliation audit migration failed: ${err.message}`);
+      throw err;
+    }
+
+    try {
+      await migrateChainIdentityToHoldings();
+    } catch (err: any) {
+      errors.push(`Chain identity migration failed: ${err.message}`);
+      throw err;
+    }
+
+    try {
+      await migrateUnifiedPlatformLedger();
+    } catch (err: any) {
+      errors.push(`Unified platform ledger migration failed: ${err.message}`);
+      throw err;
+    }
+
+    try {
+      await migrateReconciliationPrecision();
+    } catch (err: any) {
+      errors.push(`Reconciliation precision migration failed: ${err.message}`);
+      throw err;
+    }
+
+    try {
+      await migrateAccountTransactionReferenceScope();
+    } catch (err: any) {
+      errors.push(`Account transaction reference scope migration failed: ${err.message}`);
+      throw err;
+    }
+
+    try {
+      await migrateCeloStablecoinValuationCoverage();
+    } catch (err: any) {
+      errors.push(`Celo stablecoin valuation coverage migration failed: ${err.message}`);
       throw err;
     }
 

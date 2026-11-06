@@ -110,39 +110,22 @@ router.get(
   async (req: TreasuryRequest, res: Response) => {
     try {
       const { daoId } = req.params;
-
-      const transactions = await db.select().from(walletTransactions)
-        .where(and(
-          eq(walletTransactions.daoId, daoId),
-          eq(walletTransactions.status, 'completed')
-        ));
-
-      // Calculate balances from real transaction history
-      let totalDeposits = 0;
-      let totalWithdrawals = 0;
-
-      for (const tx of transactions) {
-        const amount = parseFloat(tx.amount);
-        if (tx.type === 'deposit' || tx.type === 'contribution') totalDeposits += amount;
-        if (tx.type === 'withdrawal') totalWithdrawals += amount;
-      }
-
-      const balance = totalDeposits - totalWithdrawals;
+      const balance = await TreasuryService.getBalance(daoId);
 
       res.json({
         success: true,
         daoId,
         balances: {
-          total: balance.toFixed(2),
-          available: Math.max(balance, 0).toFixed(2),
-          pending: '0.00',
+          total: balance.total,
+          available: balance.available,
+          pending: balance.pending,
         },
         breakdown: {
-          deposits: totalDeposits.toFixed(2),
-          withdrawn: totalWithdrawals.toFixed(2),
+          deposits: balance.deposits,
+          withdrawn: balance.withdrawn,
         },
-        currency: 'cUSD',
-        transactionCount: transactions.length,
+        currency: balance.currency,
+        transactionCount: balance.transactionCount,
         lastUpdated: new Date().toISOString(),
       });
     } catch (error) {

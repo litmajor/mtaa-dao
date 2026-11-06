@@ -4,11 +4,10 @@ import { Badge } from '../ui/badge';
 import { Button } from '../ui/button';
 import { Input } from '../ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../ui/select';
-import { ArrowUpRight, ArrowDownLeft, Clock, CheckCircle, XCircle, Search, Filter, RefreshCw, TrendingUp, TrendingDown, Shield, Lock } from 'lucide-react';
+import { ArrowUpRight, ArrowDownLeft, Clock, CheckCircle, XCircle, Search, Filter, RefreshCw, Shield, Lock } from 'lucide-react';
 import { Skeleton } from '../ui/skeleton';
 import ErrorBoundary from '../ErrorBoundary'; // Using ErrorBoundary from parent components directory
 import { motion, AnimatePresence } from 'framer-motion';
-import { useQuery } from '@tanstack/react-query';
 import { useWalletOperatingStore } from '@/stores/wallet-operating-store';
 import type { Transaction as SharedTransaction } from '../../../../shared/types/wallet';
 
@@ -27,9 +26,6 @@ interface Transaction {
   toAddress?: string;
   gasUsed?: string;
   gasFee?: string;
-  priceAtTime?: number; // Price of asset at transaction time
-  currentPrice?: number; // Current market price
-  priceChange24h?: number; // 24-hour price change in percentage
   twoFAVerified?: boolean; // 2FA verification status for withdrawals
   pinVerified?: boolean; // PIN verification status
 }
@@ -44,27 +40,21 @@ function normalizeTransaction(transaction: SharedTransaction): Transaction {
     id: transaction.id || '',
     type: transaction.type === 'received' ? 'deposit' : transaction.type === 'sent' ? 'transfer' : (transaction.type as Transaction['type']) || 'transfer',
     amount: String(transaction.amount ?? '0'),
-    currency: 'cUSD',
+    currency: transaction.currency || 'Unknown',
     status: transaction.status === 'confirmed' ? 'completed' : transaction.status === 'processing' ? 'pending' : (transaction.status as Transaction['status']) || 'pending',
     transactionHash: transaction.hash,
     description: transaction.description || transaction.memo,
-    createdAt: transaction.time instanceof Date ? transaction.time.toISOString() : new Date(transaction.timestamp || transaction.time || Date.now()).toISOString(),
+    createdAt: transaction.createdAt
+      ? new Date(transaction.createdAt).toISOString()
+      : transaction.time instanceof Date ? transaction.time.toISOString() : new Date(transaction.timestamp || transaction.time || Date.now()).toISOString(),
   };
 }
 
 // Component for displaying individual transaction items with accessibility in mind
 const TransactionItem = ({ 
-  tx,
-  primaryCurrency = 'cUSD',
-  secondaryCurrency = 'KES',
-  convertAmount = (amt: string | number) => typeof amt === 'string' ? amt : amt.toString(),
-  exchangeRates = {}
+  tx
 }: { 
   tx: Transaction;
-  primaryCurrency?: string;
-  secondaryCurrency?: string;
-  convertAmount?: (amount: string | number, from: string, to: string) => string;
-  exchangeRates?: any;
 }) => {
   const formatAddress = (address: string | undefined): string => {
     if (!address) return 'N/A';
@@ -96,26 +86,6 @@ const TransactionItem = ({
         return <ArrowUpRight className="h-4 w-4 text-gray-500" aria-label="Unknown type" />;
     }
   };
-
-  // Get current market price
-  const getCurrentPrice = () => {
-    const pricePair = `${tx.currency}-USD`;
-    return exchangeRates[pricePair]?.rate || tx.currentPrice || 0;
-  };
-
-  // Get price change percentage
-  const getPriceChangePercent = () => {
-    if (tx.priceChange24h !== undefined) return tx.priceChange24h;
-    const pricePair = `${tx.currency}-USD`;
-    if (exchangeRates[pricePair]?.change24h && getCurrentPrice() > 0) {
-      return ((exchangeRates[pricePair].change24h / getCurrentPrice()) * 100);
-    }
-    return 0;
-  };
-
-  const currentPrice = getCurrentPrice();
-  const priceChangePercent = getPriceChangePercent();
-  const isPositiveChange = priceChangePercent >= 0;
 
   return (
     <motion.div
@@ -165,28 +135,6 @@ const TransactionItem = ({
             {new Date(tx.createdAt).toLocaleString()}
           </div>
 
-          {/* Price Info Section */}
-          {currentPrice > 0 && (
-            <div className="flex items-center gap-2 mt-2 text-xs">
-              <span className="text-gray-600 dark:text-gray-400">Price:</span>
-              <span className="font-semibold text-gray-900 dark:text-white">
-                USD ${currentPrice.toLocaleString('en-US', {
-                  minimumFractionDigits: 2,
-                  maximumFractionDigits: 8
-                })}
-              </span>
-              {priceChangePercent !== 0 && (
-                <span className={`flex items-center gap-1 px-1.5 py-0.5 rounded text-xs font-medium ${
-                  isPositiveChange 
-                    ? 'bg-green-100 dark:bg-green-900/30 text-green-800 dark:text-green-200'
-                    : 'bg-red-100 dark:bg-red-900/30 text-red-800 dark:text-red-200'
-                }`}>
-                  {isPositiveChange ? <TrendingUp className="w-3 h-3" /> : <TrendingDown className="w-3 h-3" />}
-                  {isPositiveChange ? '+' : ''}{priceChangePercent.toFixed(2)}%
-                </span>
-              )}
-            </div>
-          )}
         </div>
       </div>
 
@@ -195,13 +143,6 @@ const TransactionItem = ({
         <div className="font-medium" aria-label={`Amount: ${tx.amount} ${tx.currency}`}>
           {tx.type === 'withdrawal' || tx.type === 'transfer' ? '-' : '+'}
           {tx.amount} {tx.currency}
-        </div>
-        {/* Converted Amounts */}
-        <div className="text-xs text-blue-600 dark:text-blue-400 font-semibold mt-1">
-          ≈ {primaryCurrency} {convertAmount(tx.amount, tx.currency, primaryCurrency)}
-        </div>
-        <div className="text-xs text-indigo-600 dark:text-indigo-400 font-semibold">
-          ≈ {secondaryCurrency} {convertAmount(tx.amount, tx.currency, secondaryCurrency)}
         </div>
         {tx.transactionHash && (
           <div className="text-xs text-gray-500 truncate max-w-[150px] mt-1" aria-label={`Transaction Hash: ${tx.transactionHash}`}>
@@ -244,67 +185,7 @@ export default function TransactionHistory({ userId, walletAddress }: Transactio
     dateRange: '30' // days
   });
   const [currentPage, setCurrentPage] = useState(1);
-  const [currencyPreferences, setCurrencyPreferences] = useState({
-    primary: 'cUSD',
-    secondary: 'KES'
-  });
   const itemsPerPage = 10;
-
-  // Fetch user currency preferences
-  const { data: preferences } = useQuery({
-    queryKey: ['user-preferences'],
-    queryFn: async () => {
-      const response = await fetch('/api/user/preferences');
-      if (!response.ok) throw new Error('Failed to fetch preferences');
-      const data = await response.json();
-      return data.data;
-    },
-    staleTime: Infinity,
-    retry: 1
-  });
-
-  // Fetch exchange rates for conversions
-  const { data: exchangeRates = {} } = useQuery({
-    queryKey: ['exchange-rates'],
-    queryFn: async () => {
-      const response = await fetch('/api/v1/wallets/balance/exchange-rates');
-      if (!response.ok) throw new Error('Failed to fetch rates');
-      const data = await response.json();
-      return data.data?.rates || {};
-    },
-    staleTime: 30000, // 30 seconds
-    retry: 1
-  });
-
-  useEffect(() => {
-    if (preferences) {
-      setCurrencyPreferences({
-        primary: preferences.primaryCurrency || 'cUSD',
-        secondary: preferences.secondaryCurrency || 'KES'
-      });
-    }
-  }, [preferences]);
-
-  // Convert amount between currencies
-  const convertAmount = (amount: string | number, from: string, to: string): string => {
-    const numAmount = typeof amount === 'string' ? parseFloat(amount) : amount;
-    if (from === to) return numAmount.toLocaleString('en-US', { maximumFractionDigits: 2 });
-    if (!exchangeRates || Object.keys(exchangeRates).length === 0) return numAmount.toLocaleString('en-US', { maximumFractionDigits: 2 });
-
-    const rateKey = `${from}-${to}`;
-    if (exchangeRates[rateKey]) {
-      const converted = numAmount * exchangeRates[rateKey].rate;
-      return converted.toLocaleString('en-US', { maximumFractionDigits: 2 });
-    }
-
-    const reverseKey = `${to}-${from}`;
-    if (exchangeRates[reverseKey]) {
-      const converted = numAmount / exchangeRates[reverseKey].rate;
-      return converted.toLocaleString('en-US', { maximumFractionDigits: 2 });
-    }
-
-    return numAmount.toLocaleString('en-US', { maximumFractionDigits: 2 });
-  };
 
   useEffect(() => {
     // If central store has transactions, use them; otherwise fetch and populate store
@@ -321,21 +202,7 @@ export default function TransactionHistory({ userId, walletAddress }: Transactio
     setLoading(true);
     setError(null); // Clear previous errors
     try {
-      const params = new URLSearchParams({
-        page: currentPage.toString(),
-        limit: itemsPerPage.toString(),
-        ...(userId && { userId }),
-        ...(walletAddress && { walletAddress }),
-        ...(filter.type && { type: filter.type }),
-        ...(filter.status && { status: filter.status }),
-        ...(filter.currency && { currency: filter.currency }),
-        ...(filter.search && { search: filter.search }),
-        dateRange: filter.dateRange
-      });
-
-      // Use v1/wallets endpoint with query parameters for flexibility
-      // Backend will resolve walletId from userId or walletAddress
-      const response = await fetch(`/api/v1/wallets/transfers/history?${params}`);
+      const response = await fetch('/api/v1/wallets/transactions');
       if (!response.ok) {
         throw new Error(`HTTP error! status: ${response.status}`);
       }
@@ -517,10 +384,6 @@ export default function TransactionHistory({ userId, walletAddress }: Transactio
                 <TransactionItem 
                   key={tx.id} 
                   tx={tx}
-                  primaryCurrency={currencyPreferences.primary}
-                  secondaryCurrency={currencyPreferences.secondary}
-                  convertAmount={convertAmount}
-                  exchangeRates={exchangeRates}
                 />
               ))}
             </div>

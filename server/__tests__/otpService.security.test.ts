@@ -55,6 +55,7 @@ vi.mock('../services/redis', () => ({
 
 import { redis } from '../services/redis';
 import { otpService } from '../services/otpService';
+import { EmailService } from '../services/emailService';
 
 describe('OTP service security hardening', () => {
   beforeEach(() => {
@@ -67,6 +68,7 @@ describe('OTP service security hardening', () => {
 
   afterEach(() => {
     vi.restoreAllMocks();
+    vi.unstubAllEnvs();
     delete process.env.ALLOW_TEST_OTP;
   });
 
@@ -125,5 +127,24 @@ describe('OTP service security hardening', () => {
     const body = JSON.parse(options.body as string);
     expect(body.to).toBe('+254712345678');
     expect(body.text.body).toContain('123456');
+  });
+
+  it('allows email OTP registration in development without a configured provider', async () => {
+    process.env.NODE_ENV = 'development';
+    for (const key of [
+      'SENDGRID_API_KEY',
+      'EMAIL_HOST',
+      'SMTP_HOST',
+      'EMAIL_USER',
+      'SMTP_USER',
+    ]) {
+      vi.stubEnv(key, '');
+    }
+
+    const sendEmail = vi.spyOn(EmailService, 'send');
+    vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+
+    await expect(otpService.sendEmailOTP('member@example.com', '123456')).resolves.toBeUndefined();
+    expect(sendEmail).not.toHaveBeenCalled();
   });
 });

@@ -37,6 +37,62 @@ Connect MtaaDAO to external services for enhanced functionality.
 | Chainlink | Trustless price feeds |
 | Telegram | Real-time trade notifications |
 
+## Chainlink Valuation Feeds
+
+The valuation oracle reads Chainlink feeds directly, separately from the Gateway's `CHAINLINK_FEED_MAP`.
+Configure valuation feeds with `CHAINLINK_VALUATION_FEEDS` as a JSON object keyed by canonical asset
+symbol. Feed addresses, descriptions, and heartbeat values must be checked against Chainlink's
+[official feed directory](https://docs.chain.link/data-feeds/price-feeds/addresses) for the target
+network. The following Celo-mainnet entries are examples for **shadow mode**; shadow quotes are
+logged and do not affect the valuation price:
+
+```json
+{
+  "CELO": {
+    "chainId": 42220,
+    "address": "0x0568fD19986748cEfF3301e55c0eb1E729E0Ab7e",
+    "heartbeatSeconds": 240,
+    "expectedDescription": "CELO / USD",
+    "mode": "shadow"
+  },
+  "KES": {
+    "chainId": 42220,
+    "address": "0x8e1f834ca4B8Efd81D9c557426C70ed5F67e87B1",
+    "heartbeatSeconds": 240,
+    "expectedDescription": "KES / USD",
+    "mode": "shadow"
+  },
+  "CUSD": {
+    "chainId": 42220,
+    "address": "0xe38A27BE4E7d866327e09736F3C570F256FFd048",
+    "heartbeatSeconds": 240,
+    "expectedDescription": "CUSD / USD",
+    "mode": "shadow"
+  },
+  "USDC": {
+    "chainId": 42220,
+    "address": "0xc7A353BaE210aed958a1A2928b654938EC59DaB2",
+    "heartbeatSeconds": 240,
+    "expectedDescription": "USDC / USD",
+    "mode": "shadow"
+  }
+}
+```
+
+The server validates each configured feed's on-chain description and decimals at startup, then checks
+round completeness, heartbeat freshness, RPC chain ID, and RPC block recency when reading. `quorum`
+adds a feed to source aggregation; `anchor` compares it against the off-chain valuation and requires
+`anchorMaxDeviationPct`. Anchor feeds default to failing closed when unavailable; other modes default
+to degrading without the feed. A symbol-to-feed mapping does not prove that a wrapped or bridged token
+tracks the reference asset, so those deployments need their own depeg checks.
+
+The KES/USD feed is also used by `ExchangeRateService` as a fallback after the Celo Mento oracle and
+before exchangerate-api.com. Chainlink reports USD per KES, so the service inverts the quote to return
+KES per USD. Because this is a forex feed, it may not refresh outside market hours; stale rounds are
+rejected and the service continues to its next fallback. `CHAINLINK_VALUATION_RPC_URL` can override
+the Celo valuation RPC; otherwise the chain-specific `CELO_RPC_URL` is preferred over the Gateway's
+legacy `CHAINLINK_RPC_URL`.
+
 ## Next Steps
 
 - [CeFi Connections](/integrations/cefi-connections)

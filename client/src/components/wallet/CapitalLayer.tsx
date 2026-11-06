@@ -1,6 +1,7 @@
 import React from 'react';
 import './capital-layer.css';
 import Decimal from 'decimal.js';
+import { parseDecimal } from '../../stores/wallet-operating-store';
 
 interface Vault {
   id: string;
@@ -8,7 +9,6 @@ interface Vault {
   currency?: string;
   type?: string;
   balance?: string | number;
-  usdValue?: number;
   apy?: number;
   monthlyYield?: number;
   lockDays?: number;
@@ -16,25 +16,26 @@ interface Vault {
 
 interface Tx {
   id: string;
-  type: 'in' | 'out' | 'swap';
+  type: 'in' | 'out' | 'swap' | 'other';
   label?: string;
   time?: string | number;
-  amount: number; // signed USD
+  amount: number;
+  currency?: string;
 }
 
 interface Props {
   address?: string;
+  currency?: string;
   total?: string | number | Decimal;
   liquidity?: string | number | Decimal;
   deployed?: string | number | Decimal;
   pending?: string | number | Decimal;
   pendingCount?: number;
-  walletHealth?: number | { liquidity: string; diversification: string; exposure: string };
   availableVaults?: Vault[];
   deployedVaults?: Vault[];
   recentTxs?: Tx[];
   netFlow30d?: string | number | Decimal;
-  flowBars?: number[];
+  hasNetFlowData?: boolean;
   onSend?: () => void;
   onAddFunds?: () => void;
   onSwap?: () => void;
@@ -49,21 +50,6 @@ const VAULT_COLORS = [
 ];
 
 // styles moved to ./capital-layer.css
-
-const FlowBars: React.FC<{ values?: number[] }> = ({ values = [12, 8, 20, 15, 24, 18, 22] }) => {
-  const max = Math.max(...values, 1);
-  return (
-    <div className="flowbars">
-      {values.map((v, i) => (
-        <span
-          key={i}
-          className="flowbar"
-          style={{ height: Math.round((v / max) * 24), background: v > max * 0.6 ? '#22c55e' : '#d1d5db' }}
-        />
-      ))}
-    </div>
-  );
-};
 
 const MetricCard: React.FC<{ label: string; value: string; sub?: string; valueColor?: string }> = ({ label, value, sub, valueColor }) => (
   <div className="metric-card">
@@ -80,7 +66,7 @@ const VaultBar: React.FC<{ pct: number; color: string }> = ({ pct, color }) => (
 );
 
 const TxDot: React.FC<{ type: Tx['type'] }> = ({ type }) => {
-  const cls = type === 'in' ? 'tx-dot in' : 'tx-dot out';
+  const cls = type === 'in' ? 'tx-dot in' : type === 'out' ? 'tx-dot out' : 'tx-dot other';
   return (
     <div className={cls}>
       {type === 'in' ? '↙' : type === 'swap' ? '⇄' : '↗'}
@@ -95,17 +81,11 @@ const ActionBtn: React.FC<{ icon: React.ReactNode; label: string; onClick?: () =
   </button>
 );
 
-const LiquidityPanel: React.FC<{ vaults?: Vault[]; flowBars?: number[] }> = ({ vaults = [], flowBars }) => {
-  const total = vaults.reduce((s, v) => s + (v.usdValue || 0), 0) || 1;
+const LiquidityPanel: React.FC<{ vaults?: Vault[] }> = ({ vaults = [] }) => {
+  const total = vaults.reduce((sum, vault) => sum.plus(vault.balance ?? 0), new Decimal(0));
   return (
     <div className="panel">
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
-        <span className="surface-title">Liquidity</span>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-          <FlowBars values={flowBars} />
-          <span style={{ fontSize: 11, color: '#9ca3af' }}>7d</span>
-        </div>
-      </div>
+      <div className="surface-title">Liquidity</div>
 
       {vaults.length === 0 && <div style={{ fontSize: 13, color: '#9ca3af', padding: '12px 0' }}>No liquid vaults.</div>}
 
@@ -120,11 +100,10 @@ const LiquidityPanel: React.FC<{ vaults?: Vault[]; flowBars?: number[] }> = ({ v
               <div style={{ fontSize: 11, color: '#9ca3af' }}>{v.type} · {v.currency}</div>
             </div>
             <div style={{ marginLeft: 'auto', textAlign: 'right' }}>
-              <div style={{ fontSize: 13, fontWeight: 500 }}>{v.balance}</div>
-              <div style={{ fontSize: 11, color: '#9ca3af' }}>${(v.usdValue || 0).toLocaleString()}</div>
+              <div style={{ fontSize: 13, fontWeight: 500 }}>{v.balance} {v.currency}</div>
             </div>
           </div>
-          <VaultBar pct={Math.round(((v.usdValue || 0) / total) * 100)} color={VAULT_COLORS[i % VAULT_COLORS.length].bar} />
+          <VaultBar pct={total.gt(0) ? Math.min(100, parseDecimal(v.balance).dividedBy(total).times(100).toNumber()) : 0} color={VAULT_COLORS[i % VAULT_COLORS.length].bar} />
           {i < vaults.length - 1 && <div style={{ height: 8 }} />}
         </div>
       ))}
@@ -132,7 +111,7 @@ const LiquidityPanel: React.FC<{ vaults?: Vault[]; flowBars?: number[] }> = ({ v
   );
 };
 
-const DeployedPanel: React.FC<{ vaults?: Vault[] }> = ({ vaults = [] }) => (
+const DeployedPanel: React.FC<{ vaults?: Vault[]; currency?: string }> = ({ vaults = [], currency = 'CELO' }) => (
   <div className="panel">
     <div className="surface-title">Deployed capital</div>
     {vaults.length === 0 && <div style={{ fontSize: 13, color: '#9ca3af', padding: '12px 0' }}>No deployed positions.</div>}
@@ -146,8 +125,8 @@ const DeployedPanel: React.FC<{ vaults?: Vault[] }> = ({ vaults = [] }) => (
           <div style={{ fontSize: 11, color: '#9ca3af' }}>{v.type}{v.apy ? ` · ${v.apy}% APY` : ''}</div>
         </div>
         <div style={{ marginLeft: 'auto', textAlign: 'right' }}>
-          <div style={{ fontSize: 13, fontWeight: 500 }}>${(v.usdValue || 0).toLocaleString()}</div>
-          {v.monthlyYield != null && <div style={{ fontSize: 11, color: '#16a34a' }}>+${v.monthlyYield.toFixed(2)}/mo</div>}
+          <div style={{ fontSize: 13, fontWeight: 500 }}>{v.balance ?? '0'} {v.currency || currency}</div>
+          {v.monthlyYield != null && <div style={{ fontSize: 11, color: '#16a34a' }}>+{v.monthlyYield.toFixed(4)} {v.currency || currency}/mo</div>}
           {v.lockDays != null && <div style={{ fontSize: 11, color: '#9ca3af' }}>locked {v.lockDays}d</div>}
         </div>
       </div>
@@ -155,73 +134,34 @@ const DeployedPanel: React.FC<{ vaults?: Vault[] }> = ({ vaults = [] }) => (
   </div>
 );
 
-const HealthPanel: React.FC<{ walletHealth?: number | { liquidity: string; diversification: string; exposure: string }; liquidity?: string | number | Decimal; deployed?: string | number | Decimal; pending?: string | number | Decimal; total?: string | number | Decimal; netFlow30d?: string | number | Decimal }> = ({ walletHealth = 0, liquidity = 0, deployed = 0, pending = 0, total = 0, netFlow30d = 0 }) => {
-  const dec = (v: any) => new Decimal(v == null ? 0 : v)
-  const totalDec = dec(total)
-  const liquidityDec = dec(liquidity)
-  const deployedDec = dec(deployed)
-  const pendingDec = dec(pending)
-  const netFlowDec = dec(netFlow30d)
-
-  const liquidityPct = totalDec.gt(0) ? liquidityDec.dividedBy(totalDec).times(100).toFixed(1) : '—';
-  const deployedPct  = totalDec.gt(0) ? deployedDec.dividedBy(totalDec).times(100).toFixed(1) : '—';
-  const pendingPct   = totalDec.gt(0) ? pendingDec.dividedBy(totalDec).times(100).toFixed(1) : '—';
+const HealthPanel: React.FC<{ netFlow30d?: string | number | Decimal; currency?: string; hasNetFlowData?: boolean }> = ({ netFlow30d = 0, currency = 'CELO', hasNetFlowData = false }) => {
+  const netFlowDec = Decimal.isDecimal(netFlow30d) ? netFlow30d : new Decimal(netFlow30d);
   const flowPositive = netFlowDec.gte(0);
-
-  // walletHealth may be a numeric score or an object with qualitative fields
-  const scoreFromObj = (w: any) => {
-    if (typeof w === 'number') return Math.max(0, Math.min(100, Math.round(w)));
-    const map = (k: string) => {
-      if (!k) return 50
-      const v = String(k).toUpperCase()
-      if (v.includes('STRONG') || v.includes('GOOD') || v.includes('LOW')) return 80
-      if (v.includes('MEDIUM') || v.includes('MED')) return 50
-      return 30
-    }
-    const l = map(w?.liquidity)
-    const d = map(w?.diversification)
-    const e = map(w?.exposure)
-    return Math.round((l + d + e) / 3)
-  }
-  const score = scoreFromObj(walletHealth)
 
   return (
     <div className="panel">
-      <div className="surface-title">Financial health</div>
-      <div className="health-grid">
-        <div className="health-card">
-          <div className="health-micro">Liquidity ratio</div>
-          <div style={{ fontSize: 16, fontWeight: 500, color: '#16a34a' }}>{liquidityPct}%</div>
+      <div className="surface-title">Financial insights</div>
+      {hasNetFlowData ? (
+        <div className="netflow">
+          <div className="health-micro">30-day net flow · CELO only</div>
+          <div style={{ fontSize: 15, fontWeight: 500, color: flowPositive ? '#16a34a' : '#dc2626' }}>
+            {flowPositive ? '+' : '−'}{Math.abs(netFlowDec.toNumber()).toFixed(4)} {currency}
+          </div>
         </div>
-        <div className="health-card">
-          <div className="health-micro">Deploy ratio</div>
-          <div style={{ fontSize: 16, fontWeight: 500 }}>{deployedPct}%</div>
-        </div>
-        <div className="health-card">
-          <div className="health-micro">Pending</div>
-          <div style={{ fontSize: 16, fontWeight: 500, color: '#d97706' }}>{pendingPct}%</div>
-        </div>
-        <div className="health-card">
-          <div className="health-micro">Score</div>
-          <div style={{ fontSize: 16, fontWeight: 500, color: score > 70 ? '#16a34a' : '#d97706' }}>{score}/100</div>
-        </div>
-      </div>
-      <div className="netflow">
-        <div className="health-micro">30d net flow</div>
-        <div style={{ fontSize: 15, fontWeight: 500, color: flowPositive ? '#16a34a' : '#dc2626' }}>
-          {flowPositive ? '+' : ''}${Math.abs(netFlowDec.toNumber()).toLocaleString()}
-        </div>
-      </div>
+      ) : (
+        <p style={{ fontSize: 13, color: '#9ca3af' }}>Financial insights will appear when eligible transaction history is available.</p>
+      )}
     </div>
   );
 };
 
-const RecentMovesPanel: React.FC<{ txs?: Tx[]; onViewAll?: () => void }> = ({ txs = [], onViewAll }) => (
+const RecentMovesPanel: React.FC<{ txs?: Tx[]; onViewAll?: () => void; currency?: string }> = ({ txs = [], onViewAll, currency = 'CELO' }) => (
   <div className="panel">
     <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
       <span className="surface-title">Recent moves</span>
       <button onClick={onViewAll} style={{ fontSize: 12, color: '#6b7280', border: 'none', background: 'none', cursor: 'pointer', padding: 0 }}>all →</button>
     </div>
+    {txs.length === 0 && <div style={{ fontSize: 13, color: '#9ca3af', padding: '12px 0' }}>No recent transactions.</div>}
     {txs.slice(0, 4).map((tx) => (
       <div key={tx.id} className="recent-tx">
         <TxDot type={tx.type} />
@@ -229,8 +169,8 @@ const RecentMovesPanel: React.FC<{ txs?: Tx[]; onViewAll?: () => void }> = ({ tx
           <div style={{ fontSize: 13 }}>{tx.label}</div>
           <div style={{ fontSize: 11, color: '#9ca3af' }}>{tx.time}</div>
         </div>
-        <div style={{ marginLeft: 'auto', fontSize: 13, fontWeight: 500, color: tx.amount >= 0 ? '#16a34a' : '#dc2626' }}>
-          {tx.amount >= 0 ? '+' : ''}${Math.abs(tx.amount).toFixed(2)}
+        <div style={{ marginLeft: 'auto', fontSize: 13, fontWeight: 500, color: tx.type === 'in' ? '#16a34a' : tx.type === 'out' ? '#dc2626' : 'inherit' }}>
+          {tx.type === 'in' ? '+' : tx.type === 'out' ? '−' : ''}{Math.abs(tx.amount).toFixed(4)} {tx.currency || currency}
         </div>
       </div>
     ))}
@@ -238,16 +178,15 @@ const RecentMovesPanel: React.FC<{ txs?: Tx[]; onViewAll?: () => void }> = ({ tx
 );
 
 const CapitalLayer: React.FC<Props> = ({
-  address = '', total = '0', liquidity = '0', deployed = '0', pending = '0', pendingCount = 0, walletHealth = 0,
-  availableVaults = [], deployedVaults = [], recentTxs = [], netFlow30d = 0, flowBars = [12, 8, 20, 15, 24, 18, 22],
+  address = '', currency = 'CELO', total = '0', liquidity = '0', deployed = '0', pending = '0', pendingCount = 0,
+  availableVaults = [], deployedVaults = [], recentTxs = [], netFlow30d = 0, hasNetFlowData = false,
   onSend = () => {}, onAddFunds = () => {}, onSwap = () => {}, onViewAll = () => {},
 }) => {
-  const totalDec = new Decimal(total as any || 0);
-  const liquidityDec = new Decimal(liquidity as any || 0);
-  const deployedDec = new Decimal(deployed as any || 0);
-  const pendingDec = new Decimal(pending as any || 0);
-  const netFlowDec = new Decimal(netFlow30d as any || 0);
-
+  const toDecimal = (value: string | number | Decimal) => Decimal.isDecimal(value) ? value : new Decimal(value);
+  const totalDec = toDecimal(total || 0);
+  const liquidityDec = toDecimal(liquidity || 0);
+  const deployedDec = toDecimal(deployed || 0);
+  const pendingDec = toDecimal(pending || 0);
   const liquidityPct = totalDec.gt(0) ? liquidityDec.dividedBy(totalDec).times(100).toFixed(1) : '0';
 
   return (
@@ -260,32 +199,32 @@ const CapitalLayer: React.FC<Props> = ({
         </div>
 
         <div style={{ display: 'flex', alignItems: 'baseline', gap: 8, marginBottom: 4 }}>
-          <span className="total-amount">${totalDec.toNumber().toLocaleString()}</span>
-          <span className="total-sub">USD</span>
+          <span className="total-amount">{totalDec.toFixed(4)}</span>
+          <span className="total-sub">{currency}</span>
         </div>
-        <div className="total-sub">Total capital across all vaults</div>
+        <div className="total-sub">Native wallet balance · token amounts are not converted to USD</div>
 
         <div className="metric-grid">
-          <MetricCard label="Liquid" value={`$${liquidityDec.toNumber().toLocaleString()}`} sub={`${liquidityPct}% available`} valueColor="#16a34a" />
-          <MetricCard label="Deployed" value={`$${deployedDec.toNumber().toLocaleString()}`} sub={`${deployedVaults.length} positions`} />
-          <MetricCard label="Pending" value={`$${pendingDec.toNumber().toLocaleString()}`} sub={`${pendingCount} transactions`} valueColor="#d97706" />
+          <MetricCard label="Liquid" value={`${liquidityDec.toFixed(4)} ${currency}`} sub={`${liquidityPct}% available`} valueColor="#16a34a" />
+          <MetricCard label="Deployed" value={`${deployedDec.toFixed(4)} ${currency}`} sub={`${deployedVaults.length} positions`} />
+          <MetricCard label="Pending" value={`${pendingDec.toFixed(4)} ${currency}`} sub={`${pendingCount} transactions`} valueColor="#d97706" />
         </div>
       </div>
 
       <div className="action-row">
-        <ActionBtn icon="+" label="Add funds" onClick={onAddFunds} />
+        <ActionBtn icon="+" label="Deposit" onClick={onAddFunds} />
         <ActionBtn icon="↗" label="Send" onClick={onSend} />
         <ActionBtn icon="⇄" label="Swap" onClick={onSwap} />
       </div>
 
-      <div style={{ display: 'grid', gridTemplateColumns: '1.6fr 1fr', gap: 12 }}>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 320px), 1fr))', gap: 12 }}>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-          <LiquidityPanel vaults={availableVaults} flowBars={flowBars} />
-          <DeployedPanel vaults={deployedVaults} />
+          <LiquidityPanel vaults={availableVaults} />
+          <DeployedPanel vaults={deployedVaults} currency={currency} />
         </div>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-          <HealthPanel walletHealth={walletHealth} liquidity={liquidity} deployed={deployed} pending={pending} total={total} netFlow30d={netFlow30d} />
-          <RecentMovesPanel txs={recentTxs} onViewAll={onViewAll} />
+          <HealthPanel netFlow30d={netFlow30d} currency={currency} hasNetFlowData={hasNetFlowData} />
+          <RecentMovesPanel txs={recentTxs} onViewAll={onViewAll} currency={currency} />
         </div>
       </div>
     </div>

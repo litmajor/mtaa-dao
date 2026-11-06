@@ -42,7 +42,7 @@ const validateExchangeQuery = (req: Request, res: Response, next: NextFunction) 
   // Parse exchanges parameter
   const exchangeList = exchanges
     ? (exchanges as string).split(',').map((e) => e.trim().toLowerCase())
-    : ['binance', 'coinbase', 'kraken'];
+    : ccxtService.getAvailableExchanges();
 
   // Validate exchanges
   const validExchanges = ccxtService.getAvailableExchanges();
@@ -109,6 +109,31 @@ router.get('/available', asyncHandler(async (req: Request, res: Response) => {
     logger.error(`Available exchanges fetch failed: ${error.message}`);
     res.status(500).json({ error: 'Failed to fetch available exchanges' });
   }
+}));
+
+/**
+ * GET /api/exchanges/pair-support?symbol=BTC%2FUSDT
+ * Resolve a pair against each initialized exchange's loaded spot markets.
+ */
+router.get('/pair-support', asyncHandler(async (req: Request, res: Response) => {
+  const symbol = typeof req.query.symbol === 'string' ? req.query.symbol.trim() : '';
+  if (!symbol) {
+    return res.status(400).json({
+      success: false,
+      error: 'symbol query parameter is required',
+    });
+  }
+
+  const pairsByExchange = await ccxtService.getPairSupport(symbol);
+  return res.json({
+    success: true,
+    symbol,
+    pairsByExchange,
+    availableOn: Object.entries(pairsByExchange)
+      .filter(([, marketSymbol]) => marketSymbol !== null)
+      .map(([exchange]) => exchange),
+    timestamp: new Date().toISOString(),
+  });
 }));
 
 /**

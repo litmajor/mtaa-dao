@@ -44,11 +44,14 @@
 **Location:** `shared/schema.ts` (line 531-543)
 ```typescript
 - id, vaultId
-- tokenSymbol, tokenAddress, tokenName
+- tokenSymbol
 - balance (high precision: 18 decimals)
-- valueUSD
-- lastUpdated
+- valueUSD, lastPriceUpdate
+- averageEntryPrice, totalDeposited, totalWithdrawn
+- createdAt, updatedAt
 ```
+
+**Balance semantics:** these are indexed database holdings, not an independent on-chain read. The current schema lacks chain and token-contract identity, so raw quantities from multiple holding rows are not aggregated. USD valuation is unavailable if any included holding lacks a recorded USD value. See [Vault Architecture](./VAULT_ARCHITECTURE.md#balance-and-reconciliation-semantics) for the current source-of-truth boundaries.
 
 #### 5. **vaultTransactions** ✅ (Detailed Vault Activity)
 **Location:** `shared/schema.ts` (line 582-601)
@@ -638,4 +641,3 @@ The 4 high-priority additions are **enhancements**, not **blockers**:
 - ✅ transaction_fees needed for revenue tracking
 
 **Recommendation:** Add the 4 high-priority tables in the next sprint.
-

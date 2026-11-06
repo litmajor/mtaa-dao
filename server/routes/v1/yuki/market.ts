@@ -29,173 +29,231 @@ const router = express.Router();
 // GET /v1/yuki/market/top - Aggregated top assets across exchanges
 router.get('/top', async (req: Request, res: Response) => {
   try {
-    const limit = parseInt((req.query.limit as string) || '500', 10);
+    const parsedLimit = Number.parseInt((req.query.limit as string) || '100', 10);
+    if (!Number.isInteger(parsedLimit) || parsedLimit < 1) {
+      return res.status(400).json({
+        success: false,
+        error: { message: 'Limit must be a positive integer' },
+      });
+    }
+    const limit = Math.min(parsedLimit, 500);
     const exchangesQuery = (req.query.exchanges as string) || '';
+    const availableExchanges = ccxtService.getAvailableExchanges();
     const requestedExchanges = exchangesQuery
       ? exchangesQuery.split(',').map((s) => s.trim().toLowerCase()).filter(Boolean)
-      : ccxtService.getAvailableExchanges();
+      : availableExchanges;
+    const invalidExchanges = requestedExchanges.filter((exchange) => !availableExchanges.includes(exchange));
+    if (invalidExchanges.length > 0) {
+      return res.status(400).json({
+        success: false,
+        error: { message: `Unsupported exchanges: ${invalidExchanges.join(', ')}` },
+      });
+    }
+    const exchanges = requestedExchanges.filter((exchange) => availableExchanges.includes(exchange));
+    if (exchanges.length === 0) {
+      return res.status(503).json({
+        success: false,
+        error: { message: 'No requested exchanges are available' },
+      });
+    }
 
-    logger.info('[MARKET] Aggregating top assets', { limit, exchanges: requestedExchanges });
+    const cacheKey = `yuki:market:top:${limit}:${[...exchanges].sort().join(',')}`;
+    const staleCacheKey = `${cacheKey}:stale`;
+    let staleResponseData: unknown;
+    try {
+      const cached = await redis.get(cacheKey);
+      if (cached) {
+        return res.json({ success: true, data: JSON.parse(cached) });
+      }
+      const stale = await redis.get(staleCacheKey);
+      if (stale) staleResponseData = JSON.parse(stale);
+    } catch (error) {
+      logger.debug('[MARKET] Failed to read cached top assets', { error });
+    }
 
     const allowedQuotes = new Set(['USDT', 'USDC', 'USD', 'BUSD', 'DAI', 'TUSD', 'USTC']);
-
-    // Aggregate volumes/prices by base symbol
     const agg = new Map<string, {
       symbol: string;
-      samples: number;
       priceSum: number;
-      totalVolume: number;
+      samples: number;
+      bidSum: number;
+      bidSamples: number;
+      askSum: number;
+      askSamples: number;
+      volume24h: number;
+      changeSum: number;
+      changeSamples: number;
+      timestamp: number;
+      markets: Array<{
+        exchange: string;
+        symbol: string;
+        last: number;
+        bid: number;
+        ask: number;
+        volume24h: number;
+        change24h: number | null;
+        timestamp: number;
+      }>;
       exchanges: Set<string>;
     }>();
-
-    // Fan-out: fetch markets + tickers per exchange
-    const exchangePromises = requestedExchanges.map(async (ex) => {
+    const exchangeResults = await Promise.allSettled(exchanges.map(async (exchange) => {
       try {
-        const markets = await ccxtService.getMarkets(ex);
-        const filtered = markets.filter((m: any) => allowedQuotes.has((m.quote || '').toUpperCase()));
-
-        const tickerPromises = filtered.map((m: any) =>
-          ccxtService.getTickerFromExchange(ex, m.symbol)
-            .then((t) => ({ market: m, ticker: t }))
-            .catch((e) => {
-              logger.debug(`[MARKET] Ticker fetch failed ${ex} ${m.symbol}: ${e.message}`);
-              return null;
-            })
-        );
-
-        const results = await Promise.allSettled(tickerPromises);
-        results.forEach((r) => {
-          if (r.status !== 'fulfilled' || !r.value) return;
-          const payload = r.value as any;
-          const t = payload.ticker as any;
-          const m = payload.market as any;
-          if (!t || typeof t.last !== 'number') return;
-
-          const base = (m.base || m.symbol.split('/')[0] || '').toUpperCase();
-          if (!base) return;
-
-          const entry = agg.get(base) || { symbol: base, samples: 0, priceSum: 0, totalVolume: 0, exchanges: new Set<string>() };
-          entry.samples += 1;
-          entry.priceSum += (t.last || 0);
-          entry.totalVolume += (t.volume || 0);
-          entry.exchanges.add(ex);
-          agg.set(base, entry);
+        let deadline: NodeJS.Timeout | undefined;
+        const tickers = await Promise.race([
+          ccxtService.getTickersFromExchange(exchange),
+          new Promise<never>((_, reject) => {
+            deadline = setTimeout(
+              () => reject(new Error(`Bulk ticker request timed out after 4000ms for ${exchange}`)),
+              4_000
+            );
+          }),
+        ]).finally(() => {
+          if (deadline) clearTimeout(deadline);
         });
+        let spotTickerCount = 0;
+        for (const ticker of tickers) {
+          if (ticker.symbol.includes(':')) continue;
+          const [rawBase, rawQuote] = ticker.symbol.split('/');
+          const base = (rawBase || '').toUpperCase();
+          const quote = (rawQuote || '').split(':')[0].toUpperCase();
+          if (!base || !allowedQuotes.has(quote)) continue;
+          spotTickerCount++;
+          const entry = agg.get(base) || {
+            symbol: base,
+            priceSum: 0,
+            samples: 0,
+            bidSum: 0,
+            bidSamples: 0,
+            askSum: 0,
+            askSamples: 0,
+            volume24h: 0,
+            changeSum: 0,
+            changeSamples: 0,
+            timestamp: 0,
+            markets: [],
+            exchanges: new Set<string>(),
+          };
+          entry.priceSum += ticker.last;
+          entry.samples += 1;
+          if (ticker.bid > 0) {
+            entry.bidSum += ticker.bid;
+            entry.bidSamples += 1;
+          }
+          if (ticker.ask > 0) {
+            entry.askSum += ticker.ask;
+            entry.askSamples += 1;
+          }
+          entry.volume24h += ticker.volume;
+          if (typeof ticker.percentage === 'number') {
+            entry.changeSum += ticker.percentage;
+            entry.changeSamples += 1;
+          }
+          entry.timestamp = Math.max(entry.timestamp, ticker.timestamp);
+          entry.markets.push({
+            exchange,
+            symbol: ticker.symbol,
+            last: ticker.last,
+            bid: ticker.bid,
+            ask: ticker.ask,
+            volume24h: ticker.volume,
+            change24h: ticker.percentage ?? null,
+            timestamp: ticker.timestamp,
+          });
+          entry.exchanges.add(exchange);
+          agg.set(base, entry);
+        }
+        return { exchange, spotTickerCount };
       } catch (e: any) {
-        logger.warn(`[MARKET] Failed to process exchange ${ex}: ${e.message}`);
+        logger.warn(`[MARKET] Failed to fetch bulk tickers from ${exchange}: ${e.message}`);
+        throw e;
       }
-    });
+    }));
 
-    await Promise.allSettled(exchangePromises);
+    const exchangeStatus = Object.fromEntries(exchangeResults.map((result, index) => {
+      const exchange = exchanges[index];
+      if (result.status === 'rejected') {
+        const message = result.reason instanceof Error ? result.reason.message : String(result.reason);
+        return [exchange, { ok: false, tickerCount: 0, error: message }];
+      }
+      return [exchange, {
+        ok: result.value.spotTickerCount > 0,
+        tickerCount: result.value.spotTickerCount,
+        ...(result.value.spotTickerCount === 0 ? { error: 'No supported spot tickers returned' } : {}),
+      }];
+    }));
+    const exchangeSummary = exchangeResults.map((result, index) => {
+      if (result.status === 'rejected') {
+        const message = result.reason instanceof Error ? result.reason.message : String(result.reason);
+        return `${exchanges[index]}: ${message}`;
+      }
+      return `${exchanges[index]}: ${result.value.spotTickerCount} spot tickers`;
+    }).join('; ');
 
-    // Build sorted list by aggregated volume
+    if (exchangeResults.every((result) => result.status === 'rejected')) {
+      if (staleResponseData !== undefined) {
+        logger.warn('[MARKET] Live market data unavailable; serving stale top-assets cache');
+        res.setHeader('X-Market-Data-Stale', 'true');
+        return res.json({ success: true, data: staleResponseData });
+      }
+      return res.status(503).json({
+        success: false,
+        error: { message: `Live market data is unavailable. ${exchangeSummary}` },
+        exchanges: exchangeStatus,
+      });
+    }
+
+    if (agg.size === 0) {
+      if (staleResponseData !== undefined) {
+        logger.warn('[MARKET] No live spot markets returned; serving stale top-assets cache');
+        res.setHeader('X-Market-Data-Stale', 'true');
+        return res.json({ success: true, data: staleResponseData });
+      }
+      return res.status(503).json({
+        success: false,
+        error: { message: `No live spot market data returned. ${exchangeSummary}` },
+        exchanges: exchangeStatus,
+      });
+    }
+
     const assets = Array.from(agg.values())
       .map((v) => ({
         symbol: v.symbol,
-        price: v.samples > 0 ? v.priceSum / v.samples : 0,
-        volume24h: v.totalVolume,
+        name: v.symbol,
+        price: v.priceSum / v.samples,
+        bid: v.bidSamples > 0 ? v.bidSum / v.bidSamples : null,
+        ask: v.askSamples > 0 ? v.askSum / v.askSamples : null,
+        change24h: v.changeSamples > 0 ? v.changeSum / v.changeSamples : 0,
+        marketCap: null,
+        circulatingSupply: null,
+        volume24h: v.volume24h,
+        timestamp: v.timestamp,
+        markets: v.markets,
         exchanges: Array.from(v.exchanges),
+        category: 'cefi',
       }))
       .sort((a, b) => b.volume24h - a.volume24h)
-      .slice(0, limit);
+      .slice(0, limit)
+      .map((asset, index) => ({ ...asset, rank: index + 1 }));
 
-    // Enrich via priceOracle (marketCap, change24h) and authoritative CoinGecko for circulating supply
-    const bases = assets.map((a) => a.symbol);
-    const priceMap = await priceOracle.getPrices(bases);
-
-    // Map base symbol -> coinGeckoId via search, batched to avoid rate limits
-    const COINGECKO_RATE_LIMIT_MS = 250;
-    const COINGECKO_BATCH_SIZE = 4;
-
-    const symbolToGeckoId = new Map<string, string | null>();
-    for (let i = 0; i < bases.length; i += COINGECKO_BATCH_SIZE) {
-      const batch = bases.slice(i, i + COINGECKO_BATCH_SIZE);
-      const promises = batch.map(async (sym) => {
-        try {
-          const resp = await fetch(`https://api.coingecko.com/api/v3/search?query=${encodeURIComponent(sym)}`);
-          if (!resp.ok) return [sym, null] as [string, string | null];
-          const data = await resp.json();
-          const coin = data.coins?.[0];
-          return [sym, coin?.id || null] as [string, string | null];
-        } catch (e) {
-          logger.debug(`[MARKET] CoinGecko id lookup failed for ${sym}: ${e}`);
-          return [sym, null] as [string, string | null];
-        }
-      });
-
-      const results = await Promise.allSettled(promises);
-      for (const r of results) {
-        if (r.status === 'fulfilled') {
-          const [sym, id] = r.value as [string, string | null];
-          symbolToGeckoId.set(sym, id);
-        }
-      }
-
-      if (i + COINGECKO_BATCH_SIZE < bases.length) {
-        await new Promise((res) => setTimeout(res, COINGECKO_RATE_LIMIT_MS * COINGECKO_BATCH_SIZE));
-      }
-    }
-
-    // Fetch coin details for available ids to get circulating_supply and authoritative market data
-    const geckoIdToSupply = new Map<string, number | null>();
-    const uniqueIds = Array.from(new Set(Array.from(symbolToGeckoId.values()).filter(Boolean))) as string[];
-    for (let i = 0; i < uniqueIds.length; i += COINGECKO_BATCH_SIZE) {
-      const batch = uniqueIds.slice(i, i + COINGECKO_BATCH_SIZE);
-      const promises = batch.map(async (id) => {
-        try {
-          const resp = await fetch(`https://api.coingecko.com/api/v3/coins/${encodeURIComponent(id)}?localization=false`);
-          if (!resp.ok) return [id, null] as [string, number | null];
-          const data = await resp.json();
-          const circ = data?.market_data?.circulating_supply ?? null;
-          return [id, circ] as [string, number | null];
-        } catch (e) {
-          logger.debug(`[MARKET] CoinGecko detail fetch failed for ${id}: ${e}`);
-          return [id, null] as [string, number | null];
-        }
-      });
-
-      const results = await Promise.allSettled(promises);
-      for (const r of results) {
-        if (r.status === 'fulfilled') {
-          const [id, circ] = r.value as [string, number | null];
-          geckoIdToSupply.set(id, circ);
-        }
-      }
-
-      if (i + COINGECKO_BATCH_SIZE < uniqueIds.length) {
-        await new Promise((res) => setTimeout(res, COINGECKO_RATE_LIMIT_MS * COINGECKO_BATCH_SIZE));
-      }
-    }
-
-    const enriched = assets.map((a, idx) => {
-      const p = priceMap.get(a.symbol) || null;
-      const geckoId = symbolToGeckoId.get(a.symbol) || null;
-      const circ = geckoId ? geckoIdToSupply.get(geckoId) ?? null : null;
-
-      return {
-        rank: idx + 1,
-        symbol: a.symbol,
-        name: p ? p.name : a.symbol,
-        price: p ? p.priceUsd : a.price,
-        change24h: p ? p.priceChange24h : 0,
-        marketCap: p ? p.marketCap : null,
-        circulatingSupply: circ !== null && circ !== undefined ? circ : (p && p.marketCap && p.priceUsd ? p.marketCap / p.priceUsd : null),
-        volume24h: a.volume24h,
-        exchanges: a.exchanges,
-      };
-    });
-
-    // Cache result briefly in Redis
+    const responseData = {
+      assets,
+      exchanges: exchangeStatus,
+      timestamp: new Date().toISOString(),
+    };
     try {
-      await redis.setex(`yuki:market:top:${limit}:${requestedExchanges.join(',')}`, 30, JSON.stringify(enriched));
-    } catch (e) {
-      logger.debug('[MARKET] Failed to cache top assets (non-blocking)');
+      const serialized = JSON.stringify(responseData);
+      await Promise.all([
+        redis.setex(cacheKey, 15, serialized),
+        redis.setex(staleCacheKey, 300, serialized),
+      ]);
+    } catch (error) {
+      logger.debug('[MARKET] Failed to cache top assets (non-blocking)', { error });
     }
 
-    return res.json({ success: true, data: enriched, timestamp: new Date().toISOString() });
+    return res.json({ success: true, data: responseData });
   } catch (error: any) {
     logger.error('[MARKET] Failed to aggregate top assets', { error });
-    return res.status(500).json({ success: false, error: error.message });
+    return res.status(500).json({ success: false, error: { message: error.message } });
   }
 });
 

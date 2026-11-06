@@ -31,7 +31,6 @@ export class MessageBusAdapter extends EventEmitter {
 
   constructor() {
     super();
-    this.setupDefaultHandlers();
   }
 
   /**
@@ -44,12 +43,7 @@ export class MessageBusAdapter extends EventEmitter {
 
     const handlers = this.handlers.get(messageType)!;
     if (handlers.includes(handler)) {
-      return () => {
-        const index = handlers.indexOf(handler);
-        if (index > -1) {
-          handlers.splice(index, 1);
-        }
-      };
+      return () => undefined;
     }
 
     handlers.push(handler);
@@ -60,10 +54,15 @@ export class MessageBusAdapter extends EventEmitter {
     );
 
     // Return unsubscribe function
+    let subscribed = true;
     return () => {
+      if (!subscribed) return;
+      subscribed = false;
       const index = handlers.indexOf(handler);
       if (index > -1) {
         handlers.splice(index, 1);
+        this.stats.subscriptions = Math.max(0, this.stats.subscriptions - 1);
+        if (handlers.length === 0) this.handlers.delete(messageType);
       }
     };
   }
@@ -187,28 +186,6 @@ export class MessageBusAdapter extends EventEmitter {
     this.messageQueue = [];
     this.stats.subscriptions = 0;
     logger.info(`[${this.name}] All subscriptions cleared`);
-  }
-
-  /**
-   * Setup default handlers for logging
-   */
-  private setupDefaultHandlers(): void {
-    // Message logging handler
-    this.subscribe("gateway:price_request", async (message) => {
-      logger.debug(`[${this.name}] Price request: ${JSON.stringify(message.payload)}`);
-    });
-
-    this.subscribe("gateway:liquidity_request", async (message) => {
-      logger.debug(`[${this.name}] Liquidity request: ${JSON.stringify(message.payload)}`);
-    });
-
-    this.subscribe("gateway:apy_request", async (message) => {
-      logger.debug(`[${this.name}] APY request: ${JSON.stringify(message.payload)}`);
-    });
-
-    this.subscribe("gateway:risk_request", async (message) => {
-      logger.debug(`[${this.name}] Risk request: ${JSON.stringify(message.payload)}`);
-    });
   }
 
   /**

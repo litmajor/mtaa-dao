@@ -1466,6 +1466,13 @@ export const vaultTokenHoldings = pgTable("vault_token_holdings", {
   id: uuid("id").primaryKey().defaultRandom(),
   vaultId: uuid("vault_id").references(() => vaults.id).notNull(),
   tokenSymbol: varchar("token_symbol").notNull(), // e.g., 'CELO', 'cUSD', 'cEUR', 'USDT'
+  chainId: integer("chain_id"),
+  chain: varchar("chain", { length: 32 }),
+  tokenAddress: varchar("token_address", { length: 255 }),
+  holderAddress: varchar("holder_address", { length: 255 }),
+  tokenDecimals: integer("token_decimals"),
+  indexedBlockNumber: bigint("indexed_block_number", { mode: "number" }),
+  indexedBlockHash: varchar("indexed_block_hash", { length: 66 }),
   balance: decimal("balance", { precision: 18, scale: 8 }).notNull(),
   valueUSD: decimal("value_usd", { precision: 18, scale: 8 }).default("0"), // USD equivalent value
   lastPriceUpdate: timestamp("last_price_update").defaultNow(),
@@ -1589,7 +1596,9 @@ export const treasuryPositions = pgTable("treasury_positions", {
   
   // Chain-specific holding (CRITICAL FOR MULTI-CHAIN)
   chain: varchar("chain", { length: 20 }).notNull(), // celo, ethereum, base, polygon
+  chainId: integer("chain_id"),
   contractAddress: varchar("contract_address", { length: 255 }).notNull(),
+  holderAddress: varchar("holder_address", { length: 255 }),
   
   // Position tracking
   balance: decimal("balance", { precision: 18, scale: 8 }).notNull().default("0"),
@@ -2368,11 +2377,11 @@ export const treasuryReconciliationAudits = pgTable("treasury_reconciliation_aud
   id: uuid("id").primaryKey().defaultRandom(),
   reconciliationType: varchar("reconciliation_type").notNull(), // 'dao_treasury' | 'vault_balance' | 'multisig_transactions'
   entityId: uuid("entity_id").notNull(), // daoId or vaultId being reconciled
-  computedValue: decimal("computed_value", { precision: 20, scale: 8 }).notNull(), // value from our computation
-  onChainValue: decimal("on_chain_value", { precision: 20, scale: 8 }).notNull(), // value from blockchain
-  discrepancy: decimal("discrepancy", { precision: 20, scale: 8 }).notNull(), // absolute difference
-  discrepancyPercent: decimal("discrepancy_percent", { precision: 5, scale: 4 }).notNull(), // percentage difference (0.0500 = 5%)
-  reconciliationStatus: varchar("reconciliation_status").default("matched").notNull(), // 'matched' | 'warning' | 'critical'
+  computedValue: decimal("computed_value", { precision: 38, scale: 18 }).notNull(), // value from our computation
+  onChainValue: decimal("on_chain_value", { precision: 38, scale: 18 }).notNull(), // value from blockchain
+  discrepancy: decimal("discrepancy", { precision: 38, scale: 18 }).notNull(), // absolute difference
+  discrepancyPercent: decimal("discrepancy_percent", { precision: 12, scale: 6 }).notNull(), // percentage difference (5.0 = 5%)
+  reconciliationStatus: varchar("reconciliation_status").default("matched").notNull(), // 'matched' | 'warning' | 'critical' | 'unverified'
   lastOnChainCheck: timestamp("last_on_chain_check").notNull(), // when we last checked on-chain
   notes: text("notes"), // any additional notes about the discrepancy
   createdAt: timestamp("created_at").defaultNow().notNull(),

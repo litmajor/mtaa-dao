@@ -1,62 +1,55 @@
-import { type Request, type Response } from 'express';
-import crypto from 'crypto';
+import type { Request, Response } from 'express';
+import crypto from 'node:crypto';
 
-const TELEGRAM_BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN;
 const APP_URL = process.env.APP_URL || 'http://localhost:5000';
+const TELEGRAM_BOT_USERNAME = process.env.TELEGRAM_BOT_USERNAME;
 
-/**
- * Generate Telegram login URL for authentication via Telegram bot
- * 
- * Telegram Login Widget uses a simple approach:
- * - User clicks login button on frontend
- * - Frontend generates auth request with bot token and callback URL
- * - Telegram bot verifies user identity
- * - Returns to our callback with user data
- */
+function escapeHtml(value: string): string {
+  return value.replace(/[&<>"']/g, (character) => {
+    const entities: Record<string, string> = {
+      '&': '&amp;',
+      '<': '&lt;',
+      '>': '&gt;',
+      '"': '&quot;',
+      "'": '&#39;',
+    };
+    return entities[character];
+  });
+}
+
 export async function authTelegramInitHandler(req: Request, res: Response) {
-  try {
-    const { mode = 'login' } = req.query;
-    
-    if (!TELEGRAM_BOT_TOKEN) {
-      return res.status(500).json({ error: 'Telegram bot not configured' });
-    }
-
-    // Generate state parameter for CSRF protection
-    const state = crypto.randomBytes(32).toString('hex');
-    const mode_str = mode === 'register' ? 'register' : 'login';
-
-    // Store state in HTTP-only cookie (10 minute expiry)
-    res.cookie('telegram_auth_state', state, {
-      httpOnly: true,
-      secure: process.env.NODE_ENV === 'production',
-      sameSite: 'strict',
-      maxAge: 10 * 60 * 1000, // 10 minutes
-    });
-
-    // Store mode in HTTP-only cookie
-    res.cookie('telegram_auth_mode', mode_str, {
-      httpOnly: true,
-      secure: process.env.NODE_ENV === 'production',
-      sameSite: 'strict',
-      maxAge: 10 * 60 * 1000, // 10 minutes
-    });
-
-    /**
-     * Telegram login widget URL
-     * The bot must have /start command enabled with deeplink support
-     * User will be redirected to our callback endpoint after authentication
-     */
-    const callbackUrl = `${APP_URL}/api/auth/telegram/callback`;
-    const botUsername = process.env.TELEGRAM_BOT_USERNAME || 'YourBotUsername';
-    
-    // Telegram login via bot deeplink
-    // User will authenticate and be redirected to callback with auth data
-    const telegramLoginUrl = `https://t.me/${botUsername}?start=auth_${state}`;
-
-    // Redirect to Telegram bot for authentication
-    return res.redirect(telegramLoginUrl);
-  } catch (error) {
-    console.error('Telegram auth init error:', error);
-    return res.status(500).json({ error: 'Telegram authentication failed' });
+  if (!TELEGRAM_BOT_USERNAME || !/^[A-Za-z0-9_]{5,32}$/.test(TELEGRAM_BOT_USERNAME)) {
+    return res.status(503).json({ error: 'Telegram Login is not configured' });
   }
+
+  const state = crypto.randomBytes(32).toString('hex');
+  const mode = req.query.mode === 'register' ? 'register' : 'login';
+  const callbackUrl = new URL('/api/auth/telegram/callback', APP_URL);
+  callbackUrl.searchParams.set('state', state);
+
+  const cookieOptions = {
+    httpOnly: true,
+    secure: process.env.NODE_ENV === 'production',
+    sameSite: 'lax' as const,
+    maxAge: 10 * 60 * 1000,
+    path: '/',
+  };
+  res.cookie('telegram_auth_state', state, cookieOptions);
+  res.cookie('telegram_auth_mode', mode, cookieOptions);
+  res.setHeader('Cache-Control', 'no-store');
+  res.type('html');
+  return res.send(`<!doctype html>
+<html lang="en">
+  <head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Sign in with Telegram</title></head>
+  <body>
+    <main>
+      <h1>Continue with Telegram</h1>
+      <script async src="https://telegram.org/js/telegram-widget.js?22"
+        data-telegram-login="${escapeHtml(TELEGRAM_BOT_USERNAME)}"
+        data-size="large"
+        data-auth-url="${escapeHtml(callbackUrl.toString())}"
+        data-request-access="write"></script>
+    </main>
+  </body>
+</html>`);
 }
