@@ -181,8 +181,6 @@ export async function authTelegramCallbackHandler(req: Request, res: Response) {
         provider: 'telegram',
         providerUserId: telegramId,
         email: existingEmailUser.email,
-        provider: 'telegram',
-        providerUserId: telegramId,
         username: telegramUsername,
         firstName: telegramData.first_name,
         lastName: telegramData.last_name,

@@ -203,21 +203,34 @@ router.post('/proposals/:proposalId/execute', isAuthenticated, proposalExecution
     }
     const executionTime = new Date(Date.now() + delay * 60 * 60 * 1000);
 
-    await db.insert(proposalExecutionQueue).values({
+    const [queuedExecution] = await db.insert(proposalExecutionQueue).values({
       proposalId: String(proposalId ?? ''),
       daoId: String(proposalData.daoId ?? ''),
       scheduledFor: executionTime,
       executionType: String(proposalData.proposalType ?? ''),
       executionData: proposalData.executionData || {},
       status: 'pending'
-    });
+    }).onConflictDoNothing().returning({ id: proposalExecutionQueue.id });
+
+    let existingExecution: { id: string } | undefined;
+    if (!queuedExecution) {
+      [existingExecution] = await db.select({ id: proposalExecutionQueue.id })
+        .from(proposalExecutionQueue)
+        .where(and(
+          eq(proposalExecutionQueue.proposalId, proposalId),
+          eq(proposalExecutionQueue.daoId, proposalData.daoId),
+          sql`${proposalExecutionQueue.status} IN ('pending', 'executing', 'settlement_pending', 'submitted', 'reconciliation_required')`,
+        ))
+        .limit(1);
+    }
 
     logRuleEvaluation(proposalData.daoId, 'proposal', proposalId, ruleResult.results);
 
     res.json({
       success: true,
-      message: 'Proposal queued for execution',
-      scheduledFor: executionTime
+      message: existingExecution ? 'Proposal already has an active execution record' : 'Proposal approved and queued for execution',
+      scheduledFor: executionTime,
+      executionId: queuedExecution?.id ?? existingExecution?.id,
     });
   } catch (error: any) {
     res.status(500).json({
@@ -1163,4 +1176,3 @@ router.get('/daos/:daoId/governance/me/rank', isAuthenticated, async (req: any, 
 // ════════════════════════════════════════════════════════════════════════════════
 
 export default router;
-

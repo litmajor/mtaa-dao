@@ -23,6 +23,7 @@ describe('PaymentGatewayService - mpesaDeposit Phone Ownership', () => {
     process.env.MPESA_SHORTCODE = '123456';
     process.env.MPESA_PASSKEY = 'test_passkey';
     process.env.APP_URL = 'http://localhost:3000';
+    process.env.MPESA_CALLBACK_URL = 'http://localhost:3000/api/payments/mpesa/callback';
 
     vi.spyOn(sharedIdempotencyManager, 'startProcessing').mockResolvedValue(true);
     vi.spyOn(sharedIdempotencyManager, 'getResult').mockResolvedValue(null);
@@ -79,6 +80,7 @@ describe('PaymentGatewayService - mpesaDeposit Phone Ownership', () => {
     const callbackToken = new URL(String(stkPayload.CallBackURL)).searchParams.get('token');
     expect(stkUrl).toContain('/mpesa/stkpush/v1/processrequest');
     expect(stkPayload).toMatchObject({ Amount: 100, PhoneNumber: '254712345678' });
+    expect(new URL(String(stkPayload.CallBackURL)).pathname).toBe('/api/payment-gateway/webhooks/mpesa');
     expect(callbackToken).toMatch(/^[a-f0-9]{64}$/);
 
     const transactionMetadata =

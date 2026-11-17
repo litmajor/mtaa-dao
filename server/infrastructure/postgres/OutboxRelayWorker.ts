@@ -57,6 +57,7 @@ export interface OutboxEvent {
   causationId: string | null;
   actor: string;
   publishAttempts: number;
+  claimToken?: string;
 }
 
 /**
@@ -65,10 +66,8 @@ export interface OutboxEvent {
  */
 export interface OutboxRepository {
   /**
-   * Fetches and row-locks unpublished events.
-   * Must use: SELECT ... WHERE published_at IS NULL
-   *           ORDER BY created_at ASC LIMIT $batchSize
-   *           FOR UPDATE SKIP LOCKED
+   * Atomically claims unpublished events using FOR UPDATE SKIP LOCKED and an
+   * expiring lease, so another process can recover a claim after a crash.
    */
   fetchAndLockUnpublished(batchSize: number): Promise<OutboxEvent[]>;
 
@@ -76,20 +75,20 @@ export interface OutboxRepository {
    * Marks a single event as successfully published.
    * Sets published_at = NOW().
    */
-  markPublished(eventId: string): Promise<void>;
+  markPublished(eventId: string, claimToken?: string): Promise<void>;
 
   /**
    * Records a publish failure: increments publish_attempts,
    * stamps last_publish_attempt, stores last_publish_error.
    */
-  recordFailure(eventId: string, error: string): Promise<void>;
+  recordFailure(eventId: string, error: string, claimToken?: string): Promise<void>;
 
   /**
    * Quarantines a poison event (publish_attempts >= MAX).
    * Implementations may move it to a separate table or set a flag.
    * The event MUST be excluded from future fetchAndLockUnpublished calls.
    */
-  quarantine(eventId: string): Promise<void>;
+  quarantine(eventId: string, claimToken?: string): Promise<void>;
 }
 
 /**
@@ -160,7 +159,7 @@ export class OutboxRelayWorker {
 
         // Scenario B safety: if markPublished fails after XADD succeeds,
         // the next relay cycle will re-publish. Consumers handle dedup.
-        await this.repo.markPublished(event.id);
+        await this.repo.markPublished(event.id, event.claimToken);
 
         logger.info({
           message: 'outbox.event.published',
@@ -177,7 +176,7 @@ export class OutboxRelayWorker {
         const errorMsg = error instanceof Error ? error.message : String(error);
 
         try {
-          await this.repo.recordFailure(event.id, errorMsg);
+          await this.repo.recordFailure(event.id, errorMsg, event.claimToken);
         } catch (dbError) {
           // If even the failure recording fails, log and move on.
           // The row lock will be released when the transaction ends.
@@ -222,7 +221,7 @@ export class OutboxRelayWorker {
       // DLQ publish failure should not block quarantine
     }
 
-    await this.repo.quarantine(event.id);
+    await this.repo.quarantine(event.id, event.claimToken);
 
     logger.error({
       message: 'outbox.event.quarantined',

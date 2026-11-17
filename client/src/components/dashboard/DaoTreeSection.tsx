@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { useSystemState } from '@/context/systemState';
+import { useSystemState } from '@/contexts/systemState';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { ChevronDown, ChevronRight, Users, DollarSign, Activity, TrendingUp } from 'lucide-react';

@@ -2,7 +2,7 @@ import { ArrowRight, TrendingUp, Lock, ChartColumn, Users, Shield, DollarSign, Z
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
-import { Link } from 'wouter';
+import { Link } from 'react-router-dom';
 import { Helmet } from 'react-helmet-async';
 
 export default function MaanoVaultLanding() {
@@ -242,7 +242,7 @@ export default function MaanoVaultLanding() {
         <p className="text-xl text-purple-200 mb-8 max-w-2xl mx-auto">
           Join thousands of Kenyans earning passive income with MaanoVault. No experience needed.
         </p>
-        <Link href="/vault">
+        <Link to="/vault">
           <Button size="lg" variant="primary" className="px-10 py-6 text-xl font-bold rounded-xl shadow-2xl">
             Launch MaanoVault Now
             <ArrowRight className="w-6 h-6 ml-2" />

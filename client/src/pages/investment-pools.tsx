@@ -7,7 +7,7 @@ import { Badge } from '@/components/ui/badge';
 import { Loader2, TrendingUp, Wallet, PieChart, Plus, ArrowUpRight, Crown, AlertTriangle, RefreshCw, Lock, Users, Zap } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { useAccount } from 'wagmi';
-import { useWallet } from './hooks/useWallet';
+import { useWallet } from '@/hooks/useWallet';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import { authClient } from '@/utils/authClient';
 import Shell from '../components/ui/shell';

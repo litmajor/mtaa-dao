@@ -2,6 +2,7 @@ import type { Request, Response } from 'express';
 import { db } from '../storage';
 import { daos, daoMemberships, proposals } from '../../shared/schema';
 import { eq, and } from 'drizzle-orm';
+import TreasuryService from '../services/treasuryService';
 
 // Get DAO settings
 export async function getDaoSettingsHandler(req: Request, res: Response) {
@@ -37,6 +38,7 @@ export async function getDaoSettingsHandler(req: Request, res: Response) {
     if (!dao) {
       return res.status(404).json({ error: 'DAO not found' });
     }
+    const computedTreasury = await TreasuryService.getComputedTreasuryBalance(daoId);
 
     // Return DAO settings
     const settings = {
@@ -62,7 +64,8 @@ export async function getDaoSettingsHandler(req: Request, res: Response) {
         executionDelay: dao.executionDelay
       },
       financial: {
-        treasuryBalance: dao.treasuryBalance,
+        treasuryBalance: computedTreasury.totalComputedBalance,
+        treasuryBalanceCurrency: computedTreasury.totalComputedBalance === null ? null : 'USD',
         plan: dao.plan,
         planExpiresAt: dao.planExpiresAt,
         billingStatus: dao.billingStatus
@@ -335,12 +338,14 @@ export async function getDaoAnalyticsHandler(req: Request, res: Response) {
       return acc;
     }, {});
 
+    const computedTreasury = await TreasuryService.getComputedTreasuryBalance(daoId);
     const analytics = {
       dao: {
         name: dao.name,
         createdAt: dao.createdAt,
         memberCount: dao.memberCount,
-        treasuryBalance: dao.treasuryBalance,
+        treasuryBalance: computedTreasury.totalComputedBalance,
+        treasuryBalanceCurrency: computedTreasury.totalComputedBalance === null ? null : 'USD',
         plan: dao.plan
       },
       members: {

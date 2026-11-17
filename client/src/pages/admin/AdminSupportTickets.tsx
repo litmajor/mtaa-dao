@@ -4,9 +4,7 @@
  */
 
 import React, { useState, useEffect } from 'react';
-import ChartJS from '@/components/charts/ChartJSSetup';
-import { Chart } from 'react-chartjs-2';
-import { ResponsiveContainer, LineChart, CartesianGrid, XAxis, YAxis, Tooltip, Line } from 'recharts';
+import { ResponsiveContainer, LineChart, CartesianGrid, XAxis, YAxis, Tooltip, Line, PieChart, Pie, Cell, Legend, BarChart, Bar } from 'recharts';
 import { AlertCircle, CheckCircle, Clock, Users, MessageSquare, Filter, RefreshCw, ChevronRight } from 'lucide-react';
 import { Card } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -211,13 +209,15 @@ export default function AdminSupportTickets() {
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
               <Card className="bg-slate-800 border-slate-700 p-6">
                 <h3 className="text-lg font-semibold text-white mb-4">Ticket Status Distribution</h3>
-                <div style={{ height: 300 }}>
-                  <Chart
-                    type="pie"
-                    data={{ labels: statusDistribution.map(s => s.name), datasets: [{ data: statusDistribution.map(s => s.value), backgroundColor: statusDistribution.map((_, i) => COLORS[i % COLORS.length]) }] }}
-                    options={{ responsive: true, maintainAspectRatio: false, plugins: { tooltip: { callbacks: { label: (ctx: any) => `${ctx.label}: ${ctx.raw}` } } } }}
-                  />
-                </div>
+                <ResponsiveContainer width="100%" height={300}>
+                  <PieChart>
+                    <Pie data={statusDistribution} dataKey="value" nameKey="name" cx="50%" cy="50%" outerRadius={100} label={({ name, value }) => `${name}: ${value}`}>
+                      {statusDistribution.map((_: any, i: number) => <Cell key={i} fill={COLORS[i % COLORS.length]} />)}
+                    </Pie>
+                    <Legend />
+                    <Tooltip />
+                  </PieChart>
+                </ResponsiveContainer>
               </Card>
 
               <Card className="bg-slate-800 border-slate-700 p-6">
@@ -256,13 +256,17 @@ export default function AdminSupportTickets() {
 
             <Card className="bg-slate-800 border-slate-700 p-6">
               <h3 className="text-lg font-semibold text-white mb-4">Tickets Over Time</h3>
-              <div style={{ height: 300 }}>
-                <Chart
-                  type="line"
-                  data={{ labels: metrics.map(m => m.date), datasets: [{ label: 'Created', data: metrics.map(m => m.created), borderColor: '#3b82f6', backgroundColor: 'rgba(59,130,246,0.06)', tension: 0.2 }, { label: 'Resolved', data: metrics.map(m => m.resolved), borderColor: '#10b981', backgroundColor: 'rgba(16,185,129,0.06)', tension: 0.2 }] }}
-                  options={{ responsive: true, maintainAspectRatio: false, plugins: { legend: { position: 'top' } } }}
-                />
-              </div>
+              <ResponsiveContainer width="100%" height={300}>
+                <LineChart data={metrics}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="#334155" />
+                  <XAxis dataKey="date" stroke="#94a3b8" />
+                  <YAxis stroke="#94a3b8" />
+                  <Tooltip contentStyle={{ backgroundColor: '#1e293b', border: '1px solid #475569' }} />
+                  <Legend />
+                  <Line type="monotone" dataKey="created" stroke="#3b82f6" name="Created" strokeWidth={2} dot={false} />
+                  <Line type="monotone" dataKey="resolved" stroke="#10b981" name="Resolved" strokeWidth={2} dot={false} />
+                </LineChart>
+              </ResponsiveContainer>
             </Card>
           </TabsContent>
 
@@ -358,13 +362,15 @@ export default function AdminSupportTickets() {
 
             <Card className="bg-slate-800 border-slate-700 p-6">
               <h3 className="text-lg font-semibold text-white mb-4">Satisfaction Score Trend</h3>
-              <div style={{ height: 300 }}>
-                <Chart
-                  type="line"
-                  data={{ labels: metrics.map(m => m.date), datasets: [{ label: 'Satisfaction (out of 5)', data: metrics.map(m => m.satisfaction), borderColor: '#10b981', backgroundColor: 'rgba(16,185,129,0.06)', tension: 0.2 }] }}
-                  options={{ responsive: true, maintainAspectRatio: false, scales: { y: { min: 0, max: 5 } } }}
-                />
-              </div>
+              <ResponsiveContainer width="100%" height={300}>
+                <LineChart data={metrics}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="#334155" />
+                  <XAxis dataKey="date" stroke="#94a3b8" />
+                  <YAxis stroke="#94a3b8" domain={[0, 5]} />
+                  <Tooltip contentStyle={{ backgroundColor: '#1e293b', border: '1px solid #475569' }} />
+                  <Line type="monotone" dataKey="satisfaction" stroke="#10b981" name="Satisfaction (out of 5)" strokeWidth={2} dot={false} />
+                </LineChart>
+              </ResponsiveContainer>
             </Card>
           </TabsContent>
 

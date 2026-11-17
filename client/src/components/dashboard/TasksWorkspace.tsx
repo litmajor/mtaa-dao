@@ -2,7 +2,7 @@ import React, { useState, useEffect, useCallback, lazy, Suspense } from 'react';
 import { Plus, CheckCircle, Timer, AlertCircle, Award, Filter } from 'lucide-react';
 import TaskBountyBoard from '../TaskBountyBoard';
 import type { Task } from '../TaskBountyBoard';
-import { useAuth } from '../../pages/hooks/useAuth';
+import { useAuth } from '@/hooks/useAuth';
 
 const CreateTaskModal = lazy(() => import('../CreateTaskModal').then(module => ({ default: module.CreateTaskModal })));
 const ClaimTaskModal = lazy(() => import('../ClaimTaskModal').then(module => ({ default: module.ClaimTaskModal })));

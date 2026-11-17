@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from "react";
-import type { Task } from "../../components/TaskBountyBoard";
-import { useToast } from "../../components/ui/use-toast";
+import type { Task } from "@/components/TaskBountyBoard";
+import { useToast } from "@/hooks/use-toast";
 
 export const useTasks = () => {
   const [tasks, setTasks] = useState<Task[]>([]);

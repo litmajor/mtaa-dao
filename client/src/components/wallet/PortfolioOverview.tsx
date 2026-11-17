@@ -5,7 +5,7 @@ import { Pie } from 'react-chartjs-2';
 import { TrendingUp, TrendingDown, DollarSign, Wallet, Eye, EyeOff } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { useQuery } from '@tanstack/react-query';
-import { useWallet } from '@/pages/hooks/useWallet';
+import { useWallet } from '@/hooks/useWallet';
 import { PriceBadge } from './PriceDisplay';
 
 interface Asset {

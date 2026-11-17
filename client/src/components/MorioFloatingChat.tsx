@@ -113,7 +113,7 @@ export default function MorioFloatingChat() {
   }, [isOpen]);
 
   return (
-    <div className="fixed bottom-6 right-6 z-40 font-sans">
+    <div className="fixed bottom-20 right-4 lg:bottom-6 lg:right-6 z-40 font-sans">
       {/* Floating Button */}
       <button
         onClick={() => {
@@ -122,6 +122,8 @@ export default function MorioFloatingChat() {
             setUnreadCount(0); // Clear unread when opened
           }
         }}
+        aria-label="Chat with Morio AI"
+        aria-expanded={isOpen}
         className={`
           relative flex items-center justify-center gap-2 px-4 py-3 rounded-full
           font-medium text-white shadow-lg transition-all duration-200
@@ -145,7 +147,7 @@ export default function MorioFloatingChat() {
 
       {/* Chat Window */}
       {isOpen && (
-        <div className="absolute bottom-20 right-0 w-96 bg-white dark:bg-gray-900 rounded-lg shadow-2xl flex flex-col h-96 animate-in fade-in slide-in-from-bottom-4">
+        <div className="absolute bottom-16 sm:bottom-20 right-0 w-[calc(100vw-2rem)] sm:w-96 max-w-[384px] bg-white dark:bg-gray-900 rounded-lg shadow-2xl flex flex-col h-96 animate-in fade-in slide-in-from-bottom-4 border border-gray-200 dark:border-gray-800">
           {/* Header */}
           <div className="flex items-center justify-between p-4 border-b dark:border-gray-800 bg-gradient-to-r from-blue-50 to-cyan-50 dark:from-blue-900/20 dark:to-cyan-900/20">
             <div className="flex items-center gap-3">
@@ -155,10 +157,11 @@ export default function MorioFloatingChat() {
                 <p className="text-xs text-gray-500 dark:text-gray-400">AI Guide</p>
               </div>
             </div>
-              <button
+            <button
               onClick={() => setIsOpen(false)}
               className="p-1 hover:bg-gray-200 dark:hover:bg-gray-800 rounded transition-colors"
               title="Close chat"
+              aria-label="Close chat"
             >
               <X className="w-5 h-5 text-gray-600 dark:text-gray-400" />
             </button>

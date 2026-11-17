@@ -5,7 +5,7 @@
  * with real-time metric updates via WebSocket/polling
  */
 
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, lazy, Suspense } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
@@ -23,8 +23,8 @@ import {
   BarChart3,
 } from 'lucide-react';
 
-import { VaultAnalyticsTab } from '@/components/analytics/VaultAnalyticsTab';
-import { ContributionAnalyticsTab } from '@/components/analytics/ContributionAnalyticsTab';
+const VaultAnalyticsTab = lazy(() => import('@/components/analytics/VaultAnalyticsTab'));
+const ContributionAnalyticsTab = lazy(() => import('@/components/analytics/ContributionAnalyticsTab'));
 import { RealtimeMetricsProvider } from '@/components/analytics/RealtimeMetricsProvider';
 import { DashboardLayout } from '@/components/layouts';
 import { Logger } from '@/utils/logger';
@@ -195,22 +195,26 @@ const AnalyticsDashboardContent: React.FC<{
               </AlertDescription>
             </Alert>
           ) : (
-            <VaultAnalyticsTab
-              daoId={daoId}
-              vaultId={vaultId}
-              timeRange={timeRange}
-              onTimeRangeChange={setTimeRange}
-            />
+            <Suspense fallback={<div className="p-8 text-center text-slate-400">Loading vault analytics...</div>}>
+              <VaultAnalyticsTab
+                daoId={daoId}
+                vaultId={vaultId}
+                timeRange={timeRange}
+                onTimeRangeChange={setTimeRange}
+              />
+            </Suspense>
           )}
         </TabsContent>
 
         {/* Contribution Analytics Tab */}
         <TabsContent value="contributions" className="space-y-4">
-          <ContributionAnalyticsTab
-            daoId={daoId}
-            timeRange={timeRange}
-            onTimeRangeChange={setTimeRange}
-          />
+          <Suspense fallback={<div className="p-8 text-center text-slate-400">Loading contribution analytics...</div>}>
+            <ContributionAnalyticsTab
+              daoId={daoId}
+              timeRange={timeRange}
+              onTimeRangeChange={setTimeRange}
+            />
+          </Suspense>
         </TabsContent>
 
         {/* Leaderboard Tab */}

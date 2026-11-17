@@ -62,6 +62,9 @@ function makeCommand<T>(type: string, payload: T): Command<T> {
   };
 }
 
+const allowAuthorization = async () => true;
+const denyAuthorization = async () => false;
+
 // ===========================================================================
 // State Machine Tests
 // ===========================================================================
@@ -243,8 +246,26 @@ describe('Payment Command Handlers', () => {
   // CreatePaymentHandler
   // -------------------------------------------------------------------------
   describe('CreatePaymentHandler', () => {
+    it('does not create a payment when the handler authorization check denies the actor', async () => {
+      const handler = new CreatePaymentHandler(mockRepo as unknown as PaymentRepository, denyAuthorization);
+      const command = makeCommand(PaymentCommandTypes.CreatePayment, {
+        userId: 'another-user',
+        reference: 'REF-123',
+        type: 'deposit',
+        amount: '1000',
+        currency: 'KES',
+        provider: 'mpesa',
+      });
+
+      const result = await handler.execute(command, context);
+
+      expect(result.success).toBe(false);
+      expect(result.error).toContain('UNAUTHORIZED');
+      expect(mockRepo.create).not.toHaveBeenCalled();
+    });
+
     it('creates a payment and returns PaymentInitiated event', async () => {
-      const handler = new CreatePaymentHandler(mockRepo as unknown as PaymentRepository);
+      const handler = new CreatePaymentHandler(mockRepo as unknown as PaymentRepository, allowAuthorization);
       const newPayment = makePayment();
       mockRepo.create.mockResolvedValue(newPayment);
 
@@ -271,7 +292,7 @@ describe('Payment Command Handlers', () => {
   // -------------------------------------------------------------------------
   describe('ReceiveWebhookHandler', () => {
     it('transitions payment to WEBHOOK_RECEIVED', async () => {
-      const handler = new ReceiveWebhookHandler(mockRepo as unknown as PaymentRepository);
+      const handler = new ReceiveWebhookHandler(mockRepo as unknown as PaymentRepository, allowAuthorization);
       const payment = makePayment({ status: PaymentStatus.PENDING });
       mockRepo.findByReference.mockResolvedValue(payment);
       mockRepo.update.mockResolvedValue({ ...payment, status: PaymentStatus.WEBHOOK_RECEIVED });
@@ -288,8 +309,55 @@ describe('Payment Command Handlers', () => {
       expect(result.events![0].type).toBe('PaymentWebhookReceived');
     });
 
+    it('persists the provider reference with the webhook transition', async () => {
+      const handler = new ReceiveWebhookHandler(mockRepo as unknown as PaymentRepository, allowAuthorization);
+      const payment = makePayment({ status: PaymentStatus.PENDING });
+      mockRepo.findByReference.mockResolvedValue(payment);
+      mockRepo.update.mockResolvedValue({
+        ...payment,
+        status: PaymentStatus.WEBHOOK_RECEIVED,
+        providerReference: 'provider-tx-1',
+      });
+
+      const command = makeCommand(PaymentCommandTypes.ReceiveWebhook, {
+        reference: 'REF-123',
+        providerReference: 'provider-tx-1',
+        providerData: {},
+      });
+
+      const result = await handler.execute(command, context);
+
+      expect(result.success).toBe(true);
+      expect(mockRepo.update).toHaveBeenCalledWith(
+        payment.id,
+        payment.version,
+        expect.objectContaining({ providerReference: 'provider-tx-1' }),
+        context.tx,
+      );
+    });
+
+    it('rejects a conflicting provider reference for the same payment', async () => {
+      const handler = new ReceiveWebhookHandler(mockRepo as unknown as PaymentRepository, allowAuthorization);
+      mockRepo.findByReference.mockResolvedValue(makePayment({
+        status: PaymentStatus.PENDING,
+        providerReference: 'provider-tx-original',
+      }));
+
+      const command = makeCommand(PaymentCommandTypes.ReceiveWebhook, {
+        reference: 'REF-123',
+        providerReference: 'provider-tx-different',
+        providerData: {},
+      });
+
+      const result = await handler.execute(command, context);
+
+      expect(result.success).toBe(false);
+      expect(result.error).toContain('different provider reference');
+      expect(mockRepo.update).not.toHaveBeenCalled();
+    });
+
     it('is idempotent for already-completed payments', async () => {
-      const handler = new ReceiveWebhookHandler(mockRepo as unknown as PaymentRepository);
+      const handler = new ReceiveWebhookHandler(mockRepo as unknown as PaymentRepository, allowAuthorization);
       const payment = makePayment({ status: PaymentStatus.COMPLETED });
       mockRepo.findByReference.mockResolvedValue(payment);
 
@@ -306,7 +374,7 @@ describe('Payment Command Handlers', () => {
     });
 
     it('returns error for non-existent payment', async () => {
-      const handler = new ReceiveWebhookHandler(mockRepo as unknown as PaymentRepository);
+      const handler = new ReceiveWebhookHandler(mockRepo as unknown as PaymentRepository, allowAuthorization);
       mockRepo.findByReference.mockResolvedValue(null);
 
       const command = makeCommand(PaymentCommandTypes.ReceiveWebhook, {
@@ -326,7 +394,7 @@ describe('Payment Command Handlers', () => {
   // -------------------------------------------------------------------------
   describe('CompletePaymentHandler', () => {
     it('executes the full accounting transaction atomically', async () => {
-      const handler = new CompletePaymentHandler(mockRepo as unknown as PaymentRepository);
+      const handler = new CompletePaymentHandler(mockRepo as unknown as PaymentRepository, allowAuthorization);
       const payment = makePayment({ status: PaymentStatus.WEBHOOK_RECEIVED });
       mockRepo.findByReference.mockResolvedValue(payment);
       mockRepo.update.mockResolvedValue({ ...payment, status: PaymentStatus.COMPLETED, version: 2 });
@@ -361,7 +429,7 @@ describe('Payment Command Handlers', () => {
     });
 
     it('is idempotent for already-completed payments', async () => {
-      const handler = new CompletePaymentHandler(mockRepo as unknown as PaymentRepository);
+      const handler = new CompletePaymentHandler(mockRepo as unknown as PaymentRepository, allowAuthorization);
       const payment = makePayment({ status: PaymentStatus.COMPLETED });
       mockRepo.findByReference.mockResolvedValue(payment);
 
@@ -378,7 +446,7 @@ describe('Payment Command Handlers', () => {
     });
 
     it('rejects completion from CREATED state', async () => {
-      const handler = new CompletePaymentHandler(mockRepo as unknown as PaymentRepository);
+      const handler = new CompletePaymentHandler(mockRepo as unknown as PaymentRepository, allowAuthorization);
       const payment = makePayment({ status: PaymentStatus.CREATED });
       mockRepo.findByReference.mockResolvedValue(payment);
 
@@ -393,7 +461,7 @@ describe('Payment Command Handlers', () => {
     });
 
     it('returns OCC_CONFLICT on version mismatch', async () => {
-      const handler = new CompletePaymentHandler(mockRepo as unknown as PaymentRepository);
+      const handler = new CompletePaymentHandler(mockRepo as unknown as PaymentRepository, allowAuthorization);
       const payment = makePayment({ status: PaymentStatus.WEBHOOK_RECEIVED });
       mockRepo.findByReference.mockResolvedValue(payment);
       mockRepo.update.mockRejectedValue(new OptimisticLockError('pay-1', 1));
@@ -414,7 +482,7 @@ describe('Payment Command Handlers', () => {
   // -------------------------------------------------------------------------
   describe('FailPaymentHandler', () => {
     it('fails a PENDING payment', async () => {
-      const handler = new FailPaymentHandler(mockRepo as unknown as PaymentRepository);
+      const handler = new FailPaymentHandler(mockRepo as unknown as PaymentRepository, allowAuthorization);
       const payment = makePayment({ status: PaymentStatus.PENDING });
       mockRepo.findByReference.mockResolvedValue(payment);
       mockRepo.update.mockResolvedValue({ ...payment, status: PaymentStatus.FAILED });
@@ -432,7 +500,7 @@ describe('Payment Command Handlers', () => {
     });
 
     it('rejects failure of a COMPLETED payment', async () => {
-      const handler = new FailPaymentHandler(mockRepo as unknown as PaymentRepository);
+      const handler = new FailPaymentHandler(mockRepo as unknown as PaymentRepository, allowAuthorization);
       const payment = makePayment({ status: PaymentStatus.COMPLETED });
       mockRepo.findByReference.mockResolvedValue(payment);
 
@@ -448,7 +516,7 @@ describe('Payment Command Handlers', () => {
     });
 
     it('is idempotent for already-failed payments', async () => {
-      const handler = new FailPaymentHandler(mockRepo as unknown as PaymentRepository);
+      const handler = new FailPaymentHandler(mockRepo as unknown as PaymentRepository, allowAuthorization);
       const payment = makePayment({ status: PaymentStatus.FAILED });
       mockRepo.findByReference.mockResolvedValue(payment);
 
@@ -469,7 +537,7 @@ describe('Payment Command Handlers', () => {
   // -------------------------------------------------------------------------
   describe('ReconcilePaymentHandler', () => {
     it('reconciles a FAILED payment', async () => {
-      const handler = new ReconcilePaymentHandler(mockRepo as unknown as PaymentRepository);
+      const handler = new ReconcilePaymentHandler(mockRepo as unknown as PaymentRepository, allowAuthorization);
       const payment = makePayment({ status: PaymentStatus.FAILED });
       mockRepo.findByReference.mockResolvedValue(payment);
       mockRepo.update.mockResolvedValue({ ...payment, status: PaymentStatus.RECONCILING });
@@ -485,7 +553,7 @@ describe('Payment Command Handlers', () => {
     });
 
     it('rejects reconciliation of a non-FAILED payment', async () => {
-      const handler = new ReconcilePaymentHandler(mockRepo as unknown as PaymentRepository);
+      const handler = new ReconcilePaymentHandler(mockRepo as unknown as PaymentRepository, allowAuthorization);
       const payment = makePayment({ status: PaymentStatus.PENDING });
       mockRepo.findByReference.mockResolvedValue(payment);
 

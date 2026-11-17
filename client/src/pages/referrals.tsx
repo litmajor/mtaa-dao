@@ -9,7 +9,7 @@ import { Avatar, AvatarImage, AvatarFallback } from "@/components/ui/avatar";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Users, DollarSign, Gift, Link, CheckCircle, TrendingUp, AlertCircle } from "lucide-react";
-import { useAuth } from "./hooks/useAuth";
+import { useAuth } from '@/hooks/useAuth';
 import { useToast } from "@/hooks/use-toast";
 import { authClient } from "@/utils/authClient";
 import OAuthConfirmationDialog from "@/components/OAuthConfirmationDialog";
@@ -30,6 +30,7 @@ export default function Referrals() {
   const [activeTab, setActiveTab] = useState("overview");
   const [showOAuthConfirmation, setShowOAuthConfirmation] = useState(false);
   const [oauthConfirmEmail, setOauthConfirmEmail] = useState('');
+  const [oauthConfirmProvider, setOauthConfirmProvider] = useState<'google' | 'telegram'>('telegram');
 
   // Check for OAuth confirmation flow on component mount
   useEffect(() => {
@@ -38,6 +39,7 @@ export default function Referrals() {
       const email = params.get('email');
       if (email) {
         setOauthConfirmEmail(decodeURIComponent(email));
+        setOauthConfirmProvider(params.get('provider') === 'google' ? 'google' : 'telegram');
         setShowOAuthConfirmation(true);
         // Clean up URL without reloading
         window.history.replaceState({}, document.title, '/referrals');
@@ -602,6 +604,7 @@ export default function Referrals() {
       {showOAuthConfirmation && (
         <OAuthConfirmationDialog
           email={oauthConfirmEmail}
+          provider={oauthConfirmProvider}
           onSuccess={() => {
             // Redirect to dashboard after successful confirmation
             window.location.href = '/dashboard';

@@ -16,3 +16,4 @@ This document freezes the current domain map for the platform so future work can
 - Route ownership should stay close to the bounded context that owns the workflow.
 - Control-plane concerns should be isolated from business-domain routes.
 - Event-driven integration should be the primary surface for cross-context coordination.
+- Financial balance authority and finality requirements are defined in [Financial Authority and Finality](./financial-authority-and-finality.md).

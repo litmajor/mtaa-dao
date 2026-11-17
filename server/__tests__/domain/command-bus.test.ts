@@ -65,14 +65,14 @@ describe('Phase 1: Command Bus Middleware Pipeline (Hardened)', () => {
   const setupBus = () => {
     // Capability-based auth
     const authService: AuthorizationService = {
-      getCapabilities: async (actor) => {
+      isAuthorized: async (command, requiredCapability) => {
         const caps: Record<string, string[]> = {
           'agent_mirrorcore': ['trade.execute', 'vault.read'],
-          'dao_admin':        ['vault.*'],
-          'system':           ['*'],
+          'dao_admin':        ['vault.write'],
+          'system:payment-reconciliation': ['payment.reconcile'],
           'readonly_user':    ['vault.read'],
         };
-        return caps[actor] || [];
+        return (caps[command.actor] || []).includes(requiredCapability);
       },
     };
 
@@ -132,7 +132,7 @@ describe('Phase 1: Command Bus Middleware Pipeline (Hardened)', () => {
     expect(result.success).toBe(true);
   });
 
-  it('Auth: actor with wildcard capability succeeds', async () => {
+  it('Auth: actor with explicit command capability succeeds', async () => {
     const { bus } = setupBus();
     const cmd = createMockCommand('cmd-2', 'dao_admin', { value: 'ok' });
     cmd.type = 'UpdateVault'; // requires vault.write, dao_admin has vault.*
@@ -142,11 +142,12 @@ describe('Phase 1: Command Bus Middleware Pipeline (Hardened)', () => {
     expect(result.error).not.toContain('UNAUTHORIZED');
   });
 
-  it('Auth: superuser (*) bypasses all gates', async () => {
+  it('Auth: scoped system identity is not a wildcard', async () => {
     const { bus } = setupBus();
-    const cmd = createMockCommand('cmd-3', 'system', { value: 'ok' });
+    const cmd = createMockCommand('cmd-3', 'system:payment-reconciliation', { value: 'ok' });
     const result = await bus.dispatch(cmd);
-    expect(result.success).toBe(true);
+    expect(result.success).toBe(false);
+    expect(result.error).toContain('UNAUTHORIZED');
   });
 
   it('Auth: actor lacking capability is rejected', async () => {
@@ -238,13 +239,14 @@ describe('Phase 1: Command Bus Middleware Pipeline (Hardened)', () => {
   // Handler Registry
   // -------------------------------------------------------------------------
 
-  it('Handler Registry: missing handler fails cleanly', async () => {
+  it('Authorization: commands without a policy fail closed before handler dispatch', async () => {
     const { bus } = setupBus();
     const cmd = createMockCommand('cmd-30', 'agent_mirrorcore', { value: 'ok' });
     cmd.type = 'UnknownCommand';
     const result = await bus.dispatch(cmd);
     expect(result.success).toBe(false);
-    expect(result.error).toBe('COMMAND_HANDLER_NOT_FOUND');
+    expect(result.error).toContain('UNAUTHORIZED');
+    expect(result.error).toContain('no authorization policy');
   });
 
   // -------------------------------------------------------------------------

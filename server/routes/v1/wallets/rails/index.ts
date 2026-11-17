@@ -13,17 +13,15 @@ const router = express.Router();
  * POST   /api/v1/wallets/rails/gateway/deposit
  * POST   /api/v1/wallets/rails/gateway/withdraw
  * GET    /api/v1/wallets/rails/gateway/verify/:provider/:reference
- * POST   /api/v1/wallets/rails/gateway/flutterwave/webhook
- * POST   /api/v1/wallets/rails/gateway/paystack/webhook
- * POST   /api/v1/wallets/rails/gateway/mpesa/callback
+ * POST   /api/v1/wallets/rails/gateway/flutterwave/webhook (public, signature-verified)
+ * POST   /api/v1/wallets/rails/gateway/paystack/webhook (public, signature-verified)
+ * POST   /api/v1/wallets/rails/gateway/mpesa/callback (public, per-payment token)
  * 
- * POST   /api/v1/wallets/rails/webhooks/flutterwave
- * POST   /api/v1/wallets/rails/webhooks/paystack
- * POST   /api/v1/wallets/rails/webhooks/paychant
- * POST   /api/v1/wallets/rails/webhooks/kotani
- * POST   /api/v1/wallets/rails/webhooks/mpesa
- * POST   /api/v1/wallets/rails/webhooks/airtel
- * POST   /api/v1/wallets/rails/webhooks/onramper
+ * The dashboard endpoints use /api/payment-gateway/webhooks/{provider}; legacy
+ * gateway callback paths above are aliases to the same payment handlers.
+ *
+ * Legacy deposit-table webhook routes are separate from payment_transactions
+ * settlement and must not be used for the consolidated gateway callbacks.
  */
 
 router.use('/gateway', gatewayRouter);

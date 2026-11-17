@@ -7,16 +7,16 @@ import { Textarea } from '@/components/ui/textarea';
 import { Label } from '@/components/ui/label';
 import { Badge } from '@/components/ui/badge';
 import { Upload, TrendingUp, Users, DollarSign, Calendar, CheckCircle } from 'lucide-react';
-import { useAuth } from '@/pages/hooks/useAuth';
+import { useAuth } from '@/hooks/useAuth';
 import { useMutation } from '@tanstack/react-query';
 import { useToast } from '@/hooks/use-toast';
-import { useLocation } from 'wouter';
+import { useNavigate } from 'react-router-dom';
 import { authClient } from '@/utils/authClient';
 
 export default function SubmitSuccessStory() {
   const { user } = useAuth();
   const { toast } = useToast();
-  const [, setLocation] = useLocation();
+  const navigate = useNavigate();
   const [formData, setFormData] = useState({
     daoId: '',
     title: '',
@@ -45,7 +45,7 @@ export default function SubmitSuccessStory() {
         title: 'Success story submitted!',
         description: 'Thank you for sharing. Our team will review and publish it soon.'
       });
-      setLocation('/success-stories');
+      navigate('/success-stories');
     }
   });
 

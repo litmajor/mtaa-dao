@@ -47,6 +47,25 @@ import type {
 import type { UpdatePaymentMetadataPayload } from './PaymentCommands';
 import { PaymentCommandTypes} from './PaymentCommands';
 import { walletTransactions } from '../../../shared/schema';
+import { authorizeCommandForHandler } from '../commands/CommandAuthorization';
+import type { CommandCapability } from '../commands/CommandAuthorization';
+
+type HandlerAuthorizer = (command: Command, capability: CommandCapability) => Promise<boolean>;
+
+async function authorizationFailure(
+  command: Command,
+  capability: CommandCapability,
+  authorize: HandlerAuthorizer,
+): Promise<CommandResult | null> {
+  return await authorize(command, capability)
+    ? null
+    : {
+        success: false,
+        commandId: command.id,
+        events: [],
+        error: `UNAUTHORIZED: actor '${command.actor}' cannot perform '${capability}'`,
+      };
+}
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -86,10 +105,15 @@ function buildPaymentEvent(
 export class CreatePaymentHandler implements CommandHandler<Command<CreatePaymentPayload>> {
   readonly commandType = PaymentCommandTypes.CreatePayment;
 
-  constructor(private repo: PaymentRepository) {}
+  constructor(
+    private repo: PaymentRepository,
+    private authorize: HandlerAuthorizer = authorizeCommandForHandler,
+  ) {}
 
   async execute(command: Command<CreatePaymentPayload>, context: CommandContext): Promise<CommandResult> {
     const { payload } = command;
+    const denied = await authorizationFailure(command, 'payment.initiate', this.authorize);
+    if (denied) return denied;
 
     const payment = await this.repo.create(
       {
@@ -132,10 +156,15 @@ export class CreatePaymentHandler implements CommandHandler<Command<CreatePaymen
 export class ReceiveWebhookHandler implements CommandHandler<Command<ReceiveWebhookPayload>> {
   readonly commandType = PaymentCommandTypes.ReceiveWebhook;
 
-  constructor(private repo: PaymentRepository) {}
+  constructor(
+    private repo: PaymentRepository,
+    private authorize: HandlerAuthorizer = authorizeCommandForHandler,
+  ) {}
 
   async execute(command: Command<ReceiveWebhookPayload>, context: CommandContext): Promise<CommandResult> {
     const { payload } = command;
+    const denied = await authorizationFailure(command, 'payment.provider_webhook', this.authorize);
+    if (denied) return denied;
 
     const payment = await this.repo.findByReference(payload.reference, context.tx);
     if (!payment) {
@@ -144,6 +173,19 @@ export class ReceiveWebhookHandler implements CommandHandler<Command<ReceiveWebh
         commandId: command.id,
         events: [],
         error: `Payment not found for reference: ${payload.reference}`,
+      };
+    }
+
+    if (
+      payload.providerReference &&
+      payment.providerReference &&
+      payment.providerReference !== payload.providerReference
+    ) {
+      return {
+        success: false,
+        commandId: command.id,
+        events: [],
+        error: 'Payment already has a different provider reference',
       };
     }
 
@@ -186,6 +228,7 @@ export class ReceiveWebhookHandler implements CommandHandler<Command<ReceiveWebh
         payment.version,
         {
           status: targetStatus,
+          providerReference: payload.providerReference || payment.providerReference,
           metadata: mergedMetadata as any,
         },
         context.tx,
@@ -221,10 +264,15 @@ export class ReceiveWebhookHandler implements CommandHandler<Command<ReceiveWebh
 export class AcceptPaymentHandler implements CommandHandler<Command<AcceptPaymentPayload>> {
   readonly commandType = PaymentCommandTypes.AcceptPayment;
 
-  constructor(private repo: PaymentRepository = new DrizzlePaymentRepository()) {}
+  constructor(
+    private repo: PaymentRepository = new DrizzlePaymentRepository(),
+    private authorize: HandlerAuthorizer = authorizeCommandForHandler,
+  ) {}
 
   async execute(command: Command<AcceptPaymentPayload>, context: CommandContext): Promise<CommandResult> {
     const { payload } = command;
+    const denied = await authorizationFailure(command, 'payment.verify', this.authorize);
+    if (denied) return denied;
 
     if (!payload.paymentId) {
       return { success: false, commandId: command.id, events: [], error: 'AcceptPayment requires paymentId' };
@@ -284,10 +332,15 @@ export class AcceptPaymentHandler implements CommandHandler<Command<AcceptPaymen
 export class VerifyPaymentHandler implements CommandHandler<Command<VerifyPaymentPayload>> {
   readonly commandType = PaymentCommandTypes.VerifyPayment;
 
-  constructor(private repo: PaymentRepository = new DrizzlePaymentRepository()) {}
+  constructor(
+    private repo: PaymentRepository = new DrizzlePaymentRepository(),
+    private authorize: HandlerAuthorizer = authorizeCommandForHandler,
+  ) {}
 
   async execute(command: Command<VerifyPaymentPayload>, context: CommandContext): Promise<CommandResult> {
     const { payload } = command;
+    const denied = await authorizationFailure(command, 'payment.verify', this.authorize);
+    if (denied) return denied;
 
     if (!payload.paymentId) {
       return { success: false, commandId: command.id, events: [], error: 'VerifyPayment requires paymentId' };
@@ -347,10 +400,15 @@ export class VerifyPaymentHandler implements CommandHandler<Command<VerifyPaymen
 export class SettlePaymentHandler implements CommandHandler<Command<SettlePaymentPayload>> {
   readonly commandType = PaymentCommandTypes.SettlePayment;
 
-  constructor(private repo: PaymentRepository = new DrizzlePaymentRepository()) {}
+  constructor(
+    private repo: PaymentRepository = new DrizzlePaymentRepository(),
+    private authorize: HandlerAuthorizer = authorizeCommandForHandler,
+  ) {}
 
   async execute(command: Command<SettlePaymentPayload>, context: CommandContext): Promise<CommandResult> {
     const { payload } = command;
+    const denied = await authorizationFailure(command, 'payment.settle', this.authorize);
+    if (denied) return denied;
 
     if (!payload.paymentId) {
       return { success: false, commandId: command.id, events: [], error: 'SettlePayment requires paymentId' };
@@ -423,10 +481,15 @@ export class SettlePaymentHandler implements CommandHandler<Command<SettlePaymen
 export class CompletePaymentHandler implements CommandHandler<Command<CompletePaymentPayload>> {
   readonly commandType = PaymentCommandTypes.CompletePayment;
 
-  constructor(private repo: PaymentRepository) {}
+  constructor(
+    private repo: PaymentRepository,
+    private authorize: HandlerAuthorizer = authorizeCommandForHandler,
+  ) {}
 
   async execute(command: Command<CompletePaymentPayload>, context: CommandContext): Promise<CommandResult> {
     const { payload } = command;
+    const denied = await authorizationFailure(command, 'payment.complete', this.authorize);
+    if (denied) return denied;
     const tx = context.tx;
 
     // 1. Load payment
@@ -615,10 +678,15 @@ export class CompletePaymentHandler implements CommandHandler<Command<CompletePa
 export class FailPaymentHandler implements CommandHandler<Command<FailPaymentPayload>> {
   readonly commandType = PaymentCommandTypes.FailPayment;
 
-  constructor(private repo: PaymentRepository) {}
+  constructor(
+    private repo: PaymentRepository,
+    private authorize: HandlerAuthorizer = authorizeCommandForHandler,
+  ) {}
 
   async execute(command: Command<FailPaymentPayload>, context: CommandContext): Promise<CommandResult> {
     const { payload } = command;
+    const denied = await authorizationFailure(command, 'payment.fail', this.authorize);
+    if (denied) return denied;
     const tx = context.tx;
 
     let payment: PaymentAggregate | null;
@@ -697,10 +765,15 @@ export class FailPaymentHandler implements CommandHandler<Command<FailPaymentPay
 export class ReconcilePaymentHandler implements CommandHandler<Command<ReconcilePaymentPayload>> {
   readonly commandType = PaymentCommandTypes.ReconcilePayment;
 
-  constructor(private repo: PaymentRepository) {}
+  constructor(
+    private repo: PaymentRepository,
+    private authorize: HandlerAuthorizer = authorizeCommandForHandler,
+  ) {}
 
   async execute(command: Command<ReconcilePaymentPayload>, context: CommandContext): Promise<CommandResult> {
     const { payload } = command;
+    const denied = await authorizationFailure(command, 'payment.reconcile', this.authorize);
+    if (denied) return denied;
     const tx = context.tx;
 
     let payment: PaymentAggregate | null;
@@ -760,10 +833,15 @@ export class ReconcilePaymentHandler implements CommandHandler<Command<Reconcile
 export class UpdatePaymentMetadataHandler implements CommandHandler<Command<UpdatePaymentMetadataPayload>> {
   readonly commandType = PaymentCommandTypes.UpdatePaymentMetadata;
 
-  constructor(private repo: PaymentRepository) {}
+  constructor(
+    private repo: PaymentRepository,
+    private authorize: HandlerAuthorizer = authorizeCommandForHandler,
+  ) {}
 
   async execute(command: Command<UpdatePaymentMetadataPayload>, context: CommandContext): Promise<CommandResult> {
     const { payload } = command;
+    const denied = await authorizationFailure(command, 'payment.metadata.update', this.authorize);
+    if (denied) return denied;
     const tx = context.tx;
 
     let payment: PaymentAggregate | null;

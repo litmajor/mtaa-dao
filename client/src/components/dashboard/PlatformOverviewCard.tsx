@@ -1,5 +1,5 @@
 import React from 'react';
-import { useSystemState } from '@/context/systemState';
+import { useSystemState } from '@/contexts/systemState';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
 import { TrendingUp, TrendingDown } from 'lucide-react';

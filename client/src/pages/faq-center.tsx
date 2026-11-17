@@ -5,7 +5,7 @@ import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Search, ChevronDown, ChevronUp, MessageCircle, BookOpen, Zap, Shield, DollarSign, Users } from 'lucide-react';
-import { Link } from 'wouter';
+import { Link } from 'react-router-dom';
 
 interface FAQItem {
   id: string;
@@ -279,7 +279,7 @@ export default function FAQCenter() {
 
       {/* Quick Actions */}
       <div className="grid md:grid-cols-3 gap-4 mb-8">
-        <Link href="/support">
+        <Link to="/support">
           <Card className="hover:shadow-lg transition-shadow cursor-pointer">
             <CardContent className="p-6 text-center">
               <MessageCircle className="w-12 h-12 mx-auto mb-3 text-purple-600" />
@@ -289,7 +289,7 @@ export default function FAQCenter() {
           </Card>
         </Link>
 
-        <Link href="/blog">
+        <Link to="/blog">
           <Card className="hover:shadow-lg transition-shadow cursor-pointer">
             <CardContent className="p-6 text-center">
               <BookOpen className="w-12 h-12 mx-auto mb-3 text-blue-600" />
@@ -383,7 +383,7 @@ export default function FAQCenter() {
       {filteredFAQs.length === 0 && (
         <Card className="text-center p-12">
           <p className="text-gray-600 dark:text-gray-400 mb-4">No FAQs found matching your search.</p>
-          <Link href="/support">
+          <Link to="/support">
             <Button>Contact Support</Button>
           </Link>
         </Card>

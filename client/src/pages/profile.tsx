@@ -5,7 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Avatar, AvatarImage, AvatarFallback } from "@/components/ui/avatar";
 import { Settings, LogOut, Calendar, TrendingUp, Users, Award, Crown, Star, Zap, Target, Trophy } from "lucide-react";
-import { useAuth } from "./hooks/useAuth";
+import { useAuth } from '@/hooks/useAuth';
 import { authClient } from "@/utils/authClient";
 
 interface ContributionData {

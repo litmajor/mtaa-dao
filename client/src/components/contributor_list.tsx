@@ -13,7 +13,7 @@ import {
   TrendingUp
 } from 'lucide-react';
 
-import { useContributors } from '@/pages/hooks/useContributors';
+import { useContributors } from '@/hooks/useContributors';
 
 // Define Contributor type locally
 type Contributor = {

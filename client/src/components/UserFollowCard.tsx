@@ -3,7 +3,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Button } from './ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from './ui/card';
 import { Users, Plus, CheckCircle } from 'lucide-react';
-import { useAuth } from '../pages/hooks/useAuth';
+import { useAuth } from '@/hooks/useAuth';
 import {authClient} from '@/utils/authClient';
 // Feature flag: Disable if not enabled
 const FOLLOWS_ENABLED = import.meta.env.VITE_FEATURE_USER_FOLLOWS === 'true';

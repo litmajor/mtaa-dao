@@ -1,11 +1,10 @@
  
 import { useQuery } from '@tanstack/react-query';
-import { useRoute } from 'wouter';
+import { useParams, Link } from 'react-router-dom';
 import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Calendar, Clock, User, ArrowLeft, Share2 } from 'lucide-react';
-import { Link } from 'wouter';
 import { authClient } from '@/utils/authClient';
 
 const sanitizeBlogHtml = (html: string) => {
@@ -18,8 +17,7 @@ const sanitizeBlogHtml = (html: string) => {
 };
 
 export default function BlogPostPage() {
-  const [, params] = useRoute('/blog/:id');
-  const postId = params?.id;
+  const { id: postId } = useParams<{ id: string }>();
 
   const { data: post, isLoading } = useQuery({
     queryKey: ['blog-post', postId],
@@ -45,7 +43,7 @@ export default function BlogPostPage() {
 
   return (
     <div className="container mx-auto px-4 py-8 max-w-4xl">
-      <Link href="/blog">
+      <Link to="/blog">
         <Button variant="ghost" className="mb-6">
           <ArrowLeft className="w-4 h-4 mr-2" />
           Back to Blog

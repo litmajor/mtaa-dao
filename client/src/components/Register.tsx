@@ -21,13 +21,15 @@ export default function StunningRegister() {
   const [resendLoading, setResendLoading] = useState(false);
   const [resendFeedback, setResendFeedback] = useState<{ type: 'success' | 'error' | ''; message: string }>({ type: '', message: '' });
   const [resendCooldown, setResendCooldown] = useState(0);
-  const [mousePosition, setMousePosition] = useState({ x: 0, y: 0 });
   const [step, setStep] = useState('method'); // 'method', 'email', 'phone', 'password', 'otp'
   const [method, setMethod] = useState<'email' | 'phone' | ''>('');
   const [countryInfo, setCountryInfo] = useState<{ code: string; flag: string; name: string } | null>(null);
   const [showCountryDropdown, setShowCountryDropdown] = useState(false);
   const [showOAuthConfirmation, setShowOAuthConfirmation] = useState(false);
   const [oauthConfirmEmail, setOauthConfirmEmail] = useState('');
+  const [oauthConfirmProvider] = useState<'google' | 'telegram'>(() =>
+    new URLSearchParams(window.location.search).get('provider') === 'google' ? 'google' : 'telegram'
+  );
   
   // Extended country code map with popular African countries first
   const countryCodes: Record<string, { flag: string; name: string }> = {
@@ -118,14 +120,6 @@ export default function StunningRegister() {
     }
   }, [method]);
 
-  // Track mouse position for interactive effects
-  useEffect(() => {
-    const handleMouseMove = (e: MouseEvent) => {
-      setMousePosition({ x: e.clientX, y: e.clientY });
-    };
-    window.addEventListener('mousemove', handleMouseMove);
-    return () => window.removeEventListener('mousemove', handleMouseMove);
-  }, []);
 
   // Cooldown timer for resend OTP
   useEffect(() => {
@@ -490,10 +484,11 @@ export default function StunningRegister() {
               {step === 'email' && (
                 <form onSubmit={(e) => { e.preventDefault(); setStep('password'); }} className="space-y-6">
                   <div className="space-y-2">
-                    <label className="block text-sm font-medium text-slate-200">Email</label>
+                    <label htmlFor="register-email" className="block text-sm font-medium text-slate-200">Email</label>
                     <div className="relative group">
                       <Mail className="absolute left-4 top-1/2 transform -translate-y-1/2 text-slate-500 w-5 h-5" />
                       <input
+                        id="register-email"
                         type="email"
                         className="w-full pl-12 pr-4 py-4 bg-slate-800/50 border border-slate-600 rounded-lg text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-orange-500 focus:border-transparent transition-all duration-300 backdrop-blur-sm group-hover:bg-slate-800/70"
                         placeholder="Enter your email address"
@@ -516,12 +511,13 @@ export default function StunningRegister() {
               {step === 'phone' && (
                 <form onSubmit={(e) => { e.preventDefault(); setStep('password'); }} className="space-y-6">
                   <div className="space-y-2">
-                    <label className="block text-sm font-medium text-slate-200">Phone Number</label>
+                    <label htmlFor="register-phone" className="block text-sm font-medium text-slate-200">Phone Number</label>
                     <div className="flex gap-2">
                       {/* Country Code Selector */}
                       <div className="relative">
                         <button
                           type="button"
+                          aria-label="Select Country Code"
                           onClick={() => setShowCountryDropdown(!showCountryDropdown)}
                           className="h-full px-4 py-4 bg-slate-800/50 border border-slate-600 rounded-lg text-white flex items-center gap-2 hover:bg-slate-800/70 transition-all duration-300 backdrop-blur-sm focus:outline-none focus:ring-2 focus:ring-orange-500 min-w-[120px]"
                         >
@@ -560,6 +556,7 @@ export default function StunningRegister() {
                       <div className="relative group flex-1">
                         <Phone className="absolute left-4 top-1/2 transform -translate-y-1/2 text-slate-500 w-5 h-5 z-10" />
                         <input
+                          id="register-phone"
                           type="tel"
                           className="w-full pl-12 pr-4 py-4 bg-slate-800/50 border border-slate-600 rounded-lg text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-orange-500 focus:border-transparent transition-all duration-300 backdrop-blur-sm group-hover:bg-slate-800/70"
                           placeholder="712345678"
@@ -629,12 +626,13 @@ export default function StunningRegister() {
 
                   {/* Password field */}
                   <div className="space-y-2">
-                    <label className="block text-sm font-medium text-slate-200">
+                    <label htmlFor="register-password" className="block text-sm font-medium text-slate-200">
                       Password
                     </label>
                     <div className="relative group">
                       <Lock className="absolute left-4 top-1/2 transform -translate-y-1/2 text-slate-500 w-5 h-5" />
                       <input
+                        id="register-password"
                         type={showPassword ? 'text' : 'password'}
                         className="w-full pl-12 pr-12 py-4 bg-slate-800/50 border border-slate-600 rounded-lg text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-orange-500 focus:border-transparent transition-all duration-300 backdrop-blur-sm group-hover:bg-slate-800/70"
                         placeholder="Create a strong password"
@@ -644,7 +642,8 @@ export default function StunningRegister() {
                       />
                       <button
                         type="button"
-                        className="absolute right-2 top-1/2 transform -translate-y-1/2 text-slate-500 hover:text-white transition-colors"
+                        aria-label={showPassword ? 'Hide password' : 'Show password'}
+                        className="absolute right-2 top-1/2 transform -translate-y-1/2 text-slate-500 hover:text-white transition-colors p-2"
                         onClick={() => setShowPassword(!showPassword)}
                       >
                         {showPassword ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}
@@ -690,12 +689,13 @@ export default function StunningRegister() {
 
                   {/* Confirm Password field */}
                   <div className="space-y-2">
-                    <label className="block text-sm font-medium text-slate-200">
+                    <label htmlFor="register-confirm-password" className="block text-sm font-medium text-slate-200">
                       Confirm Password
                     </label>
                     <div className="relative group">
                       <Lock className="absolute left-4 top-1/2 transform -translate-y-1/2 text-slate-500 w-5 h-5" />
                       <input
+                          id="register-confirm-password"
                           type={showConfirmPassword ? 'text' : 'password'}
                           className="w-full pl-12 pr-12 py-4 bg-slate-800/50 border border-slate-600 rounded-lg text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-orange-500 focus:border-transparent transition-all duration-300 backdrop-blur-sm group-hover:bg-slate-800/70"
                           placeholder="Confirm your password"
@@ -706,7 +706,8 @@ export default function StunningRegister() {
                         />
                       <button
                         type="button"
-                        className="absolute right-2 top-1/2 transform -translate-y-1/2 text-slate-500 hover:text-white transition-colors"
+                        aria-label={showConfirmPassword ? 'Hide confirm password' : 'Show confirm password'}
+                        className="absolute right-2 top-1/2 transform -translate-y-1/2 text-slate-500 hover:text-white transition-colors p-2"
                         onClick={() => setShowConfirmPassword(!showConfirmPassword)}
                       >
                         {showConfirmPassword ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}
@@ -875,6 +876,7 @@ export default function StunningRegister() {
       {showOAuthConfirmation && (
         <OAuthConfirmationDialog
           email={oauthConfirmEmail}
+          provider={oauthConfirmProvider}
           onSuccess={() => {
             // Redirect to subprofile-selection or dashboard after successful confirmation
             window.location.href = '/subprofile-selection';

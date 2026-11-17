@@ -10,6 +10,7 @@ import { inArray } from 'drizzle-orm';
 import { z } from 'zod';
 import { analyticsService } from '../analyticsService';
 import { paymentReceiptUpload } from '../middleware/paymentReceiptUpload';
+import TreasuryService from '../services/treasuryService';
 
 const onboardingService = new OnboardingService();
 
@@ -33,7 +34,6 @@ router.get("/", authenticate, async (req, res) => {
         createdAt: daos.createdAt,
         founderId: daos.founderId,
         plan: daos.plan,
-        treasuryBalance: daos.treasuryBalance,
         causeTags: daos.causeTags,
         primaryCause: daos.primaryCause,
       })
@@ -108,17 +108,19 @@ router.get("/", authenticate, async (req, res) => {
     }
 
     // Combine data
-    const enrichedDAOs = allDAOs.map((dao) => {
+    const enrichedDAOs = await Promise.all(allDAOs.map(async (dao) => {
       const membership = membershipMap.get(dao.id);
       const memberCount = memberCountMap.get(dao.id) || 0;
       const activeProposals = activityMap.get(dao.id) || 0;
       const growthRate = growthMap.get(dao.id) || 0;
+      const treasury = await TreasuryService.getComputedTreasuryBalance(dao.id);
       return {
         id: dao.id,
         name: dao.name,
         description: dao.description,
         memberCount,
-        treasuryBalance: parseFloat(dao.treasuryBalance || '0'),
+        treasuryBalance: treasury.totalComputedBalance === null ? null : Number(treasury.totalComputedBalance),
+        treasuryBalanceCurrency: treasury.totalComputedBalance === null ? null : 'USD',
         plan: dao.plan || 'free',
         role: membership?.role || null,
         isJoined: !!membership,
@@ -128,7 +130,7 @@ router.get("/", authenticate, async (req, res) => {
         causeTags: dao.causeTags || [], // Include cause tags
         primaryCause: dao.primaryCause || '', // Include primary cause
       };
-    });
+    }));
 
     res.json(enrichedDAOs);
   } catch (error) {
@@ -189,17 +191,19 @@ router.get('/:daoId/dashboard-stats', async (req, res) => {
     }
 
     // Calculate funding progress
-    const treasuryBalance = parseFloat(dao.treasuryBalance || '0');
+    const treasury = await TreasuryService.getComputedTreasuryBalance(daoId);
+    const treasuryBalance = treasury.totalComputedBalance === null ? null : Number(treasury.totalComputedBalance);
     const fundingGoal = 5000; // Default goal, can be customized per DAO
-    const fundingProgress = Math.min((treasuryBalance / fundingGoal) * 100, 100);
+    const fundingProgress = treasuryBalance === null ? null : Math.min((treasuryBalance / fundingGoal) * 100, 100);
 
     res.json({
       totalMembers: members.length,
       newMembersThisWeek,
       activeProposals: activeProposals.length,
-      treasuryBalance: treasuryBalance.toString(),
+      treasuryBalance: treasuryBalance?.toString() ?? null,
+      treasuryBalanceCurrency: treasuryBalance === null ? null : 'USD',
       fundingGoal: fundingGoal.toString(),
-      fundingProgress: Math.round(fundingProgress),
+      fundingProgress: fundingProgress === null ? null : Math.round(fundingProgress),
       planExpiresAt: dao.planExpiresAt,
       daysLeft,
       status

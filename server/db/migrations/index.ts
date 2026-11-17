@@ -86,7 +86,19 @@ import { migrateChainIdentityToHoldings } from './054-add-chain-identity-to-hold
 import { migrateUnifiedPlatformLedger } from './055-unified-platform-ledger';
 import { migrateAccountTransactionReferenceScope } from './057-account-transaction-reference-scope';
 import { migrateCeloStablecoinValuationCoverage } from './058-celo-stablecoin-valuation-coverage';
+import { migrateFinancialOperations } from './059-financial-operations';
+import { migrateProviderSettlementIdentifiers } from './060-provider-settlement-identifiers';
+import { migrateDaoContributionSettlementEvidence } from './061-dao-contribution-settlement-evidence';
+import { migrateProposalExecutionSafety } from './062-proposal-execution-safety';
 import { migrateReconciliationPrecision } from './056-increase-reconciliation-precision';
+import {
+  migrateTransactionalOutboxLeases,
+  rollbackTransactionalOutboxLeases,
+} from './063-transactional-outbox-leases';
+import {
+  migrateFinancialReconciliationRegistry,
+  rollbackFinancialReconciliationRegistry,
+} from './064-financial-reconciliation-registry';
 
 export interface MigrationResult {
   success: boolean;
@@ -432,6 +444,30 @@ export async function runAllMigrations(): Promise<MigrationResult> {
       throw err;
     }
 
+    try {
+      await migrateFinancialOperations();
+      await migrateProviderSettlementIdentifiers();
+      await migrateDaoContributionSettlementEvidence();
+      await migrateProposalExecutionSafety();
+    } catch (err: any) {
+      errors.push(`Financial operation/provider settlement migration failed: ${err.message}`);
+      throw err;
+    }
+
+    try {
+      await migrateTransactionalOutboxLeases();
+    } catch (err: any) {
+      errors.push(`Transactional outbox lease migration failed: ${err.message}`);
+      throw err;
+    }
+
+    try {
+      await migrateFinancialReconciliationRegistry();
+    } catch (err: any) {
+      errors.push(`Financial reconciliation registry migration failed: ${err.message}`);
+      throw err;
+    }
+
     const duration = Date.now() - startTime;
     console.log(`\n✅ All migrations completed in ${duration}ms`);
 
@@ -457,6 +493,18 @@ export async function rollbackMigrations(): Promise<MigrationResult> {
 
   try {
     console.log('🔄 Rolling back migrations...\n');
+
+    try {
+      await rollbackFinancialReconciliationRegistry();
+    } catch (err: any) {
+      errors.push(`Financial reconciliation registry rollback failed: ${err.message}`);
+    }
+
+    try {
+      await rollbackTransactionalOutboxLeases();
+    } catch (err: any) {
+      errors.push(`Transactional outbox lease rollback failed: ${err.message}`);
+    }
 
     try {
       await rollbackSelfCustodyRampWebhookInbox();

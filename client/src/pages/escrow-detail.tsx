@@ -9,7 +9,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { Lock, CheckCircle, AlertCircle, Clock, User, DollarSign, Calendar, Milestone, Gavel, Shield } from 'lucide-react';
 import { apiGet, apiPost } from '@/lib/api';
 import { useToast } from '@/hooks/use-toast';
-import { useAuth } from '@/pages/hooks/useAuth';
+import { useAuth } from '@/hooks/useAuth';
 
 export default function EscrowDetailPage() {
   const { escrowId } = useParams<{ escrowId: string }>();

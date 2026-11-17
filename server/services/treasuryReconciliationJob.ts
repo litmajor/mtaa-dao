@@ -19,6 +19,12 @@ import { eq, and, gt, sql, desc } from 'drizzle-orm';
 import Decimal from 'decimal.js';
 import { logger } from '../utils/logger';
 import { chainBalanceReader } from './chainBalanceReader';
+import { financialReconciliationService } from './financialReconciliationService';
+import {
+  reconcileDaoContributionAndDepositFindings,
+  recordTreasuryBalanceFinding,
+} from './daoTreasuryReconciliationRules';
+import { reconcileProposalExecutionFindings } from './proposalExecutionReconciliationRules';
 
 export interface ReconciliationResult {
   type: 'dao_treasury' | 'vault_balance' | 'multisig_transactions';
@@ -29,6 +35,14 @@ export interface ReconciliationResult {
   discrepancyPercent: number;
   status: 'matched' | 'warning' | 'critical' | 'unverified';
   notes?: string;
+  assetIdentity?: {
+    chain: string | number;
+    tokenAddress: string | null;
+    holderAddress: string;
+    symbol: string;
+    blockNumber: number;
+    blockHash: string;
+  };
   lastOnChainCheck: Date;
   recordedAt: Date;
 }
@@ -54,9 +68,14 @@ const WARNING_DISCREPANCY_THRESHOLD = 0.01; // 1% drift = warning
 export async function runTreasuryReconciliationJob(): Promise<ReconciliationJobStats> {
   const startTime = Date.now();
   const results: ReconciliationResult[] = [];
+  let reconciliationRunId: string | undefined;
 
   try {
     logger.info('[TreasuryReconciliationJob] Starting full reconciliation job...');
+    const run = await financialReconciliationService.startRun({
+      source: 'treasury-reconciliation-job',
+    });
+    reconciliationRunId = run.id;
 
     // Get all DAOs
     const allDaos = await db.select({ id: daos.id }).from(daos);
@@ -89,7 +108,11 @@ export async function runTreasuryReconciliationJob(): Promise<ReconciliationJobS
       } catch (auditError) {
         logger.warn(`[TreasuryReconciliationJob] Failed to record audit for ${result.entityId}:`, { error: auditError });
       }
+      await recordTreasuryBalanceFinding(result, run.id);
     }
+
+    const daoFindings = await reconcileDaoContributionAndDepositFindings(run.id);
+    const proposalFindings = await reconcileProposalExecutionFindings(run.id);
 
     // Calculate statistics
     const criticalCount = results.filter((r) => r.status === 'critical').length;
@@ -109,6 +132,19 @@ export async function runTreasuryReconciliationJob(): Promise<ReconciliationJobS
       totalReconciliations: results.length,
       averageDiscrepancyPercent: averageDiscrepancy,
     };
+    await financialReconciliationService.completeRun(run.id, {
+      ...stats,
+      findings: {
+        r05: daoFindings.r05,
+        r06: results.filter((result) =>
+          result.type === 'dao_treasury' &&
+          (result.status === 'warning' || result.status === 'critical')
+        ).length,
+        r07: daoFindings.r07,
+        r08: proposalFindings.r08,
+        r09: proposalFindings.r09,
+      },
+    });
 
     const elapsed = Date.now() - startTime;
 
@@ -134,6 +170,16 @@ export async function runTreasuryReconciliationJob(): Promise<ReconciliationJobS
 
     return stats;
   } catch (error) {
+    if (reconciliationRunId) {
+      try {
+        await financialReconciliationService.failRun(
+          reconciliationRunId,
+          error instanceof Error ? error.message : String(error),
+        );
+      } catch (runError) {
+        logger.error('[TreasuryReconciliationJob] Could not mark reconciliation run failed:', runError);
+      }
+    }
     logger.error('[TreasuryReconciliationJob] Fatal error during reconciliation:', error);
     throw error;
   }
@@ -267,6 +313,14 @@ async function reconcileAssets(
         discrepancy: discrepancy.toFixed(18),
         discrepancyPercent,
         status,
+        assetIdentity: {
+          chain: observed.chainId,
+          tokenAddress: observed.assetAddress,
+          holderAddress: observed.holderAddress,
+          symbol: observed.symbol,
+          blockNumber: observed.blockNumber,
+          blockHash: observed.blockHash,
+        },
         lastOnChainCheck: observed.observedAt,
         recordedAt: new Date(),
         notes: JSON.stringify({

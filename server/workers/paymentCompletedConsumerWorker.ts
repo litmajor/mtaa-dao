@@ -13,6 +13,7 @@ const CONSUMER_NAME = 'payment-completed-worker';
 const READ_COUNT = 10;
 const POLL_INTERVAL_MS = 2500;
 const BLOCK_MS = 2000;
+const PENDING_RECLAIM_IDLE_MS = 5 * 60 * 1000;
 
 class RedisAcknowledger implements StreamAcknowledger {
   constructor(
@@ -117,7 +118,7 @@ export class PaymentCompletedConsumerWorker {
   private static blockingClient: Awaited<ReturnType<typeof getRedisInstanceAsync>> | null = null;
 
   async start(): Promise<void> {
-    await this.consumer.ensureGroup(STREAM_NAME, CONSUMER_GROUP, '$');
+    await this.consumer.ensureGroup(STREAM_NAME, CONSUMER_GROUP, '0');
 
     logger.info('[PaymentCompletedConsumer] Consumer group ensured', {
       stream: STREAM_NAME,
@@ -142,6 +143,17 @@ export class PaymentCompletedConsumerWorker {
     this.running = true;
 
     try {
+      const pending = await this.consumer.pending(STREAM_NAME, CONSUMER_GROUP, READ_COUNT * 10);
+      const reclaimable = pending
+        .filter((message) => message.idleTimeMs >= PENDING_RECLAIM_IDLE_MS)
+        .slice(0, READ_COUNT);
+      const recovered = await this.consumer.claim(
+        STREAM_NAME,
+        CONSUMER_GROUP,
+        CONSUMER_NAME,
+        PENDING_RECLAIM_IDLE_MS,
+        reclaimable.map((message) => message.id),
+      );
       const messages = await this.consumer.readGroup(
         STREAM_NAME,
         CONSUMER_GROUP,
@@ -150,11 +162,11 @@ export class PaymentCompletedConsumerWorker {
         BLOCK_MS,
       );
 
-      if (messages.length === 0) {
+      if (messages.length === 0 && recovered.length === 0) {
         return;
       }
 
-      for (const message of messages) {
+      for (const message of [...recovered, ...messages]) {
         try {
           await this.handleMessage(message);
         } catch (error: any) {

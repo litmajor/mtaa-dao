@@ -13,7 +13,7 @@
  * Integrated with: `/v1/daos/:daoId/treasury/multisig/*` backend
  */
 
-import { authClient } from '../../src/utils/authClient';
+import { authClient } from '@/utils/authClient';
 
 // ────────────────────────────────────────────────────────────────────────────────
 // TYPE DEFINITIONS

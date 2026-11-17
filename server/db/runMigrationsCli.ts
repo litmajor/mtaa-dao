@@ -1,11 +1,12 @@
 import { pool, waitForDatabase } from "../db.js";
 import { runAllMigrations } from "./migrations/index.js";
+import type { PoolClient } from "pg";
 
 const LOCK_NAMESPACE = "mtaa-dao";
 const LOCK_NAME = "schema-migrations";
 
 export async function runMigrationsCli(): Promise<never> {
-  let lockClient: Awaited<ReturnType<typeof pool.connect>> | undefined;
+  let lockClient: PoolClient | undefined;
   let migrationFailed = false;
 
   try {

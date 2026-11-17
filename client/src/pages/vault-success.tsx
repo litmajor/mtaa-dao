@@ -1,13 +1,14 @@
 
 import React, { useEffect } from 'react';
-import { Link, useLocation } from 'wouter';
+import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { CheckCircle, ArrowRight, Wallet, TrendingUp } from 'lucide-react';
 
 export default function VaultSuccess() {
-  const [location] = useLocation();
-  const params = new URLSearchParams(location.split('?')[1]);
+  const location = useLocation();
+  const navigate = useNavigate();
+  const params = new URLSearchParams(location.search);
   const vaultId = params.get('vaultId');
   const vaultName = params.get('name') || 'Your Vault';
 
@@ -15,11 +16,11 @@ export default function VaultSuccess() {
     // Confetti animation or celebration effect
     const timer = setTimeout(() => {
       // Auto redirect after 5 seconds
-      window.location.href = '/vault-overview';
+      navigate('/vault-overview');
     }, 5000);
 
     return () => clearTimeout(timer);
-  }, []);
+  }, [navigate]);
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-50 via-blue-50 to-purple-50 flex items-center justify-center p-4">

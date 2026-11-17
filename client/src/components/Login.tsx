@@ -22,7 +22,6 @@ export default function MtaaDAOLogin() {
   const [lockedUntil, setLockedUntil] = useState<string | null>(null);
   const [showPassword, setShowPassword] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
-  const [mousePosition, setMousePosition] = useState({ x: 0, y: 0 });
   const [isVisible, setIsVisible] = useState(false);
   const [showOAuthConfirmation, setShowOAuthConfirmation] = useState(false);
   const [oauthConfirmEmail, setOauthConfirmEmail] = useState('');
@@ -50,13 +49,6 @@ export default function MtaaDAOLogin() {
         window.history.replaceState({}, document.title, '/login');
       }
     }
-    
-    const handleMouseMove = (e: MouseEvent) => {
-      setMousePosition({ x: e.clientX, y: e.clientY });
-    };
-    
-    window.addEventListener('mousemove', handleMouseMove);
-    return () => window.removeEventListener('mousemove', handleMouseMove);
   }, []);
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -183,16 +175,6 @@ export default function MtaaDAOLogin() {
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-950 via-orange-950 to-slate-950 flex flex-col items-center justify-center p-4 relative overflow-hidden">
-      {/* Minimal Cursor Dot */}
-      <div 
-        className="fixed pointer-events-none z-50 w-2 h-2 bg-orange-500/60 rounded-full transition-all duration-200"
-        style={{
-          left: mousePosition.x - 4,
-          top: mousePosition.y - 4,
-          transform: `translate3d(0, 0, 0) scale(${mousePosition.x > 0 ? 1 : 0})`
-        }}
-      />
-
       {/* Subtle Background */}
       <div className="absolute inset-0 overflow-hidden">
         {/* Single accent orb - very subtle */}
@@ -265,12 +247,13 @@ export default function MtaaDAOLogin() {
             <div className="space-y-5">
               {/* Email/Phone Field */}
               <div className="space-y-2">
-                <label className="block text-xs font-semibold text-slate-300 uppercase tracking-wide">
+                <label htmlFor="login-email" className="block text-xs font-semibold text-slate-300 uppercase tracking-wide">
                   Email or Phone
                 </label>
                 <div className="relative">
                   <Mail className="absolute left-3 top-3.5 text-slate-500 w-4 h-4 z-10" />
                   <input
+                    id="login-email"
                     type="text"
                     className="w-full pl-10 pr-4 py-3 bg-slate-800/50 border border-slate-700/50 rounded-lg text-white placeholder-slate-500 focus:outline-none focus:ring-1 focus:ring-orange-500 focus:border-orange-500/50 transition-all duration-300 hover:bg-slate-800/70 text-sm"
                     placeholder="name@example.com or +1234567890"
@@ -283,12 +266,13 @@ export default function MtaaDAOLogin() {
 
               {/* Password Field */}
               <div className="space-y-2">
-                <label className="block text-xs font-semibold text-slate-300 uppercase tracking-wide">
+                <label htmlFor="login-password" className="block text-xs font-semibold text-slate-300 uppercase tracking-wide">
                   Password
                 </label>
                 <div className="relative">
                   <Lock className="absolute left-3 top-3.5 text-slate-500 w-4 h-4 z-10" />
                   <input
+                    id="login-password"
                     type={showPassword ? 'text' : 'password'}
                     className="w-full pl-10 pr-10 py-3 bg-slate-800/50 border border-slate-700/50 rounded-lg text-white placeholder-slate-500 focus:outline-none focus:ring-1 focus:ring-orange-500 focus:border-orange-500/50 transition-all duration-300 hover:bg-slate-800/70 text-sm"
                     placeholder="Enter your password"
@@ -298,7 +282,8 @@ export default function MtaaDAOLogin() {
                   />
                   <button
                     type="button"
-                    className="absolute right-2 top-3.5 text-slate-500 hover:text-slate-400 transition-colors z-10 flex items-center"
+                    aria-label={showPassword ? 'Hide password' : 'Show password'}
+                    className="absolute right-2 top-3.5 text-slate-500 hover:text-slate-400 transition-colors z-10 flex items-center p-1"
                     onClick={() => setShowPassword(!showPassword)}
                   >
                     {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}

@@ -1,7 +1,7 @@
 import React from 'react';
 import WalletSetup from '../components/WalletSetup';
 import { useNavigate } from 'react-router-dom';
-import { useAuth } from './hooks/useAuth';
+import { useAuth } from '@/hooks/useAuth';
 
 export default function WalletSetupPage() {
   const navigate = useNavigate();

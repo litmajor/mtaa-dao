@@ -1,5 +1,5 @@
 import { useState, useMemo, useEffect } from "react";
-import { useWallet } from "@/pages/hooks/useWallet";
+import { useWallet } from '@/hooks/useWallet';
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { authClient } from "@/utils/authClient";
 import BigNumber from "bignumber.js";

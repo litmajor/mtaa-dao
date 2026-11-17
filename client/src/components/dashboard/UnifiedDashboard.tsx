@@ -9,7 +9,7 @@ import { UserBalanceSection } from './UserBalanceSection';
 import { AssetListTable } from './AssetListTable';
 import { RealtimeActivityFeed } from './RealtimeActivityFeed';
 import { useUnifiedDashboardData } from './hooks/useUnifiedDashboardData';
-import { useWebSocket } from './hooks/useWebSocket';
+import { useWebSocket } from '@/hooks/useWebSocket';
 
 export function UnifiedDashboard() {
   const [searchParams] = useSearchParams();

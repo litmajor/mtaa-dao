@@ -2,7 +2,7 @@ import React, { useState } from "react";
 import TaskBountyBoard from "../components/TaskBountyBoard";
 import type { Task } from "../components/TaskBountyBoard";
 import { ClaimTaskModal } from "../components/ClaimTaskModal";
-import { useTasks } from "./hooks/useTasks";
+import { useTasks } from '@/hooks/useTasks';
 
 // Example: Replace with actual user address from auth context or wallet
 const mockUserAddress = "0xYourWalletAddress";

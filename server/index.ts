@@ -78,6 +78,7 @@ import multisigRoutes from './routes/multisig';
 import userPreferencesRoutes from './routes/user-preferences';
 import nftMarketplaceRouter from './routes/nft-marketplace';
 import paymentGatewayRoutes from './routes/payment-gateway';
+import { paymentWebhookRouter } from './payments';
 import kycRouter from './routes/kyc';
 import referralRewardsRouter from './routes/referral-rewards';
 import economyRouter from './routes/economy';
@@ -447,7 +448,9 @@ app.use(express.json({
   verify: (req: Request, _res, body) => {
     if (req.originalUrl.startsWith('/api/v1/wallets/self-custody-ramps/webhook')
       || req.originalUrl.startsWith('/api/payments/kotanipay/callback')
-      || req.originalUrl.startsWith('/api/kotanipay-status/callback')) {
+      || req.originalUrl.startsWith('/api/kotanipay-status/callback')
+      || req.originalUrl.startsWith('/api/payment-gateway/webhooks/')
+      || req.originalUrl.startsWith('/api/v1/wallets/rails/gateway/')) {
       (req as Request & { rawBody?: Buffer }).rawBody = Buffer.from(body);
     }
   },
@@ -1710,6 +1713,8 @@ process.on('uncaughtException', (error) => {
     // - Transfers: sub-router 'transfers'
     // - Savings: sub-router 'savings'
     const v1WalletsRouter = (await import('./routes/v1/wallets')).default;
+    app.use('/api/payment-gateway/webhooks', paymentWebhookRouter);
+    app.use('/api/v1/wallets/rails/gateway', paymentWebhookRouter);
     app.use('/api/v1/wallets', isAuthenticated, v1WalletsRouter);
     
     app.use('/api/sessions', isAuthenticated, (await import('./routes/enhanced-sessions')).default);

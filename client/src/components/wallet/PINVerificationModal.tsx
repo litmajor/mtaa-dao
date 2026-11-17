@@ -5,7 +5,7 @@ import { Input } from '@/components/ui/input';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Loader2, AlertCircle, CheckCircle } from 'lucide-react';
 import { toast } from 'sonner';
-import { useSystemState } from '@/context/systemState';
+import { useSystemState } from '@/contexts/systemState';
 import PinResetFlow from './PinResetFlow';
 
 interface PINVerificationModalProps {

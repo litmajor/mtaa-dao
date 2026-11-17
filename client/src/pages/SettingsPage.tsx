@@ -1,9 +1,9 @@
 import React, { useState, useEffect } from "react";
 import { Helmet } from "react-helmet-async";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { useAuth } from "@/pages/hooks/useAuth";
+import { useAuth } from '@/hooks/useAuth';
 import { PageLoading } from "@/components/ui/page-loading";
-import { useLocation } from "wouter";
+import { useNavigate } from "react-router-dom";
 
 // Tab Components
 import { ProfileTab } from "@/components/settings/ProfileTab";
@@ -22,7 +22,7 @@ import { User, Lock, Bell, Palette, Zap, KeyRound, ShieldAlert } from "lucide-re
  */
 export default function SettingsPage() {
   const { user, isLoading } = useAuth();
-  const [, setLocation] = useLocation();
+  const navigate = useNavigate();
   const [activeTab, setActiveTab] = useState("profile");
 
   // Read hash from URL to jump to specific tab (e.g. /settings#security)
@@ -47,7 +47,7 @@ export default function SettingsPage() {
       <div className="min-h-screen flex flex-col items-center justify-center bg-slate-950 text-white">
         <p className="text-gray-400 mb-4">Please log in to view settings.</p>
         <button 
-          onClick={() => setLocation("/login")}
+          onClick={() => navigate("/login")}
           className="px-4 py-2 bg-primary text-primary-foreground rounded-md"
         >
           Go to Login

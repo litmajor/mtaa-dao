@@ -3,7 +3,7 @@ import { useQuery } from '@tanstack/react-query';
 import { Card, CardContent } from './ui/card';
 import { Badge } from './ui/badge';
 import { Award, TrendingUp, Users } from 'lucide-react';
-import { useAuth } from '@/pages/hooks/useAuth';
+import { useAuth } from '@/hooks/useAuth';
 import { apiGet } from '@/lib/api';
 
 export default function DaoOfTheWeekBanner() {

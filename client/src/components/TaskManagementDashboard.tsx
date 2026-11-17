@@ -7,7 +7,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from './ui/tabs';
 import { Plus, Eye, CheckCircle, Clock, AlertTriangle } from 'lucide-react';
 import { CreateTaskModal } from './CreateTaskModal';
 import { TaskVerificationModal } from './TaskVerificationModal';
-import { useTasks } from '../pages/hooks/useTasks';
+import { useTasks } from '@/hooks/useTasks';
 
 interface TaskManagementDashboardProps {
   daoId: string;

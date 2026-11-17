@@ -10,7 +10,7 @@ import SplitBillModal from './wallet/SplitBillModal';
 import PaymentRequestModal from './wallet/PaymentRequestModal';
 import { Button } from '@/components/ui/button';
 import { Zap, Send, Split, Lock, Shield } from 'lucide-react';
-import { useWallet } from '@/pages/hooks/useWallet';
+import { useWallet } from '@/hooks/useWallet';
 
 export default function WalletDashboard() {
   const [showSplitBill, setShowSplitBill] = useState(false);

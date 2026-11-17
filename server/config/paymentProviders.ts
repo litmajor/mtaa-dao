@@ -38,7 +38,8 @@ export const flutterwaveConfig: PaymentProviderConfig = {
   secretKey: env.FLUTTERWAVE_SECRET_KEY,
   publicKey: env.FLUTTERWAVE_PUBLIC_KEY,
   baseUrl: env.FLUTTERWAVE_BASE_URL || 'https://api.flutterwave.com/v3',
-  webhookUrl: env.FLUTTERWAVE_WEBHOOK_URL || '',
+  webhookUrl: env.FLUTTERWAVE_WEBHOOK_URL ||
+    `${(env.APP_URL || env.BACKEND_URL || 'http://localhost:5000').replace(/\/+$/, '')}/api/payment-gateway/webhooks/flutterwave`,
   fees: {
     localCards: 0.032, // 3.2%
     internationalCards: 0.048, // 4.8%
@@ -61,7 +62,8 @@ export const paystackConfig: PaymentProviderConfig = {
   apiKey: env.PAYSTACK_API_KEY || '',
   secretKey: env.PAYSTACK_SECRET_KEY,
   baseUrl: env.PAYSTACK_BASE_URL || 'https://api.paystack.co',
-  webhookUrl: env.PAYSTACK_WEBHOOK_URL || '',
+  webhookUrl: env.PAYSTACK_WEBHOOK_URL ||
+    `${(env.APP_URL || env.BACKEND_URL || 'http://localhost:5000').replace(/\/+$/, '')}/api/payment-gateway/webhooks/paystack`,
   fees: {
     localCards: 0.029, // 2.9% for Kenyan cards
     internationalCards: 0.038, // 3.8%

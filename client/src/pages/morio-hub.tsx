@@ -1,6 +1,6 @@
 import React from 'react';
-import { useAuth } from './hooks/useAuth';
-import { useLocation } from 'wouter';
+import { useAuth } from '@/hooks/useAuth';
+import { useNavigate } from 'react-router-dom';
 import { MorioChat } from '@/components/morio/MorioChat';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -8,7 +8,7 @@ import { Heart, Gift, Users, Target, AlertCircle } from 'lucide-react';
 
 export default function MorioHub() {
   const { user } = useAuth();
-  const [, navigate] = useLocation();
+  const navigate = useNavigate();
   
   if (!user?.id) {
     return (

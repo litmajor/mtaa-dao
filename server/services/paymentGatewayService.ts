@@ -598,7 +598,8 @@ export class PaymentGatewayService {
         stablecoin: request.metadata?.stablecoin || 'cUSD',
         walletAddress: destinationWallet,
         txRef: reference,
-        callbackUrl: request.callbackUrl || `${process.env.APP_URL}/api/payments/webhooks/kotanipay`
+        callbackUrl: request.callbackUrl ||
+          `${(process.env.APP_URL || process.env.BACKEND_URL || 'http://localhost:5000').replace(/\/+$/, '')}/api/payment-gateway/webhooks/kotanipay`
       };
 
       const apiUrl = config.environment === 'production'
@@ -689,8 +690,11 @@ export class PaymentGatewayService {
       const callbackUrl = new URL(
         request.callbackUrl ||
           process.env.MPESA_CALLBACK_URL ||
-          `${process.env.APP_URL || process.env.BACKEND_URL || 'http://localhost:5000'}/api/webhooks/mpesa`
+          `${process.env.APP_URL || process.env.BACKEND_URL || 'http://localhost:5000'}/api/payment-gateway/webhooks/mpesa`
       );
+      callbackUrl.pathname = '/api/payment-gateway/webhooks/mpesa';
+      callbackUrl.search = '';
+      callbackUrl.hash = '';
       if (
         config.environment === 'production' &&
         (callbackUrl.protocol !== 'https:' ||
@@ -779,7 +783,9 @@ export class PaymentGatewayService {
       amount: exactAmountInKobo,
       currency: request.currency,
       reference,
-      callback_url: request.callbackUrl || `${process.env.APP_URL}/payment/callback`
+      callback_url: request.callbackUrl ||
+        process.env.PAYMENT_RETURN_URL ||
+        `${process.env.FRONTEND_URL || process.env.APP_URL || 'http://localhost:5000'}/payment/callback`
     };
 
     try {
@@ -825,7 +831,9 @@ export class PaymentGatewayService {
       tx_ref: reference,
       amount: request.amount,
       currency: request.currency,
-      redirect_url: request.callbackUrl || `${process.env.APP_URL}/payment/callback`,
+      redirect_url: request.callbackUrl ||
+        process.env.PAYMENT_RETURN_URL ||
+        `${process.env.FRONTEND_URL || process.env.APP_URL || 'http://localhost:5000'}/payment/callback`,
       customer: {
         email: request.metadata?.email,
         phonenumber: request.metadata?.phone,
@@ -914,7 +922,7 @@ export class PaymentGatewayService {
 
           // 2. If status is completed or failed (not just pending), dispatch the finalization command
           if (status === 'completed') {
-            await commandBus.dispatch({
+            const completionResult = await commandBus.dispatch({
               id: crypto.randomUUID(),
               type: PaymentCommandTypes.CompletePayment,
               actor: userId,
@@ -922,8 +930,11 @@ export class PaymentGatewayService {
               timestamp: new Date(),
               payload: { reference, providerMetadata: additionalMetadata }
             });
+            if (!completionResult.success) {
+              throw new Error(`Payment completion was not authorized or recorded: ${completionResult.error || 'unknown error'}`);
+            }
           } else if (status === 'failed') {
-            await commandBus.dispatch({
+            const failureResult = await commandBus.dispatch({
               id: crypto.randomUUID(),
               type: PaymentCommandTypes.FailPayment,
               actor: userId,
@@ -931,6 +942,9 @@ export class PaymentGatewayService {
               timestamp: new Date(),
               payload: { reference, reason: additionalMetadata.error || 'Payment initialization failed', providerData: additionalMetadata }
             });
+            if (!failureResult.success) {
+              throw new Error(`Payment failure was not authorized or recorded: ${failureResult.error || 'unknown error'}`);
+            }
           }
         },
         DEFAULT_RETRY_POLICIES.database,

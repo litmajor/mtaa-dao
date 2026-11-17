@@ -7,21 +7,14 @@ vi.mock('../db', () => ({
   },
 }));
 
-vi.mock('../services/sharedIdempotencyManager', () => ({
-  sharedIdempotencyManager: {
-    startProcessing: vi.fn().mockResolvedValue(true),
-    recordResult: vi.fn().mockResolvedValue(undefined),
-  },
-}));
-
-vi.mock('../services/PaymentRecoverySAGAOrchestrator', () => ({
-  paymentRecoverySAGA: {
-    executePaymentSAGA: vi.fn().mockResolvedValue(undefined),
+vi.mock('../domain/setup', () => ({
+  commandBus: {
+    dispatch: vi.fn().mockResolvedValue({ success: true }),
   },
 }));
 
 import { db } from '../db';
-import { paymentRecoverySAGA } from '../services/PaymentRecoverySAGAOrchestrator';
+import { commandBus } from '../domain/setup';
 import { reconcileMpesaC2bCallback } from '../payments';
 
 describe('reconcileMpesaC2bCallback', () => {
@@ -66,7 +59,7 @@ describe('reconcileMpesaC2bCallback', () => {
         set: vi.fn((values: Record<string, unknown>) => ({
           where: vi.fn(async () => {
             updates.push(values);
-            payment.status = String(values.status);
+            if (values.status) payment.status = String(values.status);
             payment.metadata = values.metadata as Record<string, unknown>;
           }),
         })),
@@ -99,7 +92,7 @@ describe('reconcileMpesaC2bCallback', () => {
     });
     expect(updates).toHaveLength(1);
     expect(updates[0]).toMatchObject({
-      status: 'completed',
+      providerReference: 'QWE123ABC',
       metadata: {
         settlementStatus: 'pending_review',
         settlementReviewReasons: ['first_payment'],
@@ -107,7 +100,8 @@ describe('reconcileMpesaC2bCallback', () => {
         mpesaPaidAmount: 1200,
       },
     });
-    expect(paymentRecoverySAGA.executePaymentSAGA).not.toHaveBeenCalled();
+    expect(payment.status).toBe('pending');
+    expect(commandBus.dispatch).not.toHaveBeenCalled();
   });
 
   it('keeps the existing SAGA dispatch available behind the explicit feature flag', async () => {
@@ -173,7 +167,24 @@ describe('reconcileMpesaC2bCallback', () => {
       settlementStatus: 'auto_approved',
       settlementReviewReasons: [],
     });
-    expect(paymentRecoverySAGA.executePaymentSAGA).toHaveBeenCalledOnce();
+    expect(commandBus.dispatch).toHaveBeenCalledTimes(2);
+    expect(commandBus.dispatch).toHaveBeenNthCalledWith(
+      1,
+      expect.objectContaining({
+        type: 'ReceiveWebhook',
+        payload: expect.objectContaining({
+          reference: payment.reference,
+          providerReference: 'QWE987XYZ',
+        }),
+      }),
+    );
+    expect(commandBus.dispatch).toHaveBeenNthCalledWith(
+      2,
+      expect.objectContaining({
+        type: 'CompletePayment',
+        payload: expect.objectContaining({ reference: payment.reference }),
+      }),
+    );
   });
 
   it('holds an amount mismatch for manual review without dispatching', async () => {
@@ -219,6 +230,6 @@ describe('reconcileMpesaC2bCallback', () => {
     expect(payment.metadata).toMatchObject({
       settlementReviewReasons: expect.arrayContaining(['amount_mismatch', 'first_payment']),
     });
-    expect(paymentRecoverySAGA.executePaymentSAGA).not.toHaveBeenCalled();
+    expect(commandBus.dispatch).not.toHaveBeenCalled();
   });
 });

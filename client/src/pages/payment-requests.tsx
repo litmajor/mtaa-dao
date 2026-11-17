@@ -15,7 +15,7 @@ import {
   ArrowDownLeft,
   AlertCircle,
 } from 'lucide-react';
-import { useAuth } from '@/pages/hooks/useAuth';
+import { useAuth } from '@/hooks/useAuth';
 
 interface PaymentRequest {
   id: string;

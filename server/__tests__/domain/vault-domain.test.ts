@@ -53,6 +53,9 @@ function makeCommand<T>(type: string, payload: T): Command<T> {
   };
 }
 
+const allowAuthorization = async () => true;
+const denyAuthorization = async () => false;
+
 describe('Vault Command Handlers', () => {
   let mockRepo: Partial<VaultRepository>;
   let mockTx: any;
@@ -94,7 +97,7 @@ describe('Vault Command Handlers', () => {
 
   describe('CreateVaultHandler', () => {
     it('creates a vault and returns an event', async () => {
-      const handler = new CreateVaultHandler(mockRepo as VaultRepository);
+      const handler = new CreateVaultHandler(mockRepo as VaultRepository, allowAuthorization);
       const vault = makeVaultAggregate({ id: 'vault-create-1' });
       (mockRepo.create as any).mockResolvedValue(vault);
 
@@ -122,8 +125,26 @@ describe('Vault Command Handlers', () => {
   });
 
   describe('DepositVaultHandler', () => {
+    it('does not access or mutate a vault when the handler authorization check denies the actor', async () => {
+      const handler = new DepositVaultHandler(mockRepo as VaultRepository, denyAuthorization);
+      const command = makeCommand(VaultCommandTypes.DepositVault, {
+        vaultId: 'vault-deposit-unauthorized',
+        userId: 'user-1',
+        amount: '50',
+        transactionHash: 'tx-denied',
+      });
+
+      const result = await handler.execute(command, context);
+
+      expect(result.success).toBe(false);
+      expect(result.error).toContain('UNAUTHORIZED');
+      expect(mockRepo.findById).not.toHaveBeenCalled();
+      expect(mockRepo.update).not.toHaveBeenCalled();
+      expect(mockTx.insert).not.toHaveBeenCalled();
+    });
+
     it('records a deposit when no previous transaction exists', async () => {
-      const handler = new DepositVaultHandler(mockRepo as VaultRepository);
+      const handler = new DepositVaultHandler(mockRepo as VaultRepository, allowAuthorization);
       const vault = makeVaultAggregate({ id: 'vault-deposit-1' });
       (mockRepo.findById as any).mockResolvedValue(vault);
       (mockRepo.update as any).mockResolvedValue({ ...vault, version: 2 });
@@ -165,7 +186,7 @@ describe('Vault Command Handlers', () => {
     });
 
     it('returns success when the deposit transaction already exists', async () => {
-      const handler = new DepositVaultHandler(mockRepo as VaultRepository);
+      const handler = new DepositVaultHandler(mockRepo as VaultRepository, allowAuthorization);
       const vault = makeVaultAggregate({ id: 'vault-folded' });
       (mockRepo.findById as any).mockResolvedValue(vault);
       selectChain.limit.mockResolvedValueOnce([{ id: 'tx-123' }]);
@@ -189,7 +210,7 @@ describe('Vault Command Handlers', () => {
     });
 
     it('rejects deposit when vault address mismatches', async () => {
-      const handler = new DepositVaultHandler(mockRepo as VaultRepository);
+      const handler = new DepositVaultHandler(mockRepo as VaultRepository, allowAuthorization);
       const vault = makeVaultAggregate({ id: 'vault-deposit-2' });
       (mockRepo.findById as any).mockResolvedValue(vault);
 
@@ -213,7 +234,7 @@ describe('Vault Command Handlers', () => {
 
   describe('WithdrawVaultHandler', () => {
     it('processes a withdrawal when the vault has enough shares and holdings', async () => {
-      const handler = new WithdrawVaultHandler(mockRepo as VaultRepository);
+      const handler = new WithdrawVaultHandler(mockRepo as VaultRepository, allowAuthorization);
       const vault = makeVaultAggregate({ id: 'vault-withdraw-1' });
       const holding = { id: 'holding-1', balance: '20', totalWithdrawn: '0' };
       (mockRepo.findById as any).mockResolvedValue(vault);
@@ -252,7 +273,7 @@ describe('Vault Command Handlers', () => {
     });
 
     it('rejects withdrawal when the vault address mismatches', async () => {
-      const handler = new WithdrawVaultHandler(mockRepo as VaultRepository);
+      const handler = new WithdrawVaultHandler(mockRepo as VaultRepository, allowAuthorization);
       const vault = makeVaultAggregate({ id: 'vault-withdraw-2' });
       (mockRepo.findById as any).mockResolvedValue(vault);
 

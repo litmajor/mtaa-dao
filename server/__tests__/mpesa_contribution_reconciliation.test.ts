@@ -1,9 +1,16 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
+const mocks = vi.hoisted(() => ({
+  dispatch: vi.fn(async () => ({ success: true })),
+}));
+
 vi.mock('../db', () => ({
   db: {
     transaction: vi.fn(),
   },
+}));
+vi.mock('../domain/setup', () => ({
+  commandBus: { dispatch: mocks.dispatch },
 }));
 
 import { db } from '../db';
@@ -68,7 +75,7 @@ describe('reconcileMpesaCallback DAO contributions', () => {
     metadata: { method: 'M-Pesa', paymentStatus: 'awaiting_callback' },
   };
 
-  it('credits a confirmed payment to the pending DAO contribution ledger', async () => {
+  it('confirms the M-Pesa receipt without approving or crediting the DAO treasury', async () => {
     const { tx, updates } = createTransaction(payment, contribution);
     vi.mocked(db.transaction).mockImplementation(async (callback: any) => callback(tx));
 
@@ -88,7 +95,7 @@ describe('reconcileMpesaCallback DAO contributions', () => {
     expect(result).toMatchObject({
       reference: 'MPE-123',
       status: 'completed',
-      contributionCredited: true,
+      contributionConfirmed: true,
     });
     expect(updates).toHaveLength(2);
     expect(updates[0].values.status).toBe('completed');
@@ -142,6 +149,7 @@ describe('reconcileMpesaCallback DAO contributions', () => {
   });
 
   it("auto-approves a returning user's clean ordinary STK payment under the policy limits", async () => {
+    process.env.MPESA_AUTO_SETTLEMENT_ENABLED = 'true';
     const walletPayment = {
       ...payment,
       metadata: { ...payment.metadata, purpose: 'wallet_deposit' },
@@ -194,8 +202,21 @@ describe('reconcileMpesaCallback DAO contributions', () => {
     expect(result.status).toBe('completed');
     expect(updates).toHaveLength(1);
     expect(updates[0].values).toMatchObject({
-      status: 'completed',
       metadata: { settlementStatus: 'auto_approved', settlementReviewReasons: [], mpesaReceipt: 'QWE123ABC' },
     });
+    expect(mocks.dispatch).toHaveBeenCalledTimes(2);
+    expect(mocks.dispatch).toHaveBeenCalledWith(expect.objectContaining({
+      type: 'ReceiveWebhook',
+      payload: expect.objectContaining({
+        providerData: expect.objectContaining({
+          settlementEvidenceVerified: true,
+          settlementEvidenceProvider: 'mpesa',
+        }),
+      }),
+    }));
+    expect(mocks.dispatch).toHaveBeenNthCalledWith(2, expect.objectContaining({
+      type: 'CompletePayment',
+      payload: expect.objectContaining({ reference: 'MPE-123' }),
+    }));
   });
 });

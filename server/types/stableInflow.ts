@@ -22,6 +22,15 @@ export interface StableRiskFlags {
   notes: string[];
 }
 
+export function hasStableInflowRiskFlagsCleared(riskFlags: unknown): boolean {
+  if (!riskFlags || typeof riskFlags !== 'object') return false;
+  const flags = riskFlags as Partial<StableRiskFlags>;
+  return flags.depegDetected === false &&
+    flags.delayedConfirmation === false &&
+    flags.lowLiquidity === false &&
+    flags.highRiskScore === false;
+}
+
 export interface StableBalance {
   unitsMicroUsd: bigint | string;
   amountUsd: string;
@@ -62,4 +71,3 @@ export interface StableInflowProcessResult {
   confirmationState?: StableInflowEvent['confirmationState'];
   error?: string;
 }
-

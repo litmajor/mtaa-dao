@@ -5,7 +5,7 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Calendar, Clock, User, ArrowRight, Search, TrendingUp, BookOpen, MessageCircle } from 'lucide-react';
-import { Link } from 'wouter';
+import { Link } from 'react-router-dom';
 import { useState } from 'react';
 import { authClient } from '@/utils/authClient';
 
@@ -59,7 +59,7 @@ export default function BlogPage() {
 
       {/* Quick Links */}
       <div className="grid md:grid-cols-3 gap-4 mb-8">
-        <Link href="/support">
+        <Link to="/support">
           <Card className="hover:shadow-lg transition-shadow cursor-pointer border-purple-200 dark:border-purple-800">
             <CardContent className="p-6 text-center">
               <MessageCircle className="w-12 h-12 mx-auto mb-3 text-purple-600" />
@@ -69,7 +69,7 @@ export default function BlogPage() {
           </Card>
         </Link>
 
-        <Link href="/faq">
+        <Link to="/faq">
           <Card className="hover:shadow-lg transition-shadow cursor-pointer border-blue-200 dark:border-blue-800">
             <CardContent className="p-6 text-center">
               <BookOpen className="w-12 h-12 mx-auto mb-3 text-blue-600" />
@@ -79,7 +79,7 @@ export default function BlogPage() {
           </Card>
         </Link>
 
-        <Link href="/success-stories/submit">
+        <Link to="/success-stories/submit">
           <Card className="hover:shadow-lg transition-shadow cursor-pointer border-green-200 dark:border-green-800">
             <CardContent className="p-6 text-center">
               <TrendingUp className="w-12 h-12 mx-auto mb-3 text-green-600" />
@@ -148,7 +148,7 @@ export default function BlogPage() {
                   {featuredPost.readTime} min read
                 </span>
               </div>
-              <Link href={`/blog/${featuredPost.id}`}>
+              <Link to={`/blog/${featuredPost.id}`}>
                 <Button>
                   Read More <ArrowRight className="w-4 h-4 ml-2" />
                 </Button>
@@ -188,7 +188,7 @@ export default function BlogPage() {
                   <span>{new Date(post.publishedAt).toLocaleDateString()}</span>
                   <span>{post.readTime} min</span>
                 </div>
-                <Link href={`/blog/${post.id}`}>
+                <Link to={`/blog/${post.id}`}>
                   <Button variant="ghost" className="w-full mt-4">
                     Read Article
                   </Button>

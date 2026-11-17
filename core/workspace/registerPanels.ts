@@ -5,7 +5,7 @@ import { registerPanel } from './panelRegistry';
 // and avoid bundling these large pages into the main chunk.
 const Dashboard = React.lazy(() => import('../../client/src/pages/dashboard'));
 const TradingPage = React.lazy(() => import('../../client/src/pages/trading'));
-const TradingPanel = React.lazy(() => import('../../modules/trading/TradingPanel'));
+const TradingPanel = React.lazy(() => import('../../client/src/modules/trading/TradingPanel'));
 const DaosPage = React.lazy(() => import('../../client/src/pages/daos'));
 const DaoTreasuryPage = React.lazy(() => import('../../client/src/pages/dao/[id]/treasury'));
 const ProposalsPage = React.lazy(() => import('../../client/src/pages/proposals'));

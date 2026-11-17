@@ -1,12 +1,12 @@
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
-import { useWallet } from './hooks/useWallet';
-import { useFormPersistence } from './hooks/useFormPersistence';
-import { useStepValidation } from './hooks/useStepValidation';
+import { useWallet } from '@/hooks/useWallet';
+import { useFormPersistence } from '@/hooks/useFormPersistence';
+import { useStepValidation } from '@/hooks/useStepValidation';
 import { useTreasury } from '@/hooks/useTreasury';
 import { useTreasuryIntelligence } from '@/hooks/useTreasuryIntelligence';
 import { getTreasuryConfigForDAOType } from '@/config/treasury.config';
 import { ErrorAlert } from '@/components/ErrorAlert';
-import { DAOOrchestratorProvider, useDAOOrchestrator } from '@/context/daoOrchestratorSystem';
+import { DAOOrchestratorProvider, useDAOOrchestrator } from '@/contexts/daoOrchestratorSystem';
 import {
   SystemHealthBanner,
   AdaptiveReadinessMeter,

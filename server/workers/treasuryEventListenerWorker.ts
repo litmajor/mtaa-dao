@@ -11,11 +11,14 @@ import { db } from '../db';
 import {
   treasuryEventCursors,
   treasuryMultisigTransactions,
+  proposalExecutionQueue,
+  proposals,
   multisigWallets,
   treasuryAuditLog
 } from '../../shared/schema';
 import { getEventEmitter } from '../middleware/websocket-event-emitter';
 import { AppError } from '../middleware/errorHandler';
+import { recordUnmatchedOnchainProposalEvent } from '../services/proposalExecutionReconciliationRules';
 
 export type TreasuryEventType = TreasuryContractEvent['eventType'];
 
@@ -139,6 +142,16 @@ export class TreasuryEventListenerWorker {
     const wallet = await this.findMultisig(contractAddress);
     if (!wallet) {
       this.logger.warn(`No multisig wallet found for ${contractAddress}`);
+      await recordUnmatchedOnchainProposalEvent({
+        eventType: 'ProposalCreated',
+        contractAddress,
+        proposalId: eventData.proposalId,
+        transactionHash: eventData.transactionHash,
+        blockNumber: eventData.blockNumber,
+        blockHash: eventData.blockHash,
+        logIndex: eventData.logIndex,
+        reason: 'No database multisig wallet matches the on-chain contract',
+      });
       return;
     }
 
@@ -157,12 +170,43 @@ export class TreasuryEventListenerWorker {
       .limit(2);
 
     if (candidates.length === 0) {
+      const [alreadyRecorded] = await db
+        .select({ id: treasuryMultisigTransactions.id })
+        .from(treasuryMultisigTransactions)
+        .where(and(
+          eq(treasuryMultisigTransactions.multisigWalletId, wallet.id),
+          inArray(treasuryMultisigTransactions.status, ['submitted', 'executed']),
+          eq(treasuryMultisigTransactions.submittedTxHash, eventData.transactionHash),
+          sql`${treasuryMultisigTransactions.metadata}->>'proposalId' = ${eventData.proposalId}`
+        ))
+        .limit(1);
+      if (alreadyRecorded) return;
       this.logger.warn(
         `No pending treasury transaction found for recipient ${eventData.recipient} and amount ${eventData.amount}`
       );
+      await recordUnmatchedOnchainProposalEvent({
+        eventType: 'ProposalCreated',
+        contractAddress,
+        proposalId: eventData.proposalId,
+        transactionHash: eventData.transactionHash,
+        blockNumber: eventData.blockNumber,
+        blockHash: eventData.blockHash,
+        logIndex: eventData.logIndex,
+        reason: 'No pending database multisig transaction matches the on-chain proposal',
+      });
       return;
     }
     if (candidates.length > 1) {
+      await recordUnmatchedOnchainProposalEvent({
+        eventType: 'ProposalCreated',
+        contractAddress,
+        proposalId: eventData.proposalId,
+        transactionHash: eventData.transactionHash,
+        blockNumber: eventData.blockNumber,
+        blockHash: eventData.blockHash,
+        logIndex: eventData.logIndex,
+        reason: 'Multiple database multisig transactions match the on-chain proposal',
+      });
       throw new AppError(
         `Cannot safely match ProposalCreated ${eventData.proposalId}: multiple pending transactions match recipient and amount`,
         409
@@ -197,6 +241,41 @@ export class TreasuryEventListenerWorker {
         .returning({ id: treasuryMultisigTransactions.id });
 
       if (!result) return false;
+      const metadata = asMetadataRecord(transaction.metadata);
+      if (typeof metadata.proposalId === 'string' && eventData.transactionHash) {
+        await tx.update(proposalExecutionQueue)
+          .set({
+            status: 'completed',
+            externalReference: transaction.id,
+            externalTxHash: eventData.transactionHash,
+            executionResult: {
+              status: 'completed',
+              treasuryMultisigTransactionId: transaction.id,
+              submissionTxHash: transaction.submittedTxHash,
+              executionTxHash: eventData.transactionHash,
+              eventBlockNumber: eventData.blockNumber,
+              eventLogIndex: eventData.logIndex,
+            },
+            errorMessage: null,
+            updatedAt: new Date(),
+          })
+          .where(and(
+            eq(proposalExecutionQueue.daoId, transaction.daoId),
+            eq(proposalExecutionQueue.proposalId, metadata.proposalId),
+            sql`${proposalExecutionQueue.status} IN ('settlement_pending', 'submitted', 'failed', 'reconciliation_required')`,
+          ));
+        await tx.update(proposals)
+          .set({
+            status: 'executed',
+            executedAt: new Date(),
+            executionTxHash: eventData.transactionHash,
+            updatedAt: new Date(),
+          })
+          .where(and(
+            eq(proposals.daoId, transaction.daoId),
+            eq(proposals.id, metadata.proposalId),
+          ));
+      }
       await this.logAuditEvent(tx, {
         daoId: transaction.daoId,
         actorId: transaction.proposedBy,
@@ -258,7 +337,33 @@ export class TreasuryEventListenerWorker {
       throw new AppError('ProposalExecuted job has an invalid event payload', 400);
     }
     const transaction = await this.findSubmittedTransaction(contractAddress, eventData.proposalId);
-    if (!transaction) return;
+    if (!transaction) {
+      const wallet = await this.findMultisig(contractAddress);
+      const [alreadyExecuted] = wallet
+        ? await db
+          .select({ id: treasuryMultisigTransactions.id })
+          .from(treasuryMultisigTransactions)
+          .where(and(
+            eq(treasuryMultisigTransactions.multisigWalletId, wallet.id),
+            eq(treasuryMultisigTransactions.status, 'executed'),
+            sql`${treasuryMultisigTransactions.metadata}->>'proposalId' = ${eventData.proposalId}`,
+            sql`${treasuryMultisigTransactions.metadata}->>'executionTxHash' = ${eventData.transactionHash}`
+          ))
+          .limit(1)
+        : [];
+      if (alreadyExecuted) return;
+      await recordUnmatchedOnchainProposalEvent({
+        eventType: 'ProposalExecuted',
+        contractAddress,
+        proposalId: eventData.proposalId,
+        transactionHash: eventData.transactionHash,
+        blockNumber: eventData.blockNumber,
+        blockHash: eventData.blockHash,
+        logIndex: eventData.logIndex,
+        reason: 'No submitted database multisig transaction matches the on-chain execution',
+      });
+      return;
+    }
 
     const status = 'executed';
     const updated = await db.transaction(async (tx) => {
@@ -309,6 +414,38 @@ export class TreasuryEventListenerWorker {
     if (updated) {
       this.emitTransactionUpdate(transaction.proposedBy, transaction.id, status, eventData);
       this.logger.info(`Marked transaction ${transaction.id} as ${status}`);
+    }
+    const [execution] = await db
+      .select({
+        id: proposalExecutionQueue.id,
+        externalReference: proposalExecutionQueue.externalReference,
+        status: proposalExecutionQueue.status,
+        externalTxHash: proposalExecutionQueue.externalTxHash,
+      })
+      .from(proposalExecutionQueue)
+      .where(and(
+        eq(proposalExecutionQueue.daoId, transaction.daoId),
+        sql`${proposalExecutionQueue.proposalId} = ${eventData.proposalId}`
+      ))
+      .limit(1);
+    const executionHashMatches = execution?.externalTxHash === eventData.transactionHash ||
+      execution?.externalTxHash === transaction.submittedTxHash;
+    if (
+      !execution ||
+      execution.status !== 'completed' ||
+      execution.externalReference !== transaction.id ||
+      !executionHashMatches
+    ) {
+      await recordUnmatchedOnchainProposalEvent({
+        eventType: 'ProposalExecuted',
+        contractAddress,
+        proposalId: eventData.proposalId,
+        transactionHash: eventData.transactionHash,
+        blockNumber: eventData.blockNumber,
+        blockHash: eventData.blockHash,
+        logIndex: eventData.logIndex,
+        reason: 'On-chain execution does not match a completed proposal execution queue record',
+      });
     }
   }
 

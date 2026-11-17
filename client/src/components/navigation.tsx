@@ -3,7 +3,7 @@ import { Button } from "@/components/ui/button";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import { Moon, Sun, Settings, LogOut, ChevronDown, Wallet } from "lucide-react";
-import { useAuth } from "@/pages/hooks/useAuth";
+import { useAuth } from '@/hooks/useAuth';
 import { useEffect, useState } from "react";
 import { apiRequest } from "@/lib/queryClient";
 import { useTheme } from "@/components/theme-provider";

@@ -350,12 +350,17 @@ router.post(
     try {
       const { daoId } = req.params;
       const userId = (req as any).user?.id;
-      const { recipient, amount, purpose } = req.body;
+      const { recipient, amount, purpose, proposalId } = req.body;
 
       if (!recipient || !amount || !purpose) {
         return res.status(400).json({
           error: 'recipient, amount, and purpose required',
         });
+      }
+      if (proposalId !== undefined &&
+          (typeof proposalId !== 'string' ||
+           !/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(proposalId))) {
+        return res.status(400).json({ success: false, error: 'proposalId must be a valid UUID when linking an approved execution' });
       }
 
       // Delegate to treasuryMultisigService for core business logic
@@ -365,14 +370,22 @@ router.post(
           return res.status(400).json({ success: false, error: 'Invalid amount' });
         }
 
-        const tx = await treasuryMultisigService.proposeWithdrawal(daoId, userId, amountNum, recipient, purpose);
+        const tx = await treasuryMultisigService.proposeWithdrawal(
+          daoId,
+          userId,
+          amountNum,
+          recipient,
+          purpose,
+          typeof req.body.currency === 'string' ? req.body.currency : 'cUSD',
+          proposalId,
+        );
 
         await logConsolidatedAuditEvent({
           dao_id: daoId,
           user_id: userId,
           action: 'multisig_proposal_created',
           severity: 'high',
-          details: { recipient, amount: amountNum, purpose }
+          details: { recipient, amount: amountNum, purpose, proposalId }
         } as any);
 
         res.status(201).json({ success: true, transaction: tx });
@@ -547,15 +560,20 @@ router.post(
 
         const execResult = await treasuryMultisigService.executeTransaction(approvalId, userId);
 
-        await logConsolidatedAuditEvent({ dao_id: daoId, user_id: userId, action: 'multisig_executed', severity: 'critical', details: { approvalId } } as any);
+        await logConsolidatedAuditEvent({
+          dao_id: daoId,
+          user_id: userId,
+          action: 'multisig_submitted',
+          severity: 'critical',
+          details: { approvalId, transactionId: execResult.transactionId, submittedTxHash: execResult.submittedTxHash },
+        } as any);
 
-        res.json({
+        res.status(202).json({
           success: true,
           approvalId,
-          status: 'executed',
-          transactionHash: (execResult && (execResult as any).txHash) || `0x${'0'.repeat(64)}`,
-          newBalance: (execResult && (execResult as any).newBalance) || undefined,
-          executedAt: new Date().toISOString(),
+          status: 'submitted',
+          transactionHash: execResult.submittedTxHash,
+          message: 'Transaction submitted; payout is not complete until on-chain execution is confirmed',
         });
       } catch (err: any) {
         console.error('Execute error:', err);

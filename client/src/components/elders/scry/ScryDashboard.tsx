@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { AlertTriangle, Eye, TrendingUp, Shield, Activity, Zap } from 'lucide-react';
-import { useAuth } from '@/pages/hooks/useAuth';
+import { useAuth } from '@/hooks/useAuth';
 import { authClient } from '@/utils/authClient';
 
 interface ThreatStats {

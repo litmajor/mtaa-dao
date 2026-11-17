@@ -22,7 +22,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from 
 import { DollarSign } from 'lucide-react';
 import { AlertCircle, CheckCircle, Plus, Trash2 } from 'lucide-react';
 import { treasuryAPI } from '@/api/treasuryAPI';
-import { useWallet } from '@/pages/hooks/useWallet';
+import { useWallet } from '@/hooks/useWallet';
 import type {TreasuryWhitelistEntry, TreasuryLimits, PendingApproval} from '@/api/treasuryAPI';
 
 interface TreasuryManagementProps {

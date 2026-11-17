@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { estimateCeloGasFee, estimateCUSDGasFee, CUSD_TOKEN_ADDRESS } from '../lib/blockchain';
-import { useWallet } from '../pages/hooks/useWallet';
+import { useWallet } from '@/hooks/useWallet';
 import { useToast } from '../hooks/use-toast';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';

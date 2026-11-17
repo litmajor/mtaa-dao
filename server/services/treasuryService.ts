@@ -15,6 +15,7 @@ import { Decimal } from 'decimal.js';
 import { logConsolidatedAuditEvent } from './auditConsolidated';
 import treasuryConfig from '../config/treasury';
 import { logger } from '../utils/logger';
+import { hasStableInflowRiskFlagsCleared } from '../types/stableInflow';
 import { 
   walletTransactions, 
   daos, 
@@ -24,8 +25,13 @@ import {
   daoContributions,
   daoContributionApprovals,
   daoMultisigConfig,
+  stableInflowEvents,
   treasuryWithdrawalApprovals
 } from '@shared/schema';
+
+export type TreasuryDepositEvidence =
+  | { kind: 'on_chain'; stableInflowEventId: string }
+  | { kind: 'internal_adjustment'; adjustmentReference: string; reason: string };
 
 export interface TreasuryBalance {
   daoId: string;
@@ -41,7 +47,7 @@ export interface TreasuryBalance {
 export interface TreasuryTransaction {
   id: string;
   daoId: string;
-  type: 'deposit' | 'withdrawal' | 'transfer';
+  type: 'deposit' | 'withdrawal' | 'transfer' | 'contribution';
   amount: string;
   currency: string;
   status: 'pending' | 'approved' | 'completed' | 'rejected';
@@ -50,6 +56,12 @@ export interface TreasuryTransaction {
   approvedBy?: string;
   createdAt: string;
   completedAt?: string;
+  transactionHash?: string;
+  stableInflowEventId?: string;
+  chainId?: number;
+  tokenAddress?: string;
+  contributionId?: string;
+  conversionEvidence?: Record<string, unknown>;
 }
 
 export interface ContributionType {
@@ -166,7 +178,7 @@ export class TreasuryService {
   }
 
   /**
-   * Get treasury balance for a DAO - Real database query
+   * Get indexed on-chain cUSD custody; wallet transactions are used only for journal metrics and pending withdrawals.
    */
   static async getBalance(daoId: string): Promise<TreasuryBalance> {
     try {
@@ -185,6 +197,12 @@ export class TreasuryService {
           eq(walletTransactions.status, 'pending'),
           sql`UPPER(${walletTransactions.currency}) = 'CUSD'`,
         ));
+      const onChainPositions = await db.select({ balance: treasuryPositions.balance })
+        .from(treasuryPositions)
+        .where(and(
+          eq(treasuryPositions.daoId, daoId),
+          sql`UPPER(${treasuryPositions.symbol}) = 'CUSD'`,
+        ));
 
       let totalDeposits = new Decimal(0);
       let totalWithdrawals = new Decimal(0);
@@ -200,7 +218,10 @@ export class TreasuryService {
         if (tx.type === 'withdrawal') pendingAmount = pendingAmount.plus(tx.amount || '0');
       }
 
-      const balance = totalDeposits.minus(totalWithdrawals);
+      const balance = onChainPositions.reduce(
+        (total, position) => total.plus(position.balance || '0'),
+        new Decimal(0),
+      );
       const available = Decimal.max(balance.minus(pendingAmount), 0);
 
       return {
@@ -240,6 +261,11 @@ export class TreasuryService {
         fromUserId: walletTransactions.fromUserId,
         createdAt: walletTransactions.createdAt,
         updatedAt: walletTransactions.updatedAt,
+        transactionHash: walletTransactions.transactionHash,
+        stableInflowEventId: walletTransactions.stableInflowEventId,
+        chainId: walletTransactions.chainId,
+        tokenAddress: walletTransactions.tokenAddress,
+        metadata: walletTransactions.metadata,
       })
         .from(walletTransactions)
         .where(eq(walletTransactions.daoId, daoId))
@@ -257,17 +283,29 @@ export class TreasuryService {
       return {
         transactions: transactions
           .filter(tx => tx.daoId != null && tx.fromUserId != null)
-          .map(tx => ({
-            id: tx.id,
-            daoId: tx.daoId!,
-            type: tx.type as TreasuryTransaction['type'],
-            amount: (tx.amount ?? '0').toString(),
-            currency: tx.currency ?? 'cUSD',
-            status: tx.status as TreasuryTransaction['status'],
-            description: tx.description ?? undefined,
-            initiatedBy: tx.fromUserId!,
-            createdAt: tx.createdAt?.toISOString() ?? new Date().toISOString(),
-          })),
+          .map(tx => {
+            const metadata = (tx.metadata || {}) as Record<string, unknown>;
+            const conversionEvidence = metadata.conversionEvidence;
+            return {
+              id: tx.id,
+              daoId: tx.daoId!,
+              type: tx.type as TreasuryTransaction['type'],
+              amount: (tx.amount ?? '0').toString(),
+              currency: tx.currency ?? 'cUSD',
+              status: tx.status as TreasuryTransaction['status'],
+              description: tx.description ?? undefined,
+              initiatedBy: tx.fromUserId!,
+              createdAt: tx.createdAt?.toISOString() ?? new Date().toISOString(),
+              transactionHash: tx.transactionHash ?? undefined,
+              stableInflowEventId: tx.stableInflowEventId ?? undefined,
+              chainId: tx.chainId ?? undefined,
+              tokenAddress: tx.tokenAddress ?? undefined,
+              contributionId: typeof metadata.contributionId === 'string' ? metadata.contributionId : undefined,
+              conversionEvidence: conversionEvidence && typeof conversionEvidence === 'object'
+                ? conversionEvidence as Record<string, unknown>
+                : undefined,
+            };
+          }),
         total,
       };
     } catch (error) {
@@ -284,43 +322,98 @@ export class TreasuryService {
     amount: string,
     currency: string,
     initiatedBy: string,
+    evidence: TreasuryDepositEvidence,
     description?: string
   ): Promise<string> {
     try {
-      // Validate
-      const amountNum = parseFloat(amount);
-      if (amountNum <= 0) {
+      const depositAmount = new Decimal(amount);
+      if (!depositAmount.isFinite() || depositAmount.lte(0)) {
         throw new Error('Amount must be positive');
       }
 
-      // Insert transaction record
-      const result = await db.insert(walletTransactions).values({
-        daoId,
-        fromUserId: initiatedBy,
-        walletAddress: 'treasury',
-        amount,
-        currency,
-        type: 'deposit',
-        status: 'completed',
-        description: description ?? 'Treasury deposit',
-        metadata: { depositedBy: initiatedBy },
-      }).returning({ id: walletTransactions.id });
-
-      const txId = result[0]?.id;
-      if (!txId) throw new Error('Failed to create transaction');
-
-      // Update DAO treasury balance
-      const daoRecord = await db.query.daos.findFirst({
-        where: eq(daos.id, daoId),
-      });
-
-      if (daoRecord) {
-        const currentBalance = parseFloat((daoRecord.treasuryBalance ?? '0').toString());
-        const newBalance = (currentBalance + amountNum).toString();
-        await db.update(daos)
-          .set({ treasuryBalance: newBalance })
-          .where(eq(daos.id, daoId));
+      if (!evidence ||
+          (evidence.kind !== 'on_chain' && evidence.kind !== 'internal_adjustment')) {
+        throw new Error('Treasury deposits require on-chain settlement evidence or a documented internal adjustment');
       }
+      if (evidence.kind === 'on_chain' &&
+          (typeof evidence.stableInflowEventId !== 'string' || !evidence.stableInflowEventId.trim())) {
+        throw new Error('On-chain treasury deposits require a stable inflow event ID');
+      }
+      if (evidence.kind === 'internal_adjustment' &&
+          (typeof evidence.adjustmentReference !== 'string' || !evidence.adjustmentReference.trim() ||
+           typeof evidence.reason !== 'string' || !evidence.reason.trim())) {
+        throw new Error('Internal treasury adjustments require a reference and documented reason');
+      }
+
+      const txId = await db.transaction(async (tx) => {
+        let inflow: typeof stableInflowEvents.$inferSelect | undefined;
+        if (evidence.kind === 'on_chain') {
+          [inflow] = await tx.select().from(stableInflowEvents)
+            .where(eq(stableInflowEvents.id, evidence.stableInflowEventId))
+            .for('update')
+            .limit(1);
+          if (!inflow || inflow.status !== 'received' || inflow.confirmationState !== 'confirmed' ||
+              !hasStableInflowRiskFlagsCleared(inflow.riskFlags) ||
+              inflow.tokenSymbol.toLowerCase() !== currency.toLowerCase() ||
+              !new Decimal(inflow.normalizedTokenAmount).eq(depositAmount)) {
+            throw new Error('Treasury deposit requires a matching confirmed on-chain inflow');
+          }
+
+          const [vaultPosition] = await tx.select({ id: treasuryPositions.id })
+            .from(treasuryPositions)
+            .where(and(
+              eq(treasuryPositions.daoId, daoId),
+              eq(treasuryPositions.chainId, inflow.chainId),
+              sql`lower(${treasuryPositions.contractAddress}) = lower(${inflow.tokenAddress})`,
+              sql`lower(${treasuryPositions.holderAddress}) = lower(${inflow.toAddress})`,
+            ))
+            .limit(1);
+          if (!vaultPosition) throw new Error('Confirmed inflow recipient is not a configured vault position for this DAO');
+        }
+
+        const [result] = await tx.insert(walletTransactions).values({
+          daoId,
+          fromUserId: initiatedBy,
+          walletAddress: inflow?.toAddress ?? 'treasury',
+          amount: depositAmount.toString(),
+          currency,
+          type: 'deposit',
+          status: 'completed',
+          ...(inflow ? {
+            transactionHash: inflow.txHash,
+            stableInflowEventId: inflow.id,
+            stableUnitsMicroUsd: inflow.stableUnitsMicroUsd,
+            chainId: inflow.chainId,
+            tokenAddress: inflow.tokenAddress,
+          } : {}),
+          description: description ?? (evidence.kind === 'internal_adjustment' ? evidence.reason : 'Treasury deposit'),
+          metadata: {
+            depositedBy: initiatedBy,
+            evidence: evidence.kind === 'on_chain'
+              ? { kind: evidence.kind, stableInflowEventId: inflow?.id, txHash: inflow?.txHash }
+              : { ...evidence, kind: evidence.kind },
+          },
+        }).returning({ id: walletTransactions.id });
+        if (!result) throw new Error('Failed to create transaction');
+
+        if (inflow) {
+          const [creditedInflow] = await tx.update(stableInflowEvents).set({
+            status: 'credited',
+            metadata: sql`coalesce(${stableInflowEvents.metadata}, '{}'::jsonb) || ${JSON.stringify({
+              daoId,
+              walletTransactionId: result.id,
+              settlementEvidence: { kind: evidence.kind },
+            })}::jsonb`,
+            updatedAt: new Date(),
+          }).where(and(
+            eq(stableInflowEvents.id, inflow.id),
+            eq(stableInflowEvents.status, 'received'),
+            eq(stableInflowEvents.confirmationState, 'confirmed'),
+          )).returning({ id: stableInflowEvents.id });
+          if (!creditedInflow) throw new Error(`Stable inflow ${inflow.id} changed during treasury deposit posting`);
+        }
+        return result.id;
+      });
 
       // Audit log
       await logConsolidatedAuditEvent({
@@ -329,7 +422,7 @@ export class TreasuryService {
         targetType: 'dao',
         targetId: daoId,
         severity: 'critical',
-        metadata: { amount, currency, description, txId },
+        metadata: { amount: depositAmount.toString(), currency, description, evidence, txId },
       });
 
       return txId;
@@ -478,19 +571,6 @@ export class TreasuryService {
           .set({ status: 'completed' })
           .where(eq(walletTransactions.id, txId));
 
-        // Update DAO treasury balance
-        const dao = await db.query.daos.findFirst({
-          where: eq(daos.id, daoId),
-        });
-
-        if (dao) {
-          const currentBalance = parseFloat((dao.treasuryBalance ?? '0').toString());
-          const withdrawalAmount = withdrawal?.amount ? parseFloat(withdrawal.amount.toString()) : 0;
-          const newBalance = Math.max(currentBalance - withdrawalAmount, 0).toString();
-          await db.update(daos)
-            .set({ treasuryBalance: newBalance })
-            .where(eq(daos.id, daoId));
-        }
       }
 
       // Audit log
@@ -696,6 +776,16 @@ export class TreasuryService {
       if (!contribution) {
         throw new Error('Contribution not found');
       }
+      const contributionMetadata = (contribution.metadata || {}) as Record<string, unknown>;
+      if (approved &&
+          contribution.currency?.toUpperCase() === 'KES' &&
+          contributionMetadata.method === 'M-Pesa' &&
+          (contributionMetadata.paymentStatus !== 'confirmed' ||
+           typeof contributionMetadata.mpesaReceipt !== 'string' ||
+           !contributionMetadata.mpesaReceipt.trim() ||
+           Number(contributionMetadata.mpesaPaidAmount) !== Number(contribution.amount))) {
+        throw new Error('M-Pesa receipt confirmation is required before DAO contribution approval');
+      }
 
       // Record approval
       await db.insert(daoContributionApprovals).values({
@@ -714,39 +804,9 @@ export class TreasuryService {
         .set({
           status: newStatus,
           approvalStatus: approved ? 'unanimousApproval' : 'rejected',
-          completedAt: new Date(),
+          completedAt: null,
         })
         .where(eq(daoContributions.id, contributionId));
-
-      // If approved, create wallet transaction and update balance
-      if (approved) {
-        await db.insert(walletTransactions).values({
-          daoId,
-          fromUserId: contribution.contributorId,
-          toUserId: null,
-          walletAddress: 'treasury',
-          amount: contribution.amount?.toString() ?? '0',
-          currency: contribution.currency ?? 'cUSD',
-          type: 'contribution',
-          status: 'completed',
-          description: `Contribution approved`,
-          metadata: { contributionId, approvedBy },
-        });
-
-        // Update DAO treasury balance
-        const dao = await db.query.daos.findFirst({
-          where: eq(daos.id, daoId),
-        });
-
-        if (dao) {
-          const currentBalance = parseFloat((dao.treasuryBalance ?? '0').toString());
-          const contributionAmount = parseFloat(contribution.amount?.toString() ?? '0');
-          const newBalance = (currentBalance + contributionAmount).toString();
-          await db.update(daos)
-            .set({ treasuryBalance: newBalance })
-            .where(eq(daos.id, daoId));
-        }
-      }
 
       // Audit log
       await logConsolidatedAuditEvent({
@@ -847,11 +907,6 @@ export class TreasuryService {
 
       createdTreasuries.push(treasuryMetadata);
     }
-
-      // Update DAO with total treasury balance
-      await db.update(daos)
-        .set({ treasuryBalance: totalBalance.toString() })
-        .where(eq(daos.id, daoId));
 
       return {
         treasuries: createdTreasuries,
@@ -1165,6 +1220,9 @@ export class TreasuryService {
         available: available.toFixed(2),
         pending: pending.toFixed(2),
         currency: 'cUSD',
+        deposits: deposits.toFixed(2),
+        withdrawn: withdrawals.toFixed(2),
+        transactionCount: transactions.length,
         accessLevel,
         metadata: {
           ...metadata,

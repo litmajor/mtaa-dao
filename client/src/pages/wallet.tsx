@@ -12,7 +12,7 @@ import { apiGet } from '@/lib/api';
 const ExchangeRateWidget = React.lazy(() => import('../components/wallet/ExchangeRateWidget'));
 const RecurringPaymentsManager = React.lazy(() => import('@/components/wallet/RecurringPaymentsManager'));
 const GiftCardVoucher = React.lazy(() => import('@/components/wallet/GiftCardVoucher'));
-import { useWallet } from './hooks/useWallet';
+import { useWallet } from '@/hooks/useWallet';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../components/ui/card';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';

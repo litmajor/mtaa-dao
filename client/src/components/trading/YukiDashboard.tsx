@@ -19,7 +19,7 @@ import { TrendingUp, Settings } from 'lucide-react';
 import CexManager from './CexManager';
 import StrategyMarketplace from './StrategyMarketplace';
 import type { OpportunityData as Opportunity } from '../../types/opportunities';
-import WatchlistSection from '../../../../frontend/src/components/dashboard/WatchlistSection';
+import WatchlistSection from "@/components/dashboard/WatchlistSection";
 import * as yukiApi from '../../api/yukiApi';
 import { OpportunityScannerDashboard } from '../OpportunityScannerDashboard';
 import { useYukiStore } from '../../stores/useYukiStore';

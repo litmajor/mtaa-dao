@@ -2,7 +2,7 @@ import { Link, useLocation } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Moon, Sun, Settings, LogOut, Home, Wallet, Building2, User } from "lucide-react";
-import { useAuth } from "@/pages/hooks/useAuth";
+import { useAuth } from '@/hooks/useAuth';
 import { useEffect, useState } from "react";
 import { apiRequest } from "@/lib/queryClient";
 import { useTheme } from "@/components/theme-provider";
@@ -144,14 +144,14 @@ export default function GlobalNav() {
   ];
 
   return (
-    <nav className="sticky top-14 mt-14 lg:top-0 lg:mt-0 z-40 border-b border-slate-700 bg-slate-900/95 backdrop-blur-sm">
+    <nav className="sticky top-14 mt-14 lg:top-0 lg:mt-0 z-40 border-b border-border bg-background/95 dark:bg-slate-900/95 backdrop-blur-sm transition-colors">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         <div className="flex items-center justify-between h-16">
           {/* Logo */}
           <div className="flex-shrink-0">
             <Link to="/dashboard" className="flex items-center gap-2">
               <AnimatedLogo className="h-8 w-8" />
-              <span className="text-lg font-bold text-white hidden sm:inline">MTAA</span>
+              <span className="text-lg font-bold text-foreground hidden sm:inline">MTAA</span>
             </Link>
           </div>
 
@@ -195,7 +195,8 @@ export default function GlobalNav() {
                   variant="ghost"
                   size="sm"
                   onClick={toggleTheme}
-                  className="text-slate-300"
+                  aria-label="Toggle theme"
+                  className="text-muted-foreground hover:text-foreground"
                 >
                   {theme === "dark" ? (
                     <Sun className="h-4 w-4" />
@@ -281,7 +282,10 @@ export default function GlobalNav() {
                     e.stopPropagation();
                     setShowProfileDropdown(!showProfileDropdown);
                   }}
-                  className="flex items-center gap-2 rounded-lg p-1"
+                  aria-label="User profile menu"
+                  aria-haspopup="menu"
+                  aria-expanded={showProfileDropdown}
+                  className="flex items-center gap-2 rounded-lg p-1 hover:bg-muted/50 transition-colors"
                 >
                   <Avatar className="h-8 w-8">
                     <AvatarImage
@@ -292,36 +296,36 @@ export default function GlobalNav() {
                       {((user as any)?.username || (user as any)?.firstName || "U").toString().substring(0, 2).toUpperCase()}
                     </AvatarFallback>
                   </Avatar>
-                  <span className="hidden xl:inline text-sm font-medium text-slate-200 max-w-[100px] truncate">
+                  <span className="hidden xl:inline text-sm font-medium text-foreground max-w-[100px] truncate">
                     {(user as any)?.username || `${(user as any)?.firstName || ''} ${(user as any)?.lastName || ''}`.trim() || (user as any)?.email || "User"}
                   </span>
                 </button>
 
                 {/* Dropdown Menu */}
                 {showProfileDropdown && (
-                  <div className="absolute right-0 mt-2 w-48 bg-slate-800 border border-slate-700 rounded-lg shadow-lg py-1 z-50">
+                  <div className="absolute right-0 mt-2 w-48 bg-popover text-popover-foreground border border-border rounded-lg shadow-lg py-1 z-50 animate-in fade-in zoom-in-95">
                     <Link
                       to="/profile"
-                      className="block px-4 py-2 text-sm text-slate-300 hover:bg-slate-700 hover:text-white"
+                      className="block px-4 py-2 text-sm text-foreground hover:bg-muted"
                       onClick={() => setShowProfileDropdown(false)}
                     >
                       My Profile
                     </Link>
                     <Link
                       to="/settings"
-                      className="block px-4 py-2 text-sm text-slate-300 hover:bg-slate-700 hover:text-white"
+                      className="block px-4 py-2 text-sm text-foreground hover:bg-muted"
                       onClick={() => setShowProfileDropdown(false)}
                     >
                       <Settings className="inline mr-2 h-4 w-4" />
                       Settings
                     </Link>
-                    <hr className="my-1 border-slate-700" />
+                    <hr className="my-1 border-border" />
                     <button
                       onClick={() => {
                         setShowProfileDropdown(false);
                         handleLogout();
                       }}
-                      className="w-full text-left px-4 py-2 text-sm text-red-400 hover:bg-slate-700"
+                      className="w-full text-left px-4 py-2 text-sm text-red-500 hover:bg-muted"
                     >
                       <LogOut className="inline mr-2 h-4 w-4" />
                       Logout

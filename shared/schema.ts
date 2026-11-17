@@ -6,6 +6,7 @@ import {
   jsonb,
   index,
   serial,
+  bigserial,
   integer,
   bigint,
   decimal,
@@ -16,7 +17,8 @@ import {
   uniqueIndex,
   date,
   unique,
-  primaryKey
+  primaryKey,
+  check
 } from "drizzle-orm/pg-core";
 import { sql } from 'drizzle-orm';
 import { createInsertSchema } from "drizzle-zod";
@@ -919,13 +921,24 @@ export const proposalExecutionQueue = pgTable("proposal_execution_queue", {
   scheduledFor: timestamp("scheduled_for").notNull(),
   executionType: varchar("execution_type").notNull(), // treasury_transfer, member_action, etc.
   executionData: jsonb("execution_data").notNull(),
-  status: varchar("status").default("pending"), // pending, executing, completed, failed
+  status: varchar("status").default("pending"), // pending, executing, settlement_pending, submitted, completed, failed, reconciliation_required
   attempts: integer("attempts").default(0),
   lastAttempt: timestamp("last_attempt"),
   errorMessage: text("error_message"),
+  idempotencyKey: varchar("idempotency_key", { length: 200 }),
+  executionResult: jsonb("execution_result"),
+  externalReference: text("external_reference"),
+  externalTxHash: varchar("external_tx_hash", { length: 255 }),
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
-});
+}, (table) => ({
+  idempotencyKeyUnique: uniqueIndex("proposal_execution_queue_idempotency_key_uq")
+    .on(table.idempotencyKey)
+    .where(sql`${table.idempotencyKey} IS NOT NULL`),
+  activeProposalUnique: uniqueIndex("proposal_execution_queue_active_proposal_uq")
+    .on(table.daoId, table.proposalId)
+    .where(sql`${table.status} IN ('pending', 'executing', 'settlement_pending', 'submitted', 'reconciliation_required')`),
+}));
 
 // Contributions table
 export const contributions = pgTable("contributions", {
@@ -1183,6 +1196,7 @@ export const paymentTransactions = pgTable('payment_transactions', {
   amount: text('amount').notNull(),
   currency: text('currency').notNull().default('KES'),
   provider: text('provider').notNull(),
+  providerReference: text('provider_reference'),
   status: text('status').notNull().default('pending'),
   metadata: json('metadata'),
   version: integer('version').notNull().default(1),
@@ -1211,7 +1225,7 @@ export const walletTransactions = pgTable("wallet_transactions", {
   toUserId: varchar("to_user_id").references(() => users.id),
   walletAddress: varchar("wallet_address").notNull(),
   daoId: uuid("dao_id").references(() => daos.id),
-  amount: decimal("amount", { precision: 10, scale: 2 }).notNull(),
+  amount: decimal("amount", { precision: 38, scale: 18 }).notNull(),
   currency: varchar("currency").default("cUSD"),
   type: varchar("type").notNull(), // deposit, withdrawal, transfer, contribution
   status: varchar("status").default("completed"), // pending, completed, failed
@@ -1226,6 +1240,157 @@ export const walletTransactions = pgTable("wallet_transactions", {
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
 });
+
+export type FinancialOperationType = "deposit" | "withdrawal" | "transfer" | "dao_contribution" | "disbursement";
+export type FinancialOperationStatus =
+  | "initiated"
+  | "awaiting_authorization"
+  | "authorized"
+  | "settlement_pending"
+  | "settled"
+  | "accounting_pending"
+  | "completed"
+  | "failed"
+  | "reconciliation_required";
+export type FinancialOperationLinkType =
+  | "payment_transaction"
+  | "dao_contribution"
+  | "proposal"
+  | "wallet_transaction"
+  | "account_transaction"
+  | "vault_transaction"
+  | "blockchain_transaction"
+  | "stable_inflow_event"
+  | "dao_rotation_payout";
+
+export const financialOperations = pgTable("financial_operations", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  operationType: varchar("operation_type", { length: 32 }).notNull(),
+  sourceDomain: varchar("source_domain", { length: 64 }).notNull(),
+  destinationDomain: varchar("destination_domain", { length: 64 }).notNull(),
+  asset: varchar("asset", { length: 128 }).notNull(),
+  amount: numeric("amount", { precision: 78, scale: 36 }).notNull(),
+  status: varchar("status", { length: 32 }).$type<FinancialOperationStatus>().notNull().default("initiated"),
+  idempotencyKey: varchar("idempotency_key", { length: 200 }).notNull(),
+  externalReference: text("external_reference"),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+}, (table) => ({
+  idempotencyUnique: uniqueIndex("financial_operations_idempotency_key_uq").on(table.idempotencyKey),
+  statusCreatedIdx: index("financial_operations_status_created_idx").on(table.status, table.createdAt),
+  positiveAmountCheck: check("financial_operations_positive_amount_ck", sql`${table.amount} > 0`),
+  operationTypeCheck: check(
+    "financial_operations_operation_type_ck",
+    sql`${table.operationType} IN ('deposit', 'withdrawal', 'transfer', 'dao_contribution', 'disbursement')`
+  ),
+  statusCheck: check(
+    "financial_operations_status_ck",
+    sql`${table.status} IN ('initiated', 'awaiting_authorization', 'authorized', 'settlement_pending', 'settled', 'accounting_pending', 'completed', 'failed', 'reconciliation_required')`
+  ),
+}));
+
+export const financialOperationLinks = pgTable("financial_operation_links", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  operationId: uuid("operation_id").notNull().references(() => financialOperations.id, { onDelete: "restrict" }),
+  recordType: varchar("record_type", { length: 40 }).notNull(),
+  recordId: text("record_id").notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+}, (table) => ({
+  recordUnique: uniqueIndex("financial_operation_links_record_uq").on(table.recordType, table.recordId),
+  operationIdx: index("financial_operation_links_operation_idx").on(table.operationId),
+  recordTypeCheck: check(
+    "financial_operation_links_record_type_ck",
+    sql`${table.recordType} IN ('payment_transaction', 'dao_contribution', 'proposal', 'wallet_transaction', 'account_transaction', 'vault_transaction', 'blockchain_transaction', 'stable_inflow_event', 'dao_rotation_payout')`
+  ),
+}));
+
+export const financialOperationEvents = pgTable("financial_operation_events", {
+  id: bigserial("id", { mode: "number" }).primaryKey(),
+  operationId: uuid("operation_id").notNull().references(() => financialOperations.id, { onDelete: "restrict" }),
+  eventType: varchar("event_type", { length: 40 }).notNull(),
+  fromStatus: varchar("from_status", { length: 32 }),
+  toStatus: varchar("to_status", { length: 32 }),
+  actor: text("actor").notNull().default("system"),
+  details: jsonb("details").notNull().default({}),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+}, (table) => ({
+  operationCreatedIdx: index("financial_operation_events_operation_created_idx").on(table.operationId, table.createdAt),
+}));
+
+export type FinancialReconciliationRunStatus = "running" | "completed" | "failed";
+export type FinancialReconciliationFindingStatus = "open" | "acknowledged" | "resolved" | "reopened";
+export type FinancialReconciliationSeverity = "critical" | "high" | "medium" | "low";
+
+export const financialReconciliationRuns = pgTable("financial_reconciliation_runs", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  status: varchar("status", { length: 16 }).$type<FinancialReconciliationRunStatus>().notNull().default("running"),
+  startedAt: timestamp("started_at", { withTimezone: true }).notNull().defaultNow(),
+  completedAt: timestamp("completed_at", { withTimezone: true }),
+  summary: jsonb("summary").$type<Record<string, unknown>>().notNull().default({}),
+  error: text("error"),
+}, (table) => ({
+  statusStartedIdx: index("financial_reconciliation_runs_status_started_idx").on(table.status, table.startedAt),
+  statusCheck: check("financial_reconciliation_runs_status_ck", sql`${table.status} IN ('running', 'completed', 'failed')`),
+}));
+
+export const financialReconciliationFindings = pgTable("financial_reconciliation_findings", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  findingKey: varchar("finding_key", { length: 512 }).notNull(),
+  domain: varchar("domain", { length: 64 }).notNull(),
+  ruleId: varchar("rule_id", { length: 16 }).notNull(),
+  severity: varchar("severity", { length: 16 }).$type<FinancialReconciliationSeverity>().notNull(),
+  operationId: uuid("operation_id").references(() => financialOperations.id, { onDelete: "set null" }),
+  status: varchar("status", { length: 16 }).$type<FinancialReconciliationFindingStatus>().notNull().default("open"),
+  expectedState: jsonb("expected_state").$type<unknown>().notNull(),
+  observedState: jsonb("observed_state").$type<unknown>().notNull(),
+  evidenceReferences: jsonb("evidence_references").$type<string[]>().notNull().default([]),
+  firstDetectedAt: timestamp("first_detected_at", { withTimezone: true }).notNull().defaultNow(),
+  lastDetectedAt: timestamp("last_detected_at", { withTimezone: true }).notNull().defaultNow(),
+  resolvedAt: timestamp("resolved_at", { withTimezone: true }),
+  resolvedBy: text("resolved_by"),
+  resolutionNote: text("resolution_note"),
+  acknowledgedAt: timestamp("acknowledged_at", { withTimezone: true }),
+  acknowledgedBy: text("acknowledged_by"),
+  lastRunId: uuid("last_run_id").references(() => financialReconciliationRuns.id, { onDelete: "set null" }),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+}, (table) => ({
+  findingKeyUnique: uniqueIndex("financial_reconciliation_findings_key_uq").on(table.findingKey),
+  statusDetectedIdx: index("financial_reconciliation_findings_status_detected_idx").on(table.status, table.lastDetectedAt),
+  ruleDomainIdx: index("financial_reconciliation_findings_rule_domain_idx").on(table.ruleId, table.domain),
+  operationIdx: index("financial_reconciliation_findings_operation_idx").on(table.operationId),
+  runIdx: index("financial_reconciliation_findings_run_idx").on(table.lastRunId),
+  severityCheck: check(
+    "financial_reconciliation_findings_severity_ck",
+    sql`${table.severity} IN ('critical', 'high', 'medium', 'low')`,
+  ),
+  statusCheck: check(
+    "financial_reconciliation_findings_status_ck",
+    sql`${table.status} IN ('open', 'acknowledged', 'resolved', 'reopened')`,
+  ),
+}));
+
+export const financialReconciliationFindingEvents = pgTable("financial_reconciliation_finding_events", {
+  id: bigserial("id", { mode: "number" }).primaryKey(),
+  findingId: uuid("finding_id").notNull().references(() => financialReconciliationFindings.id, { onDelete: "restrict" }),
+  runId: uuid("run_id").references(() => financialReconciliationRuns.id, { onDelete: "set null" }),
+  eventType: varchar("event_type", { length: 16 }).notNull(),
+  fromStatus: varchar("from_status", { length: 16 }),
+  toStatus: varchar("to_status", { length: 16 }),
+  actor: text("actor").notNull(),
+  note: text("note"),
+  expectedState: jsonb("expected_state").$type<unknown>(),
+  observedState: jsonb("observed_state").$type<unknown>(),
+  evidenceReferences: jsonb("evidence_references").$type<string[]>(),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+}, (table) => ({
+  findingCreatedIdx: index("financial_reconciliation_finding_events_created_idx").on(table.findingId, table.createdAt),
+  runIdx: index("financial_reconciliation_finding_events_run_idx").on(table.runId),
+  eventTypeCheck: check(
+    "financial_reconciliation_finding_events_type_ck",
+    sql`${table.eventType} IN ('detected', 'acknowledged', 'resolved', 'reopened')`,
+  ),
+}));
 
 /**
  * Stable Asset Registry

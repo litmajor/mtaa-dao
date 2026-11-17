@@ -3,7 +3,7 @@ import { Eye, EyeOff, Mail, Lock, AlertCircle, UserPlus, Check, Phone, Send } fr
 import { Button } from '@/components/ui/button';
 import { signIn } from '../lib/auth';
 
-const ACCESS_CODE = 'your-secret-code'; // Change this to your secret
+const ACCESS_CODE = import.meta.env.VITE_ARCHITECT_ACCESS_CODE || '';
 
 export default function ArchitectSetup() {
   const [accessCode, setAccessCode] = useState('');

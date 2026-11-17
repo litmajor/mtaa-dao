@@ -7,7 +7,7 @@ import { Lock, CheckCircle, AlertCircle } from 'lucide-react';
 import { apiGet } from '@/lib/api';
 import { useToast } from '@/hooks/use-toast';
 import { PageLoading } from '@/components/ui/page-loading';
-import { useAuth } from '@/pages/hooks/useAuth';
+import { useAuth } from '@/hooks/useAuth';
 
 export default function EscrowAcceptPage() {
   const { inviteCode } = useParams<{ inviteCode: string }>();

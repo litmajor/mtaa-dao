@@ -15,6 +15,25 @@ import { VaultOptimisticLockError } from './VaultRepository';
 import { VaultStateMachine } from './VaultStateMachine';
 import type {VaultStatus} from './VaultStateMachine';
 import { vaults, vaultTransactions, vaultTokenHoldings } from '../../../shared/schema';
+import { authorizeCommandForHandler } from '../commands/CommandAuthorization';
+import type { CommandCapability } from '../commands/CommandAuthorization';
+
+type HandlerAuthorizer = (command: Command, capability: CommandCapability) => Promise<boolean>;
+
+async function authorizationFailure(
+  command: Command,
+  capability: CommandCapability,
+  authorize: HandlerAuthorizer,
+): Promise<CommandResult | null> {
+  return await authorize(command, capability)
+    ? null
+    : {
+        success: false,
+        commandId: command.id,
+        events: [],
+        error: `UNAUTHORIZED: actor '${command.actor}' cannot perform '${capability}'`,
+      };
+}
 
 function buildVaultEvent(
   type: string,
@@ -60,10 +79,15 @@ function calculateSharePrice(vault: VaultAggregate): number {
 export class CreateVaultHandler implements CommandHandler<Command<CreateVaultPayload>> {
   readonly commandType = VaultCommandTypes.CreateVault;
 
-  constructor(private repo: VaultRepository) {}
+  constructor(
+    private repo: VaultRepository,
+    private authorize: HandlerAuthorizer = authorizeCommandForHandler,
+  ) {}
 
   async execute(command: Command<CreateVaultPayload>, context: CommandContext): Promise<CommandResult> {
     const { payload } = command;
+    const denied = await authorizationFailure(command, 'vault.create', this.authorize);
+    if (denied) return denied;
     const ownerType = payload.ownerType;
 
     if (ownerType !== 'user' && ownerType !== 'dao') {
@@ -115,10 +139,15 @@ export class CreateVaultHandler implements CommandHandler<Command<CreateVaultPay
 export class DepositVaultHandler implements CommandHandler<Command<DepositVaultPayload>> {
   readonly commandType = VaultCommandTypes.DepositVault;
 
-  constructor(private repo: VaultRepository) {}
+  constructor(
+    private repo: VaultRepository,
+    private authorize: HandlerAuthorizer = authorizeCommandForHandler,
+  ) {}
 
   async execute(command: Command<DepositVaultPayload>, context: CommandContext): Promise<CommandResult> {
     const { payload } = command;
+    const denied = await authorizationFailure(command, 'vault.deposit', this.authorize);
+    if (denied) return denied;
     const tx = context.tx;
     const vaultAddress = payload.vaultAddress;
 
@@ -264,10 +293,15 @@ export class DepositVaultHandler implements CommandHandler<Command<DepositVaultP
 export class WithdrawVaultHandler implements CommandHandler<Command<WithdrawVaultPayload>> {
   readonly commandType = VaultCommandTypes.WithdrawVault;
 
-  constructor(private repo: VaultRepository) {}
+  constructor(
+    private repo: VaultRepository,
+    private authorize: HandlerAuthorizer = authorizeCommandForHandler,
+  ) {}
 
   async execute(command: Command<WithdrawVaultPayload>, context: CommandContext): Promise<CommandResult> {
     const { payload } = command;
+    const denied = await authorizationFailure(command, 'vault.withdraw', this.authorize);
+    if (denied) return denied;
     const tx = context.tx;
     const vaultAddress = payload.vaultAddress;
 

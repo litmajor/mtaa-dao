@@ -1,5 +1,5 @@
 import React from 'react';
-import { useDAOOrchestrator } from '@/context/daoOrchestratorSystem';
+import { useDAOOrchestrator } from '@/contexts/daoOrchestratorSystem';
 import { AlertCircle, CheckCircle, Zap, TrendingUp, Heart } from 'lucide-react';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';

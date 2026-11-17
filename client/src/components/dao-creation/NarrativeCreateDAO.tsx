@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { useDAOOrchestrator } from '@/context/daoOrchestratorSystem';
+import { useDAOOrchestrator } from '@/contexts/daoOrchestratorSystem';
 import { 
   SystemHealthBanner, 
   AdaptiveReadinessMeter, 

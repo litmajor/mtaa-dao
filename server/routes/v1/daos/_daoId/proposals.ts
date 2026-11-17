@@ -61,14 +61,6 @@ const proposalVoteLimiter = createRateLimiter({
   keyGenerator: (req) => `proposal:vote:${(req as any).user?.id || req.ip}`,
 });
 
-// In-memory idempotency store (use Redis in production)
-interface ExecutionRecord {
-  idempotencyKey: string;
-  executedAt: Date;
-  result: unknown;
-}
-const executionIdempotencyMap = new Map<string, ExecutionRecord>();
-
 // Helper to get userId with proper type narrowing
 function getUserId(req: Request): string | null {
   const userReq = req as Request & UserRequest;
@@ -932,41 +924,18 @@ router.post('/:proposalId/execute', async (req: Request, res: Response) => {
     const daoId = getDaoId(req);
     const { proposalId } = (req as any).params;
     const userId = getUserId(req);
-    const idempotencyKey = req.headers['idempotency-key'] as string;
+    const idempotencyKey = req.headers['idempotency-key'];
     
     if (!userId) {
       return res.status(401).json({ success: false, message: 'User not authenticated' });
     }
     
     // Require idempotency key for critical operation
-    if (!idempotencyKey) {
+    if (typeof idempotencyKey !== 'string' || !idempotencyKey.trim() || idempotencyKey.length > 200) {
       return res.status(400).json({
         success: false,
-        message: 'Idempotency-Key header is required for proposal execution',
+        message: 'Idempotency-Key header must contain 1 to 200 characters',
         code: 'MISSING_IDEMPOTENCY_KEY'
-      });
-    }
-    
-    // Check for idempotency
-    const executionKey = `${daoId}:${proposalId}`;
-    const existingExecution = executionIdempotencyMap.get(executionKey);
-    
-    if (existingExecution && existingExecution.idempotencyKey === idempotencyKey) {
-      return res.status(200).json({
-        success: true,
-        message: 'Proposal execution already completed (idempotent response)',
-        data: existingExecution.result,
-        executedAt: existingExecution.executedAt,
-        isIdempotentResponse: true
-      });
-    }
-    
-    if (existingExecution && existingExecution.idempotencyKey !== idempotencyKey) {
-      return res.status(409).json({
-        success: false,
-        message: 'Proposal already executed with a different Idempotency-Key',
-        code: 'IDEMPOTENCY_KEY_CONFLICT',
-        previousExecutionTime: existingExecution.executedAt
       });
     }
     
@@ -979,15 +948,14 @@ router.post('/:proposalId/execute', async (req: Request, res: Response) => {
       });
     }
     
-    // Get pending execution from queue
+    // Load persisted execution state so retries cannot re-run completed or claimed work.
     const execution = await db.select()
       .from(proposalExecutionQueue)
       .where(and(
         eq(proposalExecutionQueue.proposalId, proposalId),
-        eq(proposalExecutionQueue.daoId, daoId),
-        eq(proposalExecutionQueue.status, 'pending')
+        eq(proposalExecutionQueue.daoId, daoId)
       ))
-      .limit(1);
+      .limit(2);
     
     if (!execution.length) {
       return res.status(404).json({
@@ -995,35 +963,66 @@ router.post('/:proposalId/execute', async (req: Request, res: Response) => {
         message: 'No pending execution found for this proposal'
       });
     }
+    if (execution.length > 1) {
+      return res.status(409).json({
+        success: false,
+        message: 'Multiple execution queue records exist for this proposal; reconciliation is required',
+        code: 'DUPLICATE_EXECUTION_RECORDS',
+      });
+    }
     
-    // Execute proposal
-    const executionResult = await ProposalExecutionService.executeProposal(execution[0], userId);
-    
-    // Store idempotency key
-    executionIdempotencyMap.set(executionKey, {
-      idempotencyKey,
-      executedAt: new Date(),
-      result: executionResult
-    });
-    
-    // Clean up old entries after 24 hours
-    setTimeout(() => executionIdempotencyMap.delete(executionKey), 24 * 60 * 60 * 1000);
+    const executionResult = await ProposalExecutionService.executeProposal(execution[0], userId, idempotencyKey);
     
     logger.info(`[AUDIT] Proposal ${proposalId} executed by user ${userId} in DAO ${daoId}`);
     
-    res.json({
-      success: true,
-      message: 'Proposal executed successfully',
+    const resultStatus = executionResult.status ?? 'reconciliation_required';
+    const unresolvedFailure = ['failed', 'reconciliation_required'].includes(resultStatus);
+    const statusCode = unresolvedFailure ? 409 : resultStatus === 'completed' ? 200 : 202;
+    res.status(statusCode).json({
+      success: !unresolvedFailure,
+      message: resultStatus === 'completed'
+        ? 'Proposal execution completed'
+        : unresolvedFailure
+          ? 'Proposal execution requires reconciliation before it can continue'
+        : 'Proposal is not yet settled; multisig submission and on-chain confirmation are required',
       data: executionResult,
-      executedAt: new Date()
+      executedAt: resultStatus === 'completed' ? new Date() : undefined,
     });
   } catch (error: any) {
     logger.error(`Error executing proposal:`, error);
-    res.status(500).json({
+    const conflict = /already claimed|already assigned|not due|different idempotency|not in the approved/i.test(error.message || '');
+    res.status(conflict ? 409 : 500).json({
       success: false,
-      message: 'Failed to execute proposal',
+      message: 'Proposal execution did not complete',
       error: error.message
     });
+  }
+});
+
+router.post('/execution/:executionId/reconcile', async (req: Request, res: Response) => {
+  try {
+    const daoId = getDaoId(req);
+    const { executionId } = (req as any).params;
+    const userId = getUserId(req);
+    if (!userId) return res.status(401).json({ success: false, message: 'User not authenticated' });
+    const hasPermission = await validateExecutionPermission(userId, daoId);
+    if (!hasPermission) return res.status(403).json({ success: false, message: 'Insufficient permission to reconcile proposal execution' });
+
+    const [execution] = await db.select()
+      .from(proposalExecutionQueue)
+      .where(and(eq(proposalExecutionQueue.id, executionId), eq(proposalExecutionQueue.daoId, daoId)))
+      .limit(1);
+    if (!execution) return res.status(404).json({ success: false, message: 'Execution not found' });
+
+    const result = await ProposalExecutionService.reconcileOnchainExecution(executionId);
+    const resultStatus = 'status' in result ? result.status : undefined;
+    const responseStatus = resultStatus === 'completed' ? 200
+      : resultStatus === 'failed' || resultStatus === 'reconciliation_required' ? 409
+        : 202;
+    return res.status(responseStatus).json({ success: responseStatus !== 409, data: result });
+  } catch (error: any) {
+    logger.error('Failed to reconcile proposal execution:', error);
+    return res.status(500).json({ success: false, message: 'Failed to reconcile proposal execution', error: error.message });
   }
 });
 

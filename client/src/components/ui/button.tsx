@@ -8,6 +8,8 @@ export interface ButtonProps extends React.ButtonHTMLAttributes<HTMLButtonElemen
   variant?: ButtonVariant;
   size?: ButtonSize;
   loading?: boolean;
+  isLoading?: boolean;
+  fullWidth?: boolean;
   /** token name from --gradient-<name> or raw gradient string */
   gradient?: string;
   icon?: React.ReactNode;
@@ -36,8 +38,9 @@ const sizeMap: Record<ButtonSize, string> = {
 };
 
 export const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(
-  ({ variant = 'default', size = 'md', className, children, loading = false, gradient, icon, iconPosition = 'left', ...rest }, ref) => {
-    const isDisabled = !!(rest.disabled || loading);
+  ({ variant = 'default', size = 'md', className, children, loading = false, isLoading = false, fullWidth = false, gradient, icon, iconPosition = 'left', ...rest }, ref) => {
+    const isBusy = !!(loading || isLoading);
+    const isDisabled = !!(rest.disabled || isBusy);
 
     const style: React.CSSProperties = { ...(rest.style || {}) };
   if (gradient) {
@@ -47,6 +50,7 @@ export const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(
 
   const classes = clsx(
     base,
+    fullWidth && 'w-full',
     variantMap[variant],
     sizeMap[size],
     className,
@@ -55,7 +59,7 @@ export const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(
 
   return (
     <button ref={ref} className={classes} style={style} aria-disabled={isDisabled} {...rest} disabled={isDisabled}>
-      {loading ? (
+      {isBusy ? (
         <svg className="w-4 h-4 animate-spin mr-2" viewBox="0 0 24 24" fill="none" stroke="currentColor"><circle cx="12" cy="12" r="10" strokeWidth="4" strokeOpacity="0.15"></circle><path d="M22 12a10 10 0 00-10-10" strokeWidth="4"></path></svg>
       ) : null}
       {icon && iconPosition === 'left' ? <span className="mr-2 inline-flex items-center">{icon}</span> : null}

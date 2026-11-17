@@ -12,7 +12,7 @@
  */
 
 import React, { useState } from 'react';
-import { DAOOrchestratorProvider } from '@/context/daoOrchestratorSystem';
+import { DAOOrchestratorProvider } from '@/contexts/daoOrchestratorSystem';
 import { NarrativeCreateDAO } from '@/components/dao-creation/NarrativeCreateDAO';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -126,7 +126,7 @@ export default CreateDAOPageNarrative;
  *    Update create-dao.tsx to wrap with DAOOrchestratorProvider:
  * 
  *    ```typescript
- *    import { DAOOrchestratorProvider } from '@/context/daoOrchestratorSystem';
+ *    import { DAOOrchestratorProvider } from '@/contexts/daoOrchestratorSystem';
  *    
  *    export default function CreateDAOPage() {
  *      return (
@@ -141,7 +141,7 @@ export default CreateDAOPageNarrative;
  *    Add this to any component that should be stateful:
  * 
  *    ```typescript
- *    import { useDAOOrchestrator } from '@/context/daoOrchestratorSystem';
+ *    import { useDAOOrchestrator } from '@/contexts/daoOrchestratorSystem';
  *    
  *    export function YourComponent() {
  *      const orchestrator = useDAOOrchestrator();

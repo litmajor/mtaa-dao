@@ -246,20 +246,11 @@ const statusColors = {
 export default function SuccessStoriesPage() {
   const [selectedStory, setSelectedStory] = useState<SuccessStory | null>(null);
   const [selectedCategory, setSelectedCategory] = useState<string>('All');
-  const [mousePosition, setMousePosition] = useState({ x: 0, y: 0 });
 
   const categories = ['All', ...Array.from(new Set(successStories.map(story => story.category)))];
   const filteredStories = selectedCategory === 'All' 
     ? successStories 
     : successStories.filter(story => story.category === selectedCategory);
-
-  useEffect(() => {
-    const handleMouseMove = (e: MouseEvent) => {
-      setMousePosition({ x: e.clientX, y: e.clientY });
-    };
-    window.addEventListener('mousemove', handleMouseMove);
-    return () => window.removeEventListener('mousemove', handleMouseMove);
-  }, []);
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-orange-50 via-red-50 to-purple-100 relative overflow-hidden">
@@ -268,15 +259,6 @@ export default function SuccessStoriesPage() {
         <div className="absolute top-20 left-20 w-72 h-72 bg-gradient-to-r from-orange-300/30 to-red-300/30 rounded-full blur-3xl animate-pulse" />
         <div className="absolute bottom-20 right-20 w-96 h-96 bg-gradient-to-r from-purple-300/30 to-pink-300/30 rounded-full blur-3xl animate-pulse delay-1000" />
       </div>
-
-      {/* Cursor glow effect */}
-      <div 
-        className="fixed pointer-events-none w-96 h-96 rounded-full opacity-20 blur-3xl bg-gradient-to-r from-orange-400 to-pink-400 transition-all duration-300 z-10"
-        style={{
-          left: mousePosition.x - 192,
-          top: mousePosition.y - 192,
-        }}
-      />
 
       <div className="relative z-20 max-w-7xl mx-auto p-6">
         {/* Header */}

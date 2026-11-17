@@ -66,7 +66,7 @@ export const useExchangeAssets = (exchangeName: string | null) => {
     queryKey: ['exchange-assets', exchangeName],
     queryFn: async () => {
       if (!exchangeName) return [];
-      const data = await fetchLiveMarketData<any>(500, [exchangeName]);
+      const data = await fetchLiveMarketData<unknown>(500, [exchangeName]);
       return data.assets.flatMap((asset) => asset.markets
         .filter((market) => market.exchange === exchangeName)
         .map((market) => ({
@@ -96,7 +96,7 @@ export const usePrices = (symbol: string | null, exchanges: string[]) => {
     queryKey: ['prices', symbol, exchanges.join(',')],
     queryFn: async () => {
       if (!symbol || exchanges.length === 0) return null;
-      const data = await fetchLiveMarketData<any>(500, exchanges);
+      const data = await fetchLiveMarketData<unknown>(500, exchanges);
       const [baseSymbol, quoteSymbol] = symbol.split('/');
       const normalizedPair = symbol.includes('/') ? symbol.toUpperCase() : null;
       const asset = data.assets.find((item) => item.symbol.toUpperCase() === baseSymbol.toUpperCase());
@@ -217,7 +217,7 @@ export const useExchangeBalance = (exchange: string | null) => {
       queryFn: async () => {
         if (!baseSymbol) return { found: 0, exchanges: [] };
         try {
-          const data = await fetchLiveMarketData<any>(500, exchanges);
+          const data = await fetchLiveMarketData<unknown>(500, exchanges);
           const asset = data.assets.find((item) => item.symbol.toUpperCase() === baseSymbol.toUpperCase());
           const list = asset?.markets ?? [];
           return {

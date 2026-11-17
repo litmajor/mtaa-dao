@@ -5,7 +5,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../co
 import { Button } from '@/components/ui/button';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
-import { useAuth } from '@/pages/hooks/useAuth';
+import { useAuth } from '@/hooks/useAuth';
 import { useTheme } from '@/components/theme-provider';
 import { apiRequest } from '@/lib/queryClient';
 import {
@@ -27,8 +27,8 @@ import {
 
 import Shell from '../components/ui/shell';
 import { Grid } from '../components/ui/grid';
-import SystemStateProvider, { useSystemState, deriveOperationalMode } from '../context/systemState';
-import type { OperationalMode } from '../context/systemState';
+import SystemStateProvider, { useSystemState, deriveOperationalMode } from '@/contexts/systemState';
+import type { OperationalMode } from '@/contexts/systemState';
 
 // Sub-components (stub implementations, can be replaced with proper components later)
 const PlatformOverviewCard = ({ data, isLoading }: any) => (

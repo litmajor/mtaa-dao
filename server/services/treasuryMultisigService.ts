@@ -7,7 +7,8 @@ import {
   treasuryAuditLog,
   daoMemberships,
   users,
-  multisigWallets
+  multisigWallets,
+  proposalExecutionQueue
 } from '../../shared/schema';
 import { eq, and, desc, gte, lte, sql } from 'drizzle-orm';
 import { Logger } from '../utils/logger';
@@ -25,7 +26,8 @@ export class TreasuryMultisigService {
     amount: number,
     recipient: string,
     purpose: string,
-    currency: string = 'cUSD'
+    currency: string = 'cUSD',
+    proposalId?: string,
   ) {
     try {
       // Get DAO treasury settings
@@ -33,6 +35,35 @@ export class TreasuryMultisigService {
       if (!dao.length) throw new NotFoundError('DAO not found');
 
       const daoData = dao[0];
+
+      let linkedExecution: typeof proposalExecutionQueue.$inferSelect | undefined;
+      if (proposalId) {
+        [linkedExecution] = await db.select()
+          .from(proposalExecutionQueue)
+          .where(and(
+            eq(proposalExecutionQueue.daoId, daoId),
+            eq(proposalExecutionQueue.proposalId, proposalId),
+            eq(proposalExecutionQueue.status, 'settlement_pending'),
+          ))
+          .limit(1);
+        const executionData = (linkedExecution?.executionData || {}) as Record<string, unknown>;
+        if (!linkedExecution ||
+            linkedExecution.executionType !== 'treasury_transfer' ||
+            String(executionData.recipient || '').toLowerCase() !== recipient.toLowerCase() ||
+            Number(executionData.amount) !== amount ||
+            String(executionData.currency || 'cUSD').toUpperCase() !== currency.toUpperCase()) {
+          throw new ValidationError('Proposal does not have a matching approved treasury transfer awaiting settlement');
+        }
+
+        const [existingLink] = await db.select({ id: treasuryMultisigTransactions.id })
+          .from(treasuryMultisigTransactions)
+          .where(and(
+            eq(treasuryMultisigTransactions.daoId, daoId),
+            sql`${treasuryMultisigTransactions.metadata}->>'proposalId' = ${proposalId}`,
+          ))
+          .limit(1);
+        if (existingLink) throw new ValidationError('A multisig transaction is already linked to this proposal');
+      }
 
       // CRITICAL: Check if proposer is elder or admin
       const membership = await db.select().from(daoMemberships)
@@ -108,6 +139,7 @@ export class TreasuryMultisigService {
           signature: 'auto_proposal'
         }],
         status: needsMultisig ? 'pending' : 'approved',
+        ...(proposalId ? { metadata: { proposalId, proposalExecutionQueueId: linkedExecution?.id } } : {}),
         expiresAt
       }).returning();
 
@@ -213,7 +245,10 @@ export class TreasuryMultisigService {
   /**
    * Execute approved multi-sig transaction
    */
-  async executeTransaction(txId: string, executorId: string) {
+  async executeTransaction(
+    txId: string,
+    executorId: string,
+  ): Promise<{ status: 'submitted'; transactionId: string; submittedTxHash: string }> {
     try {
       const tx = await db.select().from(treasuryMultisigTransactions)
         .where(eq(treasuryMultisigTransactions.id, txId))
@@ -226,45 +261,9 @@ export class TreasuryMultisigService {
         throw new ValidationError('Transaction is not approved');
       }
 
-      // Execute withdrawal (integrate with actual blockchain/wallet logic)
-      // For now, update DAO balance
-      const dao = await db.select().from(daos).where(eq(daos.id, transaction.daoId)).limit(1);
-      const currentBalance = parseFloat(dao[0].treasuryBalance || '0');
-      const newBalance = currentBalance - parseFloat(transaction.amount);
-
-      await db.update(daos)
-        .set({ 
-          treasuryBalance: newBalance.toString(),
-          updatedAt: new Date()
-        })
-        .where(eq(daos.id, transaction.daoId));
-
-      // Mark transaction as executed
-      await db.update(treasuryMultisigTransactions)
-        .set({
-          status: 'executed',
-          executedAt: new Date(),
-          executionTxHash: `0x${Date.now()}`, // Replace with actual tx hash
-          updatedAt: new Date()
-        })
-        .where(eq(treasuryMultisigTransactions.id, txId));
-
-      // Audit log
-      await this.logAudit({
-        daoId: transaction.daoId,
-        actorId: executorId,
-        action: 'withdrawal',
-        amount: parseFloat(transaction.amount),
-        previousBalance: currentBalance,
-        newBalance: newBalance,
-        reason: transaction.purpose,
-        multisigTxId: txId,
-        severity: 'high'
-      });
-
-      Logger.getLogger().info(`Treasury withdrawal executed: ${txId}, amount: ${transaction.amount}`);
-
-      return { success: true, newBalance };
+      throw new ValidationError(
+        'On-chain treasury execution is not configured; the approved withdrawal remains pending until verified settlement is available',
+      );
     } catch (error: any) {
       Logger.getLogger().error('Transaction execution failed:', error);
       throw error;

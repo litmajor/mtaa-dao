@@ -1,7 +1,7 @@
 import React, { useEffect } from 'react';
 import { Helmet } from 'react-helmet-async';
 import { useNavigate } from 'react-router-dom';
-import { useAuth } from '@/pages/hooks/useAuth';
+import { useAuth } from '@/hooks/useAuth';
 import { PageLoading } from '@/components/ui/page-loading';
 import { PersonaModeSelector } from '@/components/PersonaModeSelector';
 

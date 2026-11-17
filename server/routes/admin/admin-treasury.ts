@@ -131,8 +131,10 @@ router.get('/daos/:daoId/treasury', featureGate('treasury.view'), async (req: Re
       .from(vaults)
       .where(eq(vaults.daoId, daoId));
 
-    // Calculate total value (simplified - would need oracle for real prices)
-    const totalBalance = vaultList.reduce((sum: number, v: any) => sum + parseBalance(v.balance), 0);
+    const computedTreasury = await TreasuryService.getComputedTreasuryBalance(daoId);
+    const totalBalance = computedTreasury.totalComputedBalance === null
+      ? null
+      : Number(computedTreasury.totalComputedBalance);
 
     // Get recent transactions
     const recentTransactions = vaultList.length === 0 ? [] : await db
@@ -153,12 +155,13 @@ router.get('/daos/:daoId/treasury', featureGate('treasury.view'), async (req: Re
       dao: {
         id: dao[0].id,
         name: dao[0].name,
-        treasuryHealth: getBalanceHealth(dao[0].treasuryBalance),
+        treasuryHealth: getBalanceHealth(totalBalance),
         isFrozen: await getTreasuryFrozen(daoId),
       },
       vaults: vaultList,
       summary: {
         totalBalance,
+        totalBalanceCurrency: totalBalance === null ? null : 'USD',
         vaultCount: vaultList.length,
         activeVaults: vaultList.filter(v => v.isActive).length,
       },

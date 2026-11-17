@@ -21,8 +21,11 @@ import crypto from 'crypto';
 import { and, eq, lt, sql } from 'drizzle-orm';
 import { db } from '../db';
 import { paymentTransactions } from '../../shared/schema';
+import { accountTransactions } from '../../shared/accountSchema';
 import { logger } from '../utils/logger';
 import { logConsolidatedAuditEvent } from '../services/auditConsolidated';
+import { financialReconciliationService } from '../services/financialReconciliationService';
+import { reconcilePaymentWalletFindings } from '../services/paymentWalletReconciliationRules';
 import { commandBus } from '../domain/setup';
 import { PaymentCommandTypes } from '../domain/payments/PaymentCommands';
 import { getRedisInstanceAsync } from '../config/redisConnectionManager';
@@ -58,7 +61,7 @@ const KOTANI_API_KEY = process.env.KOTANIPAY_API_KEY;
 type PaymentRow = typeof paymentTransactions.$inferSelect;
 
 type ProviderResult =
-  | { outcome: 'success'; raw: unknown }
+  | { outcome: 'success'; raw: unknown; providerReference?: string }
   | { outcome: 'failed'; raw: unknown; reason?: string }
   | { outcome: 'pending'; raw: unknown }
   | { outcome: 'unknown'; raw?: unknown; error?: string };
@@ -102,11 +105,17 @@ async function checkPaystack(reference: string): Promise<ProviderResult> {
   try {
     const data = await fetchJson<{
       status?: boolean;
-      data?: { status?: string };
+      data?: { status?: string; id?: string | number };
     }>(url, { headers: { Authorization: `Bearer ${secret}` } });
 
     const status = data?.data?.status?.toLowerCase();
-    if (status === 'success') return { outcome: 'success', raw: data };
+    if (status === 'success') {
+      return {
+        outcome: 'success',
+        raw: data,
+        providerReference: data.data?.id === undefined ? undefined : String(data.data.id),
+      };
+    }
     if (status === 'failed' || status === 'abandoned' || status === 'reversed') {
       return { outcome: 'failed', raw: data, reason: status };
     }
@@ -126,14 +135,18 @@ async function checkFlutterwave(reference: string): Promise<ProviderResult> {
   try {
     const data = await fetchJson<{
       status?: string;
-      data?: { status?: string };
+      data?: { status?: string; id?: string | number };
     }>(url, { headers: { Authorization: `Bearer ${secret}` } });
 
     const outer = data?.status?.toLowerCase();
     const inner = data?.data?.status?.toLowerCase();
 
     if (outer === 'success' && inner === 'successful') {
-      return { outcome: 'success', raw: data };
+      return {
+        outcome: 'success',
+        raw: data,
+        providerReference: data.data?.id === undefined ? undefined : String(data.data.id),
+      };
     }
     if (outer === 'success' && (inner === 'failed' || inner === 'cancelled')) {
       return { outcome: 'failed', raw: data, reason: inner };
@@ -237,7 +250,7 @@ async function checkMpesa(checkoutRequestId: string): Promise<ProviderResult> {
     }
 
     if (resultCode === '0') {
-      return { outcome: 'success', raw: data };
+      return { outcome: 'success', raw: data, providerReference: checkoutRequestId };
     }
 
     // Common failure codes: 1032 (cancelled by user), 1037 (timeout), 1xxx etc.
@@ -298,17 +311,18 @@ async function checkKotani(checkoutId: string): Promise<ProviderResult> {
 
 async function markCompleted(
   reference: string,
-  additionalMetadata: Record<string, unknown> = {}
+  additionalMetadata: Record<string, unknown> = {},
+  providerReference?: string
 ): Promise<boolean> {
   const correlationId = crypto.randomUUID();
 
   const receiveResult = await commandBus.dispatch({
     id: crypto.randomUUID(),
     type: PaymentCommandTypes.ReceiveWebhook,
-    actor: 'system-reconciliation',
+    actor: 'system:payment-reconciliation',
     correlationId,
     timestamp: new Date(),
-    payload: { reference, providerData: additionalMetadata },
+    payload: { reference, providerReference, providerData: additionalMetadata },
   });
 
   if (!receiveResult.success) {
@@ -321,7 +335,7 @@ async function markCompleted(
   const completeResult = await commandBus.dispatch({
     id: crypto.randomUUID(),
     type: PaymentCommandTypes.CompletePayment,
-    actor: 'system-reconciliation',
+    actor: 'system:payment-reconciliation',
     correlationId,
     timestamp: new Date(),
     payload: {
@@ -351,7 +365,7 @@ async function markFailed(
   const receiveResult = await commandBus.dispatch({
     id: crypto.randomUUID(),
     type: PaymentCommandTypes.ReceiveWebhook,
-    actor: 'system-reconciliation',
+    actor: 'system:payment-reconciliation',
     correlationId,
     timestamp: new Date(),
     payload: { reference, providerData: additionalMetadata },
@@ -367,7 +381,7 @@ async function markFailed(
   const failResult = await commandBus.dispatch({
     id: crypto.randomUUID(),
     type: PaymentCommandTypes.FailPayment,
-    actor: 'system-reconciliation',
+    actor: 'system:payment-reconciliation',
     correlationId,
     timestamp: new Date(),
     payload: {
@@ -419,11 +433,63 @@ async function markAbandoned(tx: PaymentRow): Promise<void> {
   });
 }
 
+async function recordVerifiedPaymentWithoutCredit(
+  tx: PaymentRow,
+  providerReference: string | undefined,
+  runId: string,
+): Promise<void> {
+  const [credit] = await db
+    .select({ id: accountTransactions.id })
+    .from(accountTransactions)
+    .where(
+      and(
+        eq(accountTransactions.reference, `payment:${tx.id}`),
+        eq(accountTransactions.transactionType, 'deposit'),
+        eq(accountTransactions.status, 'completed'),
+      ),
+    )
+    .limit(1);
+  if (credit) return;
+
+  const [paymentState] = await db
+    .select({ metadata: paymentTransactions.metadata })
+    .from(paymentTransactions)
+    .where(eq(paymentTransactions.id, tx.id))
+    .limit(1);
+  const metadata = (paymentState?.metadata as Record<string, unknown> | null) || {};
+  if (metadata.gatewayVerified === true || metadata.settlementEvidenceVerified === true) return;
+
+  await financialReconciliationService.recordFinding({
+    findingKey: `R01:payment:${tx.id}`,
+    domain: 'payments',
+    ruleId: 'R01',
+    severity: 'high',
+    expectedState: { paymentCredited: true },
+    observedState: {
+      paymentId: tx.id,
+      reference: tx.reference,
+      provider: tx.provider,
+      providerReference: providerReference || tx.providerReference || null,
+      userId: tx.userId,
+      amount: tx.amount,
+      currency: tx.currency,
+      paymentStatus: tx.status,
+      walletCreditFound: false,
+      providerStatusVerified: true,
+    },
+    evidenceReferences: [
+      `payment:${tx.id}`,
+      `provider:${tx.provider}:${providerReference || tx.providerReference || tx.reference}`,
+    ],
+    runId,
+  });
+}
+
 // ─────────────────────────────────────────────────────────────
 // Per-transaction reconciliation
 // ─────────────────────────────────────────────────────────────
 
-async function reconcileTransaction(tx: PaymentRow): Promise<void> {
+async function reconcileTransaction(tx: PaymentRow, runId: string): Promise<void> {
   if (!tx.createdAt) {
     logger.warn('[RECONCILE] Skipping transaction without a creation timestamp', {
       transactionId: tx.id,
@@ -547,7 +613,7 @@ async function reconcileTransaction(tx: PaymentRow): Promise<void> {
     const ok = await markCompleted(tx.reference, {
       gatewayVerified: true,
       gatewayResponse: result.raw,
-    });
+    }, result.providerReference || tx.providerReference || undefined);
     if (ok) {
       webhookReconciliationSuccess.inc({ provider: tx.provider });
       await logConsolidatedAuditEvent({
@@ -558,6 +624,12 @@ async function reconcileTransaction(tx: PaymentRow): Promise<void> {
         result: 'success',
         metadata: { provider: tx.provider, reference: tx.reference },
       });
+    } else {
+      await recordVerifiedPaymentWithoutCredit(
+        tx,
+        result.providerReference || tx.providerReference || undefined,
+        runId,
+      );
     }
   } else if (result.outcome === 'failed') {
     const ok = await markFailed(tx.reference, {
@@ -647,8 +719,14 @@ async function reconcileOnce(): Promise<void> {
   }
 
   webhookReconciliationRuns.inc();
+  let reconciliationRunId: string | undefined;
 
   try {
+    const run = await financialReconciliationService.startRun({
+      source: 'webhook-reconciliation-worker',
+    });
+    reconciliationRunId = run.id;
+
     const cutoff = new Date(Date.now() - cfg.olderThanMs);
 
     const rows = await db
@@ -662,12 +740,30 @@ async function reconcileOnce(): Promise<void> {
       )
       .limit(cfg.batchSize);
 
-    if (!rows.length) return;
+    if (rows.length) {
+      logger.info(`[RECONCILE] Evaluating ${rows.length} stale pending transaction(s)`);
+      await mapWithConcurrency(rows, cfg.concurrency, (row) => reconcileTransaction(row, run.id));
+    }
 
-    logger.info(`[RECONCILE] Evaluating ${rows.length} stale pending transaction(s)`);
-
-    await mapWithConcurrency(rows, cfg.concurrency, reconcileTransaction);
+    const findings = await reconcilePaymentWalletFindings(run.id);
+    await financialReconciliationService.completeRun(run.id, {
+      stalePaymentsChecked: rows.length,
+      findings,
+    });
   } catch (err) {
+    if (reconciliationRunId) {
+      try {
+        await financialReconciliationService.failRun(
+          reconciliationRunId,
+          err instanceof Error ? err.message : String(err),
+        );
+      } catch (runError) {
+        logger.error('[RECONCILE] Could not mark reconciliation run failed', {
+          runId: reconciliationRunId,
+          error: runError instanceof Error ? runError.message : String(runError),
+        });
+      }
+    }
     logger.error('[RECONCILE] Tick failed', {
       error: err instanceof Error ? err.message : String(err),
     });

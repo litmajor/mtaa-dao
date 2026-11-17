@@ -19,7 +19,7 @@ import {
   ChevronRight,
 } from 'lucide-react';
 import { BillSplitModal } from '@/components/modals/BillSplitModal';
-import { useAuth } from '@/pages/hooks/useAuth';
+import { useAuth } from '@/hooks/useAuth';
 import { useToast } from '@/hooks/use-toast';
 
 interface BillSplit {

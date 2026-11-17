@@ -344,7 +344,7 @@ export class EconomyService {
     } else {
       // If payment was completed synchronously, update it
       if (paymentResult.status === 'completed') {
-        await commandBus.dispatch({
+        const completionResult = await commandBus.dispatch({
           id: crypto.randomUUID(),
           type: PaymentCommandTypes.CompletePayment,
           actor: merchantId,
@@ -355,6 +355,9 @@ export class EconomyService {
             providerMetadata: {}
           }
         });
+        if (!completionResult.success) {
+          throw new Error(`Redemption completion was not authorized or recorded: ${completionResult.error || 'unknown error'}`);
+        }
       }
     }
 

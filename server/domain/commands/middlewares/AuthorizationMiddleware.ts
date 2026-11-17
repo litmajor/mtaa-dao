@@ -1,5 +1,6 @@
 import { type Command } from '../Command';
 import { type CommandResult, type CommandContext } from '../CommandBus';
+import { getRequiredCommandCapability, isCommandAuthorized } from '../CommandAuthorization';
 
 export type NextFn = (context?: CommandContext) => Promise<CommandResult>;
 
@@ -7,24 +8,12 @@ export interface CommandMiddleware {
   handle(command: Command, context: CommandContext, next: NextFn): Promise<CommandResult>;
 }
 
-// ---------------------------------------------------------------------------
-// Capability-Based Authorization
-// ---------------------------------------------------------------------------
-
-/**
- * Maps a command type to the capability string required to execute it.
- * Example: { 'ExecuteTrade': 'trade.execute', 'UpdateVault': 'vault.write' }
- */
 export interface CommandCapabilityMap {
   getRequiredCapability(commandType: string): string | undefined;
 }
 
-/**
- * Resolves the capabilities an actor currently holds.
- * Implementations may query a database, cache, or static config.
- */
 export interface AuthorizationService {
-  getCapabilities(actor: string): Promise<string[]>;
+  isAuthorized(command: Command, requiredCapability: string): Promise<boolean>;
 }
 
 export class AuthorizationMiddleware implements CommandMiddleware {
@@ -35,26 +24,16 @@ export class AuthorizationMiddleware implements CommandMiddleware {
 
   async handle(command: Command, context: CommandContext, next: NextFn): Promise<CommandResult> {
     const requiredCapability = this.capabilityMap.getRequiredCapability(command.type);
-
-    // If no capability is mapped, the command is unrestricted
     if (!requiredCapability) {
-      return next();
+      return {
+        success: false,
+        commandId: command.id,
+        events: [],
+        error: `UNAUTHORIZED: command '${command.type}' has no authorization policy`,
+      };
     }
 
-    const actorCapabilities = await this.authService.getCapabilities(command.actor);
-
-    // Check for exact match or wildcard (e.g., "trade.*" covers "trade.execute")
-    const isAllowed = actorCapabilities.some((cap) => {
-      if (cap === '*') return true; // superuser
-      if (cap === requiredCapability) return true;
-      // Wildcard match: "trade.*" matches "trade.execute"
-      if (cap.endsWith('.*')) {
-        const prefix = cap.slice(0, -1); // "trade."
-        return requiredCapability.startsWith(prefix);
-      }
-      return false;
-    });
-
+    const isAllowed = await this.authService.isAuthorized(command, requiredCapability);
     if (!isAllowed) {
       return {
         success: false,
@@ -65,5 +44,17 @@ export class AuthorizationMiddleware implements CommandMiddleware {
     }
 
     return next();
+  }
+}
+
+export class DatabaseAuthorizationService implements AuthorizationService {
+  async isAuthorized(command: Command, requiredCapability: string): Promise<boolean> {
+    return isCommandAuthorized(command, requiredCapability);
+  }
+}
+
+export class ExplicitCommandCapabilityMap implements CommandCapabilityMap {
+  getRequiredCapability(commandType: string): string | undefined {
+    return getRequiredCommandCapability(commandType);
   }
 }

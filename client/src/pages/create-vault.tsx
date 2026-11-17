@@ -13,7 +13,7 @@ import { ArrowLeft, Lock, Shield, DollarSign, Target, Users, AlertTriangle, Chec
 import { Link } from 'react-router-dom';
 import { useToast } from '@/hooks/use-toast';
 import { authClient } from '@/utils/authClient';
-import { DAOOrchestratorProvider, useDAOOrchestrator } from '@/context/daoOrchestratorSystem';
+import { DAOOrchestratorProvider, useDAOOrchestrator } from '@/contexts/daoOrchestratorSystem';
 import {
   SystemHealthBanner,
   AdaptiveReadinessMeter,

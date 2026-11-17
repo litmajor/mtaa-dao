@@ -7,7 +7,7 @@ import {
   Send, ArrowDownLeft, ArrowUpRight, Plus, Eye
 } from "lucide-react";
 import { useState } from "react";
-import { useAuth } from "@/pages/hooks/useAuth";
+import { useAuth } from '@/hooks/useAuth';
 
 export function MobileNav() {
   const location = useLocation();

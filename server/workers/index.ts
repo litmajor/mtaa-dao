@@ -7,6 +7,7 @@ import { StrategyJobWorker } from './strategyJobWorker';
 import { MorioJobWorker } from './morioJobWorker';
 import { PoolVaultJobWorker } from './poolVaultJobWorker';
 import { PaymentCompletedConsumerWorker } from './paymentCompletedConsumerWorker';
+import { initializeOutboxWorker, shutdownOutboxWorker } from './outbox.worker';
 import {
   initializeTreasuryEventListener,
   shutdownTreasuryEventListener
@@ -32,6 +33,13 @@ export async function initializeWorkers(): Promise<void> {
     // Initialize pool/vault worker (rebalance)
     PoolVaultJobWorker.initialize();
     logger.info('[Workers] Pool/Vault worker initialized');
+
+    const outboxStarted = await initializeOutboxWorker();
+    if (outboxStarted) {
+      logger.info('[Workers] Transactional outbox relay initialized');
+    } else {
+      logger.warn('[Workers] Transactional outbox relay initialization deferred; retry is scheduled');
+    }
 
     // Initialize PaymentCompleted domain event consumer
     const paymentConsumerStarted = await PaymentCompletedConsumerWorker.initialize();
@@ -67,6 +75,7 @@ export async function shutdownWorkers(): Promise<void> {
     logger.info('[Workers] Shutting down job workers...');
     
     // Close consumer worker first
+    await shutdownOutboxWorker();
     await shutdownTreasuryEventListener();
     await PaymentCompletedConsumerWorker.shutdown();
 

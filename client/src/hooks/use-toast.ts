@@ -1,55 +1,66 @@
-import { useContext } from "react";
-import { ToastContext } from "../components/ui/ToastProvider";
+/**
+ * use-toast — unified toast hook backed by Sonner.
+ *
+ * All callers that previously relied on the custom ToastProvider context or
+ * the stub `toast()` function now use Sonner, which is already mounted in
+ * App.tsx as <Toaster richColors position="top-right" />.
+ *
+ * Supported call signatures (backward-compatible):
+ *   useToast().toast("message")
+ *   useToast().toast("message", "success" | "error" | "info")
+ *   useToast().toast({ title, description, variant, duration })
+ *   toast("message")
+ *   toast({ title, description, variant })
+ */
+import { toast as sonnerToast } from 'sonner';
 
 export interface ToastOptions {
   title?: string;
   description?: string;
-  variant?: "default" | "destructive" | "success" | "warning";
+  variant?: 'default' | 'destructive' | 'success' | 'warning';
   duration?: number;
 }
 
-export function useToast() {
-  const context = useContext(ToastContext);
+type ToastType = 'success' | 'error' | 'info' | 'warning';
 
-  if (!context) {
-    // Provide a fallback instead of throwing
-    return {
-      toast: (messageOrOptions: string | ToastOptions, type?: 'success' | 'error' | 'info') => {
-        if (typeof messageOrOptions === 'string') {
-          console.warn('[Toast] ToastProvider not found, logging:', messageOrOptions, type);
-        } else {
-          console.warn('[Toast] ToastProvider not found, logging:', messageOrOptions.title || messageOrOptions.description);
-        }
-      }
-    };
+function fireToast(messageOrOptions: string | ToastOptions, type?: ToastType): void {
+  if (typeof messageOrOptions === 'string') {
+    const fn = type === 'error' ? sonnerToast.error
+              : type === 'success' ? sonnerToast.success
+              : type === 'warning' ? sonnerToast.warning
+              : sonnerToast;
+    fn(messageOrOptions);
+  } else {
+    const { title, description, variant, duration } = messageOrOptions;
+    const resolvedType: ToastType =
+      variant === 'destructive' ? 'error'
+      : variant === 'success' ? 'success'
+      : variant === 'warning' ? 'warning'
+      : 'info';
+    const fn = resolvedType === 'error' ? sonnerToast.error
+              : resolvedType === 'success' ? sonnerToast.success
+              : resolvedType === 'warning' ? sonnerToast.warning
+              : sonnerToast;
+    fn(title ?? description ?? 'Notification', {
+      description: title ? description : undefined,
+      duration,
+    });
   }
+}
 
-  // Adapt the context's toast function to support both signatures
+/** React hook — drop-in replacement for the old context-based useToast(). */
+export function useToast() {
   return {
-    toast: (messageOrOptions: string | ToastOptions, type?: 'success' | 'error' | 'info') => {
-      if (typeof messageOrOptions === 'string') {
-        context.toast(messageOrOptions, type);
-      } else {
-        // Convert ToastOptions to simple message
-        const message = messageOrOptions.title || messageOrOptions.description || 'Notification';
-        const toastType = messageOrOptions.variant === 'destructive' ? 'error' : 
-                         messageOrOptions.variant === 'success' ? 'success' : 'info';
-        context.toast(message, toastType);
-      }
-    }
+    toast: (messageOrOptions: string | ToastOptions, type?: ToastType) =>
+      fireToast(messageOrOptions, type),
   };
 }
 
-export function toast(message: string, type?: 'success' | 'error' | 'info'): void;
+/** Standalone function — drop-in replacement for the old stub toast(). */
+export function toast(message: string, type?: ToastType): void;
 export function toast(options: ToastOptions): void;
-export function toast(messageOrOptions: string | ToastOptions, type?: 'success' | 'error' | 'info'): void {
-  // Implementation handled by ToastProvider
-  if (typeof messageOrOptions === 'string') {
-    console.log('Toast:', messageOrOptions, type);
-  } else {
-    console.log('Toast:', messageOrOptions);
-  }
+export function toast(messageOrOptions: string | ToastOptions, type?: ToastType): void {
+  fireToast(messageOrOptions, type);
 }
 
-// Default export for compatibility
 export default toast;

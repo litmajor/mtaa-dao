@@ -57,7 +57,7 @@ export default defineConfig({
 
           // ─── Framework core (stable, cacheable) ───
           if (id.includes('/react/') || id.includes('/react-dom/') || 
-              id.includes('react-router') || id.includes('wouter') || 
+              id.includes('react-router') ||
               id.includes('/scheduler/')) {
             return 'react-core';
           }

@@ -8,7 +8,7 @@ import { Label } from '@/components/ui/label';
 import { Badge } from '@/components/ui/badge';
 import { MessageCircle, Mail, Phone, Clock, CheckCircle, Sparkles } from 'lucide-react';
 import { MorioChat } from '@/components/morio/MorioChat';
-import { useAuth } from '@/pages/hooks/useAuth';
+import { useAuth } from '@/hooks/useAuth';
 import { useMutation } from '@tanstack/react-query';
 import { useToast } from '@/hooks/use-toast';
 import { authClient } from '@/utils/authClient';

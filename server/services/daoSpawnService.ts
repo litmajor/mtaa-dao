@@ -151,10 +151,10 @@ export async function triggerDAOSpawnFromPayment(txReference: string): Promise<v
 
   try {
     // 2. Mark spawn as in-progress via CommandBus
-    await commandBus.dispatch({
+    const processingResult = await commandBus.dispatch({
       id: crypto.randomUUID(),
       type: PaymentCommandTypes.UpdatePaymentMetadata,
-      actor: 'system',
+      actor: 'system:dao-spawn',
       correlationId: crypto.randomUUID(),
       timestamp: new Date(),
       payload: {
@@ -162,6 +162,9 @@ export async function triggerDAOSpawnFromPayment(txReference: string): Promise<v
         metadata: { spawnStatus: 'processing' }
       }
     });
+    if (!processingResult.success) {
+      throw new Error(`Could not mark DAO spawn as processing: ${processingResult.error || 'unknown error'}`);
+    }
 
     // 3. Call DAOSpawnGateway.paySpawnFee() from platform wallet
     const vaultIndex = DAO_TYPE_TO_VAULT_INDEX[daoType] ?? 0;
@@ -179,10 +182,10 @@ export async function triggerDAOSpawnFromPayment(txReference: string): Promise<v
     }
 
     // 6. Mark spawn complete
-    await commandBus.dispatch({
+    const completedResult = await commandBus.dispatch({
       id: crypto.randomUUID(),
       type: PaymentCommandTypes.UpdatePaymentMetadata,
-      actor: 'system',
+      actor: 'system:dao-spawn',
       correlationId: crypto.randomUUID(),
       timestamp: new Date(),
       payload: {
@@ -190,14 +193,17 @@ export async function triggerDAOSpawnFromPayment(txReference: string): Promise<v
         metadata: { spawnStatus: 'completed', daoId, spawnTx }
       }
     });
+    if (!completedResult.success) {
+      throw new Error(`Could not mark DAO spawn as completed: ${completedResult.error || 'unknown error'}`);
+    }
 
     logger.info(`[DAOSpawn] Completed for tx: ${txReference} — daoId: ${daoId}`);
   } catch (err: any) {
     logger.error(`[DAOSpawn] Spawn failed for tx: ${txReference}`, err);
-    await commandBus.dispatch({
+    const failureResult = await commandBus.dispatch({
       id: crypto.randomUUID(),
       type: PaymentCommandTypes.UpdatePaymentMetadata,
-      actor: 'system',
+      actor: 'system:dao-spawn',
       correlationId: crypto.randomUUID(),
       timestamp: new Date(),
       payload: {
@@ -205,6 +211,11 @@ export async function triggerDAOSpawnFromPayment(txReference: string): Promise<v
         metadata: { spawnStatus: 'spawn_failed', spawnError: err.message }
       }
     });
+    if (!failureResult.success) {
+      logger.error(`[DAOSpawn] Could not persist failure state for tx: ${txReference}`, {
+        error: failureResult.error,
+      });
+    }
   }
 }
 

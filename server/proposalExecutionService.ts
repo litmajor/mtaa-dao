@@ -7,10 +7,10 @@ import {
   walletTransactions,
   daoMemberships,
   vaults,
-  vaultTransactions
+  vaultTransactions,
+  treasuryMultisigTransactions
 } from '../shared/schema';
-import { eq, and, lte } from 'drizzle-orm';
-import { sql } from 'drizzle-orm';
+import { eq, and, lte, or, isNull, sql } from 'drizzle-orm';
 import { vaultService } from './services/vaultService';
 import { TreasuryValidationService } from './services/treasuryValidationService';
 
@@ -60,7 +60,11 @@ export class ProposalExecutionService {
       console.log(`Processing ${pendingExecutions.length} pending executions`);
       
       for (const execution of pendingExecutions) {
-        await this.executeProposal(execution);
+        try {
+          await this.executeProposal(execution);
+        } catch (error) {
+          console.error(`Proposal execution ${execution.id} failed:`, error);
+        }
       }
     } catch (error) {
       console.error('Error processing pending executions:', error);
@@ -68,24 +72,136 @@ export class ProposalExecutionService {
   }
   
   // Execute individual proposal
-  static async executeProposal(execution: any, executorUserId?: string) {
+  static async executeProposal(execution: any, executorUserId?: string, requestedIdempotencyKey?: string) {
+    const executionId = execution.id as string;
+    const proposalId = execution.proposalId as string;
+    const daoId = execution.daoId as string;
+    const actualExecutor = executorUserId || 'system';
+    const idempotencyKey = requestedIdempotencyKey || `scheduler:${executionId}`;
+    if (!idempotencyKey.trim() || idempotencyKey.length > 200) {
+      throw new Error('Idempotency-Key must contain 1 to 200 characters');
+    }
+
+    type ExecutionClaim =
+      | { kind: 'conflict' }
+      | { kind: 'missing' }
+      | { kind: 'busy' }
+      | { kind: 'existing'; execution: typeof proposalExecutionQueue.$inferSelect }
+      | { kind: 'claimed'; execution: typeof proposalExecutionQueue.$inferSelect };
+    let claim: ExecutionClaim;
     try {
-      // PHASE 1 FIX: Use actual executor user ID for audit trail (not hardcoded 'system')
-      const actualExecutor = executorUserId || 'system';
-      
+      claim = await db.transaction(async (tx) => {
+        const [keyOwner] = await tx.select()
+          .from(proposalExecutionQueue)
+          .where(eq(proposalExecutionQueue.idempotencyKey, idempotencyKey))
+          .limit(1);
+        if (keyOwner && keyOwner.id !== executionId) {
+          return { kind: 'conflict' as const };
+        }
+
+        const [alreadyClaimed] = await tx.select()
+          .from(proposalExecutionQueue)
+          .where(eq(proposalExecutionQueue.id, executionId))
+          .limit(1);
+        if (!alreadyClaimed) return { kind: 'missing' as const };
+        if (alreadyClaimed.status !== 'pending') {
+          if (alreadyClaimed.idempotencyKey !== idempotencyKey) return { kind: 'conflict' as const };
+          return { kind: 'existing' as const, execution: alreadyClaimed };
+        }
+
+        const now = new Date();
+        const [claimed] = await tx.update(proposalExecutionQueue)
+          .set({
+            status: 'executing',
+            idempotencyKey,
+            lastAttempt: now,
+            attempts: (alreadyClaimed.attempts || 0) + 1,
+            updatedAt: now,
+          })
+          .where(and(
+            eq(proposalExecutionQueue.id, executionId),
+            eq(proposalExecutionQueue.status, 'pending'),
+            lte(proposalExecutionQueue.scheduledFor, now),
+            or(isNull(proposalExecutionQueue.idempotencyKey), eq(proposalExecutionQueue.idempotencyKey, idempotencyKey)),
+          ))
+          .returning();
+        if (!claimed) {
+          const [concurrentExecution] = await tx.select()
+            .from(proposalExecutionQueue)
+            .where(eq(proposalExecutionQueue.id, executionId))
+            .limit(1);
+          if (concurrentExecution?.idempotencyKey === idempotencyKey) {
+            return { kind: 'existing' as const, execution: concurrentExecution };
+          }
+          return { kind: 'busy' as const };
+        }
+
+        const [approvedProposal] = await tx.update(proposals)
+          .set({ status: 'executing', updatedAt: now })
+          .where(and(
+            eq(proposals.id, proposalId),
+            eq(proposals.daoId, daoId),
+            eq(proposals.status, 'passed'),
+          ))
+          .returning({ id: proposals.id });
+        if (!approvedProposal) {
+          throw new Error(`Proposal ${proposalId} is not in the approved 'passed' state`);
+        }
+        return { kind: 'claimed' as const, execution: claimed };
+      });
+    } catch (error: any) {
+      if (error?.code === '23505') {
+        throw new Error('Idempotency key is already assigned to another execution');
+      }
+      throw error;
+    }
+
+    if (claim.kind === 'conflict') {
+      throw new Error('Proposal execution is already claimed with a different idempotency key');
+    }
+    if (claim.kind === 'missing') throw new Error(`Proposal execution ${executionId} was not found`);
+    if (claim.kind === 'busy') throw new Error(`Proposal execution ${executionId} is not due or has already been claimed`);
+    if (claim.kind === 'existing') {
+      return {
+        executionId,
+        proposalId,
+        status: claim.execution.status,
+        result: claim.execution.executionResult,
+        externalReference: claim.execution.externalReference,
+        externalTxHash: claim.execution.externalTxHash,
+        idempotent: true,
+      };
+    }
+
+    const claimedExecution = claim.execution;
+    const { executionType, executionData } = claimedExecution;
+    try {
+      const requiresExternalSettlement = ['treasury_transfer', 'vault_operation', 'disbursement'].includes(executionType);
+      if (requiresExternalSettlement) {
+        const result = {
+          status: 'settlement_pending',
+          message: 'Proposal approval is preserved. Submit the payout through the DAO multisig and link it to this proposal before it can be marked executed.',
+        };
+        await db.transaction(async (tx) => {
+          const [waiting] = await tx.update(proposalExecutionQueue)
+            .set({ status: 'settlement_pending', executionResult: result, updatedAt: new Date() })
+            .where(and(
+              eq(proposalExecutionQueue.id, executionId),
+              eq(proposalExecutionQueue.status, 'executing'),
+              eq(proposalExecutionQueue.idempotencyKey, idempotencyKey),
+            ))
+            .returning({ id: proposalExecutionQueue.id });
+          if (!waiting) throw new Error(`Execution ${executionId} lost its claim before awaiting settlement`);
+
+          await tx.update(proposals)
+            .set({ status: 'passed', updatedAt: new Date() })
+            .where(and(eq(proposals.id, proposalId), eq(proposals.status, 'executing')));
+        });
+        return { executionId, proposalId, status: 'settlement_pending', result };
+      }
+
       console.log(`Executing proposal ${execution.proposalId} with type ${execution.executionType} by ${actualExecutor}`);
-      
-      // Update status to executing
-      await db.update(proposalExecutionQueue)
-        .set({ 
-          status: 'executing',
-          lastAttempt: new Date(),
-          attempts: execution.attempts + 1
-        })
-        .where(eq(proposalExecutionQueue.id, execution.id));
-      
-      const { executionType, executionData, daoId, proposalId } = execution;
-      
+
       switch (executionType) {
         case 'treasury_transfer':
           // For manual executions, require valid executor. For scheduled, use 'system'
@@ -110,38 +226,145 @@ export class ProposalExecutionService {
           throw new Error(`Unknown execution type: ${executionType}`);
       }
       
-      // Mark as completed
-      await db.update(proposalExecutionQueue)
-        .set({ status: 'completed' })
-        .where(eq(proposalExecutionQueue.id, execution.id));
-      
-      // Update proposal status and record executor
-      await db.update(proposals)
-        .set({ 
-          status: 'executed',
-          executedAt: new Date(),
-          executedBy: actualExecutor
-        })
-        .where(eq(proposals.id, proposalId));
+      const now = new Date();
+      await db.transaction(async (tx) => {
+        const [completed] = await tx.update(proposalExecutionQueue)
+          .set({ status: 'completed', executionResult: { status: 'completed' }, updatedAt: now })
+          .where(and(
+            eq(proposalExecutionQueue.id, executionId),
+            eq(proposalExecutionQueue.status, 'executing'),
+            eq(proposalExecutionQueue.idempotencyKey, idempotencyKey),
+          ))
+          .returning({ id: proposalExecutionQueue.id });
+        if (!completed) throw new Error(`Execution ${executionId} lost its claim before completion`);
+
+        await tx.update(proposals)
+          .set({ status: 'executed', executedAt: now, executedBy: actualExecutor === 'system' ? null : actualExecutor, updatedAt: now })
+          .where(and(eq(proposals.id, proposalId), eq(proposals.status, 'executing')));
+      });
       
       console.log(`Successfully executed proposal ${proposalId}`);
-      
+      return { executionId, proposalId, status: 'completed' as const };
     } catch (error: any) {
       console.error('Error executing proposal:', error);
-      
-      // Check if this is a retriable error or permanent failure
-      const maxAttempts = 3;
-      const shouldRetry = execution.attempts < maxAttempts && this.isRetriableError(error);
-      
-      await db.update(proposalExecutionQueue)
-        .set({ 
-          status: shouldRetry ? 'pending' : 'failed',
-          errorMessage: error.message,
-          // Retry after 1 hour if retriable
-          scheduledFor: shouldRetry ? new Date(Date.now() + 60 * 60 * 1000) : undefined
-        })
-        .where(eq(proposalExecutionQueue.id, execution.id));
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      await db.transaction(async (tx) => {
+        await tx.update(proposalExecutionQueue)
+          .set({
+            status: 'reconciliation_required',
+            errorMessage,
+            executionResult: { status: 'reconciliation_required', error: errorMessage },
+            updatedAt: new Date(),
+          })
+          .where(and(eq(proposalExecutionQueue.id, executionId), eq(proposalExecutionQueue.status, 'executing')));
+        await tx.update(proposals)
+          .set({ status: 'passed', updatedAt: new Date() })
+          .where(and(eq(proposals.id, proposalId), eq(proposals.status, 'executing')));
+      });
+      throw error;
     }
+  }
+
+  static async reconcileOnchainExecution(executionId: string) {
+    const [execution] = await db.select()
+      .from(proposalExecutionQueue)
+      .where(eq(proposalExecutionQueue.id, executionId))
+      .limit(1);
+    if (!execution) return { found: false as const };
+    if (execution.status === 'completed' || execution.status === 'failed') {
+      return { found: true as const, status: execution.status };
+    }
+
+    const matchingTransactions = await db.select()
+      .from(treasuryMultisigTransactions)
+      .where(and(
+        eq(treasuryMultisigTransactions.daoId, execution.daoId),
+        sql`${treasuryMultisigTransactions.metadata}->>'proposalId' = ${execution.proposalId}`,
+      ))
+      .limit(2);
+    if (matchingTransactions.length > 1) {
+      await db.update(proposalExecutionQueue)
+        .set({
+          status: 'reconciliation_required',
+          errorMessage: 'Multiple DAO multisig transactions reference this proposal',
+          updatedAt: new Date(),
+        })
+        .where(eq(proposalExecutionQueue.id, executionId));
+      return { found: true as const, status: 'reconciliation_required' as const };
+    }
+
+    const transaction = matchingTransactions[0];
+    if (!transaction) return { found: true as const, status: execution.status, linked: false as const };
+
+    const metadata = (transaction.metadata || {}) as Record<string, unknown>;
+    if (transaction.status === 'executed' && metadata.executedOnChain === true &&
+        typeof metadata.executionTxHash === 'string' && metadata.executionTxHash) {
+      const now = new Date();
+      await db.transaction(async (tx) => {
+        await tx.update(proposalExecutionQueue)
+          .set({
+            status: 'completed',
+            externalReference: transaction.id,
+            externalTxHash: metadata.executionTxHash as string,
+            executionResult: {
+              status: 'completed',
+              treasuryMultisigTransactionId: transaction.id,
+              submissionTxHash: transaction.submittedTxHash,
+              executionTxHash: metadata.executionTxHash,
+              eventBlockNumber: metadata.eventBlockNumber,
+              eventLogIndex: metadata.eventLogIndex,
+            },
+            errorMessage: null,
+            updatedAt: now,
+          })
+          .where(and(
+            eq(proposalExecutionQueue.id, executionId),
+            sql`${proposalExecutionQueue.status} IN ('settlement_pending', 'submitted', 'failed', 'reconciliation_required')`,
+          ));
+        await tx.update(proposals)
+          .set({
+            status: 'executed',
+            executedAt: transaction.executedAt || now,
+            executionTxHash: metadata.executionTxHash as string,
+            updatedAt: now,
+          })
+          .where(eq(proposals.id, execution.proposalId));
+      });
+      return { found: true as const, linked: true as const, status: 'completed' as const, externalTxHash: metadata.executionTxHash };
+    }
+
+    if (transaction.status === 'failed' || transaction.status === 'rejected' || transaction.status === 'expired') {
+      await db.update(proposalExecutionQueue)
+        .set({
+          status: 'failed',
+          externalReference: transaction.id,
+          externalTxHash: transaction.submittedTxHash,
+          errorMessage: `Linked multisig transaction is ${transaction.status}`,
+          executionResult: { status: 'failed', treasuryMultisigTransactionId: transaction.id },
+          updatedAt: new Date(),
+        })
+        .where(eq(proposalExecutionQueue.id, executionId));
+      return { found: true as const, linked: true as const, status: 'failed' as const };
+    }
+
+    const submitted = transaction.status === 'submitted' && Boolean(transaction.submittedTxHash);
+    await db.update(proposalExecutionQueue)
+      .set({
+        status: submitted ? 'submitted' : 'settlement_pending',
+        externalReference: transaction.id,
+        ...(transaction.submittedTxHash ? { externalTxHash: transaction.submittedTxHash } : {}),
+        executionResult: {
+          status: submitted ? 'submitted' : 'settlement_pending',
+          treasuryMultisigTransactionId: transaction.id,
+          submissionTxHash: transaction.submittedTxHash,
+        },
+        updatedAt: new Date(),
+      })
+      .where(and(
+        eq(proposalExecutionQueue.id, executionId),
+        sql`${proposalExecutionQueue.status} IN ('settlement_pending', 'submitted', 'reconciliation_required')`,
+      ));
+    return { found: true as const, linked: true as const, status: submitted ? 'submitted' as const : 'settlement_pending' as const };
   }
   
   // Execute treasury transfer

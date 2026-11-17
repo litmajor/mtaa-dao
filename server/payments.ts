@@ -6,8 +6,8 @@
  * 
  * CHANGES:
  * - All provider initiations route through paymentGatewayService (single path)
- * - Webhooks use sharedIdempotencyManager to prevent duplicate processing
- * - SAGA dispatch extracts real wallet IDs from user accounts
+ * - Verified webhooks use the payment command bus and canonical wallet accounting
+ * - Provider identifiers are persisted under database uniqueness constraints
  * - Recovery workflow endpoints for manual intervention resolution
  * - Reversibility endpoints for grace-period reversals
  * - SAGA admin endpoints for reconciliation
@@ -17,13 +17,14 @@
 import express, { type Request, type Response } from 'express';
 import crypto from 'crypto';
 import { db } from './db';
-import { paymentTransactions, accounts, users, daoContributions } from '../shared/schema';
+import { paymentTransactions, users, daoContributions } from '../shared/schema';
 import { eq, sql, and, gte, ne } from 'drizzle-orm';
 import { paymentGatewayService } from './services/paymentGatewayService';
 import { paymentRecoveryWorkflowService } from './services/paymentRecoveryWorkflowService';
 import { paymentRecoverySAGA } from './services/PaymentRecoverySAGAOrchestrator';
+import { commandBus } from './domain/setup';
+import { PaymentCommandTypes } from './domain/payments/PaymentCommands';
 import { PaymentExecutionService } from './services/paymentExecutionService';
-import { sharedIdempotencyManager } from './services/sharedIdempotencyManager';
 import { ReversibilityService } from './services/reversibilityService';
 import {
   PaymentError,
@@ -36,10 +37,12 @@ import { isAuthenticated } from './auth';
 import { logger } from './utils/logger';
 import { rateLimitMiddleware, withdrawalLimits, depositLimits } from './middleware/rateLimitConfig';
 import { getEventEmitter } from './middleware/websocket-event-emitter';
-import { validatePaystackSignature, constructStripeEventFromRaw } from './middleware/webhookValidators';
+import { constructStripeEventFromRaw } from './middleware/webhookValidators';
 import { evaluateMpesaSettlementPolicy } from './services/mpesaSettlementPolicy';
+import { paymentProviderAdapters, WebhookVerificationError } from './services/paymentProviderAdapters';
 
 const router = express.Router();
+export const paymentWebhookRouter = express.Router();
 
 // ===== TYPE DEFINITIONS =====
 
@@ -70,115 +73,110 @@ function makeReference(prefix: string): string {
   return `${prefix}-${Date.now()}-${crypto.randomBytes(4).toString('hex')}`;
 }
 
+function getMpesaWebhookUrl(): string {
+  const baseUrl = process.env.APP_URL || process.env.BACKEND_URL || 'http://localhost:5000';
+  return `${baseUrl.replace(/\/+$/, '')}/api/payment-gateway/webhooks/mpesa`;
+}
+
 function validateAmount(amount: any): number {
   return PaymentValidator.validateAmount(amount, { service: 'gateway', operation: 'routeValidation' });
 }
 
-async function getUserWalletIds(userId: string): Promise<{ walletFrom: string; walletTo?: string }> {
-  const [wallet] = await db
-    .select()
-    .from(accounts)
-    .where(and(eq(accounts.userId, userId), eq(accounts.accountType, 'wallet')))
-    .limit(1);
-
-  if (!wallet) {
-    throw PaymentErrorHandler.createError(
-      PaymentErrorCode.INVALID_USER,
-      'User has no wallet account',
-      { service: 'gateway', operation: 'getUserWalletIds', userId }
-    );
-  }
-
-  return { walletFrom: wallet.id };
-}
-
-/**
- * Dispatch SAGA with real wallet IDs extracted from database.
- * Wrapped in idempotency to prevent duplicate execution.
- */
-async function dispatchPaymentSAGA(
+async function settleVerifiedPayment(
   reference: string,
-  userId: string,
-  amount: number,
-  currency: string,
-  metadata: Record<string, any>
+  provider: Provider,
+  providerReference: string | undefined,
+  metadata: Record<string, unknown>
 ): Promise<void> {
-  const idempotencyKey = `saga-dispatch:${reference}`;
-  const acquired = await sharedIdempotencyManager.startProcessing(idempotencyKey);
-  if (!acquired) {
-    logger.info(`[SAGA-DISPATCH] Already dispatched for ${reference}`);
-    return;
+  const correlationId = crypto.randomUUID();
+  const settlementEvidence = {
+    ...metadata,
+    settlementEvidenceVerified: true,
+    settlementEvidenceVerifiedAt: new Date().toISOString(),
+    settlementEvidenceProvider: provider,
+  };
+  const received = await commandBus.dispatch({
+    id: crypto.randomUUID(),
+    type: PaymentCommandTypes.ReceiveWebhook,
+    actor: `provider-webhook:${provider}`,
+    correlationId,
+    timestamp: new Date(),
+    payload: {
+      reference,
+      providerReference,
+      providerData: settlementEvidence,
+    },
+  });
+  if (!received.success) {
+    throw new Error(`Could not record verified ${provider} webhook: ${received.error || 'unknown error'}`);
   }
 
-  try {
-    const { walletFrom } = await getUserWalletIds(userId);
-    const vaultId = metadata.vaultId || process.env.DEFAULT_VAULT_ID;
-
-    await paymentRecoverySAGA.executePaymentSAGA({
-      userId,
-      amount,
-      currency,
-      walletFrom,
-      walletTo: metadata.walletTo || walletFrom, // Self-transfer if no destination specified
-      vaultId,
-      metadata: {
-        originalReference: reference,
-        provider: metadata.provider,
-        ...metadata
-      }
-    });
-
-    await sharedIdempotencyManager.recordResult(idempotencyKey, { success: true, dispatchedAt: new Date() }, 86400);
-    logger.info(`[SAGA-DISPATCH] Success for ${reference}`);
-  } catch (error: any) {
-    await sharedIdempotencyManager.recordResult(idempotencyKey, { success: false, error: error.message }, 86400);
-    logger.error(`[SAGA-DISPATCH] Failed for ${reference}`, error);
-    // Don't throw — webhook should return 200 to provider, but log for reconciliation
+  const completed = await commandBus.dispatch({
+    id: crypto.randomUUID(),
+    type: PaymentCommandTypes.CompletePayment,
+    actor: `provider-webhook:${provider}`,
+    correlationId,
+    timestamp: new Date(),
+    payload: { reference, providerMetadata: settlementEvidence },
+  });
+  if (!completed.success) {
+    throw new Error(`Could not account verified ${provider} payment: ${completed.error || 'unknown error'}`);
   }
 }
 
 /**
- * Process webhook with idempotency and atomic DB update.
+ * Apply the normalized provider event through the canonical payment command handlers.
  */
 async function processWebhook(
   provider: Provider,
   reference: string,
   status: 'completed' | 'failed',
-  metadata: Record<string, any>
+  metadata: Record<string, unknown>,
+  providerReference?: string
 ): Promise<boolean> {
-  const idempotencyKey = `webhook:${provider}:${reference}`;
-  const acquired = await sharedIdempotencyManager.startProcessing(idempotencyKey);
-  if (!acquired) {
-    logger.info(`[WEBHOOK] Already processed ${provider}:${reference}`);
-    return false;
+  const [record] = await db
+    .select({ status: paymentTransactions.status, provider: paymentTransactions.provider })
+    .from(paymentTransactions)
+    .where(eq(paymentTransactions.reference, reference))
+    .limit(1);
+  if (!record || record.provider !== provider) {
+    throw new Error(`Payment not found for ${provider} reference ${reference}`);
+  }
+  if (record.status === 'completed' || record.status === 'failed') return false;
+
+  if (status === 'completed') {
+    await settleVerifiedPayment(reference, provider, providerReference, metadata);
+    return true;
   }
 
-  const result = await db.transaction(async (tx) => {
-    const rows = await tx.execute(sql`
-      SELECT * FROM payment_transactions 
-      WHERE reference = ${reference} 
-      FOR UPDATE
-    `);
-    const record = rows.rows[0] as any;
-
-    if (!record || record.status === 'completed') {
-      await sharedIdempotencyManager.recordResult(idempotencyKey, { processed: false, reason: 'already_completed' }, 86400);
-      return false;
-    }
-
-    await tx.execute(sql`
-      UPDATE payment_transactions 
-      SET status = ${status}, 
-          metadata = metadata || ${JSON.stringify(metadata)}::jsonb,
-          updated_at = NOW()
-      WHERE reference = ${reference}
-    `);
-
-    return status === 'completed';
+  const correlationId = crypto.randomUUID();
+  const received = await commandBus.dispatch({
+    id: crypto.randomUUID(),
+    type: PaymentCommandTypes.ReceiveWebhook,
+    actor: `provider-webhook:${provider}`,
+    correlationId,
+    timestamp: new Date(),
+    payload: { reference, providerReference, providerData: metadata },
   });
-
-  await sharedIdempotencyManager.recordResult(idempotencyKey, { processed: result, status }, 86400);
-  return result;
+  if (!received.success) {
+    throw new Error(`Could not record verified ${provider} webhook: ${received.error || 'unknown error'}`);
+  }
+  const failed = await commandBus.dispatch({
+    id: crypto.randomUUID(),
+    type: PaymentCommandTypes.FailPayment,
+    actor: `provider-webhook:${provider}`,
+    correlationId,
+    timestamp: new Date(),
+    payload: {
+      reference,
+      reason: `${provider} reported payment failure`,
+      providerData: metadata,
+    },
+  });
+  if (!failed.success) {
+    throw new Error(`Could not record failed ${provider} payment: ${failed.error || 'unknown error'}`);
+  }
+  return false;
 }
 
 export async function reconcileMpesaCallback(callbackData: Record<string, any>, callbackToken?: string) {
@@ -313,11 +311,21 @@ export async function reconcileMpesaCallback(callbackData: Record<string, any>, 
       ...(phoneItem ? { mpesaPaidPhone: String(phoneItem.Value) } : {}),
     };
 
-    if (record.status !== 'completed') {
+    if (record.status !== 'completed' && isContribution) {
       await tx
         .update(paymentTransactions)
         .set({
           status: isSuccess ? 'completed' : 'failed',
+          providerReference: receiptItem ? String(receiptItem.Value) : record.providerReference,
+          metadata: { ...metadata, ...callbackMetadata },
+          updatedAt: new Date(),
+        })
+        .where(eq(paymentTransactions.id, record.id));
+    } else if (record.status !== 'completed') {
+      await tx
+        .update(paymentTransactions)
+        .set({
+          providerReference: receiptItem ? String(receiptItem.Value) : record.providerReference,
           metadata: { ...metadata, ...callbackMetadata },
           updatedAt: new Date(),
         })
@@ -372,22 +380,35 @@ export async function reconcileMpesaCallback(callbackData: Record<string, any>, 
     };
   });
 
-  if (result.isSuccess && !result.isContribution && result.record.status !== 'completed' &&
+  const callbackMetadata = {
+    mpesaCheckoutRequestId: checkoutRequestId,
+    mpesaReceipt: receiptItem ? String(receiptItem.Value) : undefined,
+    mpesaPaidAmount: amountItem ? Number(amountItem.Value) : undefined,
+    mpesaPaidPhone: phoneItem ? String(phoneItem.Value) : undefined,
+    settlementStatus: result.settlementStatus,
+  };
+  if (!result.isContribution && result.isSuccess &&
       result.settlementStatus === 'auto_approved' &&
       process.env.MPESA_AUTO_SETTLEMENT_ENABLED === 'true') {
-    await dispatchPaymentSAGA(
+    await settleVerifiedPayment(
       result.record.reference,
-      result.record.userId,
-      Number(result.record.amount),
-      result.record.currency,
-      { provider: 'mpesa', mpesaCheckoutRequestId: checkoutRequestId }
+      'mpesa',
+      receiptItem ? String(receiptItem.Value) : undefined,
+      callbackMetadata,
     );
+  } else if (!result.isContribution && !result.isSuccess) {
+    await processWebhook('mpesa', result.record.reference, 'failed', callbackMetadata);
   }
 
   return {
     reference: result.record.reference,
-    status: result.isSuccess ? 'completed' : 'failed',
-    contributionCredited: result.isContribution && result.isSuccess,
+    status: result.isContribution
+      ? result.isSuccess ? 'completed' : 'failed'
+      : result.isSuccess && result.settlementStatus === 'auto_approved' &&
+          process.env.MPESA_AUTO_SETTLEMENT_ENABLED === 'true'
+        ? 'completed'
+        : result.isSuccess ? 'pending_review' : 'failed',
+    contributionConfirmed: result.isContribution && result.isSuccess,
     alreadyCompleted: result.record.status === 'completed',
   };
 }
@@ -503,7 +524,7 @@ export async function reconcileMpesaC2bCallback(callbackData: Record<string, any
     await tx
       .update(paymentTransactions)
       .set({
-        status: 'completed',
+        providerReference: transactionId,
         metadata: {
           ...metadata,
           settlementStatus: policy.status,
@@ -523,11 +544,10 @@ export async function reconcileMpesaC2bCallback(callbackData: Record<string, any
 
   if (!result.alreadyProcessed && result.settlementStatus === 'auto_approved' &&
       process.env.MPESA_AUTO_SETTLEMENT_ENABLED === 'true') {
-    await dispatchPaymentSAGA(
+    await settleVerifiedPayment(
       result.record.reference,
-      result.record.userId,
-      paidAmount,
-      result.record.currency,
+      'mpesa',
+      transactionId,
       { provider: 'mpesa', mpesaReceipt: transactionId, paymentRail: 'c2b' }
     );
   }
@@ -557,7 +577,7 @@ router.post('/deposit', [isAuthenticated, rateLimitMiddleware(depositLimits)], a
       currency,
       method,
       metadata,
-      callbackUrl: `${process.env.APP_URL}/api/payments/webhooks/${provider}`,
+      ...(provider === 'mpesa' ? { callbackUrl: getMpesaWebhookUrl() } : {}),
       idempotencyKey: clientKey
     });
 
@@ -872,8 +892,7 @@ router.get('/saga/:sagaId', isAuthenticated, async (req: Request, res: Response)
 
 // ===== WEBHOOKS (all providers) =====
 
-// Stripe webhook
-router.post('/webhooks/stripe', express.raw({ type: 'application/json' }), async (req: Request, res: Response) => {
+paymentWebhookRouter.post(['/stripe', '/stripe/webhook', '/webhooks/stripe'], express.raw({ type: 'application/json' }), async (req: Request, res: Response) => {
   try {
     const stripeSecret = process.env.STRIPE_WEBHOOK_SECRET;
     if (!stripeSecret) {
@@ -888,106 +907,51 @@ router.post('/webhooks/stripe', express.raw({ type: 'application/json' }), async
       return res.status(400).json({ success: false, message: 'Missing reference' });
     }
 
-    const status = event.type === 'payment_intent.succeeded' ? 'completed' : 'failed';
-    const shouldDispatch = await processWebhook('stripe', reference, status, {
+    const status = event.type === 'payment_intent.succeeded' ? 'completed' :
+      event.type === 'payment_intent.payment_failed' ? 'failed' : undefined;
+    if (!status) return res.json({ received: true });
+    await processWebhook('stripe', reference, status, {
       stripeId: object.id,
-      eventType: event.type
-    });
-
-    if (shouldDispatch) {
-      const rec = await db.select().from(paymentTransactions).where(eq(paymentTransactions.reference, reference)).then(r => r[0]);
-      if (rec) {
-        await dispatchPaymentSAGA(reference, rec.userId, Number(rec.amount), rec.currency, {
-          provider: 'stripe',
-          stripePaymentIntentId: object.id
-        });
-      }
-    }
+      eventType: event.type,
+    }, object.id === undefined || object.id === null ? undefined : String(object.id));
 
     res.json({ received: true });
   } catch (error: any) {
     logger.error('Stripe webhook error', { message: error.message });
-    res.status(400).json({ success: false, message: error.message });
+    res.status(500).json({ success: false, message: error.message });
   }
 });
 
-// Paystack webhook
-router.post('/webhooks/paystack', async (req: Request, res: Response) => {
+paymentWebhookRouter.post(['/paystack', '/paystack/webhook', '/webhooks/paystack'], async (req: Request, res: Response) => {
   try {
-    if (!validatePaystackSignature(req)) {
-      return res.status(401).json({ success: false, message: 'Invalid signature' });
+    const event = await paymentProviderAdapters.paystack.verifyWebhook(req);
+    if (event.status !== 'pending') {
+      await processWebhook(event.provider, event.reference, event.status, event.providerData, event.providerReference);
     }
-
-    const event = req.body;
-    const reference = event?.data?.reference;
-    if (!reference) {
-      return res.status(400).json({ success: false, message: 'Missing reference' });
-    }
-
-    const status = event.event === 'charge.success' ? 'completed' : 'failed';
-    const shouldDispatch = await processWebhook('paystack', reference, status, {
-      paystackEvent: event.event,
-      paystackId: event.data.id
-    });
-
-    if (shouldDispatch) {
-      const rec = await db.select().from(paymentTransactions).where(eq(paymentTransactions.reference, reference)).then(r => r[0]);
-      if (rec) {
-        await dispatchPaymentSAGA(reference, rec.userId, Number(rec.amount), rec.currency, {
-          provider: 'paystack',
-          paystackTransactionId: event.data.id
-        });
-      }
-    }
-
-    res.json({ success: true, message: 'Webhook processed' });
+    res.json({ success: true, message: 'Webhook accepted' });
   } catch (error: any) {
     logger.error('Paystack webhook error', { message: error.message });
-    res.status(500).json({ success: false, message: error.message });
+    const statusCode = error instanceof WebhookVerificationError ? 401 : 500;
+    res.status(statusCode).json({ success: false, message: error.message });
   }
 });
 
-// Flutterwave webhook
-router.post('/webhooks/flutterwave', async (req: Request, res: Response) => {
+paymentWebhookRouter.post(['/flutterwave', '/flutterwave/webhook', '/webhooks/flutterwave'], async (req: Request, res: Response) => {
   try {
-    const signature = req.headers['verif-hash'] as string;
-    const flwSecret = process.env.FLUTTERWAVE_SECRET_HASH;
-
-    if (flwSecret && signature !== flwSecret) {
-      return res.status(401).json({ success: false, message: 'Invalid signature' });
+    const event = await paymentProviderAdapters.flutterwave.verifyWebhook(req);
+    if (event.status !== 'pending') {
+      await processWebhook(event.provider, event.reference, event.status, event.providerData, event.providerReference);
     }
-
-    const event = req.body;
-    const reference = event?.data?.tx_ref;
-    if (!reference) {
-      return res.status(400).json({ success: false, message: 'Missing reference' });
-    }
-
-    const status = event?.data?.status === 'successful' ? 'completed' : 'failed';
-    const shouldDispatch = await processWebhook('flutterwave', reference, status, {
-      flutterwaveStatus: event.data.status,
-      flutterwaveTransactionId: event.data.id
-    });
-
-    if (shouldDispatch) {
-      const rec = await db.select().from(paymentTransactions).where(eq(paymentTransactions.reference, reference)).then(r => r[0]);
-      if (rec) {
-        await dispatchPaymentSAGA(reference, rec.userId, Number(rec.amount), rec.currency, {
-          provider: 'flutterwave',
-          flutterwaveTransactionId: event.data.id
-        });
-      }
-    }
-
-    res.json({ success: true, message: 'Webhook processed' });
+    res.json({ success: true, message: 'Webhook accepted' });
   } catch (error: any) {
     logger.error('Flutterwave webhook error', { message: error.message });
-    res.status(500).json({ success: false, message: error.message });
+    const statusCode = error instanceof WebhookVerificationError ? 401 : 500;
+    res.status(statusCode).json({ success: false, message: error.message });
   }
 });
 
 // M-Pesa Daraja callback
-router.post('/webhooks/mpesa', async (req: Request, res: Response) => {
+paymentWebhookRouter.post(['/mpesa', '/mpesa/callback', '/webhooks/mpesa'], async (req: Request, res: Response) => {
   try {
     const callbackData = req.body?.Body?.stkCallback;
     if (!callbackData) {
@@ -999,7 +963,7 @@ router.post('/webhooks/mpesa', async (req: Request, res: Response) => {
       ResultCode: '0',
       ResultDesc: 'Accepted',
       paymentStatus: result.status,
-      contributionCredited: result.contributionCredited,
+      contributionConfirmed: result.contributionConfirmed,
     });
   } catch (error: any) {
     logger.error('M-Pesa webhook error', { message: error.message });
@@ -1007,8 +971,7 @@ router.post('/webhooks/mpesa', async (req: Request, res: Response) => {
   }
 });
 
-// KotaniPay webhook
-router.post('/webhooks/kotanipay', async (req: Request, res: Response) => {
+paymentWebhookRouter.post(['/kotanipay', '/kotanipay/webhook'], async (req: Request, res: Response) => {
   try {
     const signature = (req.headers['x-kotani-signature'] as string) || '';
     if (process.env.NODE_ENV === 'production' && !signature) {
@@ -1032,20 +995,10 @@ router.post('/webhooks/kotanipay', async (req: Request, res: Response) => {
     }
 
     const mappedStatus = ['success', 'completed', 'successful'].includes(String(status).toLowerCase()) ? 'completed' : 'failed';
-    const shouldDispatch = await processWebhook('kotanipay', externalId, mappedStatus, {
+    await processWebhook('kotanipay', externalId, mappedStatus, {
       kotaniStatus: status,
       txhash
-    });
-
-    if (shouldDispatch) {
-      const rec = await db.select().from(paymentTransactions).where(eq(paymentTransactions.reference, externalId)).then(r => r[0]);
-      if (rec) {
-        await dispatchPaymentSAGA(externalId, rec.userId, Number(rec.amount), rec.currency, {
-          provider: 'kotanipay',
-          txhash
-        });
-      }
-    }
+    }, txhash);
 
     res.json({ success: true, message: 'Webhook processed' });
   } catch (error: any) {
@@ -1055,7 +1008,7 @@ router.post('/webhooks/kotanipay', async (req: Request, res: Response) => {
 });
 
 // Generic crypto webhook
-router.post('/webhooks/crypto', async (req: Request, res: Response) => {
+paymentWebhookRouter.post(['/crypto', '/crypto/webhook'], async (req: Request, res: Response) => {
   try {
     const { paymentReference, txHash, status } = req.body;
     if (!paymentReference || !txHash) {
@@ -1063,17 +1016,7 @@ router.post('/webhooks/crypto', async (req: Request, res: Response) => {
     }
 
     const mapped = ['confirmed', 'success', 'completed'].includes(String(status).toLowerCase()) ? 'completed' : 'failed';
-    const shouldDispatch = await processWebhook('crypto', paymentReference, mapped, { txHash });
-
-    if (shouldDispatch) {
-      const rec = await db.select().from(paymentTransactions).where(eq(paymentTransactions.reference, paymentReference)).then(r => r[0]);
-      if (rec) {
-        await dispatchPaymentSAGA(paymentReference, rec.userId, Number(rec.amount), rec.currency, {
-          provider: 'crypto',
-          txHash
-        });
-      }
-    }
+    await processWebhook('crypto', paymentReference, mapped, { txHash }, txHash);
 
     res.json({ success: true, message: 'Webhook processed' });
   } catch (error: any) {
@@ -1083,24 +1026,14 @@ router.post('/webhooks/crypto', async (req: Request, res: Response) => {
 });
 
 // MiniPay confirmation
-router.post('/webhooks/minipay', async (req: Request, res: Response) => {
+paymentWebhookRouter.post(['/minipay', '/minipay/webhook'], async (req: Request, res: Response) => {
   try {
     const { paymentReference, txHash } = req.body;
     if (!paymentReference || !txHash) {
       return res.status(400).json({ success: false, message: 'paymentReference and txHash required' });
     }
 
-    const shouldDispatch = await processWebhook('minipay', paymentReference, 'completed', { txHash });
-
-    if (shouldDispatch) {
-      const rec = await db.select().from(paymentTransactions).where(eq(paymentTransactions.reference, paymentReference)).then(r => r[0]);
-      if (rec) {
-        await dispatchPaymentSAGA(paymentReference, rec.userId, Number(rec.amount), rec.currency, {
-          provider: 'minipay',
-          txHash
-        });
-      }
-    }
+    await processWebhook('minipay', paymentReference, 'completed', { txHash }, txHash);
 
     res.json({ success: true, message: 'MiniPay confirmed' });
   } catch (error: any) {
@@ -1128,7 +1061,7 @@ router.post('/:provider/initiate', isAuthenticated, async (req: AuthenticatedReq
       currency: currency || 'KES',
       method: method || 'mobile_money',
       metadata: { ...metadata, daoId },
-      callbackUrl: `${process.env.APP_URL}/api/payments/webhooks/${provider}`
+      ...(provider === 'mpesa' ? { callbackUrl: getMpesaWebhookUrl() } : {})
     });
 
     res.status(result.success ? 200 : 202).json({ ...result, traceId });
@@ -1138,5 +1071,7 @@ router.post('/:provider/initiate', isAuthenticated, async (req: AuthenticatedReq
     res.status(500).json({ success: false, message: error.message, traceId });
   }
 });
+
+router.use('/webhooks', paymentWebhookRouter);
 
 export default router;

@@ -134,12 +134,18 @@ export const domainEvents = pgTable('domain_events', {
   publishAttempts: integer('publish_attempts').default(0).notNull(),
   lastPublishAttempt: timestamp('last_publish_attempt'),
   lastPublishError: text('last_publish_error'),
+  claimToken: text('claim_token'),
+  claimUntil: timestamp('claim_until'),
+  quarantinedAt: timestamp('quarantined_at'),
 }, (table) => ({
   // OCC Constraint: Prevent concurrent transactions from emitting the same version of an aggregate
   occConstraint: uniqueIndex('domain_events_occ_idx').on(table.aggregateType, table.aggregateId, table.version),
   
   // Optimize Outbox Relay querying
   unpublishedIdx: index('idx_domain_events_unpublished').on(table.createdAt).where(sql`${table.publishedAt} IS NULL`),
+  claimableIdx: index('idx_domain_events_claimable')
+    .on(table.claimUntil, table.createdAt)
+    .where(sql`${table.publishedAt} IS NULL AND ${table.quarantinedAt} IS NULL`),
   
   // Optimize historical rebuilding
   aggregateHistoryIdx: index('idx_domain_events_aggregate').on(table.aggregateType, table.aggregateId, table.version),

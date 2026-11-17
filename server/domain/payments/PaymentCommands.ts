@@ -35,6 +35,7 @@ export interface AcceptPaymentPayload {
 
 export interface ReceiveWebhookPayload {
   reference: string;
+  providerReference?: string;
   providerData: Record<string, any>;
 }
 

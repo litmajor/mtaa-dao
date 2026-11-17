@@ -11,6 +11,9 @@
 import { randomUUID } from 'crypto';
 import {OutboxRelayWorker} from '../infrastructure/postgres/OutboxRelayWorker';
 import type { OutboxRepository, StreamPublisher } from '../infrastructure/postgres/OutboxRelayWorker';
+import { getRedisInstanceAsync } from '../config/redisConnectionManager';
+import { RedisStreamProducer } from '../infrastructure/redis/RedisStreamAdapter';
+import { PostgresOutboxRepository } from '../infrastructure/postgres/PostgresOutboxRepository';
 import { logger } from '../observability/logger';
 import { CorrelationContext } from '../observability/CorrelationContext';
 
@@ -125,4 +128,61 @@ export class OutboxWorker {
       this.running = false;
     }
   }
+}
+
+let activeWorker: OutboxWorker | null = null;
+let initializationRetry: ReturnType<typeof setTimeout> | null = null;
+let initializationAttempt = 0;
+let initializationInProgress = false;
+let shuttingDown = false;
+
+export async function initializeOutboxWorker(): Promise<boolean> {
+  if (activeWorker) return true;
+  if (shuttingDown || initializationInProgress) return false;
+
+  initializationInProgress = true;
+  try {
+    const redis = await getRedisInstanceAsync();
+    activeWorker = new OutboxWorker(
+      new PostgresOutboxRepository(),
+      new RedisStreamProducer(redis),
+    );
+    activeWorker.start();
+    initializationAttempt = 0;
+    if (initializationRetry) {
+      clearTimeout(initializationRetry);
+      initializationRetry = null;
+    }
+    return true;
+  } catch (error) {
+    initializationAttempt += 1;
+    const delayMs = Math.min(60_000, 1_000 * (2 ** Math.min(initializationAttempt - 1, 6)));
+    logger.warn({
+      message: 'outbox.worker.initialization.deferred',
+      error: error instanceof Error ? error.message : String(error),
+      retryInMs: delayMs,
+      attempt: initializationAttempt,
+    });
+    initializationRetry = setTimeout(() => {
+      initializationRetry = null;
+      void initializeOutboxWorker();
+    }, delayMs);
+    initializationRetry.unref?.();
+    return false;
+  } finally {
+    initializationInProgress = false;
+  }
+}
+
+export async function shutdownOutboxWorker(): Promise<void> {
+  shuttingDown = true;
+  if (initializationRetry) {
+    clearTimeout(initializationRetry);
+    initializationRetry = null;
+  }
+  if (activeWorker) {
+    await activeWorker.stop();
+    activeWorker = null;
+  }
+  initializationAttempt = 0;
 }

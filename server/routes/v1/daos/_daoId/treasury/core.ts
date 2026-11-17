@@ -15,7 +15,7 @@ import { authenticate } from '../../../../../auth';
 import { rateLimitPerUser } from '../../../../../middleware/rateLimit';
 import { treasuryAdminGuard } from './security';
 import { logConsolidatedAuditEvent } from '../../../../../services/auditConsolidated';
-import { TreasuryService } from '../../../../../services/treasuryService';
+import { TreasuryService, type TreasuryDepositEvidence } from '../../../../../services/treasuryService';
 import treasuryConfig from '../../../../../config/treasury';
 import {
   walletTransactions,
@@ -43,6 +43,7 @@ interface DepositBody {
   amount: string | number;
   currency?: string;
   description?: string;
+  evidence?: TreasuryDepositEvidence;
 }
 
 interface WithdrawalBody {
@@ -94,6 +95,22 @@ interface TreasuryRebalanceBody {
 const router = express.Router({ mergeParams: true });
 
 type TreasuryRequest<P extends Record<string, string> = { daoId: string }, B = unknown, Q = Record<string, unknown>> = Request<P, any, B, Q>;
+
+function isTreasuryDepositEvidence(value: unknown): value is TreasuryDepositEvidence {
+  if (!value || typeof value !== 'object') return false;
+  const evidence = value as Record<string, unknown>;
+  if (evidence.kind === 'on_chain') {
+    return typeof evidence.stableInflowEventId === 'string' &&
+      /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(evidence.stableInflowEventId);
+  }
+  return evidence.kind === 'internal_adjustment' &&
+    typeof evidence.adjustmentReference === 'string' &&
+    evidence.adjustmentReference.trim().length > 0 &&
+    evidence.adjustmentReference.length <= 200 &&
+    typeof evidence.reason === 'string' &&
+    evidence.reason.trim().length >= 10 &&
+    evidence.reason.length <= 1000;
+}
 
 // ════════════════════════════════════════════════════════════════════════════════
 // CORE TREASURY OPERATIONS
@@ -162,6 +179,12 @@ router.get(
         createdAt: walletTransactions.createdAt,
         fromUserId: walletTransactions.fromUserId,
         toUserId: walletTransactions.toUserId,
+        transactionHash: walletTransactions.transactionHash,
+        stableInflowEventId: walletTransactions.stableInflowEventId,
+        chainId: walletTransactions.chainId,
+        tokenAddress: walletTransactions.tokenAddress,
+        contributionId: sql<string | null>`${walletTransactions.metadata}->>'contributionId'`,
+        conversionEvidence: sql<Record<string, unknown> | null>`${walletTransactions.metadata}->'conversionEvidence'`,
       })
         .from(walletTransactions)
         .where(eq(walletTransactions.daoId, daoId))
@@ -208,36 +231,30 @@ router.post(
     try {
       const { daoId } = req.params;
       const userId = req.user?.id ?? 'system';
-      const { amount, currency = 'cUSD', description } = req.body;
+      const { amount, currency = 'cUSD', description, evidence } = req.body;
       const parsedAmount = Number(amount);
 
       if (!amount || Number.isNaN(parsedAmount) || parsedAmount <= 0) {
         return res.status(400).json({ error: 'Valid amount required' });
       }
-
-      const newDeposit: InsertWalletTransaction = {
-        daoId,
-        fromUserId: userId,
-        walletAddress: 'treasury',
-        amount: parsedAmount.toString(),
-        currency,
-        type: 'deposit',
-        status: 'completed',
-        description: description || 'Treasury deposit',
-        metadata: { depositedBy: userId },
-      };
-
-      const result = await db.insert(walletTransactions).values(newDeposit).returning({ id: walletTransactions.id, createdAt: walletTransactions.createdAt });
-
-      const transaction = result[0];
-
-      // Recompute and persist stored treasury balance via TreasuryService (computed is source-of-truth)
-      try {
-        const computed = await TreasuryService.getBalance(daoId);
-        await TreasuryService.updateStoredTreasuryBalance(daoId, computed.total);
-      } catch (err) {
-        console.warn('[Treasury] Failed to recompute stored balance after deposit:', err);
+      if (!isTreasuryDepositEvidence(evidence)) {
+        return res.status(400).json({
+          error: 'A completed treasury deposit requires a confirmed on-chain inflow or a documented internal adjustment',
+        });
       }
+
+      const transactionId = await TreasuryService.recordDeposit(
+        daoId,
+        String(amount),
+        currency,
+        userId,
+        evidence,
+        description,
+      );
+      const transaction = await db.query.walletTransactions.findFirst({
+        where: eq(walletTransactions.id, transactionId),
+      });
+      if (!transaction) throw new Error(`Treasury deposit ${transactionId} was not found after posting`);
 
       await logConsolidatedAuditEvent({
         actorId: userId,
@@ -246,12 +263,12 @@ router.post(
         actionType: 'treasury_deposit',
         actionCategory: 'treasury',
         severity: 'medium',
-        metadata: { amount, currency, description },
+        metadata: { amount: String(amount), currency, description, evidence },
       });
 
       res.status(201).json({
         success: true,
-        transactionId: transaction.id,
+        transactionId,
         daoId,
         amount,
         currency,
@@ -260,6 +277,11 @@ router.post(
       });
     } catch (error) {
       console.error('Treasury deposit error:', error);
+      if (error instanceof Error &&
+         (error.message.includes('requires a matching confirmed on-chain inflow') ||
+          error.message.includes('not a configured vault position'))) {
+       return res.status(409).json({ error: error.message });
+      }
       res.status(500).json({
         error: 'Failed to process deposit',
         details: error instanceof Error ? error.message : 'Unknown error',
@@ -704,26 +726,38 @@ router.post(
       const { daoId, contributionId } = req.params;
       const userId = req.user?.id ?? 'system';
       const { approved, comment } = req.body;
+      if (typeof approved !== 'boolean') {
+        return res.status(400).json({ error: '`approved` must be a boolean' });
+      }
 
       const contribution = await db.query.daoContributions.findFirst({
-        where: eq(daoContributions.id, contributionId),
+        where: and(eq(daoContributions.id, contributionId), eq(daoContributions.daoId, daoId)),
       });
 
       if (!contribution) {
         return res.status(404).json({ error: 'Contribution not found' });
       }
+      if (contribution.status !== 'pending') {
+        return res.status(409).json({ error: 'Contribution is no longer pending' });
+      }
+      const contributionMetadata = (contribution.metadata || {}) as Record<string, unknown>;
+      if (contribution.currency?.toUpperCase() === 'KES' &&
+          contributionMetadata.method === 'M-Pesa' &&
+          (contributionMetadata.paymentStatus !== 'confirmed' ||
+           typeof contributionMetadata.mpesaReceipt !== 'string' ||
+           !contributionMetadata.mpesaReceipt.trim() ||
+           Number(contributionMetadata.mpesaPaidAmount) !== Number(contribution.amount))) {
+        return res.status(409).json({ error: 'M-Pesa receipt confirmation is required before DAO contribution approval' });
+      }
 
       // Record approval
-      const [approval] = await db.insert(daoContributionApprovals).values({
+      await db.insert(daoContributionApprovals).values({
         daoId,
         contributionId,
         approverId: userId,
         approved: approved === true,
         comment: comment || null,
         approvedAt: new Date(),
-      }).returning({ 
-        id: daoContributionApprovals.id,
-        approved: daoContributionApprovals.approved,
       });
 
       // Get all approvals for this contribution
@@ -746,39 +780,13 @@ router.post(
             status: newStatus,
             approvalStatus: 'unanimousApproval',
             approvalsCount: approvalCount,
-            completedAt: new Date(),
+            completedAt: null,
           })
-          .where(eq(daoContributions.id, contributionId));
-
-        // Create wallet transaction for the contribution
-        const contributionTransaction: InsertWalletTransaction = {
-          daoId,
-          fromUserId: contribution.contributorId,
-          toUserId: null,
-          walletAddress: 'treasury',
-          amount: contribution.amount.toString(),
-          currency: contribution.currency || 'cUSD',
-          type: 'contribution',
-          status: 'completed',
-          description: `Contribution approved: ${contribution.description || 'DAO contribution'}`,
-          metadata: { contributionId, approvedBy: userId },
-        };
-
-        await db.insert(walletTransactions).values(contributionTransaction);
-
-        // Update DAO treasury balance
-        const dao = await db.query.daos.findFirst({
-          where: eq(daos.id, daoId),
-        });
-
-        if (dao) {
-          try {
-            const computed = await TreasuryService.getBalance(daoId);
-            await TreasuryService.updateStoredTreasuryBalance(daoId, computed.total);
-          } catch (err) {
-            console.warn('[Treasury] Failed to recompute stored balance after contribution approval:', err);
-          }
-        }
+          .where(and(
+            eq(daoContributions.id, contributionId),
+            eq(daoContributions.daoId, daoId),
+            eq(daoContributions.status, 'pending'),
+          ));
       }
 
       await logConsolidatedAuditEvent({

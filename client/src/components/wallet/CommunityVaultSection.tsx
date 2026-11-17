@@ -15,7 +15,7 @@ import { WithdrawalModal as VaultWithdrawInfoCard } from "@/components/vault/Wit
 import ProposalCard from "@/components/proposal-card";
 import { Dialog, DialogContent, DialogTrigger, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { toast } from "sonner";
-import { useWallet } from "@/pages/hooks/useWallet";
+import { useWallet } from '@/hooks/useWallet';
 import { useAccount, useBalance } from "wagmi"; // For Celo wallet integration
 import { parseEther } from '@/lib/blockchain'; // For gas estimates
 

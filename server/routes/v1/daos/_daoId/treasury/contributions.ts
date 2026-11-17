@@ -3,6 +3,7 @@ import type { Request, Response, NextFunction } from 'express';
 import path from 'path';
 import { randomUUID } from 'crypto';
 import { and, count, desc, eq, sql } from 'drizzle-orm';
+import Decimal from 'decimal.js';
 import { db } from '../../../../../storage';
 import {
   daoContributionApprovals,
@@ -10,7 +11,10 @@ import {
   daoContributionTypes,
   daoMemberships,
   daos,
+  paymentTransactions,
   paymentReceipts,
+  stableInflowEvents,
+  treasuryPositions,
   users,
   walletTransactions,
 } from '@shared/schema';
@@ -20,6 +24,7 @@ import { paymentReceiptUpload } from '../../../../../middleware/paymentReceiptUp
 import { logConsolidatedAuditEvent } from '../../../../../services/auditConsolidated';
 import { paymentGatewayService } from '../../../../../services/paymentGatewayService';
 import { MAX_B2C_AMOUNT_KES } from '../../../../../services/mpesaB2cPayoutService';
+import { hasStableInflowRiskFlagsCleared } from '../../../../../types/stableInflow';
 
 const router = express.Router({ mergeParams: true });
 const adminRoles = new Set(['admin', 'elder', 'owner', 'founder']);
@@ -100,7 +105,10 @@ function contributionResponse(row: any) {
     contributorPhone: metadata.contributorPhone,
     description: row.description,
     method: metadata.method,
-    mpesaRef: metadata.mpesaCode,
+    mpesaRef: metadata.mpesaReceipt ?? metadata.mpesaCode,
+    paymentReference: metadata.paymentReference,
+    paymentStatus: metadata.paymentStatus,
+    conversionEvidence: metadata.conversionEvidence,
     purpose: metadata.purpose,
     cycle: metadata.cycle,
     createdAt: row.createdAt,
@@ -776,6 +784,14 @@ router.post(
         if (!contribution) return { error: 'not_found' as const };
         if (contribution.status !== 'pending') return { error: 'not_pending' as const };
         const metadata = (contribution.metadata || {}) as Record<string, unknown>;
+        if (contribution.currency?.toUpperCase() === 'KES' &&
+            metadata.method === 'M-Pesa' &&
+            (metadata.paymentStatus !== 'confirmed' ||
+             typeof metadata.mpesaReceipt !== 'string' ||
+             !metadata.mpesaReceipt.trim() ||
+             Number(metadata.mpesaPaidAmount) !== Number(contribution.amount))) {
+          return { error: 'payment_unconfirmed' as const };
+        }
         if (contribution.contributorId === userId) return { error: 'self_approval' as const };
         if (contribution.currency?.toUpperCase() === 'KES' && metadata.recordedBy === userId) {
           return { error: 'recorder_approval' as const };
@@ -822,28 +838,13 @@ router.post(
           approvalsCount: approvedCount,
           requiredApprovals: needed,
           rejectionReason: newStatus === 'rejected' ? comment?.trim() || null : null,
-          completedAt: newStatus === 'approved' ? new Date() : null,
+          completedAt: null,
           updatedAt: new Date(),
         }).where(and(
           eq(daoContributions.id, contributionId),
           eq(daoContributions.status, 'pending')
         )).returning({ id: daoContributions.id });
         if (!updatedContribution) return { error: 'not_pending' as const };
-
-        if (newStatus === 'approved' && contribution.currency?.toLowerCase() === 'cusd') {
-          await tx.insert(walletTransactions).values({
-            daoId,
-            fromUserId: contribution.contributorId,
-            toUserId: null,
-            walletAddress: 'treasury',
-            amount: contribution.amount.toString(),
-            currency: contribution.currency || 'KES',
-            type: 'contribution',
-            status: 'completed',
-            description: `Contribution approved: ${contribution.description || 'DAO contribution'}`,
-            metadata: { contributionId, approvedBy: userId },
-          });
-        }
 
         return { status: newStatus, approvalsCount: approvedCount, requiredApprovals: needed };
       });
@@ -853,6 +854,7 @@ router.post(
         if (result.error === 'already_reviewed') return res.status(409).json({ error: 'You have already reviewed this contribution' });
         if (result.error === 'self_approval') return res.status(403).json({ error: 'Contributors cannot approve their own contributions' });
         if (result.error === 'recorder_approval') return res.status(403).json({ error: 'The member who recorded a KES contribution cannot approve it' });
+        if (result.error === 'payment_unconfirmed') return res.status(409).json({ error: 'M-Pesa receipt confirmation is required before DAO contribution approval' });
         return res.status(409).json({ error: 'Contribution is no longer pending' });
       }
 
@@ -873,6 +875,238 @@ router.post(
         return res.status(409).json({ error: 'You have already reviewed this contribution' });
       }
       return res.status(500).json({ error: 'Failed to approve contribution' });
+    }
+  }
+);
+
+router.post(
+  '/:contributionId/settle',
+  requireDaoAdmin,
+  rateLimitPerUser('treasury-contrib-settle', 10, '10min'),
+  async (req: Request, res: Response) => {
+    try {
+      const { daoId, contributionId } = req.params;
+      const userId = (req as any).user.id as string;
+      const stableInflowEventId = req.body?.stableInflowEventId;
+      if (typeof stableInflowEventId !== 'string' ||
+          !/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(stableInflowEventId)) {
+        return res.status(400).json({ error: '`stableInflowEventId` must be a valid UUID for an indexed on-chain inflow' });
+      }
+
+      const settlement = await db.transaction(async (tx) => {
+        const [contribution] = await tx.select().from(daoContributions)
+          .where(and(eq(daoContributions.id, contributionId), eq(daoContributions.daoId, daoId)))
+          .for('update')
+          .limit(1);
+        if (!contribution) return { error: 'not_found' as const };
+
+        const contributionMetadata = (contribution.metadata || {}) as Record<string, unknown>;
+        if (contribution.status === 'completed') {
+          const priorEvidence = contributionMetadata.conversionEvidence as Record<string, unknown> | undefined;
+          if (priorEvidence?.stableInflowEventId === stableInflowEventId) {
+            return { status: 'completed' as const, alreadySettled: true };
+          }
+          return { error: 'already_settled' as const };
+        }
+        if (contribution.status !== 'approved') return { error: 'not_approved' as const };
+
+        const isKesContribution = contribution.currency?.toUpperCase() === 'KES';
+        let paymentReference: string | undefined;
+        let mpesaReceipt: string | undefined;
+        const conversionProvider = typeof req.body?.conversionProvider === 'string'
+          ? req.body.conversionProvider.trim()
+          : '';
+        const conversionReference = typeof req.body?.conversionReference === 'string'
+          ? req.body.conversionReference.trim()
+          : '';
+        if (isKesContribution) {
+          if (!conversionProvider || conversionProvider.length > 100 ||
+              !conversionReference || conversionReference.length > 200) {
+            return { error: 'conversion_evidence_missing' as const };
+          }
+          paymentReference = typeof contributionMetadata.paymentReference === 'string'
+            ? contributionMetadata.paymentReference
+            : undefined;
+          mpesaReceipt = typeof contributionMetadata.mpesaReceipt === 'string'
+            ? contributionMetadata.mpesaReceipt.trim()
+            : undefined;
+          if (contributionMetadata.paymentStatus !== 'confirmed' || !paymentReference || !mpesaReceipt ||
+              Number(contributionMetadata.mpesaPaidAmount) !== Number(contribution.amount)) {
+            return { error: 'mpesa_unconfirmed' as const };
+          }
+
+          const [payment] = await tx.select().from(paymentTransactions)
+            .where(and(
+              eq(paymentTransactions.reference, paymentReference),
+              eq(paymentTransactions.userId, contribution.contributorId),
+              eq(paymentTransactions.provider, 'mpesa'),
+              eq(paymentTransactions.status, 'completed'),
+              eq(paymentTransactions.currency, 'KES'),
+            ))
+            .for('update')
+            .limit(1);
+          const paymentMetadata = (payment?.metadata || {}) as Record<string, unknown>;
+          if (!payment || !new Decimal(payment.amount).eq(contribution.amount.toString()) ||
+              payment.providerReference !== mpesaReceipt ||
+              paymentMetadata.mpesaReceipt !== mpesaReceipt ||
+              Number(paymentMetadata.mpesaPaidAmount) !== Number(contribution.amount) ||
+              paymentMetadata.contributionId !== contributionId ||
+              paymentMetadata.daoId !== daoId) {
+            return { error: 'mpesa_unconfirmed' as const };
+          }
+        }
+
+        const [inflow] = await tx.select().from(stableInflowEvents)
+          .where(eq(stableInflowEvents.id, stableInflowEventId))
+          .for('update')
+          .limit(1);
+        if (!inflow || inflow.tokenSymbol.toLowerCase() !== 'cusd' ||
+            inflow.status !== 'received' || inflow.confirmationState !== 'confirmed' ||
+            !hasStableInflowRiskFlagsCleared(inflow.riskFlags)) {
+          return { error: 'inflow_unverified' as const };
+        }
+
+        const [daoVaultPosition] = await tx.select({ id: treasuryPositions.id })
+          .from(treasuryPositions)
+          .where(and(
+            eq(treasuryPositions.daoId, daoId),
+            eq(treasuryPositions.chainId, inflow.chainId),
+            sql`lower(${treasuryPositions.contractAddress}) = lower(${inflow.tokenAddress})`,
+            sql`lower(${treasuryPositions.holderAddress}) = lower(${inflow.toAddress})`,
+          ))
+          .limit(1);
+        if (!daoVaultPosition) return { error: 'not_dao_vault_inflow' as const };
+
+        const existingCredit = await tx.select({ id: walletTransactions.id, metadata: walletTransactions.metadata })
+          .from(walletTransactions)
+          .where(eq(walletTransactions.stableInflowEventId, inflow.id))
+          .limit(1);
+        if (existingCredit.length) {
+          const existingMetadata = (existingCredit[0].metadata || {}) as Record<string, unknown>;
+          return existingMetadata.contributionId === contributionId
+            ? { status: 'completed' as const, alreadySettled: true }
+            : { error: 'inflow_already_linked' as const };
+        }
+
+        const convertedAmount = new Decimal(inflow.normalizedTokenAmount);
+        if (!convertedAmount.isFinite() || convertedAmount.lte(0)) return { error: 'inflow_unverified' as const };
+        if (!isKesContribution && !convertedAmount.eq(contribution.amount.toString())) {
+          return { error: 'amount_mismatch' as const };
+        }
+
+        const conversionEvidence = {
+          kind: isKesContribution ? 'kes_to_cusd_onchain_settlement' : 'onchain_cusd_settlement',
+          ...(paymentReference ? { paymentReference } : {}),
+          ...(mpesaReceipt ? { mpesaReceipt } : {}),
+          ...(isKesContribution ? {
+            sourceAmount: contribution.amount.toString(),
+            sourceCurrency: 'KES',
+            conversionRate: convertedAmount.div(contribution.amount.toString()).toString(),
+            conversionProvider,
+            conversionReference,
+            conversionReferenceVerification: 'operator_recorded',
+          } : {}),
+          destinationAmount: convertedAmount.toString(),
+          destinationCurrency: 'cUSD',
+          stableInflowEventId: inflow.id,
+          chainId: inflow.chainId,
+          tokenAddress: inflow.tokenAddress,
+          txHash: inflow.txHash,
+          logIndex: inflow.logIndex,
+          fromAddress: inflow.fromAddress,
+          toAddress: inflow.toAddress,
+          confirmedAt: new Date().toISOString(),
+          confirmedBy: userId,
+        };
+        const now = new Date();
+        const [credit] = await tx.insert(walletTransactions).values({
+          daoId,
+          fromUserId: contribution.contributorId,
+          walletAddress: inflow.toAddress,
+          amount: convertedAmount.toString(),
+          currency: 'cUSD',
+          type: 'contribution',
+          status: 'completed',
+          transactionHash: inflow.txHash,
+          stableInflowEventId: inflow.id,
+          stableUnitsMicroUsd: inflow.stableUnitsMicroUsd,
+          chainId: inflow.chainId,
+          tokenAddress: inflow.tokenAddress,
+          description: `Settled contribution: ${contribution.description || 'DAO contribution'}`,
+          metadata: { contributionId, conversionEvidence },
+          createdAt: now,
+          updatedAt: now,
+        }).returning({ id: walletTransactions.id });
+        if (!credit) throw new Error('Failed to create evidence-linked treasury credit');
+
+        const [updatedContribution] = await tx.update(daoContributions).set({
+          status: 'completed',
+          completedAt: now,
+          metadata: {
+            ...contributionMetadata,
+            settlementStatus: 'settled',
+            treasuryCreditTransactionId: credit.id,
+            conversionEvidence,
+          },
+          updatedAt: now,
+        }).where(and(
+          eq(daoContributions.id, contributionId),
+          eq(daoContributions.status, 'approved'),
+        )).returning({ id: daoContributions.id });
+        if (!updatedContribution) throw new Error(`Contribution ${contributionId} changed during settlement`);
+
+        const [creditedInflow] = await tx.update(stableInflowEvents).set({
+          status: 'credited',
+          metadata: sql`coalesce(${stableInflowEvents.metadata}, '{}'::jsonb) || ${JSON.stringify({
+            daoId,
+            contributionId,
+            walletTransactionId: credit.id,
+            settlementEvidence: conversionEvidence,
+          })}::jsonb`,
+          updatedAt: now,
+        }).where(and(
+          eq(stableInflowEvents.id, inflow.id),
+          eq(stableInflowEvents.status, 'received'),
+          eq(stableInflowEvents.confirmationState, 'confirmed'),
+        )).returning({ id: stableInflowEvents.id });
+        if (!creditedInflow) throw new Error(`Stable inflow ${inflow.id} changed during settlement`);
+
+        return { status: 'completed' as const, alreadySettled: false, walletTransactionId: credit.id, conversionEvidence };
+      });
+
+      if ('error' in settlement) {
+        if (settlement.error === 'not_found') return res.status(404).json({ error: 'Contribution not found' });
+        if (settlement.error === 'not_approved') return res.status(409).json({ error: 'Contribution must be approved before settlement' });
+        if (settlement.error === 'mpesa_unconfirmed') return res.status(409).json({ error: 'A matching confirmed M-Pesa payment receipt is required before conversion settlement' });
+        if (settlement.error === 'conversion_evidence_missing') {
+          return res.status(400).json({ error: 'KES conversion settlement requires conversionProvider and conversionReference' });
+        }
+        if (settlement.error === 'inflow_unverified') return res.status(409).json({ error: 'A confirmed, risk-cleared indexed cUSD inflow is required' });
+        if (settlement.error === 'not_dao_vault_inflow') return res.status(409).json({ error: 'The indexed cUSD inflow recipient is not a configured vault position for this DAO' });
+        if (settlement.error === 'amount_mismatch') return res.status(409).json({ error: 'The indexed cUSD amount does not match the approved cUSD contribution' });
+        if (settlement.error === 'inflow_already_linked') return res.status(409).json({ error: 'The indexed cUSD inflow is already linked to another treasury credit' });
+        return res.status(409).json({ error: 'Contribution is already settled with different evidence' });
+      }
+
+      if (!settlement.alreadySettled) {
+        await logConsolidatedAuditEvent({
+          actorId: userId,
+          actionType: 'contribution_settled',
+          targetType: 'contribution',
+          targetId: contributionId,
+          severity: 'critical',
+          metadata: { daoId, ...settlement },
+        });
+      }
+      return res.json({ success: true, daoId, contributionId, settlement });
+    } catch (error) {
+      console.error('[Treasury contributions] Failed to settle contribution:', error);
+      const databaseError = error as { code?: string; constraint?: string } | null;
+      if (databaseError?.code === '23505' &&
+          databaseError.constraint === 'wallet_transactions_stable_inflow_event_uq') {
+        return res.status(409).json({ error: 'The indexed cUSD inflow has already been credited' });
+      }
+      return res.status(500).json({ error: 'Failed to settle contribution' });
     }
   }
 );

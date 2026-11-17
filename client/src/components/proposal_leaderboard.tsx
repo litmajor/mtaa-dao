@@ -1,6 +1,6 @@
 // components/ProposalLeaderboard.tsx
 
-import { useProposalStats } from "@/pages/hooks/useProposalStats"
+import { useProposalStats } from '@/hooks/useProposalStats';
 import { Card, CardHeader, CardContent } from "@/components/ui/card"
 import { Trophy } from "lucide-react"
 

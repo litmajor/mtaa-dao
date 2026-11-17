@@ -1,11 +1,11 @@
 import React from 'react';
-import { useLocation } from 'wouter';
+import { useNavigate } from 'react-router-dom';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { ShieldAlert, Users, Database, Activity, ArrowRight } from 'lucide-react';
 
 export function AdminTab() {
-  const [, setLocation] = useLocation();
+  const navigate = useNavigate();
 
   return (
     <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
@@ -40,21 +40,21 @@ export function AdminTab() {
           <div className="space-y-3 pt-4 border-t border-red-500/20">
             <Button 
               className="w-full justify-between bg-red-500/10 hover:bg-red-500/20 text-red-400 border border-red-500/30"
-              onClick={() => setLocation('/admin/system-settings')}
+              onClick={() => navigate('/admin/system-settings')}
             >
               Open Full System Settings
               <ArrowRight className="w-4 h-4" />
             </Button>
             <Button 
               className="w-full justify-between bg-black/40 hover:bg-white/5 text-gray-300 border border-white/10"
-              onClick={() => setLocation('/admin/users')}
+              onClick={() => navigate('/admin/users')}
             >
               Manage Users
               <ArrowRight className="w-4 h-4" />
             </Button>
             <Button 
               className="w-full justify-between bg-black/40 hover:bg-white/5 text-gray-300 border border-white/10"
-              onClick={() => setLocation('/admin/audit')}
+              onClick={() => navigate('/admin/audit')}
             >
               View Audit Logs
               <ArrowRight className="w-4 h-4" />

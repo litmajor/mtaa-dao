@@ -2,8 +2,11 @@ import { CommandBusImpl } from './commands/CommandBusImpl';
 import { CommandHandlerRegistry } from './commands/handlers/CommandHandlerRegistry';
 
 // Middlewares
-import { AuthorizationMiddleware } from './commands/middlewares/AuthorizationMiddleware';
-import type { AuthorizationService, CommandCapabilityMap } from './commands/middlewares/AuthorizationMiddleware';
+import {
+  AuthorizationMiddleware,
+  DatabaseAuthorizationService,
+  ExplicitCommandCapabilityMap,
+} from './commands/middlewares/AuthorizationMiddleware';
 import { IdempotencyMiddleware } from './commands/middlewares/IdempotencyMiddleware';
 import { TransactionMiddleware } from './commands/middlewares/TransactionMiddleware';
 import { OutboxMiddleware } from './commands/middlewares/OutboxMiddleware';
@@ -41,23 +44,6 @@ import {
 } from './vaults/VaultHandlers';
 
 // ---------------------------------------------------------------------------
-// Mock Implementations for Phase 1
-// ---------------------------------------------------------------------------
-
-class MockAuthorizationService implements AuthorizationService {
-  async getCapabilities(actor: string): Promise<string[]> {
-    // For Phase 1, assume all actors have superuser capabilities
-    return ['*'];
-  }
-}
-
-class MockCommandCapabilityMap implements CommandCapabilityMap {
-  getRequiredCapability(commandType: string): string | undefined {
-    return undefined; // Unrestricted for now
-  }
-}
-
-// ---------------------------------------------------------------------------
 // Composition Root
 // ---------------------------------------------------------------------------
 
@@ -69,8 +55,8 @@ const paymentRepo = new DrizzlePaymentRepository();
 
 // 2. Middlewares
 const authMiddleware = new AuthorizationMiddleware(
-  new MockAuthorizationService(),
-  new MockCommandCapabilityMap()
+  new DatabaseAuthorizationService(),
+  new ExplicitCommandCapabilityMap()
 );
 const idempotencyMiddleware = new IdempotencyMiddleware(commandLogRepo);
 const transactionMiddleware = new TransactionMiddleware();
